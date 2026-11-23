@@ -69,6 +69,32 @@ class SoundEngineImpl {
   private highTension = false;
   public audioMode: AudioMode = 'all';
 
+  constructor() {
+    if (typeof document !== 'undefined' && typeof document.addEventListener === 'function') {
+      document.addEventListener('visibilitychange', () => {
+        if (document.hidden) {
+          this.stopBgm();
+          this.stopCrowdAmbience();
+          this.stopWeatherAmbience();
+          if (this.ctx && this.ctx.state === 'running') {
+            this.ctx.suspend().catch(() => {});
+          }
+        } else if (!this.muted) {
+          if (this.ctx && this.ctx.state === 'suspended') {
+            this.ctx.resume().catch(() => {});
+          }
+          if (this.audioMode === 'all' && !this.bgmTimer) {
+            this.startBgmLoop();
+          }
+          if (this.currentScene === 'match') {
+            this.startCrowdAmbience();
+            this.startWeatherAmbience(this.currentWeather);
+          }
+        }
+      });
+    }
+  }
+
   public get muted(): boolean {
     return this.audioMode === 'muted';
   }
@@ -250,6 +276,7 @@ class SoundEngineImpl {
 
   private startBgmLoop(): void {
     this.stopBgm();
+    if (typeof document !== 'undefined' && document.hidden) return;
     const ctx = this.ensureContext();
     if (!ctx) return;
 
@@ -259,6 +286,7 @@ class SoundEngineImpl {
     const scheduleAheadSec = 0.09;
     const tick = () => {
       if (this.audioMode !== 'all') return;
+      if (typeof document !== 'undefined' && document.hidden) return;
       const c = this.ensureContext();
       if (!c) return;
 
@@ -396,6 +424,10 @@ class SoundEngineImpl {
     g.gain.linearRampToValueAtTime(vol, time + 0.005);
     g.gain.exponentialRampToValueAtTime(0.001, time + 0.14);
     osc.connect(g).connect(dest);
+    osc.onended = () => {
+      osc.disconnect();
+      g.disconnect();
+    };
     osc.start(time);
     osc.stop(time + 0.15);
   }
@@ -412,6 +444,11 @@ class SoundEngineImpl {
     ng.gain.setValueAtTime(vol, time);
     ng.gain.exponentialRampToValueAtTime(0.001, time + 0.13);
     src.connect(bp).connect(ng).connect(dest);
+    src.onended = () => {
+      src.disconnect();
+      bp.disconnect();
+      ng.disconnect();
+    };
     src.start(time);
     src.stop(time + 0.14);
 
@@ -424,6 +461,10 @@ class SoundEngineImpl {
     og.gain.setValueAtTime(vol * 0.75, time);
     og.gain.exponentialRampToValueAtTime(0.001, time + 0.08);
     osc.connect(og).connect(dest);
+    osc.onended = () => {
+      osc.disconnect();
+      og.disconnect();
+    };
     osc.start(time);
     osc.stop(time + 0.09);
   }
@@ -438,6 +479,11 @@ class SoundEngineImpl {
     g.gain.setValueAtTime(vol, time);
     g.gain.exponentialRampToValueAtTime(0.001, time + dur);
     src.connect(hp).connect(g).connect(dest);
+    src.onended = () => {
+      src.disconnect();
+      hp.disconnect();
+      g.disconnect();
+    };
     src.start(time);
     src.stop(time + dur + 0.01);
   }
@@ -452,6 +498,11 @@ class SoundEngineImpl {
     g.gain.setValueAtTime(vol, time);
     g.gain.exponentialRampToValueAtTime(0.001, time + 0.55);
     src.connect(hp).connect(g).connect(dest);
+    src.onended = () => {
+      src.disconnect();
+      hp.disconnect();
+      g.disconnect();
+    };
     src.start(time);
     src.stop(time + 0.58);
   }
@@ -476,6 +527,11 @@ class SoundEngineImpl {
     g.gain.linearRampToValueAtTime(vol, time + 0.01);
     g.gain.exponentialRampToValueAtTime(0.001, time + dur);
     osc.connect(lp).connect(g).connect(dest);
+    osc.onended = () => {
+      osc.disconnect();
+      lp.disconnect();
+      g.disconnect();
+    };
     osc.start(time);
     osc.stop(time + dur + 0.01);
   }
@@ -501,6 +557,7 @@ class SoundEngineImpl {
     g.gain.exponentialRampToValueAtTime(0.001, time + dur);
     shaper.connect(cab).connect(g).connect(dest);
 
+    let ended = 0;
     // 强力五度和弦：Root + 5th + Octave
     [1, 1.498, 2].forEach((mult, i) => {
       const osc = ctx.createOscillator();
@@ -508,6 +565,15 @@ class SoundEngineImpl {
       osc.frequency.setValueAtTime(rootFreq * mult, time);
       osc.detune.setValueAtTime(i === 1 ? -5 : i === 2 ? 5 : 0, time);
       osc.connect(shaper);
+      osc.onended = () => {
+        osc.disconnect();
+        ended++;
+        if (ended === 3) {
+          shaper.disconnect();
+          cab.disconnect();
+          g.disconnect();
+        }
+      };
       osc.start(time);
       osc.stop(time + dur + 0.02);
     });
@@ -544,6 +610,12 @@ class SoundEngineImpl {
     g.gain.exponentialRampToValueAtTime(0.001, time + dur);
 
     osc.connect(shaper).connect(bp).connect(g).connect(dest);
+    osc.onended = () => {
+      osc.disconnect();
+      shaper.disconnect();
+      bp.disconnect();
+      g.disconnect();
+    };
     osc.start(time);
     osc.stop(time + dur + 0.02);
   }

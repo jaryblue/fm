@@ -99,14 +99,15 @@ export class HallOfFameScreen {
         align: 'center',
       });
     } else {
-      [...hof.records].reverse().slice(0, 6).forEach((rec, i) => {
-        const ry = 334 + i * 58;
+      [...hof.records].reverse().slice(0, 5).forEach((rec, i) => {
+        const hasMem = !!rec.topMemory;
+        const ry = 334 + i * 70;
         drawRoundRect(
           ctx,
           lx + 20,
           ry,
           lw - 40,
-          50,
+          hasMem ? 62 : 50,
           7,
           THEME.BG_CARD,
           rec.isChampion ? THEME.GOLD : THEME.BORDER
@@ -114,24 +115,32 @@ export class HallOfFameScreen {
         drawBadge(
           ctx,
           lx + 32,
-          ry + 15,
+          ry + 12,
           42,
           20,
           `S${rec.seasonNumber}`,
           rec.isChampion ? THEME.GOLD : '#1E293B',
           rec.isChampion ? '#080C14' : THEME.TX1
         );
-        if (rec.isChampion) drawIcon(ctx, 'trophy', lx + 86, ry + 18, 13, THEME.GOLD_LIGHT);
-        drawText(ctx, rec.clubName, rec.isChampion ? lx + 100 : lx + 86, ry + 18, {
+        if (rec.isChampion) drawIcon(ctx, 'trophy', lx + 86, ry + 16, 13, THEME.GOLD_LIGHT);
+        drawText(ctx, rec.clubName, rec.isChampion ? lx + 100 : lx + 86, ry + 16, {
           size: 13,
           bold: true,
           color: rec.isChampion ? THEME.GOLD_LIGHT : THEME.TX1,
         });
-        drawText(ctx, `${rec.storylineTitle || '常规赛季'} · ${rec.points}分 · ${rec.gf}/${rec.ga}`, lx + 86, ry + 36, {
+        drawText(ctx, `${rec.storylineTitle || '常规赛季'} · ${rec.points}分 · ${rec.gf}/${rec.ga}`, lx + 86, ry + 34, {
           size: 11,
           color: THEME.TX2,
         });
-        drawText(ctx, `第 ${rec.finalRank} 名`, lx + lw - 34, ry + 25, {
+        if (rec.topMemory) {
+          const mem = rec.topMemory;
+          const oppExtra = mem.oppPlayerName ? ` · 敌方:${mem.oppPlayerName}` : '';
+          drawText(ctx, `★ ${mem.badge} · ${mem.title} (${mem.scoreText}${oppExtra})`, lx + 32, ry + 51, {
+            size: 10,
+            color: mem.isPainful ? '#FCA5A5' : THEME.GOLD_LIGHT,
+          });
+        }
+        drawText(ctx, `第 ${rec.finalRank} 名`, lx + lw - 34, ry + 22, {
           size: 13,
           bold: true,
           color: rec.isChampion ? THEME.GOLD_LIGHT : THEME.TX1,

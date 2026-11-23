@@ -853,6 +853,31 @@
       this.currentWeather = "sunny";
       this.highTension = false;
       this.audioMode = "all";
+      if (typeof document !== "undefined" && typeof document.addEventListener === "function") {
+        document.addEventListener("visibilitychange", () => {
+          if (document.hidden) {
+            this.stopBgm();
+            this.stopCrowdAmbience();
+            this.stopWeatherAmbience();
+            if (this.ctx && this.ctx.state === "running") {
+              this.ctx.suspend().catch(() => {
+              });
+            }
+          } else if (!this.muted) {
+            if (this.ctx && this.ctx.state === "suspended") {
+              this.ctx.resume().catch(() => {
+              });
+            }
+            if (this.audioMode === "all" && !this.bgmTimer) {
+              this.startBgmLoop();
+            }
+            if (this.currentScene === "match") {
+              this.startCrowdAmbience();
+              this.startWeatherAmbience(this.currentWeather);
+            }
+          }
+        });
+      }
     }
     get muted() {
       return this.audioMode === "muted";
@@ -1007,6 +1032,7 @@
     }
     startBgmLoop() {
       this.stopBgm();
+      if (typeof document !== "undefined" && document.hidden) return;
       const ctx2 = this.ensureContext();
       if (!ctx2) return;
       this.stepIndex = 0;
@@ -1014,6 +1040,7 @@
       const scheduleAheadSec = 0.09;
       const tick = () => {
         if (this.audioMode !== "all") return;
+        if (typeof document !== "undefined" && document.hidden) return;
         const c = this.ensureContext();
         if (!c) return;
         const style = this.getActiveStyle();
@@ -1099,6 +1126,10 @@
       g.gain.linearRampToValueAtTime(vol, time + 5e-3);
       g.gain.exponentialRampToValueAtTime(1e-3, time + 0.14);
       osc.connect(g).connect(dest);
+      osc.onended = () => {
+        osc.disconnect();
+        g.disconnect();
+      };
       osc.start(time);
       osc.stop(time + 0.15);
     }
@@ -1113,6 +1144,11 @@
       ng.gain.setValueAtTime(vol, time);
       ng.gain.exponentialRampToValueAtTime(1e-3, time + 0.13);
       src.connect(bp).connect(ng).connect(dest);
+      src.onended = () => {
+        src.disconnect();
+        bp.disconnect();
+        ng.disconnect();
+      };
       src.start(time);
       src.stop(time + 0.14);
       const osc = ctx2.createOscillator();
@@ -1123,6 +1159,10 @@
       og.gain.setValueAtTime(vol * 0.75, time);
       og.gain.exponentialRampToValueAtTime(1e-3, time + 0.08);
       osc.connect(og).connect(dest);
+      osc.onended = () => {
+        osc.disconnect();
+        og.disconnect();
+      };
       osc.start(time);
       osc.stop(time + 0.09);
     }
@@ -1136,6 +1176,11 @@
       g.gain.setValueAtTime(vol, time);
       g.gain.exponentialRampToValueAtTime(1e-3, time + dur);
       src.connect(hp).connect(g).connect(dest);
+      src.onended = () => {
+        src.disconnect();
+        hp.disconnect();
+        g.disconnect();
+      };
       src.start(time);
       src.stop(time + dur + 0.01);
     }
@@ -1149,6 +1194,11 @@
       g.gain.setValueAtTime(vol, time);
       g.gain.exponentialRampToValueAtTime(1e-3, time + 0.55);
       src.connect(hp).connect(g).connect(dest);
+      src.onended = () => {
+        src.disconnect();
+        hp.disconnect();
+        g.disconnect();
+      };
       src.start(time);
       src.stop(time + 0.58);
     }
@@ -1165,6 +1215,11 @@
       g.gain.linearRampToValueAtTime(vol, time + 0.01);
       g.gain.exponentialRampToValueAtTime(1e-3, time + dur);
       osc.connect(lp).connect(g).connect(dest);
+      osc.onended = () => {
+        osc.disconnect();
+        lp.disconnect();
+        g.disconnect();
+      };
       osc.start(time);
       osc.stop(time + dur + 0.01);
     }
@@ -1179,12 +1234,22 @@
       g.gain.linearRampToValueAtTime(vol, time + 0.012);
       g.gain.exponentialRampToValueAtTime(1e-3, time + dur);
       shaper.connect(cab).connect(g).connect(dest);
+      let ended = 0;
       [1, 1.498, 2].forEach((mult, i) => {
         const osc = ctx2.createOscillator();
         osc.type = "sawtooth";
         osc.frequency.setValueAtTime(rootFreq * mult, time);
         osc.detune.setValueAtTime(i === 1 ? -5 : i === 2 ? 5 : 0, time);
         osc.connect(shaper);
+        osc.onended = () => {
+          osc.disconnect();
+          ended++;
+          if (ended === 3) {
+            shaper.disconnect();
+            cab.disconnect();
+            g.disconnect();
+          }
+        };
         osc.start(time);
         osc.stop(time + dur + 0.02);
       });
@@ -1209,6 +1274,12 @@
       g.gain.linearRampToValueAtTime(vol, time + 0.015);
       g.gain.exponentialRampToValueAtTime(1e-3, time + dur);
       osc.connect(shaper).connect(bp).connect(g).connect(dest);
+      osc.onended = () => {
+        osc.disconnect();
+        shaper.disconnect();
+        bp.disconnect();
+        g.disconnect();
+      };
       osc.start(time);
       osc.stop(time + dur + 0.02);
     }
@@ -2127,16 +2198,16 @@
       lineHeight: 0,
       widthScale: 1,
       directness: 0.5,
-      tempo: 1,
-      pressDistance: 13,
-      pressIntensity: 1,
-      shootBias: 1
+      tempo: 0.94,
+      pressDistance: 12,
+      pressIntensity: 0.93,
+      shootBias: 0.92
     },
     tiki_taka: {
       name: "\u4F20\u63A7\u6E17\u900F",
       lineHeight: 4,
       widthScale: 0.9,
-      directness: 0.28,
+      directness: 0.46,
       tempo: 1.15,
       pressDistance: 15,
       pressIntensity: 1.15,
@@ -2144,43 +2215,43 @@
     },
     gegenpress: {
       name: "\u9AD8\u4F4D\u903C\u62A2",
-      lineHeight: 8,
+      lineHeight: 6,
       widthScale: 1.02,
       directness: 0.6,
       tempo: 1.22,
-      pressDistance: 20,
-      pressIntensity: 1.38,
-      shootBias: 1.08
+      pressDistance: 19,
+      pressIntensity: 1.32,
+      shootBias: 1.12
     },
     counter: {
       name: "\u5FEB\u901F\u53CD\u51FB",
       lineHeight: -6,
       widthScale: 0.96,
       directness: 0.82,
-      tempo: 1.08,
-      pressDistance: 10,
-      pressIntensity: 0.82,
-      shootBias: 1.14
+      tempo: 1.1,
+      pressDistance: 11,
+      pressIntensity: 0.95,
+      shootBias: 1.16
     },
     wing_play: {
       name: "\u4E24\u7FFC\u9F50\u98DE",
       lineHeight: 4,
       widthScale: 1.07,
-      directness: 0.62,
-      tempo: 1.1,
+      directness: 0.57,
+      tempo: 1.04,
       pressDistance: 14,
-      pressIntensity: 1.05,
-      shootBias: 1.22
+      pressIntensity: 1.04,
+      shootBias: 1.02
     },
     park_bus: {
       name: "\u94C1\u6876\u9632\u53CD",
-      lineHeight: -7,
+      lineHeight: -6,
       widthScale: 0.9,
-      directness: 0.62,
-      tempo: 0.88,
-      pressDistance: 10,
-      pressIntensity: 0.82,
-      shootBias: 0.8
+      directness: 0.78,
+      tempo: 1.04,
+      pressDistance: 11,
+      pressIntensity: 0.95,
+      shootBias: 1.08
     }
   };
 
@@ -2438,16 +2509,16 @@
     // ==================== 五后卫体系 (4种) ====================
     "5-4-1": [
       { role: "GK", baseX: 5, baseY: 34 },
-      { role: "LWB", baseX: 27, baseY: 9 },
+      { role: "LWB", baseX: 28, baseY: 9 },
       { role: "CB", baseX: 21, baseY: 21 },
       { role: "CB", baseX: 20, baseY: 34 },
       { role: "CB", baseX: 21, baseY: 47 },
-      { role: "RWB", baseX: 27, baseY: 59 },
-      { role: "LM", baseX: 45, baseY: 13 },
-      { role: "CM", baseX: 44, baseY: 27 },
-      { role: "CM", baseX: 44, baseY: 41 },
-      { role: "RM", baseX: 45, baseY: 55 },
-      { role: "ST", baseX: 69, baseY: 34 }
+      { role: "RWB", baseX: 28, baseY: 59 },
+      { role: "LM", baseX: 50, baseY: 13 },
+      { role: "CM", baseX: 47, baseY: 27 },
+      { role: "CM", baseX: 47, baseY: 41 },
+      { role: "RM", baseX: 50, baseY: 55 },
+      { role: "ST", baseX: 71, baseY: 34 }
     ],
     "5-3-2": [
       { role: "GK", baseX: 5, baseY: 34 },
@@ -2514,6 +2585,9 @@
     let roleModX = 0;
     let roleModY = 0;
     if (hasPossession === true) {
+      if ((style === "park_bus" || style === "counter") && ["ST", "LW", "RW", "CAM"].includes(slot.role)) {
+        roleModX += 9;
+      }
       if (slot.role === "ST" && (mods?.falseNineDrop ?? 0) > 0 && relBallX >= 36 && relBallX <= 66) {
         roleModX = -Math.min(6, (mods?.falseNineDrop ?? 0) * 0.5);
       } else if (slot.role === "LB" || slot.role === "RB" || slot.role === "LWB" || slot.role === "RWB") {
@@ -2795,7 +2869,7 @@
     const currentXT = evaluateXT(holder.pos, attackDir);
     if (holder.role === "GK") {
       const mates = players.filter((p) => p.team === holder.team && p.id !== holder.id && !p.redCard).sort((a, b) => dist2D(holder.pos, a.pos) - dist2D(holder.pos, b.pos));
-      if (style === "counter" || style === "park_bus") {
+      if (style === "counter") {
         const forwardMate2 = mates.find((m) => dist2D(holder.pos, m.pos) > 28) || mates[mates.length - 1] || mates[0];
         return { type: "pass", target: forwardMate2, passType: "long" };
       }
@@ -2824,19 +2898,20 @@
     const goalX = attackDir === 1 ? PITCH.LENGTH : 0;
     const distToGoal = dist2D(holder.pos, { x: goalX, y: PITCH.GOAL_Y });
     const longShotDelta = clamp(mods?.longShotBias ?? 0, -0.1, 0.14);
-    const maxShootDist = longShotDelta > 0.03 ? 34 : 32;
-    const minShootXG = style === "tiki_taka" ? 0.025 : style === "park_bus" ? 0.028 : 0.02;
+    const maxShootDist = longShotDelta > 0.03 ? 29 : 27;
+    const minShootXG = 0.03;
     if (distToGoal < maxShootDist) {
       const xG = computeShotXG(holder, attackDir, players);
       const isWideAttacker = holder.role === "LW" || holder.role === "RW" || holder.role === "LM" || holder.role === "RM";
-      const isAttacker = holder.role === "ST" || holder.role === "CAM" || isWideAttacker || holder.role === "CM" && relX > 62;
-      const roleShootMul = isAttacker ? 1.28 : 0.92;
-      const boxBonus = distToGoal < 20 ? 0.28 : 0;
-      const wingCutInBonus = isWideAttacker && relX >= 66 ? style === "tiki_taka" ? 0.22 : style === "gegenpress" ? 0.18 : style === "counter" ? 0.16 : style === "wing_play" ? 0.08 : 0.14 : 0;
-      const midCrashBonus = (holder.role === "CM" || holder.role === "CDM") && relX >= 68 && (style === "tiki_taka" || style === "gegenpress") ? 0.12 : 0;
+      const isMidCrasher = holder.role === "CM" || holder.role === "CDM";
+      const isAttacker = holder.role === "ST" || holder.role === "CAM" || isWideAttacker || isMidCrasher && relX > 66;
+      const roleShootMul = holder.role === "CB" ? distToGoal < 12 ? 0.95 : 0.42 : isAttacker ? 1.24 : 0.85;
+      const boxBonus = distToGoal < 12 ? 0.46 : distToGoal < 17 ? 0.34 : distToGoal < 21 ? 0.06 : -0.18;
+      const wingCutInBonus = isWideAttacker && relX >= 68 ? style === "tiki_taka" ? 0.24 : style === "gegenpress" ? 0.22 : style === "counter" ? 0.2 : style === "wing_play" ? 0.14 : 0.18 : 0;
+      const midCrashBonus = isMidCrasher && relX >= 70 ? style === "tiki_taka" || style === "gegenpress" ? 0.22 : 0.14 : 0;
       const longShotMod = distToGoal >= 18 ? longShotDelta : 0;
-      const dutyShootBonus = holder.duty === "poacher" ? 0.2 : holder.duty === "inside_forward" ? 0.16 : holder.duty === "target_man" ? 0.1 : holder.duty === "false_nine" || holder.duty === "regista" ? -0.1 : 0;
-      const shootScore = (0.4 + xG * 3.6 + boxBonus) * preset.shootBias * roleShootMul + longShotMod + wingCutInBonus + midCrashBonus + dutyShootBonus;
+      const dutyShootBonus = holder.duty === "poacher" ? 0.2 : holder.duty === "inside_forward" ? 0.18 : holder.duty === "target_man" ? 0.1 : holder.duty === "false_nine" || holder.duty === "regista" ? -0.1 : 0;
+      const shootScore = (0.2 + xG * 3.8 + boxBonus) * preset.shootBias * roleShootMul + longShotMod + wingCutInBonus + midCrashBonus + dutyShootBonus;
       if (xG >= minShootXG && shootScore > bestScore) {
         bestScore = shootScore;
         bestAction = { type: "shoot", xG };
@@ -2864,10 +2939,10 @@
       const progressGain = (mateRelX - relX) / 105;
       let styleBias = progressGain * (preset.directness - 0.35) * 0.32;
       if (style === "tiki_taka") {
-        if (relX < 74 && passType === "short" && d < 22) styleBias += 0.16;
-        if (passType === "long") styleBias -= 0.2;
-        if (isCross) styleBias -= 0.14;
-        if (relX < 68 && mateRelX < relX && mateRelX > 32) styleBias += 0.05;
+        if (relX < 74 && passType === "short" && d < 22) styleBias += progressGain > 0 ? 0.18 : 0.06;
+        if (passType === "long") styleBias -= 0.16;
+        if (isCross) styleBias -= 0.12;
+        if (relX > 66 && progressGain > 0.04 && passType === "through") styleBias += 0.12;
       } else if (style === "wing_play") {
         const mateWide = mate.pos.y < 19 || mate.pos.y > PITCH.WIDTH - 19 || WIDE_ROLES.has(mate.role);
         if (relX < 56 && mateWide && mateRelX >= relX - 2) styleBias += 0.08;
@@ -2877,8 +2952,9 @@
         if ((passType === "through" || passType === "long") && progressGain > 0.12) styleBias += 0.24;
         if (progressGain < 0) styleBias -= 0.14;
       } else if (style === "park_bus") {
-        if (relX < 40 && passType === "long" && progressGain > 0.18) styleBias += 0.14;
-        if (relX < 38 && passType === "short" && progressGain <= 0) styleBias -= 0.1;
+        if (progressGain > 0.08) styleBias += 0.14;
+        if (relX < 40 && passType === "long" && progressGain > 0.18) styleBias += 0.12;
+        if (relX < 44 && progressGain <= 0) styleBias -= 0.12;
       } else if (style === "gegenpress") {
         if (progressGain > 0.05 && (passType === "through" || passType === "short")) styleBias += 0.12;
         if (isCross) styleBias -= 0.06;
@@ -2890,9 +2966,22 @@
       const dutyPassBonus = (holder.duty === "false_nine" || holder.duty === "regista") && (passType === "short" || passType === "through") ? 0.12 : holder.duty === "classic_winger" && isCross ? 0.15 : holder.duty === "wing_back" && isCross ? 0.12 : 0;
       const passBiasScale = relX < 76 ? 1 : 0.25;
       const modPassBias = passBiasScale * (passType === "through" ? clamp(mods?.throughPassBias ?? 0, -0.1, 0.14) : passType === "cross" ? clamp(mods?.crossBias ?? 0, -0.1, 0.14) : passType === "short" ? clamp(mods?.shortPassBias ?? 0, -0.1, 0.14) : 0);
-      const antiPingPong = ball.lastPasserId === mate.id ? -0.1 : 0;
+      const antiPingPong = ball.lastPasserId === mate.id ? relX >= 64 ? -0.26 : -0.14 : 0;
       const avoidGK = mate.role === "GK" ? style === "tiki_taka" ? -0.06 : -0.16 : 0;
-      const passScore = pComp * (mateXT + 0.14) - (1 - pComp) * 0.18 + styleBias + modPassBias + wingTraitBonus + throughTraitBonus + dutyPassBonus + antiPingPong + avoidGK;
+      let finalThirdMod = 0;
+      if (relX >= 68) {
+        const dxRel = mateRelX - relX;
+        if (dxRel < -3.5) {
+          finalThirdMod = -0.19;
+        } else if (Math.abs(dxRel) <= 3.5 && mateRelX < 84) {
+          finalThirdMod = style === "tiki_taka" ? -0.05 : -0.13;
+        } else if (dxRel > 4 && mateRelX >= 76) {
+          finalThirdMod = 0.11;
+        }
+        if (isCross && mateRelX >= 76) finalThirdMod += 0.12;
+        if (isThrough && mateRelX >= 74) finalThirdMod += 0.1;
+      }
+      const passScore = pComp * (mateXT + 0.14) - (1 - pComp) * 0.18 + styleBias + modPassBias + wingTraitBonus + throughTraitBonus + dutyPassBonus + antiPingPong + avoidGK + finalThirdMod;
       if (passScore > bestScore) {
         bestScore = passScore;
         bestAction = { type: "pass", target: mate, passType };
@@ -2900,7 +2989,7 @@
     }
     const dribbleStep = 8;
     const isWidePlayer = WIDE_ROLES.has(holder.role);
-    const hugWingY = style === "wing_play" && isWidePlayer && relX < 58 ? holder.pos.y < PITCH.HALF_Y ? -1.4 : 1.4 : isWidePlayer && relX >= 56 && (style === "tiki_taka" || style === "gegenpress" || style === "balanced") ? holder.pos.y < PITCH.HALF_Y ? 4.8 : -4.8 : isWidePlayer && relX >= 62 ? holder.pos.y < PITCH.HALF_Y ? 3.8 : -3.8 : holder.pos.y < 16 ? 3.5 : holder.pos.y > PITCH.WIDTH - 16 ? -3.5 : 0;
+    const hugWingY = style === "wing_play" && isWidePlayer && relX < 62 ? holder.pos.y < PITCH.HALF_Y ? -1.4 : 1.4 : isWidePlayer && relX >= 58 && (style === "tiki_taka" || style === "gegenpress" || style === "balanced") ? holder.pos.y < PITCH.HALF_Y ? 5.2 : -5.2 : isWidePlayer && relX >= 64 ? holder.pos.y < PITCH.HALF_Y ? 4.4 : -4.4 : holder.pos.y < 16 ? 3.5 : holder.pos.y > PITCH.WIDTH - 16 ? -3.5 : 0;
     const dribbleTarget = {
       x: clamp(holder.pos.x + attackDir * dribbleStep, 4, PITCH.LENGTH - 4),
       y: clamp(holder.pos.y + hugWingY + (Math.random() - 0.5) * 3, 4, PITCH.WIDTH - 4)
@@ -2917,10 +3006,11 @@
     }
     const dribbleXT = evaluateXT(dribbleTarget, attackDir);
     const dribbleSkill = holder.attributes.dribbling / 99;
-    const spaceBonus = nearestFrontOpp > 7.5 ? 0.08 : nearestFrontOpp < 3.5 ? -0.22 : -0.05;
-    const roleDribbleBias = holder.role === "LW" || holder.role === "RW" || holder.role === "CAM" || (holder.role === "LM" || holder.role === "RM") && relX > 55 ? 0.05 : holder.role === "CB" || holder.role === "CDM" ? -0.18 : -0.08;
-    const styleDribbleBias = style === "tiki_taka" ? -0.08 : style === "wing_play" && isWidePlayer ? 0.08 : style === "counter" && relX > 45 && nearestFrontOpp > 6 ? 0.08 : 0;
-    const dribbleScore = (currentXT * 0.35 + dribbleXT * 0.55) * (0.65 + dribbleSkill * 0.3) + spaceBonus + roleDribbleBias + styleDribbleBias;
+    const spaceBonus = nearestFrontOpp > 7.5 ? 0.12 : nearestFrontOpp < 3.2 ? -0.22 : -0.01;
+    const finalThirdDriveBonus = relX >= 62 && relX < 88 && nearestFrontOpp > 3.5 && holder.role !== "CB" ? 0.12 : 0;
+    const roleDribbleBias = holder.role === "LW" || holder.role === "RW" || holder.role === "CAM" || (holder.role === "LM" || holder.role === "RM" || holder.role === "LWB" || holder.role === "RWB") && relX > 52 ? 0.08 : holder.role === "CB" || holder.role === "CDM" ? -0.18 : -0.05;
+    const styleDribbleBias = style === "tiki_taka" ? -0.05 : style === "wing_play" && isWidePlayer ? 0.1 : style === "counter" && relX > 45 && nearestFrontOpp > 6 ? 0.1 : 0;
+    const dribbleScore = (currentXT * 0.35 + dribbleXT * 0.58) * (0.68 + dribbleSkill * 0.3) + spaceBonus + finalThirdDriveBonus + roleDribbleBias + styleDribbleBias;
     if (!bestAction || dribbleScore > bestScore) {
       bestAction = { type: "dribble", targetPos: dribbleTarget };
     }
@@ -2935,7 +3025,9 @@
       const defDir = defendingTeam === "home" ? homeDir : homeDir === 1 ? -1 : 1;
       const defBallRelX = toRelativeX(ball.pos.x, defDir);
       const defStyle = defendingTeam === "home" ? homeStyle : awayStyle;
+      const defForm = defendingTeam === "home" ? homeFormation : awayFormation;
       const defMods = defendingTeam === "home" ? homeMods : awayMods;
+      const isLowBlock = defStyle === "park_bus" || getDefenseSystem(defForm) === "5-back";
       const preset = TACTICAL_PRESETS[defStyle];
       const pressDist = preset.pressDistance + clamp(defMods?.pressDistBonus ?? 0, 0, 8);
       const defPlayers = players.filter((p) => {
@@ -2943,14 +3035,26 @@
         if (defStyle !== "gegenpress" && defBallRelX < 46 && p.role === "ST") return false;
         return true;
       }).sort((a, b) => dist2D(a.pos, ball.pos) - dist2D(b.pos, ball.pos));
-      if (defPlayers[0] && (dist2D(defPlayers[0].pos, ball.pos) < pressDist + 12 || ball.mode === "loose")) {
+      const shouldCBHold = (p) => {
+        if (p.role !== "CB") return false;
+        if (ball.mode === "loose") return false;
+        if (defBallRelX >= 18) return true;
+        return false;
+      };
+      const primaryPresser = defPlayers.find((p) => !shouldCBHold(p) && (dist2D(p.pos, ball.pos) < pressDist + 10 || ball.mode === "loose"));
+      if (primaryPresser) {
+        pressers.add(primaryPresser.id);
+      } else if (defPlayers[0] && (defBallRelX < 18 || ball.mode === "loose")) {
         pressers.add(defPlayers[0].id);
       }
-      if (defPlayers[1] && (preset.pressIntensity >= 1.1 || defMods?.extraPresser) && dist2D(defPlayers[1].pos, ball.pos) < pressDist + 4) {
-        pressers.add(defPlayers[1].id);
+      const allowMultiPress = defBallRelX >= 48 || defStyle === "gegenpress";
+      const secondPresser = defPlayers.find((p) => p.id !== primaryPresser?.id && !shouldCBHold(p));
+      if (secondPresser && allowMultiPress && (preset.pressIntensity >= 1.1 || defMods?.extraPresser) && dist2D(secondPresser.pos, ball.pos) < pressDist + 3) {
+        pressers.add(secondPresser.id);
       }
-      if (defPlayers[2] && (defStyle === "gegenpress" || defMods?.extraPresser) && dist2D(defPlayers[2].pos, ball.pos) < pressDist) {
-        pressers.add(defPlayers[2].id);
+      const thirdPresser = defPlayers.find((p) => !pressers.has(p.id) && p.role !== "CB");
+      if (thirdPresser && allowMultiPress && (defStyle === "gegenpress" || defMods?.extraPresser) && dist2D(thirdPresser.pos, ball.pos) < pressDist) {
+        pressers.add(thirdPresser.id);
       }
     } else {
       for (const side of ["home", "away"]) {
@@ -2989,13 +3093,28 @@
       const clampOnside = (x) => p.role === "GK" ? x : dir === 1 ? Math.min(x, onsideMaxX) : Math.max(x, onsideMaxX);
       let tx = rawAnchor.x + (p.customOffset ? dir * p.customOffset.x : 0);
       let ty = rawAnchor.y + (p.customOffset ? p.customOffset.y : 0);
+      if (hasPossession === false && (p.role === "CB" || p.role === "CDM" || p.role === "LB" || p.role === "RB" || p.role === "LWB" || p.role === "RWB")) {
+        const ballRelX = toRelativeX(ball.pos.x, dir);
+        const myRelX = toRelativeX(p.pos.x, dir);
+        if (ballRelX < 44 && dist2D(p.pos, ball.pos) < 18) {
+          const jockeyGap = style === "park_bus" || style === "counter" ? 4.2 : 3.4;
+          const jockeyX = dir === 1 ? Math.max(6, ball.pos.x - jockeyGap) : Math.min(PITCH.LENGTH - 6, ball.pos.x + jockeyGap);
+          if (myRelX > ballRelX - 4.5) {
+            tx = jockeyX;
+            ty = ty * 0.45 + (ball.pos.y * 0.75 + PITCH.GOAL_Y * 0.25) * 0.55;
+          }
+        }
+      }
       if (hasPossession && holder) {
         const holderRelX = toRelativeX(holder.pos.x, dir);
-        const isAttRole = p.role === "ST" || p.role === "CAM" || p.role === "LW" || p.role === "RW" || p.role === "LM" || p.role === "RM" || (teamMods?.boxCrashBonus ?? 0) > 0 && p.role === "CM";
-        if (isAttRole && holderRelX > 48) {
-          tx += dir * 8;
-          if (holderRelX > 66) {
-            const targetInwardY = style === "wing_play" && (p.role === "LW" || p.role === "RW") && Math.abs(holder.pos.y - p.pos.y) < 16 ? ty : PITCH.HALF_Y + (ty - PITCH.HALF_Y) * 0.55;
+        const isCounterStyle = style === "park_bus" || style === "counter" || getDefenseSystem(formation) === "5-back";
+        const triggerRelX = isCounterStyle ? 24 : 46;
+        const isSingleStrikerForm = formation === "5-4-1" || formation === "4-1-4-1" || formation === "4-4-1-1";
+        const isAttRole = p.role === "ST" || p.role === "CAM" || p.role === "LW" || p.role === "RW" || p.role === "LM" || p.role === "RM" || (isCounterStyle || style === "wing_play") && (p.role === "LWB" || p.role === "RWB") || (isSingleStrikerForm || style === "balanced" || style === "tiki_taka" || (teamMods?.boxCrashBonus ?? 0) > 0) && p.role === "CM";
+        if (isAttRole && holderRelX > triggerRelX) {
+          tx += dir * (isCounterStyle ? 12 : p.role === "LM" || p.role === "RM" || p.role === "CM" ? 10 : 8);
+          if (holderRelX > 64) {
+            const targetInwardY = style === "wing_play" && (p.role === "LW" || p.role === "RW") && Math.abs(holder.pos.y - p.pos.y) < 16 ? ty : PITCH.HALF_Y + (ty - PITCH.HALF_Y) * 0.48;
             ty = targetInwardY;
           }
         }
@@ -3874,7 +3993,7 @@
             skillId: sk.id,
             name: sk.name,
             situationLabel: sk.situationLabel,
-            powerLabel: hasCardBoost ? `${sk.powerLabel} (\u5361\u724C\u5171\u632F+35%\u5A01\u529B)` : sk.powerLabel,
+            powerLabel: hasCardBoost ? `${sk.powerLabel} (\u5361\u724C\u5171\u632F+20%\u5A01\u529B)` : sk.powerLabel,
             expiresTick: s.tick + 12,
             isCardBoosted: hasCardBoost
           };
@@ -3891,7 +4010,7 @@
       const cdEnd = s.skillCooldowns?.[skillId] ?? 0;
       if (s.minute < cdEnd) return { ok: false };
       const hasCardBoost = s.activeBuffs.some((bf) => bf.team === team && !bf.effect.id.startsWith("sk_"));
-      const mul = hasCardBoost ? 1.35 : 1;
+      const mul = hasCardBoost ? 1.2 : 1;
       const eff = {
         ...sk.effect,
         passingDelta: sk.effect.passingDelta ? Math.round(sk.effect.passingDelta * mul) : void 0,
@@ -3906,7 +4025,7 @@
       s.skillUses = s.skillUses ?? {};
       s.skillUses[skillId] = uses + 1;
       s.skillCooldowns = s.skillCooldowns ?? {};
-      const effCd = hasCardBoost ? Math.round(sk.cooldownMinutes * 0.6) : sk.cooldownMinutes;
+      const effCd = hasCardBoost ? Math.round(sk.cooldownMinutes * 0.75) : sk.cooldownMinutes;
       s.skillCooldowns[skillId] = s.minute + effCd;
       s.activeSkillPrompt = null;
       return { ok: true, boosted: hasCardBoost };
@@ -4057,10 +4176,15 @@
           const attPower = holder.attributes.dribbling * 0.7 + holder.attributes.strength * 0.3 + frenzyHolderEdge;
           const tackleGoldMul = def.goldTraits?.includes("\u7CBE\u51C6\u94F2\u65AD") ? 2 : 1;
           const traitTackleBonus = def.traits?.includes("\u7CBE\u51C6\u94F2\u65AD") ? 0.1 * tackleGoldMul : 0;
-          const styleTackleBonus = oppStyle === "gegenpress" ? 0.08 : 0;
+          const styleTackleBonus = oppStyle === "gegenpress" ? 0.06 : oppStyle === "park_bus" && toRelativeX(holder.pos.x, this.getAttackDir(holder.team)) >= 68 ? 0.05 : 0;
+          const defFatigueTacklePenalty = def.fitness < 65 ? -0.1 : 0;
+          const holderStyle = holder.team === "home" ? this.state.homeStyle : this.state.awayStyle;
+          const holderForm = holder.team === "home" ? this.state.homeFormation : this.state.awayFormation;
+          const holderRelX = toRelativeX(holder.pos.x, this.getAttackDir(holder.team));
+          const counterStyleTackleMod = (oppStyle === "gegenpress" && holderStyle === "tiki_taka" && holderRelX < 55 ? 0.08 : 0) + ((oppStyle === "gegenpress" || oppStyle === "wing_play") && (holderStyle === "counter" || holderStyle === "park_bus") && holderRelX < 58 ? -0.1 : 0) + (holderStyle === "balanced" && (oppStyle === "gegenpress" || oppStyle === "tiki_taka") ? 0.03 : 0) + (getDefenseSystem(holderForm) === "5-back" && holderRelX >= 52 ? -0.03 : 0) + (getDefenseSystem(holderForm) === "4-back" && holderRelX < 52 ? -0.03 : 0);
           const blitzBonus = this.hasActiveMechanic(oppTeam, "high_press_blitz") ? 0.12 : 0;
           const traitFoulMul = def.traits?.includes("\u7CBE\u51C6\u94F2\u65AD") ? def.goldTraits?.includes("\u7CBE\u51C6\u94F2\u65AD") ? 0.45 : 0.65 : 1;
-          const tackleWinProb = clamp(0.45 + (defPower - attPower) / 100 * 0.55 + traitTackleBonus + styleTackleBonus + blitzBonus, 0.15, 0.92);
+          const tackleWinProb = clamp(0.45 + (defPower - attPower) / 100 * 0.55 + traitTackleBonus + styleTackleBonus + defFatigueTacklePenalty + counterStyleTackleMod + blitzBonus, 0.15, 0.92);
           if (Math.random() < 0.24 * pressMul * traitFoulMul) {
             this.handleFoul(def, holder);
             return;
@@ -4140,16 +4264,42 @@
       if (hasBloodFrenzy) {
         xG = Math.min(0.68, xG * 1.1);
       }
+      const myStyleShot = shooter.team === "home" ? this.state.homeStyle : this.state.awayStyle;
+      const myFormShot = shooter.team === "home" ? this.state.homeFormation : this.state.awayFormation;
+      const oppStyleShot = shooter.team === "home" ? this.state.awayStyle : this.state.homeStyle;
+      const oppFormShot = shooter.team === "home" ? this.state.awayFormation : this.state.homeFormation;
+      const oppIs5Back = getDefenseSystem(oppFormShot) === "5-back";
+      if ((myStyleShot === "counter" || myStyleShot === "park_bus") && (oppStyleShot === "gegenpress" || oppStyleShot === "wing_play")) {
+        xG = Math.min(0.68, xG + (myStyleShot === "counter" ? 0.08 : 0.05));
+      } else if (myStyleShot === "park_bus" && oppStyleShot !== "park_bus") {
+        xG = Math.min(0.68, xG + 0.03);
+      } else if (myStyleShot === "counter" && oppStyleShot !== "park_bus") {
+        xG = Math.min(0.68, xG + 0.02);
+      } else if (oppStyleShot === "gegenpress" && dist >= 18 && dist < 24) {
+        xG = Math.min(0.68, xG + 0.02);
+      } else if (myStyleShot === "tiki_taka" && oppStyleShot === "park_bus") {
+        xG = Math.min(0.68, xG + 0.04);
+      }
+      if (getDefenseSystem(myFormShot) === "5-back" && toRelativeX(shooter.pos.x, dir) > 50) {
+        xG = Math.min(0.68, xG + (myFormShot === "5-4-1" ? 0.02 : 0.01));
+      }
+      if (getDefenseSystem(myFormShot) === "4-back" && toRelativeX(shooter.pos.x, dir) > 70) {
+        xG = Math.min(0.68, xG + 0.02);
+      }
       shooter.hasBall = false;
       shooter.matchStats.shots++;
       this.state.stats[shooter.team].shots++;
       this.state.stats[shooter.team].xG += xG;
-      const fatiguePenalty = shooter.fitness < 55 ? (55 - shooter.fitness) / 35 * 0.1 : 0;
-      const effectiveShoot = Math.min(99, shooter.attributes.shooting + (hasBloodFrenzy ? 8 : 0));
+      const fatiguePenalty = shooter.fitness < 62 ? (62 - shooter.fitness) / 38 * 0.11 : 0;
+      const strainPenalty = shooter.strainWarning ? 0.04 : 0;
+      const antiAttackShotPenalty = (oppIs5Back && (myStyleShot === "wing_play" || getDefenseSystem(myFormShot) === "3-back") ? 0.08 : 0) + (oppStyleShot === "park_bus" && (myStyleShot === "wing_play" || myStyleShot === "gegenpress") ? 0.07 : 0);
+      const rawShoot = Math.min(99, shooter.attributes.shooting + (hasBloodFrenzy ? 8 : 0));
+      const effectiveShoot = rawShoot > 80 ? 80 + (rawShoot - 80) * 1.35 : rawShoot;
+      const longDistPenalty = dist >= 22 && !hasLongShotCannon ? (dist - 20) * 0.015 : 0;
       const onTargetProb = clamp(
-        0.2 + effectiveShoot / 99 * 0.3 - dist / 35 * 0.14 - fatiguePenalty + (hasLongShotCannon ? 0.14 : 0),
-        0.14,
-        hasLongShotCannon ? 0.72 : 0.62
+        0.24 + effectiveShoot / 99 * 0.34 - dist / 32 * 0.16 - longDistPenalty - fatiguePenalty - strainPenalty - antiAttackShotPenalty + (hasLongShotCannon ? 0.14 : 0),
+        0.1,
+        hasLongShotCannon ? 0.74 : 0.68
       );
       const onTarget = Math.random() < onTargetProb;
       if (onTarget) {
@@ -4173,7 +4323,29 @@
           if (p.team === b.lastTouchTeam || p.redCard || p.stunTicks > 0) continue;
           const d = dist2D(p.pos, b.pos);
           if (d < 2.2) {
-            const interceptChance = clamp(0.52 + p.attributes.defending / 99 * 0.4, 0.42, 0.88);
+            const passTeam = b.lastTouchTeam ?? "home";
+            const passStyle = passTeam === "home" ? this.state.homeStyle : this.state.awayStyle;
+            const defStyleInt = p.team === "home" ? this.state.homeStyle : this.state.awayStyle;
+            const defFormInt = p.team === "home" ? this.state.homeFormation : this.state.awayFormation;
+            const defIs5Back = getDefenseSystem(defFormInt) === "5-back";
+            let interceptMod = 0;
+            if (defStyleInt === "gegenpress" && (b.passType === "through" || b.passType === "long")) {
+              interceptMod -= passStyle === "counter" || passStyle === "park_bus" ? 0.1 : 0.03;
+            }
+            if ((defIs5Back || defStyleInt === "park_bus") && b.passType === "cross") {
+              interceptMod += 0.14;
+            }
+            if ((defIs5Back || defStyleInt === "park_bus") && passStyle === "counter" && b.passType === "through") {
+              interceptMod += 0.05;
+            }
+            if (passStyle === "counter" && (b.passType === "through" || b.passType === "long")) {
+              interceptMod -= 0.05;
+            }
+            const passerObj = b.lastPasserId ? this.state.players.find((pl) => pl.id === b.lastPasserId) : null;
+            const passerPass = passerObj ? passerObj.attributes.passing : 65;
+            const isLoftedPass = b.passType === "cross" || b.passType === "long";
+            const passerResist = (passerPass - 60) / 100 * 0.28 + (passerObj?.traits?.includes("\u8282\u62CD\u5668") ? passerObj.goldTraits?.includes("\u8282\u62CD\u5668") ? 0.08 : 0.05 : 0) + (isLoftedPass && passerObj?.traits?.includes("\u7CBE\u51C6\u957F\u4F20") ? passerObj.goldTraits?.includes("\u7CBE\u51C6\u957F\u4F20") ? 0.1 : 0.06 : 0);
+            const interceptChance = clamp(0.5 + (p.attributes.defending - 60) / 100 * 0.28 - passerResist + interceptMod, 0.24, 0.86);
             if (Math.random() < interceptChance) {
               p.matchStats.interceptions++;
               this.state.stats[p.team].interceptions++;
@@ -4211,10 +4383,13 @@
         this.giveBallTo(target);
         const tStyle = target.team === "home" ? this.state.homeStyle : this.state.awayStyle;
         const tMods = target.team === "home" ? this.homeMods : this.awayMods;
-        const baseCrossFinish = tStyle === "wing_play" || (tMods.crossBias ?? 0) > 0.03 ? 0.66 : 0.5;
+        const baseCrossFinish = tStyle === "wing_play" || (tMods.crossBias ?? 0) > 0.03 ? 0.52 : 0.49;
+        const defFormCross = target.team === "home" ? this.state.awayFormation : this.state.homeFormation;
+        const defStyleCross = target.team === "home" ? this.state.awayStyle : this.state.homeStyle;
+        const antiCrossPenalty = (getDefenseSystem(defFormCross) === "5-back" ? 0.22 : 0) + (defStyleCross === "park_bus" ? 0.16 : 0);
         const crossFinishProb = clamp(
-          baseCrossFinish + (this.hasActiveMechanic(target.team, "wing_overload") ? 0.2 : 0),
-          0.3,
+          baseCrossFinish + (this.hasActiveMechanic(target.team, "wing_overload") ? 0.2 : 0) - antiCrossPenalty,
+          0.18,
           0.92
         );
         if (b.passType === "cross" && target.role !== "GK" && Math.random() < crossFinishProb) {
@@ -4240,8 +4415,12 @@
       const defForm = defTeam === "home" ? this.state.homeFormation : this.state.awayFormation;
       const isFiveBack = getDefenseSystem(defForm) === "5-back";
       const hasIronWall = this.hasActiveMechanic(defTeam, "iron_wall_block");
-      const blockDist = (defStyle === "park_bus" || isFiveBack ? 1.6 : 1.15) + (hasIronWall ? 0.25 : 0);
-      const blockProb = (defStyle === "park_bus" || isFiveBack ? 0.33 : 0.24) + (hasIronWall ? 0.18 : 0);
+      const shootForm = shootTeam === "home" ? this.state.homeFormation : this.state.awayFormation;
+      const shootStyle = shootTeam === "home" ? this.state.homeStyle : this.state.awayStyle;
+      const fiveVsCounterTarget = isFiveBack && (getDefenseSystem(shootForm) === "3-back" || shootStyle === "wing_play") ? 0.1 : 0;
+      const busVsCounterTarget = defStyle === "park_bus" && (shootStyle === "wing_play" || shootStyle === "gegenpress") ? 0.09 : 0;
+      const blockDist = (defStyle === "park_bus" || isFiveBack ? 1.36 : 1.08) + (hasIronWall ? 0.25 : 0);
+      const blockProb = (defStyle === "park_bus" || isFiveBack ? 0.22 : 0.18) + fiveVsCounterTarget + busVsCounterTarget + (hasIronWall ? 0.16 : 0);
       if (b.pos.z < 1.9) {
         for (const p of this.state.players) {
           if (p.team !== defTeam || p.redCard || p.role === "GK") continue;
@@ -4278,14 +4457,19 @@
         return;
       }
       const gk = this.state.players.find((p) => p.team === defTeam && p.role === "GK");
-      const gkAttr = gk ? gk.attributes.goalkeeping : 65;
+      const rawGk = gk ? gk.attributes.goalkeeping : 65;
+      const gkAttr = rawGk > 80 ? 80 + (rawGk - 80) * 1.15 : rawGk;
       const frenzyShootBonus = shooter && this.hasActiveMechanic(shooter.team, "blood_frenzy") && this.isTrailing(shooter.team) ? 8 : 0;
-      const shooterAttr = shooter ? Math.min(99, shooter.attributes.shooting + frenzyShootBonus) * 0.65 + shooter.attributes.composure * 0.35 : 70;
+      const rawShooterShoot = shooter ? Math.min(99, shooter.attributes.shooting + frenzyShootBonus) : 70;
+      const rawShooterComp = shooter ? shooter.attributes.composure : 70;
+      const baseShooterAttr = rawShooterShoot * 0.65 + rawShooterComp * 0.35;
+      const shooterAttr = baseShooterAttr > 80 ? 80 + (baseShooterAttr - 80) * 1.15 : baseShooterAttr;
       const gkGoldMul = gk?.goldTraits?.includes("\u95E8\u7EBF\u795E\u6251") ? 2 : 1;
-      const gkTraitBonus = gk?.traits?.includes("\u95E8\u7EBF\u795E\u6251") ? 0.07 * gkGoldMul : 0;
-      const gkSaveBonus = (gkAttr - 65) / 100 * 0.22 + gkTraitBonus;
-      const attrDiffBonus = (shooterAttr - gkAttr) / 100 * 0.18;
-      const goalProb = clamp(0.24 + b.shotXG * 0.78 + attrDiffBonus - gkSaveBonus, 0.12, 0.68);
+      const gkTraitBonus = gk?.traits?.includes("\u95E8\u7EBF\u795E\u6251") ? 0.045 * gkGoldMul : 0;
+      const gkSaveBonus = (rawGk - 65) / 100 * 0.16 + gkTraitBonus;
+      const attrDiffBonus = (shooterAttr - gkAttr) / 100 * 0.28;
+      const strainGoalPenalty = shooter?.strainWarning ? 0.04 : 0;
+      const goalProb = clamp(0.33 + b.shotXG * 0.88 + attrDiffBonus - gkSaveBonus - strainGoalPenalty, 0.16, 0.76);
       if (Math.random() < goalProb) {
         if (shooter) shooter.matchStats.goals++;
         this.state.stats[shootTeam].goals++;
@@ -4391,6 +4575,7 @@
       const victimRelX = toRelativeX(victim.pos.x, victimDir);
       const inPenaltyBox = victimRelX >= PITCH.LENGTH - PITCH.PENALTY_BOX_DEPTH && Math.abs(victim.pos.y - PITCH.GOAL_Y) <= PITCH.PENALTY_BOX_HALF_W;
       if (inPenaltyBox) {
+        this.pushEvent("commentary", victim.team, victim.id, victim.name, victim.pos, `\u2696\uFE0F \u7981\u533A\u5185\u653E\u5012 ${victim.name}\uFF0C\u4E3B\u88C1\u5224\u679C\u65AD\u5224\u7F5A\u70B9\u7403\uFF01`, void 0, "important");
         this.setDeadBall(victim.team, "penalty", victim.pos, 6);
       } else {
         this.setDeadBall(victim.team, "freekick", victim.pos, 5);
@@ -4487,13 +4672,13 @@
         const mods = p.team === "home" ? this.homeMods : this.awayMods;
         const drainMul = clamp(mods.staminaDrainMul ?? 1, 0.7, 1);
         const rawPress = TACTICAL_PRESETS[style].pressIntensity;
-        const styleDrain = style === "gegenpress" ? p.role === "CB" ? 1.12 : p.role === "GK" ? 1 : 1.25 : p.role === "GK" ? 1 : 0.7 + rawPress * 0.3;
+        const styleDrain = style === "gegenpress" ? p.role === "CB" ? 1.06 : p.role === "GK" ? 1 : 1.18 : style === "balanced" ? p.role === "GK" ? 1 : 1.04 : p.role === "GK" ? 1 : 0.7 + rawPress * 0.3;
         let formFactor = 1;
         if (defSys === "3-back" && (p.role === "LWB" || p.role === "RWB" || p.role === "CB")) {
           formFactor = 1.1;
         } else if (defSys === "5-back") {
-          if (p.role === "CB") formFactor = 0.9;
-          else if (p.role === "LWB" || p.role === "RWB") formFactor = 1.06;
+          if (p.role === "CB") formFactor = 0.96;
+          else if (p.role === "LWB" || p.role === "RWB") formFactor = 1.08;
         }
         if ((formation === "4-4-2" || formation === "4-2-2-2") && (p.role === "CM" || p.role === "CDM")) {
           formFactor *= 1.08;
@@ -4558,8 +4743,8 @@
     { tier: 3, name: "\u7B2C3\u7EA7 \xB7 \u7532\u7EA7\u8054\u8D5B", shortLabel: "\u7532\u7EA7", baseCA: 66, promoteCount: 3, relegateCount: 3, metaMul: 1.3 },
     { tier: 4, name: "\u7B2C4\u7EA7 \xB7 \u4E59\u7EA7\u8054\u8D5B", shortLabel: "\u4E59\u7EA7", baseCA: 60, promoteCount: 3, relegateCount: 3, metaMul: 1.15 },
     { tier: 5, name: "\u7B2C5\u7EA7 \xB7 \u4E19\u7EA7\u8054\u8D5B", shortLabel: "\u4E19\u7EA7", baseCA: 54, promoteCount: 3, relegateCount: 3, metaMul: 1 },
-    { tier: 6, name: "\u7B2C6\u7EA7 \xB7 \u5730\u533A\u8054\u8D5B", shortLabel: "\u5730\u533A", baseCA: 48, promoteCount: 3, relegateCount: 3, metaMul: 0.9 },
-    { tier: 7, name: "\u7B2C7\u7EA7 \xB7 \u793E\u533A\u4E1A\u4F59\u8054\u8D5B", shortLabel: "\u4E1A\u4F59", baseCA: 42, promoteCount: 3, relegateCount: 0, metaMul: 0.8 }
+    { tier: 6, name: "\u7B2C6\u7EA7 \xB7 \u5730\u533A\u8054\u8D5B", shortLabel: "\u5730\u533A", baseCA: 48, promoteCount: 3, relegateCount: 3, metaMul: 0.95 },
+    { tier: 7, name: "\u7B2C7\u7EA7 \xB7 \u793E\u533A\u4E1A\u4F59\u8054\u8D5B", shortLabel: "\u4E1A\u4F59", baseCA: 42, promoteCount: 3, relegateCount: 0, metaMul: 0.9 }
   ];
   function getLeagueTierInfo(tier) {
     return LEAGUE_TIERS.find((t) => t.tier === tier) ?? LEAGUE_TIERS[LEAGUE_TIERS.length - 1];
@@ -5708,9 +5893,9 @@
       maxLevel: 5,
       costs: [40, 80, 140, 200, 280],
       levelDescriptions: [
-        "\u5F00\u5C40 Shuffle Draft \u9884\u7B97 +60 (\u5171 1,340)",
-        "\u5F00\u5C40 Shuffle Draft \u9884\u7B97 +120 (\u5171 1,400)",
-        "\u5F00\u5C40\u9884\u7B97 +180 (\u5171 1,460)\uFF0C\u4E14 Re-Draft \u6362\u4EBA\u4E0A\u9650 +1",
+        "\u5F00\u5C40 Shuffle Draft \u9884\u7B97 +60 (\u5171 2,140)",
+        "\u5F00\u5C40 Shuffle Draft \u9884\u7B97 +120 (\u5171 2,200)",
+        "\u5F00\u5C40\u9884\u7B97 +180 (\u5171 2,260)\uFF0C\u4E14 Re-Draft \u6362\u4EBA\u4E0A\u9650 +1",
         "\u6BCF\u8D5B\u5B63\u5F00\u5C40\u989D\u5916\u83B7\u8D60 2 \u4E2A\u968F\u673A\u57FA\u7840\u6218\u672F\u5143\u7D20",
         "\u8C6A\u95E8\u8D5E\u52A9\uFF1A\u8D5B\u5B63\u7ED3\u7B97 Meta \u70B9\u6570\u5956\u52B1\u989D\u5916 +15%"
       ]
@@ -5890,9 +6075,9 @@
       name: "\u5747\u8861\u539F\u70B9",
       color: "#2DD4BF",
       originId: "ori_bal",
-      desc: "\u5747\u8861\u9635\u5730\u8D77\u70B9\uFF1A\u5168\u961F \u4F20\u7403+1 \u9632\u5B88+1 \u4F53\u80FD+2",
-      eff: { passing: 1, defending: 1, stamina: 2 },
-      mods: { staminaDrainMul: 0.96 }
+      desc: "\u5747\u8861\u9635\u5730\u8D77\u70B9\uFF1A\u5168\u961F \u4F20\u7403+2 \u9632\u5B88+2 \u4F53\u80FD+2\uFF0C\u89E3\u9501\u4E2D\u573A\u540E\u63D2\u4E0A",
+      eff: { passing: 2, defending: 2, stamina: 2 },
+      mods: { staminaDrainMul: 0.94, boxCrashBonus: 1 }
     },
     tiki_taka: {
       angle: -150,
@@ -5946,7 +6131,7 @@
     { f: "3-4-2-1", sys: "3-back", angle: 45, roles: ["CAM", "LWB", "RWB"], desc: "\u53CC\u5F71\u950B\u5185\u6536+\u7FFC\u536B\u62C9\u8FB9\uFF08\u4F7F\u7528 3-4-2-1 \u65F6\u6548\u679C\xD72\uFF09", eff: { dribbling: 2, passing: 2 }, mods: { dualOverlap: true } },
     { f: "3-4-1-2", sys: "3-back", angle: 65, roles: ["CAM", "ST"], desc: "\u524D\u8170\u76F4\u585E\u9A71\u52A8\u53CC\u524D\u950B\uFF08\u4F7F\u7528 3-4-1-2 \u65F6\u6548\u679C\xD72\uFF09", eff: { passing: 2, shooting: 2 }, mods: { throughPassBias: 0.03 } },
     // 5-back (4)
-    { f: "5-4-1", sys: "5-back", angle: 115, roles: ["CB", "GK", "LWB", "RWB"], desc: "\u4E94\u540E\u536B\u4F4E\u4F4D\u94C1\u6876\u4E0E\u5355\u950B\u5077\u9E21\uFF08\u4F7F\u7528 5-4-1 \u65F6\u6548\u679C\xD72\uFF09", eff: { defending: 3, goalkeeping: 2 }, mods: { lineShift: -3 } },
+    { f: "5-4-1", sys: "5-back", angle: 115, roles: ["CB", "GK", "LWB", "RWB"], desc: "\u4E94\u540E\u536B\u4F4E\u4F4D\u94C1\u6876\u4E0E\u957F\u4F20\u76F4\u585E\u53CD\u51FB\uFF08\u4F7F\u7528 5-4-1 \u65F6\u6548\u679C\xD72\uFF09", eff: { defending: 2, pace: 2, passing: 1 }, mods: { throughPassBias: 0.04, gkQuickLaunch: true } },
     { f: "5-3-2", sys: "5-back", angle: 140, roles: ["CB", "ST"], desc: "\u4E94\u4EBA\u9632\u7EBF\u914D\u53CC\u524D\u950B\u5FEB\u53CD\uFF08\u4F7F\u7528 5-3-2 \u65F6\u6548\u679C\xD72\uFF09", eff: { defending: 2, pace: 2 }, mods: { gkQuickLaunch: true } },
     { f: "5-2-3", sys: "5-back", angle: 165, roles: ["LW", "RW", "ST"], desc: "\u7A33\u5B88\u540E\u573A\u957F\u4F20\u4E09\u53C9\u621F\uFF08\u4F7F\u7528 5-2-3 \u65F6\u6548\u679C\xD72\uFF09", eff: { pace: 2, shooting: 2 }, mods: { throughPassBias: 0.03 } },
     { f: "5-2-1-2", sys: "5-back", angle: 190, roles: ["CAM", "LWB", "RWB"], desc: "\u4E94\u536B\u524D\u8170\u53CD\u51FB\u67A2\u7EBD\uFF08\u4F7F\u7528 5-2-1-2 \u65F6\u6548\u679C\xD72\uFF09", eff: { passing: 2, defending: 2 }, mods: { overlapDepthBonus: 2 } }
@@ -6755,9 +6940,13 @@
       gkQuickLaunch: false,
       staminaDrainMul: 1
     };
+    const activeSys = getDefenseSystem(formation);
     for (const id of unlockedIds) {
       const node = map.get(id);
       if (!node?.mods) continue;
+      if (node.formationTag && node.formationTag !== formation) continue;
+      if (node.styleTag && node.styleTag !== style) continue;
+      if (node.systemTag && node.systemTag !== activeSys) continue;
       const mul = isNodeResonating(node, formation, style) ? 2 : 1;
       const m = node.mods;
       if (m.overlapDepthBonus) mods.overlapDepthBonus += m.overlapDepthBonus * mul;
@@ -7242,7 +7431,7 @@
       evidences: [
         (c) => `\u8FB9\u536B${c.fbName}\u4F53\u80FD\u4EC5\u5269${c.fbFit}%\u4E14\u9632\u5B88${c.fbDef}\uFF0C\u8FB9\u8DEF\u4E0A\u4E0B\u5F80\u8FD4\u5DF2\u529B\u4E0D\u4ECE\u5FC3`,
         (c) => `${c.form}\u9635\u578B\u8FB9\u8DEF\u4FDD\u62A4\u8584\u5F31\uFF0C${c.fbName}\u8EAB\u540E\u7ECF\u5E38\u51FA\u73B0\u4E00\u5BF9\u4E8C\u7684\u65E0\u89E3\u5C40\u9762`,
-        (c) => `\u5BF9\u624B\u8FB9\u540E\u536B\u8FDE\u7EED\u4F5C\u6218\u808C\u8089\u7D27\u7EF7\uFF0C\u4E0B\u534A\u573A\u8FB9\u8DEF\u56DE\u9632\u901F\u5EA6\u660E\u663E\u6389\u6863`,
+        (c) => `\u5BF9\u624B\u8FB9\u540E\u536B\u8FDE\u7EED\u4F5C\u6218\u4F53\u80FD\u75B2\u60EB\uFF0C\u4E0B\u534A\u573A\u8FB9\u8DEF\u56DE\u9632\u901F\u5EA6\u660E\u663E\u6389\u6863`,
         (c) => `${c.opp.name}\u4E24\u7FFC\u534F\u9632\u8131\u8282\uFF0C\u8FB9\u950B\u4E0E\u8FB9\u536B\u4E4B\u95F4\u7684\u808B\u90E8\u901A\u9053\u9891\u9891\u6F0F\u98CE`,
         (c) => `\u9488\u5BF9${c.fbName}\u6240\u5728\u4FA7\u6301\u7EED\u4E0B\u5E95\u4F20\u4E2D\u6216\u5185\u5207\uFF0C\u80FD\u8FC5\u901F\u8017\u7A7A\u5BF9\u624B\u8FB9\u8DEF\u9632\u7EBF`
       ],
@@ -7837,9 +8026,9 @@
         playerId: strainedStarter.id,
         playerName: strainedStarter.name,
         role: strainedStarter.role,
-        prompt: `\u6559\u7EC3\uFF0C\u6211\u7684\u808C\u8089\u6709\u4E9B\u7D27\u7EF7\uFF08\u4F53\u80FD ${Math.round(strainedStarter.fitness ?? 55)}%\uFF09\uFF0C\u5F3A\u884C\u6253\u6EE1\u53EF\u80FD\u4F1A\u62C9\u4F24\u2026`,
-        optA: { label: "\u8F6E\u4F11\u7406\u7597 (\u6D88\u7D27\u7EF7+18%\u4F53)", effectDesc: "\u6D88\u9664\u808C\u8089\u7D27\u7EF7\u9884\u8B66\uFF0C\u4F53\u80FD +18%\uFF0C\u58EB\u6C14\u63D0\u5347", kind: "rest" },
-        optB: { label: "\u54AC\u7259\u575A\u6301 (\u51B7\u9759/\u9632+4)", effectDesc: "\u4E0B\u573A\u51B7\u9759\u4E0E\u9632\u5B88 +4\uFF0C\u4F46\u4ECD\u5E26\u6709\u7D27\u7EF7\u62C9\u4F24\u98CE\u9669", kind: "boost" }
+        prompt: `\u6559\u7EC3\uFF0C\u6211\u611F\u89C9\u8EAB\u4F53\u6709\u4E9B\u75B2\u60EB\uFF08\u4F53\u80FD ${Math.round(strainedStarter.fitness ?? 55)}%\uFF09\uFF0C\u5F3A\u884C\u6253\u6EE1\u53EF\u80FD\u4F1A\u62C9\u4F24\u2026`,
+        optA: { label: "\u8F6E\u4F11\u7406\u7597 (\u6D88\u75B2\u60EB+18%\u4F53)", effectDesc: "\u6D88\u9664\u75B2\u60EB\u9884\u8B66\uFF0C\u4F53\u80FD +18%\uFF0C\u58EB\u6C14\u63D0\u5347", kind: "rest" },
+        optB: { label: "\u54AC\u7259\u575A\u6301 (\u51B7\u9759/\u9632+4)", effectDesc: "\u4E0B\u573A\u51B7\u9759\u4E0E\u9632\u5B88 +4\uFF0C\u4F46\u4ECD\u5E26\u6709\u75B2\u60EB\u62C9\u4F24\u98CE\u9669", kind: "boost" }
       };
     } else if (lowMoralePlayer) {
       playerTalk = {
@@ -8475,13 +8664,13 @@
       isCorrupted = true;
       shooting += 8;
       pace += 7;
-      penaltyFitnessDelta = -8;
-      if (counts.blitz >= 2) penaltyAllDefDelta = -3;
+      penaltyFitnessDelta = -4;
+      if (counts.blitz >= 2) penaltyAllDefDelta = -1;
     } else if (rawInstability >= 2 || len >= 3) {
       stability = "\u53CC\u5203\u5251";
       stabilityColor = "#F59E0B";
       isCorrupted = counts.press >= 2 || counts.blitz >= 2;
-      if (counts.press >= 2) penaltyFitnessDelta = -6;
+      if (counts.press >= 2) penaltyFitnessDelta = -3;
     }
     const level = Math.min(4, len);
     let cost = len >= 4 ? 3 : len === 3 ? 2 : 1;
@@ -8512,7 +8701,7 @@
       id: commit ? `card_chem_${++craftSeq}_${Date.now().toString(36)}` : "preview",
       name: `${prefix}${coreName}`,
       cost,
-      durationMinutes: (level >= 3 ? 14 : 11) + (focus === "endure" ? 5 : 0),
+      durationMinutes: (level >= 4 ? 18 : level === 3 ? 16 : 11) + (focus === "endure" ? 5 : 0),
       targetLine,
       passingDelta: passing > 0 ? passing : void 0,
       shootingDelta: shooting > 0 ? shooting : void 0,
@@ -8559,19 +8748,20 @@
   function fuseTwoCards(a, b) {
     const nextLv = Math.min(4, Math.max(a.level ?? 1, b.level ?? 1) + 1);
     const chain = a.chainEffect || b.chainEffect || (nextLv >= 3 ? CHAIN_POOL[(a.name.length + b.name.length) % CHAIN_POOL.length] : void 0);
+    const capFuse = (v) => v > 0 ? Math.min(14, v) : void 0;
     const card = {
       id: `card_fuse_${++craftSeq}_${Date.now().toString(36)}`,
       name: `\u878D\u5408\xB7${a.name.slice(0, 3)}${b.name.slice(0, 3)}`,
       cost: Math.min(3, Math.max(a.cost, b.cost)),
       durationMinutes: Math.max(a.durationMinutes, b.durationMinutes) + 2,
       targetLine: nextLv >= 4 ? "ALL" : a.targetLine === b.targetLine ? a.targetLine : "MID",
-      passingDelta: (a.passingDelta ?? 0) + Math.ceil((b.passingDelta ?? 0) * 0.5) || void 0,
-      shootingDelta: (a.shootingDelta ?? 0) + Math.ceil((b.shootingDelta ?? 0) * 0.5) || void 0,
-      defendingDelta: (a.defendingDelta ?? 0) + Math.ceil((b.defendingDelta ?? 0) * 0.5) || void 0,
-      paceDelta: (a.paceDelta ?? 0) + Math.ceil((b.paceDelta ?? 0) * 0.5) || void 0,
-      composureDelta: (a.composureDelta ?? 0) + Math.ceil((b.composureDelta ?? 0) * 0.5) || void 0,
-      goalkeepingDelta: (a.goalkeepingDelta ?? 0) + Math.ceil((b.goalkeepingDelta ?? 0) * 0.5) || void 0,
-      fitnessInstantDelta: (a.fitnessInstantDelta ?? 0) + (b.fitnessInstantDelta ?? 0) || void 0,
+      passingDelta: capFuse((a.passingDelta ?? 0) + Math.ceil((b.passingDelta ?? 0) * 0.5)),
+      shootingDelta: capFuse((a.shootingDelta ?? 0) + Math.ceil((b.shootingDelta ?? 0) * 0.5)),
+      defendingDelta: capFuse((a.defendingDelta ?? 0) + Math.ceil((b.defendingDelta ?? 0) * 0.5)),
+      paceDelta: capFuse((a.paceDelta ?? 0) + Math.ceil((b.paceDelta ?? 0) * 0.5)),
+      composureDelta: capFuse((a.composureDelta ?? 0) + Math.ceil((b.composureDelta ?? 0) * 0.5)),
+      goalkeepingDelta: capFuse((a.goalkeepingDelta ?? 0) + Math.ceil((b.goalkeepingDelta ?? 0) * 0.5)),
+      fitnessInstantDelta: capFuse((a.fitnessInstantDelta ?? 0) + (b.fitnessInstantDelta ?? 0)),
       penaltyFitnessDelta: a.penaltyFitnessDelta || b.penaltyFitnessDelta,
       penaltyAllDefDelta: a.penaltyAllDefDelta || b.penaltyAllDefDelta,
       chainEffect: chain,
@@ -8791,6 +8981,7 @@
       ensureChronicles(this.state);
       if (this.state.stayedTierCount === void 0) this.state.stayedTierCount = 0;
       if (this.state.winlessStreak === void 0) this.state.winlessStreak = 0;
+      if (!this.state.seasonMemories) this.state.seasonMemories = [];
       if (this.state.phase === "REGULAR_SEASON" && !this.state.interMatchPrep) {
         this.state.interMatchPrep = createInterMatchPrep(this.state, this.getUserClub());
       }
@@ -9195,6 +9386,7 @@
         discoveredRecipes: [],
         hallOfFame,
         tutorialDone,
+        seasonMemories: [],
         lastSummary: null,
         currentTier,
         leaguePyramid: pyramid
@@ -10050,22 +10242,30 @@
         }
         if (club.isUser) {
           const webUnlocked = this.getSkillWebUnlocked();
+          const swDelta = {};
           for (const nid of webUnlocked) {
             const node = SKILL_WEB_NODES.find((n) => n.id === nid);
             if (!node) continue;
             if (node.targetRoles && !node.targetRoles.includes(p.role)) continue;
             const mul = isNodeResonating(node, club.formation, club.style) ? 2 : 1;
             const ef = node.effect;
-            if (ef.passing) attrs.passing = clampAttr2(attrs.passing + ef.passing * mul);
-            if (ef.shooting) attrs.shooting = clampAttr2(attrs.shooting + ef.shooting * mul);
-            if (ef.dribbling) attrs.dribbling = clampAttr2(attrs.dribbling + ef.dribbling * mul);
-            if (ef.pace) attrs.pace = clampAttr2(attrs.pace + ef.pace * mul);
-            if (ef.defending) attrs.defending = clampAttr2(attrs.defending + ef.defending * mul);
-            if (ef.positioning) attrs.positioning = clampAttr2(attrs.positioning + ef.positioning * mul);
-            if (ef.composure) attrs.composure = clampAttr2(attrs.composure + ef.composure * mul);
-            if (ef.stamina) attrs.stamina = clampAttr2(attrs.stamina + ef.stamina * mul);
-            if (ef.strength) attrs.strength = clampAttr2(attrs.strength + ef.strength * mul);
-            if (ef.goalkeeping && p.role === "GK") attrs.goalkeeping = clampAttr2(attrs.goalkeeping + ef.goalkeeping * mul);
+            const addSw = (k, val) => {
+              if (val) swDelta[k] = (swDelta[k] ?? 0) + val * mul;
+            };
+            addSw("passing", ef.passing);
+            addSw("shooting", ef.shooting);
+            addSw("dribbling", ef.dribbling);
+            addSw("pace", ef.pace);
+            addSw("defending", ef.defending);
+            addSw("positioning", ef.positioning);
+            addSw("composure", ef.composure);
+            addSw("stamina", ef.stamina);
+            addSw("strength", ef.strength);
+            if (p.role === "GK") addSw("goalkeeping", ef.goalkeeping);
+          }
+          for (const k of Object.keys(swDelta)) {
+            const capped = Math.min(12, swDelta[k] ?? 0);
+            attrs[k] = clampAttr2(attrs[k] + capped);
           }
         }
         attrs.shooting = clampAttr2(attrs.shooting + synergy.shootingDelta);
@@ -10109,15 +10309,48 @@
             if (buff.paceBonus) attrs.pace = clampAttr2(attrs.pace + buff.paceBonus);
           }
         }
+        if (club.isUser) {
+          for (const k of Object.keys(attrs)) {
+            const baseVal = p.attributes[k];
+            const delta = attrs[k] - baseVal;
+            if (delta > 15) {
+              const softDelta = Math.min(24, 15 + Math.round((delta - 15) * 0.5));
+              attrs[k] = clampAttr2(baseVal + softDelta);
+            }
+          }
+        } else {
+          const curTier = this.state.currentTier ?? 7;
+          const aiTierBonus = curTier <= 5 ? (6 - curTier) * 2 : 0;
+          if (aiTierBonus > 0) {
+            attrs.passing = clampAttr2(attrs.passing + aiTierBonus);
+            attrs.shooting = clampAttr2(attrs.shooting + aiTierBonus);
+            attrs.defending = clampAttr2(attrs.defending + aiTierBonus);
+            attrs.positioning = clampAttr2(attrs.positioning + aiTierBonus);
+            attrs.composure = clampAttr2(attrs.composure + aiTierBonus);
+            if (p.role === "GK") attrs.goalkeeping = clampAttr2(attrs.goalkeeping + aiTierBonus);
+          }
+        }
+        const mergedTraits = p.traits ? [...p.traits] : [];
+        const mergedGold = p.goldTraits ? [...p.goldTraits] : [];
+        const mergedSilver = p.silverTraits ? [...p.silverTraits] : [];
+        for (const tt of p.tempTraits ?? []) {
+          if (tt.remainingMatches <= 0) continue;
+          if (!mergedTraits.includes(tt.trait)) mergedTraits.push(tt.trait);
+          if (tt.tier === "gold") {
+            if (!mergedGold.includes(tt.trait)) mergedGold.push(tt.trait);
+          } else if (!mergedSilver.includes(tt.trait) && !mergedGold.includes(tt.trait)) {
+            mergedSilver.push(tt.trait);
+          }
+        }
         return {
           id: p.id,
           name: p.name,
           role: p.role,
           shirtNumber: p.shirtNumber,
           attributes: attrs,
-          traits: p.traits ? [...p.traits] : [],
-          goldTraits: p.goldTraits ? [...p.goldTraits] : [],
-          silverTraits: p.silverTraits ? [...p.silverTraits] : [],
+          traits: mergedTraits,
+          goldTraits: mergedGold,
+          silverTraits: mergedSilver,
           hiddenTrait: p.hiddenTrait,
           fitness: p.fitness,
           strainWarning: p.strainWarning,
@@ -10126,21 +10359,35 @@
         };
       });
       const starterSet = new Set(club.starterIds);
-      const subs = club.squad.filter((p) => !starterSet.has(p.id) && (p.suspendedRounds ?? 0) <= 0 && (p.injuredRounds ?? 0) <= 0).map((p) => ({
-        id: p.id,
-        name: p.name,
-        role: p.role,
-        shirtNumber: p.shirtNumber,
-        attributes: { ...p.attributes },
-        traits: p.traits ? [...p.traits] : [],
-        goldTraits: p.goldTraits ? [...p.goldTraits] : [],
-        silverTraits: p.silverTraits ? [...p.silverTraits] : [],
-        hiddenTrait: p.hiddenTrait,
-        fitness: p.fitness,
-        strainWarning: p.strainWarning,
-        isCaptain: p.id === this.getCaptainId(club),
-        formationFamiliarity: club.isUser ? this.getPlayerFamiliarity(p, club.formation) : void 0
-      }));
+      const subs = club.squad.filter((p) => !starterSet.has(p.id) && (p.suspendedRounds ?? 0) <= 0 && (p.injuredRounds ?? 0) <= 0).map((p) => {
+        const sTraits = p.traits ? [...p.traits] : [];
+        const sGold = p.goldTraits ? [...p.goldTraits] : [];
+        const sSilver = p.silverTraits ? [...p.silverTraits] : [];
+        for (const tt of p.tempTraits ?? []) {
+          if (tt.remainingMatches <= 0) continue;
+          if (!sTraits.includes(tt.trait)) sTraits.push(tt.trait);
+          if (tt.tier === "gold") {
+            if (!sGold.includes(tt.trait)) sGold.push(tt.trait);
+          } else if (!sSilver.includes(tt.trait) && !sGold.includes(tt.trait)) {
+            sSilver.push(tt.trait);
+          }
+        }
+        return {
+          id: p.id,
+          name: p.name,
+          role: p.role,
+          shirtNumber: p.shirtNumber,
+          attributes: { ...p.attributes },
+          traits: sTraits,
+          goldTraits: sGold,
+          silverTraits: sSilver,
+          hiddenTrait: p.hiddenTrait,
+          fitness: p.fitness,
+          strainWarning: p.strainWarning,
+          isCaptain: p.id === this.getCaptainId(club),
+          formationFamiliarity: club.isUser ? this.getPlayerFamiliarity(p, club.formation) : void 0
+        };
+      });
       const tacticalMods = club.isUser ? computeSkillWebMods(this.getSkillWebUnlocked(), club.formation, club.style) : void 0;
       const spineBonus = club.isUser ? computeCentralSpineInfo(club, this.getChemistryLinks()).bonus : 0;
       let teamFamAvg = 50;
@@ -10400,10 +10647,16 @@
           `S${this.state.seasonNumber} \u7B2C${this.state.currentRound}\u8F6E ${myGoals}:${oppGoals} \u5173\u952E\u96F6\u5C01\u62A2\u5206`
         );
       }
+      for (const p of userClubNow.squad) {
+        if (p.tempTraits && p.tempTraits.length > 0) {
+          p.tempTraits = p.tempTraits.map((t) => ({ ...t, remainingMatches: t.remainingMatches - 1 })).filter((t) => t.remainingMatches > 0);
+        }
+      }
+      this.captureSeasonMemory(userFixture, userMatchResult, userClubNow);
       this.advanceAfterRound();
       if (this.state.phase !== "SEASON_END") {
-        this.state.pendingPostMatchReward = this.createPostMatchRewardState(userWon);
         this.state.interMatchPrep = createInterMatchPrep(this.state, userClubNow);
+        this.state.pendingPostMatchReward = this.createPostMatchRewardState(userWon);
         if (this.state.phase === "REGULAR_SEASON" && !this.state.pendingStoryEvent) {
           const chrEvent = evaluateChronicleTrigger(this.state, userClubNow, this.getStandings());
           if (chrEvent) this.state.pendingStoryEvent = chrEvent;
@@ -10414,16 +10667,35 @@
       }
     }
     createPostMatchRewardState(won) {
-      const allCats = ["player", "stat_boost", "line_boost", "craft_card", "event"];
-      const pool = [...allCats];
-      for (let i = pool.length - 1; i > 0; i--) {
-        const j = Math.floor(Math.random() * (i + 1));
-        [pool[i], pool[j]] = [pool[j], pool[i]];
-      }
+      const allCats = [
+        "player",
+        "stat_boost",
+        "line_boost",
+        "craft_card",
+        "event",
+        "trait_forge",
+        "tactical_pact",
+        "chemistry_forge"
+      ];
+      const club = this.getUserClub();
+      const recent = new Set(this.state.recentRewardCategories ?? []);
+      const tiredCount = club.squad.filter((p) => (p.fitness ?? 100) < 72).length;
+      const hasHighCostCard = this.getCoachDeck().some((c) => c.cost >= 2);
+      const scored = allCats.map((cat) => {
+        let weight = recent.has(cat) ? 0.35 : 1.5;
+        if (!won && (cat === "tactical_pact" || cat === "trait_forge" || cat === "player")) weight += 0.55;
+        if (tiredCount >= 3 && (cat === "event" || cat === "tactical_pact")) weight += 0.5;
+        if (hasHighCostCard && (cat === "chemistry_forge" || cat === "craft_card")) weight += 0.45;
+        if (this.state.currentRound % 3 === 0 && cat === "trait_forge") weight += 0.4;
+        return { cat, score: weight * (0.65 + Math.random() * 0.7) };
+      });
+      scored.sort((a, b) => b.score - a.score);
+      const picked = scored.slice(0, 3).map((s) => s.cat);
+      this.state.recentRewardCategories = picked;
       return {
         round: this.state.currentRound,
         won,
-        categories: pool.slice(0, 3),
+        categories: picked,
         chosenCategory: null,
         options: [],
         pendingStatOptionId: null,
@@ -10501,7 +10773,7 @@
           });
         });
       } else if (cat === "craft_card") {
-        const focuses = ["attack", "defense", "balanced"];
+        const focuses = ["balanced", "endure", "surge"];
         const e1 = TACTICAL_ELEMENTS[Math.floor(Math.random() * TACTICAL_ELEMENTS.length)];
         const e2 = TACTICAL_ELEMENTS[Math.floor(Math.random() * TACTICAL_ELEMENTS.length)];
         const synth = synthesizeChemistry([e1.id, e2.id], focuses[Math.floor(Math.random() * focuses.length)], true);
@@ -10531,9 +10803,164 @@
           rarity: "common",
           craftReward: { kind: "elements", elements: [{ id: elA.id, name: elA.name, count: 2 }, { id: elB.id, name: elB.name, count: 1 }] }
         });
+      } else if (cat === "trait_forge") {
+        const silverPool = [
+          { trait: "\u8FDC\u5C04\u91CD\u70AE", desc: "\u7981\u533A\u5916\u8FDC\u5C04(18m+) xG +25%\uFF0C\u9002\u5408\u524D\u8170/\u4E2D\u573A/\u524D\u950B" },
+          { trait: "\u81F4\u547D\u76F4\u585E", desc: "\u76F4\u585E\u7403\u51B3\u7B56\u503E\u5411\u4E0E\u7A7F\u900F\u6536\u76CA\u63D0\u5347\uFF0C\u6495\u88C2\u9632\u7EBF\u5229\u5668" },
+          { trait: "\u7981\u533A\u72D0\u72F8", desc: "\u7981\u533A\u5185\u5C04\u95E8\u671F\u671B\u8FDB\u7403 xG +18%\uFF0C\u5C04\u624B\u8D28\u53D8\u5FBD\u7AE0" },
+          { trait: "\u7CBE\u51C6\u94F2\u65AD", desc: "\u62A2\u65AD\u6210\u529F\u7387 +10% \u4E14\u72AF\u89C4\u98CE\u9669\u964D\u4F4E 35%" },
+          { trait: "\u94C1\u80BA\u8986\u76D6", desc: "\u5168\u573A\u5954\u8DD1\u4F53\u80FD\u6D88\u8017\u964D\u4F4E 40%\uFF0C\u653B\u9632\u6C38\u52A8\u673A" },
+          { trait: "\u7CBE\u51C6\u4F20\u4E2D", desc: "\u8FB9\u8DEF\u4F20\u4E2D\u51B3\u7B56\u4E0E\u5230\u4F4D\u7387\u63D0\u5347\uFF0C\u4E24\u7FFC\u4F53\u7CFB\u6838\u5FC3" },
+          { trait: "\u8282\u62CD\u5668", desc: "\u77ED\u4F20\u4E0E\u4E2D\u573A\u7EC4\u7EC7\u6210\u529F\u7387 +5%\uFF0C\u4F20\u63A7\u5927\u8111\u5FC5\u5907" }
+        ];
+        const pickedSilver = silverPool[Math.floor(Math.random() * silverPool.length)];
+        options.push({
+          id: "pm_tf_silver",
+          category: "trait_forge",
+          title: `\u4E34\u65F6\u94F6\u6807\uFF1A\u8D50\u4E88\u3010${pickedSilver.trait}\u3011(5\u8F6E)`,
+          subtitle: `\u6307\u5B9A 1 \u540D\u7403\u5458\u672A\u6765 5 \u8F6E\u83B7\u5F97\u8BE5\u5F15\u64CE\u94F6\u6807\uFF08\u82E5\u5DF2\u6709\u5219\u4E34\u65F6\u5347\u91D1\u6807+ 3\u8F6E\uFF01\uFF09`,
+          rarity: "rare",
+          traitForge: { kind: "grant_silver", trait: pickedSilver.trait, durationRounds: 5, description: pickedSilver.desc }
+        });
+        options.push({
+          id: "pm_tf_gold",
+          category: "trait_forge",
+          title: "\u4E34\u65F6\u91D1\u6807+\uFF1APlayStyle+\u8D85\u9891 (3\u8F6E)",
+          subtitle: "\u6307\u5B9A 1 \u540D\u7403\u5458\uFF0C\u5C06\u5176\u9996\u679A\u94F6\u6807\u5728\u672A\u6765 3 \u8F6E\u5347\u534E\u4E3A\u91D1\u6807+(2\u500D\u5F15\u64CE\u52A0\u6210)\uFF01",
+          rarity: "epic",
+          traitForge: { kind: "upgrade_gold", durationRounds: 3, description: "\u6307\u5B9A\u7403\u5458\u4E34\u65F6\u664B\u5347 1 \u679A\u91D1\u6807\u7279\u8D28\uFF083\u8F6E\uFF09" }
+        });
+        options.push({
+          id: "pm_tf_role",
+          category: "trait_forge",
+          title: "\u5168\u80FD\u6539\u9020\uFF1A\u89E3\u9501\u7B2C\u4E8C\u4F4D\u7F6E + \u7AD9\u4F4D+1",
+          subtitle: "\u6307\u5B9A 1 \u540D\u7403\u5458\u4E60\u5F97\u517C\u5BB9\u6B21\u9009\u4F4D\u7F6E\u5E76\u63D0\u5347\u7AD9\u4F4D/\u4F20\u7403 +1",
+          rarity: "rare",
+          traitForge: { kind: "unlock_role", description: "\u89E3\u9501\u65B0\u6B21\u9009\u4F4D\u7F6E\u5E76\u63D0\u5347\u7AD9\u4F4D\u4E0E\u4F20\u7403 +1" }
+        });
+      } else if (cat === "tactical_pact") {
+        const pactPool = [
+          {
+            id: "pm_tp_blitz",
+            category: "tactical_pact",
+            title: "\u5951\u7EA6\xB7\u9AD8\u538B\u900F\u652F\uFF1A\u653B\u51FB\u7FA4\u5C04\u901F +3",
+            subtitle: "\u4EE3\u4EF7\uFF1A\u5168\u961F\u5F53\u524D\u4F53\u80FD -16% | \u6536\u76CA\uFF1A\u5168\u961F\u524D\u950B/\u4E2D\u573A\u5C04\u95E8+3\u3001\u901F\u5EA6+3",
+            rarity: "epic",
+            pactReward: { kind: "blitz_overdrive", description: "\u524D\u950B/\u4E2D\u573A\u5C04\u95E8+3\u3001\u901F\u5EA6+3\uFF0C\u5168\u961F\u4F53\u80FD -16%" }
+          },
+          {
+            id: "pm_tp_iron",
+            category: "tactical_pact",
+            title: "\u5951\u7EA6\xB7\u94C1\u8840\u6B7B\u5B88\uFF1A\u9632\u7EBF\u6251\u6551 +4",
+            subtitle: "\u4EE3\u4EF7\uFF1A\u5168\u961F\u524D\u950B\u5C04\u95E8 -2 | \u6536\u76CA\uFF1A\u5168\u961F\u540E\u536B\u62A2\u65AD+4\u3001\u95E8\u5C06\u6251\u6551+4",
+            rarity: "epic",
+            pactReward: { kind: "iron_fortress", description: "\u540E\u536B\u62A2\u65AD+4\u3001\u95E8\u5C06\u6251\u6551+4\uFF0C\u524D\u950B\u5C04\u95E8 -2" }
+          },
+          {
+            id: "pm_tp_youth",
+            category: "tactical_pact",
+            title: "\u5951\u7EA6\xB7\u9752\u6625\u98CE\u66B4\uFF1AU23 \u5168\u9762\u66B4\u6DA8",
+            subtitle: "\u4EE3\u4EF7\uFF1A28\u5C81+\u8001\u5C06\u4F53\u80FD\u4E0A\u9650 -2 | \u6536\u76CA\uFF1A\u5168\u961FU23\u65B0\u661F\u4F20\u5C04\u901F\u5404 +2",
+            rarity: "rare",
+            pactReward: { kind: "youth_gamble", description: "U23\u65B0\u661F\u4F20\u5C04\u901F\u5404+2\uFF0C\u8001\u5C06\u4F53\u80FD -2" }
+          },
+          {
+            id: "pm_tp_vet",
+            category: "tactical_pact",
+            title: "\u5951\u7EA6\xB7\u8001\u5175\u71C3\u5C3D\uFF1A\u8001\u5C06\u5173\u952E\u7403 +4",
+            subtitle: "\u4EE3\u4EF7\uFF1A27\u5C81+\u8001\u5C06\u4F53\u80FD -18% | \u6536\u76CA\uFF1A27\u5C81+\u8001\u5C06\u51B7\u9759+5\u3001\u4F20\u7403+3\u3001\u5C04\u95E8+3",
+            rarity: "rare",
+            pactReward: { kind: "veteran_last_dance", description: "27+\u8001\u5C06\u51B7\u9759+5\u4F20\u5C04+3\uFF0C\u5F53\u524D\u4F53\u80FD -18%" }
+          },
+          {
+            id: "pm_tp_alchemy",
+            category: "tactical_pact",
+            title: "\u5951\u7EA6\xB7\u9ED1\u5E02\u70BC\u91D1\uFF1AMeta\u4E0E\u5907\u6218\u70B9\u53CC\u6536",
+            subtitle: "\u4EE3\u4EF7\uFF1A\u6D88\u8017\u6700\u591A 2 \u5143\u7D20 | \u6536\u76CA\uFF1AMeta +50pt\u3001\u4E0B\u8F6E\u5907\u6218\u70B9 +1\u3001\u5168\u961F\u51B7\u9759 +1",
+            rarity: "epic",
+            pactReward: { kind: "black_market_alchemy", description: "\u6D88\u8017\u6700\u591A2\u5143\u7D20\u6362\u53D6 Meta +50pt\u3001\u5907\u6218\u70B9 +1 \u53CA\u51B7\u9759+1" }
+          },
+          {
+            id: "pm_tp_stamina",
+            category: "tactical_pact",
+            title: "\u5951\u7EA6\xB7\u6781\u9650\u4F53\u80FD\uFF1A\u6D88\u9664\u4F24\u75C5\u9690\u60A3",
+            subtitle: "\u4EE3\u4EF7\uFF1A\u5168\u961F\u4F53\u80FD\u7EDF\u4E00\u9501\u5B9A 74% | \u6536\u76CA\uFF1A\u5168\u961F\u4F53\u80FD\u4E0A\u9650 +4 \u4E14\u6E05\u7A7A\u75B2\u52B3\u8B66\u544A",
+            rarity: "rare",
+            pactReward: { kind: "stamina_limit_break", description: "\u5168\u961F\u4F53\u80FD+4\u5E76\u6E05\u7A7A\u75B2\u52B3\u8B66\u544A\uFF0C\u5F53\u524D\u4F53\u80FD\u7F6E\u4E3A74%" }
+          }
+        ];
+        for (let i = pactPool.length - 1; i > 0; i--) {
+          const j = Math.floor(Math.random() * (i + 1));
+          [pactPool[i], pactPool[j]] = [pactPool[j], pactPool[i]];
+        }
+        options.push(...pactPool.slice(0, 3));
+      } else if (cat === "chemistry_forge") {
+        const chemPool = [
+          {
+            id: "pm_cf_gold",
+            category: "chemistry_forge",
+            title: "\u94F8\u9020\u3010\u9EC4\u91D1\u8FDE\u7EBF\u3011\uFF1A\u9996\u53D1\u9ED8\u5951\u8D28\u53D8",
+            subtitle: "\u5F53\u524D\u9996\u53D1\u6700\u5177\u6F5C\u529B\u7684\u4E00\u5BF9\u9635\u578B\u8FDE\u7EBF\u7ACB\u5373\u9ED8\u5951 +25 \u5E76\u5C01\u53F7\u3010\u9EC4\u91D1\u8FDE\u7EBF\u3011",
+            rarity: "epic",
+            chemReward: { kind: "golden_link", description: "\u4E00\u5BF9\u9996\u53D1\u6838\u5FC3\u8FDE\u7EBF\u9ED8\u5951 +25 \u5E76\u89E3\u9501\u9EC4\u91D1\u8FDE\u7EBF" }
+          },
+          {
+            id: "pm_cf_form",
+            category: "chemistry_forge",
+            title: "\u9635\u578B\u5B97\u5E08\u704C\u9876\uFF1A\u719F\u7EC3\u5EA6 + Meta \u57FA\u91D1",
+            subtitle: "\u5168\u961F\u5F53\u524D\u9635\u578B\u719F\u7EC3\u5EA6 +12%\u3001\u5B97\u5E08\u7ECF\u9A8C +3\uFF0C\u5E76\u989D\u5916\u83B7\u8D60 Meta +15pt",
+            rarity: "rare",
+            chemReward: { kind: "formation_master", description: "\u5168\u961F\u5F53\u524D\u9635\u578B\u719F\u7EC3\u5EA6 +12\uFF0C\u5B97\u5E08\u7ECF\u9A8C +3\uFF0CMeta +15pt" }
+          },
+          {
+            id: "pm_cf_spine",
+            category: "chemistry_forge",
+            title: "\u4E2D\u8F74\u810A\u6881\u5171\u9E23\uFF1A\u95E8\u536B\u8170\u950B\u9F50\u5347",
+            subtitle: "\u961F\u5185\u6838\u5FC3 GK/CB/CM/ST \u5404\u90091\u540D\u4E3B\u5C06\u51B7\u9759+2\u3001\u7AD9\u4F4D+2\uFF0C\u4E2D\u8F74\u9ED8\u5951 +10",
+            rarity: "epic",
+            chemReward: { kind: "spine_boost", description: "\u4E2D\u8F74\u7EBF\u4E3B\u5C06\u51B7\u9759/\u7AD9\u4F4D +2\uFF0C\u4E2D\u8F74\u9ED8\u5951 +10" }
+          },
+          {
+            id: "pm_cf_overclock",
+            category: "chemistry_forge",
+            title: "\u6307\u6325\u5361\u8D85\u9891\u964D\u8D39\uFF1A\u6218\u672F\u80FD\u91CF\u51CF\u8D1F",
+            subtitle: "\u5361\u5E93\u5185 1 \u5F20\u9AD8\u8D39\u5361(2+\u8D39)\u80FD\u91CF\u6D88\u8017 -1 \u4E14\u6301\u7EED\u65F6\u95F4 +2 \u5206\uFF08\u82E5\u65E0\u5219\u8D60 Meta +25pt\uFF09",
+            rarity: "epic",
+            chemReward: { kind: "card_overclock", description: "\u9AD8\u8D39\u6307\u6325\u5361\u8D39\u7528 -1\u3001\u6301\u7EED +2 \u5206\u949F" }
+          }
+        ];
+        for (let i = chemPool.length - 1; i > 0; i--) {
+          const j = Math.floor(Math.random() * (i + 1));
+          [chemPool[i], chemPool[j]] = [chemPool[j], chemPool[i]];
+        }
+        options.push(...chemPool.slice(0, 3));
       } else {
         const chrons = ensureChronicles(this.state);
         const evPool = [];
+        evPool.push({
+          id: "pm_ev_meta",
+          category: "event",
+          title: "\u7406\u4E8B\u4F1A\u5609\u5956\uFF1AMeta \u5929\u8D4B +35pt",
+          subtitle: "\u76F4\u63A5\u5165\u8D26\u6559\u7EC3\u5929\u8D4B\u6811\u4E0E SkillWeb \u6280\u80FD\u7F51\u70B9\u6570 +35pt",
+          rarity: "epic",
+          eventReward: { kind: "meta_grant", amount: 35, description: "\u76F4\u63A5\u83B7\u5F97 Meta \u5929\u8D4B\u70B9\u6570 +35pt" }
+        });
+        evPool.push({
+          id: "pm_ev_prep",
+          category: "event",
+          title: "\u6218\u672F\u5BA4\u52A0\u73ED\uFF1A\u4E0B\u8F6E\u5907\u6218\u70B9 +2",
+          subtitle: "\u4E0B\u8F6E\u8D5B\u524D\u6574\u5907\u884C\u52A8\u70B9 +2\uFF08\u53EF\u591A\u505A\u7406\u7597/\u6F14\u7EC3/\u4FA6\u5BDF\uFF09\u4E14 Meta +10pt",
+          rarity: "epic",
+          eventReward: { kind: "prep_actions", amount: 2, description: "\u4E0B\u8F6E\u8D5B\u524D\u5907\u6218\u884C\u52A8\u70B9 +2\uFF0CMeta +10pt" }
+        });
+        evPool.push({
+          id: "pm_ev_intel",
+          category: "event",
+          title: "\u7403\u63A2\u5BC6\u7535\uFF1A\u6478\u900F\u4E0B\u8F6E\u5BF9\u624B +45%",
+          subtitle: "\u4E0B\u8F6E\u5BF9\u624B\u7403\u63A2\u4E86\u89E3\u5EA6\u76F4\u63A5 +45%\uFF08\u89E3\u9501\u66F4\u591A\u7834\u7EFD\u7EBF\u7D22\uFF09\u4E14 Meta +15pt",
+          rarity: "rare",
+          eventReward: { kind: "scout_intel", amount: 45, description: "\u4E0B\u8F6E\u5BF9\u624B\u4E86\u89E3\u5EA6 +45%\uFF0CMeta +15pt" }
+        });
         if (chrons.relegation_fight.status === "active") {
           evPool.push({
             id: "pm_ev_heal",
@@ -10645,6 +11072,67 @@
         rw.summaryText = `${target.name} ${opt.statBoost.attrLabel} +${gain} (CA ${oldCa}\u2192${target.ca})`;
         return { ok: true, summary: rw.summaryText };
       }
+      if (opt.category === "trait_forge" && opt.traitForge) {
+        if (!targetPlayerId) {
+          rw.pendingStatOptionId = opt.id;
+          return { ok: true, needsTarget: true };
+        }
+        const target = club.squad.find((p) => p.id === targetPlayerId);
+        if (!target) return { ok: false, reason: "\u672A\u627E\u5230\u76EE\u6807\u7403\u5458" };
+        const tf = opt.traitForge;
+        const dur = tf.durationRounds ?? 4;
+        target.tempTraits = target.tempTraits ? [...target.tempTraits] : [];
+        const upsertTempTrait = (trait, tier, rounds) => {
+          const existing = target.tempTraits.find((t) => t.trait === trait);
+          if (existing) {
+            if (tier === "gold") existing.tier = "gold";
+            existing.remainingMatches = Math.max(existing.remainingMatches, rounds);
+          } else {
+            target.tempTraits.push({ trait, tier, remainingMatches: rounds });
+          }
+        };
+        if (tf.kind === "grant_silver" && tf.trait) {
+          const trait = target.role === "GK" && tf.trait !== "\u7CBE\u51C6\u957F\u4F20" && tf.trait !== "\u8282\u62CD\u5668" ? "\u95E8\u7EBF\u795E\u6251" : tf.trait;
+          const alreadyGold = target.goldTraits?.includes(trait);
+          const alreadySilver = target.silverTraits?.includes(trait) || target.traits?.includes(trait);
+          if (alreadyGold) {
+            target.attributes.composure = clampAttr2(target.attributes.composure + 2);
+            target.ca = computeWeightedCA(target.role, target.attributes);
+            rw.summaryText = `${target.name} \u5DF2\u62E5\u6709\u91D1\u6807\u3010${trait}\u3011\uFF0C\u989D\u5916\u5F3A\u5316\u51B7\u9759 +2 (CA ${target.ca})`;
+          } else if (alreadySilver) {
+            upsertTempTrait(trait, "gold", Math.max(3, dur - 2));
+            rw.summaryText = `${target.name} \u7684\u3010${trait}\u3011\u4E34\u65F6\u5171\u9E23\u5347\u4E3A\u91D1\u6807+\uFF08\u6301\u7EED ${Math.max(3, dur - 2)} \u8F6E\uFF09\uFF01`;
+          } else {
+            upsertTempTrait(trait, "silver", dur);
+            rw.summaryText = `${target.name} \u83B7\u5F97\u4E34\u65F6\u94F6\u6807\u7279\u8D28\u3010${trait}\u3011\uFF08\u6301\u7EED ${dur} \u8F6E\uFF09\uFF01`;
+          }
+        } else if (tf.kind === "upgrade_gold") {
+          const promotable = target.silverTraits?.[0] ?? target.traits?.find((t) => !(target.goldTraits ?? []).includes(t));
+          if (promotable) {
+            upsertTempTrait(promotable, "gold", dur);
+            rw.summaryText = `${target.name} \u7684\u3010${promotable}\u3011\u4E34\u65F6\u8D85\u9891\u4E3A\u91D1\u6807+\uFF08\u6301\u7EED ${dur} \u8F6E\uFF0C2\u500D\u5F15\u64CE\u52A0\u6210\uFF09\uFF01`;
+          } else {
+            const fallbackGold = target.role === "GK" ? "\u95E8\u7EBF\u795E\u6251" : ["CB", "LB", "RB"].includes(target.role) ? "\u7CBE\u51C6\u94F2\u65AD" : "\u8282\u62CD\u5668";
+            upsertTempTrait(fallbackGold, "gold", dur);
+            rw.summaryText = `${target.name} \u4E34\u65F6\u89C9\u9192\u91D1\u6807+\u3010${fallbackGold}\u3011\uFF08\u6301\u7EED ${dur} \u8F6E\uFF09\uFF01`;
+          }
+        } else if (tf.kind === "unlock_role") {
+          const pool = SECONDARY_ROLE_POOL[target.role] ?? [];
+          const existing = new Set(target.secondaryRoles ?? []);
+          const newRole = pool.find((r) => !existing.has(r));
+          target.secondaryRoles = [...existing];
+          if (newRole) target.secondaryRoles.push(newRole);
+          target.attributes.positioning = clampAttr2(target.attributes.positioning + 1);
+          target.attributes.passing = clampAttr2(target.attributes.passing + 1);
+          target.ca = computeWeightedCA(target.role, target.attributes);
+          rw.summaryText = newRole ? `${target.name} \u89E3\u9501\u6B21\u9009\u4F4D\u7F6E\u3010${newRole}\u3011\uFF0C\u7AD9\u4F4D/\u4F20\u7403 +1 (CA ${target.ca})` : `${target.name} \u5168\u4F4D\u7F6E\u719F\u7A14\u5EA6\u63D0\u5347\uFF0C\u7AD9\u4F4D/\u4F20\u7403 +1 (CA ${target.ca})`;
+        }
+        const rIdx = roster.findIndex((r) => r.id === target.id);
+        if (rIdx >= 0) roster[rIdx] = JSON.parse(JSON.stringify(target));
+        rw.pendingStatOptionId = null;
+        rw.completed = true;
+        return { ok: true, summary: rw.summaryText };
+      }
       if (opt.category === "line_boost" && opt.lineBoost) {
         const lb = opt.lineBoost;
         let count = 0;
@@ -10693,9 +11181,186 @@
         rw.completed = true;
         return { ok: true, summary: rw.summaryText };
       }
+      if (opt.category === "tactical_pact" && opt.pactReward) {
+        const pr = opt.pactReward;
+        if (pr.kind === "blitz_overdrive") {
+          for (const p of club.squad) {
+            if (["ST", "LW", "RW", "CAM", "CM", "LM", "RM"].includes(p.role)) {
+              p.attributes.shooting = clampAttr2(p.attributes.shooting + 3);
+              p.attributes.pace = clampAttr2(p.attributes.pace + 3);
+              p.ca = computeWeightedCA(p.role, p.attributes);
+            }
+            p.fitness = Math.max(30, (p.fitness ?? 100) - 16);
+          }
+          rw.summaryText = "\u9AD8\u538B\u900F\u652F\u5951\u7EA6\u751F\u6548\uFF1A\u4E2D\u524D\u573A\u5C04\u95E8/\u901F\u5EA6 +3\uFF0C\u5168\u961F\u4F53\u80FD -16%";
+        } else if (pr.kind === "iron_fortress") {
+          for (const p of club.squad) {
+            if (p.role === "GK") p.attributes.goalkeeping = clampAttr2(p.attributes.goalkeeping + 4);
+            else if (["CB", "LB", "RB", "LWB", "RWB", "CDM"].includes(p.role)) {
+              p.attributes.defending = clampAttr2(p.attributes.defending + 4);
+            } else if (["ST", "LW", "RW"].includes(p.role)) {
+              p.attributes.shooting = clampAttr2(p.attributes.shooting - 2);
+            }
+            p.ca = computeWeightedCA(p.role, p.attributes);
+          }
+          rw.summaryText = "\u94C1\u8840\u6B7B\u5B88\u5951\u7EA6\u751F\u6548\uFF1A\u9632\u7EBF\u62A2\u65AD/\u95E8\u5C06\u6251\u6551 +4\uFF0C\u524D\u950B\u5C04\u95E8 -2";
+        } else if (pr.kind === "youth_gamble") {
+          let u23Count = 0;
+          for (const p of club.squad) {
+            if (p.age <= 23) {
+              p.attributes.passing = clampAttr2(p.attributes.passing + 2);
+              p.attributes.shooting = clampAttr2(p.attributes.shooting + 2);
+              p.attributes.pace = clampAttr2(p.attributes.pace + 2);
+              p.ca = computeWeightedCA(p.role, p.attributes);
+              u23Count++;
+            } else if (p.age >= 28) {
+              p.attributes.stamina = clampAttr2(p.attributes.stamina - 2);
+              p.ca = computeWeightedCA(p.role, p.attributes);
+            }
+          }
+          rw.summaryText = `\u9752\u6625\u98CE\u66B4\u5951\u7EA6\u751F\u6548\uFF1A${u23Count}\u540DU23\u4F20\u5C04\u901F +2\uFF0C28+\u8001\u5C06\u4F53\u80FD -2`;
+        } else if (pr.kind === "veteran_last_dance") {
+          let vetCount = 0;
+          for (const p of club.squad) {
+            if (p.age >= 27) {
+              p.attributes.composure = clampAttr2(p.attributes.composure + 5);
+              p.attributes.passing = clampAttr2(p.attributes.passing + 3);
+              p.attributes.shooting = clampAttr2(p.attributes.shooting + 3);
+              p.ca = computeWeightedCA(p.role, p.attributes);
+              p.fitness = Math.max(28, (p.fitness ?? 100) - 18);
+              vetCount++;
+            }
+          }
+          rw.summaryText = vetCount > 0 ? `\u8001\u5175\u71C3\u5C3D\u5951\u7EA6\u751F\u6548\uFF1A${vetCount}\u540D\u8001\u5C06\u51B7\u9759+5\u4F20\u5C04+3\uFF0C\u5F53\u524D\u4F53\u80FD -18%` : "\u961F\u5185\u6682\u65E027+\u8001\u5C06\uFF0C\u6539\u8D60\u5168\u961F\u51B7\u9759 +1";
+          if (vetCount === 0) {
+            for (const p of club.squad) p.attributes.composure = clampAttr2(p.attributes.composure + 1);
+          }
+        } else if (pr.kind === "black_market_alchemy") {
+          const inv = this.getElementInventory();
+          let spent = 0;
+          for (const el of TACTICAL_ELEMENTS) {
+            while ((inv[el.id] ?? 0) > 0 && spent < 2) {
+              inv[el.id] -= 1;
+              spent++;
+            }
+          }
+          this.state.metaPointsTotal += 50;
+          if (this.state.interMatchPrep) {
+            this.state.interMatchPrep.actionsLeft += 1;
+          }
+          for (const p of club.squad) {
+            p.attributes.composure = clampAttr2(p.attributes.composure + 1);
+            p.ca = computeWeightedCA(p.role, p.attributes);
+          }
+          rw.summaryText = `\u9ED1\u5E02\u70BC\u91D1\u5B8C\u6210\uFF1A\u6D88\u8017 ${spent} \u5143\u7D20\uFF0C\u5165\u8D26 Meta +50pt\u3001\u4E0B\u8F6E\u5907\u6218\u70B9 +1\u3001\u5168\u961F\u51B7\u9759 +1`;
+        } else if (pr.kind === "stamina_limit_break") {
+          for (const p of club.squad) {
+            p.attributes.stamina = clampAttr2(p.attributes.stamina + 4);
+            p.strainWarning = false;
+            p.fitness = 74;
+            p.ca = computeWeightedCA(p.role, p.attributes);
+          }
+          rw.summaryText = "\u6781\u9650\u4F53\u80FD\u5951\u7EA6\u751F\u6548\uFF1A\u5168\u961F\u4F53\u80FD\u4E0A\u9650 +4\u3001\u6E05\u7A7A\u75B2\u52B3\u8B66\u544A\uFF0C\u4F53\u80FD\u9501\u5B9A 74%";
+        }
+        rw.completed = true;
+        return { ok: true, summary: rw.summaryText };
+      }
+      if (opt.category === "chemistry_forge" && opt.chemReward) {
+        const cr = opt.chemReward;
+        if (cr.kind === "golden_link") {
+          const links = this.getChemistryLinks();
+          const squadMap = new Map(club.squad.map((p) => [p.id, p]));
+          const specs = getFormationLinks(club, squadMap);
+          const picked = specs.sort((a, b) => {
+            const la = getOrCreateChemistryLink(links, a.playerA, a.playerB).score;
+            const lb = getOrCreateChemistryLink(links, b.playerA, b.playerB).score;
+            return la - lb;
+          })[0];
+          if (picked) {
+            const lk = getOrCreateChemistryLink(links, picked.playerA, picked.playerB);
+            lk.score = Math.min(100, lk.score + 25);
+            lk.title = "\u9EC4\u91D1\u8FDE\u7EBF";
+            rw.summaryText = `\u9EC4\u91D1\u8FDE\u7EBF\u94F8\u6210\uFF1A${picked.playerA.name} \xD7 ${picked.playerB.name} \u9ED8\u5951 +25\uFF08\u5F53\u524D ${lk.score}\uFF09`;
+          } else {
+            this.state.metaPointsTotal += 25;
+            rw.summaryText = "\u6682\u65E0\u53EF\u8FDE\u7EBF\u9996\u53D1\uFF0C\u6539\u8D60 Meta +25pt";
+          }
+        } else if (cr.kind === "formation_master") {
+          for (const p of club.squad) {
+            const cur = this.getPlayerFamiliarity(p, club.formation);
+            p.formationFamiliarity = p.formationFamiliarity ?? {};
+            p.formationFamiliarity[club.formation] = Math.min(100, cur + 12);
+          }
+          const m = this.getTacticalMastery();
+          m.formations[club.formation] = Math.min(15, (m.formations[club.formation] ?? 0) + 3);
+          this.state.metaPointsTotal += 15;
+          rw.summaryText = `\u9635\u578B\u5B97\u5E08\u704C\u9876\uFF1A\u5168\u961F\u3010${club.formation}\u3011\u719F\u7EC3\u5EA6 +12%\u3001\u5B97\u5E08\u7ECF\u9A8C +3\u3001Meta +15pt`;
+        } else if (cr.kind === "spine_boost") {
+          const spineRoles = /* @__PURE__ */ new Set(["GK", "CB", "CDM", "CM", "CAM", "ST"]);
+          const boosted = [];
+          const starterList = club.starterIds.map((id) => club.squad.find((p) => p.id === id)).filter((p) => !!p && spineRoles.has(p.role)).slice(0, 4);
+          for (const p of starterList) {
+            p.attributes.composure = clampAttr2(p.attributes.composure + 2);
+            p.attributes.positioning = clampAttr2(p.attributes.positioning + 2);
+            p.ca = computeWeightedCA(p.role, p.attributes);
+            boosted.push(p.name);
+          }
+          const links = this.getChemistryLinks();
+          for (let i = 0; i < starterList.length; i++) {
+            for (let j = i + 1; j < starterList.length; j++) {
+              const lk = getOrCreateChemistryLink(links, starterList[i], starterList[j]);
+              lk.score = Math.min(100, lk.score + 10);
+            }
+          }
+          rw.summaryText = `\u4E2D\u8F74\u5171\u9E23\uFF1A${boosted.join("\xB7")} \u51B7\u9759/\u7AD9\u4F4D +2\uFF0C\u4E2D\u8F74\u9ED8\u5951 +10`;
+        } else if (cr.kind === "card_overclock") {
+          const deck = this.getCoachDeck();
+          const highCost = deck.find((c) => c.cost >= 2);
+          if (highCost) {
+            highCost.cost = Math.max(1, highCost.cost - 1);
+            highCost.durationMinutes += 2;
+            rw.summaryText = `\u8D85\u9891\u6210\u529F\uFF1A\u3010${highCost.name}\u3011\u8D39\u7528\u964D\u81F3 ${highCost.cost}\uFF0C\u6301\u7EED +2\u5206`;
+          } else {
+            this.state.metaPointsTotal += 25;
+            rw.summaryText = "\u5361\u5E93\u5747\u4E3A 1 \u8D39\u5361\uFF0C\u6539\u8D60 Meta +25pt";
+          }
+        }
+        rw.completed = true;
+        return { ok: true, summary: rw.summaryText };
+      }
       if (opt.category === "event" && opt.eventReward) {
         const ev = opt.eventReward;
-        if (ev.kind === "heal_all") {
+        if (ev.kind === "meta_grant") {
+          const pts = ev.amount ?? 35;
+          this.state.metaPointsTotal += pts;
+          rw.summaryText = `\u7406\u4E8B\u4F1A\u5609\u5956\uFF1AMeta \u5929\u8D4B\u70B9\u6570 +${pts}pt\uFF08\u5F53\u524D ${this.state.metaPointsTotal}pt\uFF09`;
+        } else if (ev.kind === "prep_actions") {
+          const actGain = ev.amount ?? 2;
+          if (this.state.interMatchPrep) {
+            this.state.interMatchPrep.actionsLeft += actGain;
+          }
+          this.state.metaPointsTotal += 10;
+          rw.summaryText = `\u6218\u672F\u5BA4\u52A0\u73ED\uFF1A\u4E0B\u8F6E\u8D5B\u524D\u5907\u6218\u70B9 +${actGain}\uFF08\u5F53\u524D ${this.state.interMatchPrep?.actionsLeft ?? actGain} \u70B9\uFF09\u4E14 Meta +10pt`;
+        } else if (ev.kind === "scout_intel") {
+          const intelGain = ev.amount ?? 45;
+          this.state.metaPointsTotal += 15;
+          const prep = this.state.interMatchPrep;
+          if (prep?.matchupIntel) {
+            const rec = getOpponentIntelRecord(this.state, prep.matchupIntel.oppClubId);
+            rec.familiarity = Math.min(100, rec.familiarity + intelGain);
+            const refreshed = buildOpponentMatchupIntel(this.state, club);
+            if (refreshed) {
+              refreshed.chosenCounterId = prep.matchupIntel.chosenCounterId;
+              refreshed.spotCorrect = prep.matchupIntel.spotCorrect;
+              refreshed.scoutedThisRound = prep.matchupIntel.scoutedThisRound;
+              prep.matchupIntel = refreshed;
+            }
+            rw.summaryText = `\u7403\u63A2\u5BC6\u7535\uFF1A\u3010${prep.matchupIntel.oppClubName}\u3011\u4E86\u89E3\u5EA6 +${intelGain}%\uFF08\u5F53\u524D ${rec.familiarity}%\uFF09\uFF0CMeta +15pt`;
+          } else {
+            this.state.metaPointsTotal += 15;
+            rw.summaryText = "\u7403\u63A2\u5BC6\u7535\u5F52\u6863\uFF1AMeta \u989D\u5916 +30pt";
+          }
+        } else if (ev.kind === "heal_all") {
           for (const p of club.squad) p.fitness = 100;
           rw.summaryText = "\u795E\u533B\u7406\u7597\u751F\u6548\uFF1A\u5168\u961F\u4F53\u80FD\u5DF2\u6062\u590D\u81F3 100%";
         } else if (ev.kind === "devil_training") {
@@ -10837,6 +11502,332 @@
             rp.fitness = sp.fitness;
           }
         }
+      }
+    }
+    captureSeasonMemory(fixture, res, userClub) {
+      const userIsHome = fixture.homeClubId === this.state.userClubId;
+      const userSide = userIsHome ? "home" : "away";
+      const oppSide = userIsHome ? "away" : "home";
+      const oppClubId = userIsHome ? fixture.awayClubId : fixture.homeClubId;
+      const oppClub = this.state.clubs.find((c) => c.id === oppClubId);
+      const oppName = oppClub?.name ?? "\u5BF9\u624B";
+      const myGoals = userIsHome ? fixture.homeGoals : fixture.awayGoals;
+      const oppGoals = userIsHome ? fixture.awayGoals : fixture.homeGoals;
+      const scoreText = `${myGoals}:${oppGoals}`;
+      const round = this.state.currentRound;
+      const margin = Math.abs(myGoals - oppGoals);
+      const styleLabels = {
+        tiki_taka: "\u4F20\u63A7\u6E17\u900F",
+        gegenpress: "\u9AD8\u4F4D\u903C\u62A2",
+        balanced: "\u5747\u8861\u9635\u5730",
+        wing_play: "\u4E24\u7FFC\u9F50\u98DE",
+        counter: "\u5FEB\u901F\u53CD\u51FB",
+        park_bus: "\u94C1\u6876\u9632\u53CD"
+      };
+      const userFormation = userClub.formation;
+      const oppFormation = oppClub?.formation ?? (userIsHome ? res.awayFormation : res.homeFormation) ?? "4-4-2";
+      const oppStyle = oppClub ? styleLabels[oppClub.style] : void 0;
+      const myStats = userIsHome ? res.stats.home : res.stats.away;
+      const oppStats = userIsHome ? res.stats.away : res.stats.home;
+      const totPoss = myStats.possessionTicks + oppStats.possessionTicks || 1;
+      const myPossPct = Math.round(myStats.possessionTicks / totPoss * 100);
+      const xgText = `xG ${myStats.xG.toFixed(2)} : ${oppStats.xG.toFixed(2)}`;
+      const possessionText = `\u63A7\u7403 ${myPossPct}% : ${100 - myPossPct}%`;
+      const standings = this.getStandings();
+      const userRank = standings.findIndex((s) => s.clubId === this.state.userClubId) + 1;
+      const oppRank = standings.findIndex((s) => s.clubId === oppClubId) + 1;
+      const oppStandout = [...res.players].filter((p) => p.team === oppSide).sort(
+        (a, b) => b.matchStats.goals * 4 + b.matchStats.assists * 2 + (b.redCard ? 2 : 0) + b.matchStats.saves * 0.5 - (a.matchStats.goals * 4 + a.matchStats.assists * 2 + (a.redCard ? 2 : 0) + a.matchStats.saves * 0.5)
+      )[0];
+      const oppPlayerLabel = oppStandout ? `${oppStandout.name}(${oppStandout.matchStats.goals > 0 ? `${oppStandout.matchStats.goals}\u7403` : oppStandout.redCard ? "\u7EA2\u724C" : oppStandout.role === "GK" ? `${oppStandout.matchStats.saves}\u6251` : oppStandout.role})` : void 0;
+      const userTopAssister = [...res.players].filter((p) => p.team === userSide && p.matchStats.assists > 0).sort((a, b) => b.matchStats.assists - a.matchStats.assists)[0];
+      const baseMeta = {
+        oppPlayerName: oppPlayerLabel,
+        assistPlayerName: userTopAssister?.name,
+        userFormation,
+        oppFormation,
+        oppStyle,
+        xgText,
+        possessionText
+      };
+      const candidates = [];
+      const goalEvents = res.events.filter((e) => e.type === "goal");
+      let hScore = 0;
+      let aScore = 0;
+      let maxUserDeficit = 0;
+      let maxUserLead = 0;
+      for (const ev of goalEvents) {
+        if (ev.team === "home") hScore++;
+        else aScore++;
+        const diff = userIsHome ? hScore - aScore : aScore - hScore;
+        if (diff < 0 && -diff > maxUserDeficit) maxUserDeficit = -diff;
+        if (diff > 0 && diff > maxUserLead) maxUserLead = diff;
+      }
+      if (margin <= 1 && goalEvents.length > 0) {
+        const lastGoal = goalEvents[goalEvents.length - 1];
+        if (lastGoal.minute >= 85) {
+          const userScored = lastGoal.team === userSide;
+          if (userScored && myGoals >= oppGoals) {
+            const isWin = myGoals > oppGoals;
+            const assister = lastGoal.assistPlayerName ?? userTopAssister?.name;
+            candidates.push({
+              id: `mem_s${this.state.seasonNumber}_r${round}_late`,
+              round,
+              kind: "LATE_WINNER",
+              badge: isWin ? "\u8BFB\u79D2\u7EDD\u6740" : "\u538B\u54E8\u7EDD\u5E73",
+              title: `\u7B2C${lastGoal.minute}\u5206\u949F ${lastGoal.playerName} ${isWin ? "\u7EDD\u6740" : "\u7EDD\u5E73"}\uFF01`,
+              summary: `\u7B2C${round}\u8F6E${userIsHome ? "\u4E3B\u573A" : "\u5BA2\u573A"}\u6218${oppName}(${oppFormation})\uFF0C${assister ? `${assister}\u9001\u51FA\u81F4\u547D\u52A9\u653B\uFF0C` : ""}${lastGoal.playerName}\u7B2C${lastGoal.minute}\u5206\u949F\u4E00\u9524\u5B9A\u97F3\uFF0C${scoreText}\u5E26\u8D70\u79EF\u5206\u3002`,
+              scoreText,
+              oppName,
+              playerName: lastGoal.playerName,
+              ...baseMeta,
+              assistPlayerName: assister,
+              contextTag: userIsHome ? "\u4E3B\u573A\u7EDD\u6740" : "\u5BA2\u573A\u7EDD\u6740",
+              minute: lastGoal.minute,
+              dramaScore: (isWin ? 95 : 89) + Math.min(5, lastGoal.minute - 85),
+              isPainful: false
+            });
+          } else if (!userScored && myGoals <= oppGoals) {
+            const isLoss = myGoals < oppGoals;
+            candidates.push({
+              id: `mem_s${this.state.seasonNumber}_r${round}_late_pain`,
+              round,
+              kind: "LATE_WINNER",
+              badge: isLoss ? "\u60E8\u906D\u7EDD\u6740" : "\u75DB\u5931\u4E09\u5206",
+              title: `\u7B2C${lastGoal.minute}\u5206\u949F\u906D${oppName}\xB7${lastGoal.playerName}\u7EDD\u6740`,
+              summary: `\u7B2C${round}\u8F6E\u8BFB\u79D2\u65F6\u523B\u88AB${oppName}\u7684${lastGoal.playerName}\u7834\u95E8\uFF0C${scoreText}\u62B1\u61BE\u800C\u5F52\u3002`,
+              scoreText,
+              oppName,
+              playerName: lastGoal.playerName,
+              ...baseMeta,
+              oppPlayerName: `${lastGoal.playerName}(${lastGoal.minute}'\u7EDD\u6740)`,
+              contextTag: "\u8BFB\u79D2\u5931\u5B88",
+              minute: lastGoal.minute,
+              dramaScore: (isLoss ? 92 : 85) + Math.min(5, lastGoal.minute - 85),
+              isPainful: true
+            });
+          }
+        }
+      }
+      if (maxUserDeficit >= 2 && myGoals >= oppGoals) {
+        const won = myGoals > oppGoals;
+        candidates.push({
+          id: `mem_s${this.state.seasonNumber}_r${round}_comeback`,
+          round,
+          kind: "COMEBACK",
+          badge: won ? "\u60CA\u5929\u9006\u8F6C" : "\u7EDD\u5730\u8FFD\u5E73",
+          title: won ? `\u843D\u540E${maxUserDeficit}\u7403\u9006\u8F6C${oppName}\uFF01` : `\u843D\u540E${maxUserDeficit}\u7403\u987D\u5F3A\u8FFD\u5E73${oppName}`,
+          summary: `\u7B2C${round}\u8F6E\u4E00\u5EA6\u843D\u540E${maxUserDeficit}\u7403\u4ECD\u672A\u653E\u5F03\uFF0C${userClub.name}(${userFormation})\u8FDE\u8FFD\u53CD\u6251\uFF0C\u7EC8\u573A\u5B9A\u683C\u5728${scoreText}\u3002`,
+          scoreText,
+          oppName,
+          ...baseMeta,
+          contextTag: `\u9006\u8F6C${maxUserDeficit}\u7403`,
+          dramaScore: won ? 91 : 85,
+          isPainful: false
+        });
+      } else if (maxUserLead >= 2 && myGoals < oppGoals) {
+        candidates.push({
+          id: `mem_s${this.state.seasonNumber}_r${round}_choke`,
+          round,
+          kind: "COMEBACK",
+          badge: "\u906D\u9006\u8F6C\u7FFB\u76D8",
+          title: `\u4E24\u7403\u9886\u5148\u88AB${oppName}\u9006\u8F6C`,
+          summary: `\u7B2C${round}\u8F6E\u624B\u63E1${maxUserLead}\u7403\u4F18\u52BF\u5374\u6CA1\u80FD\u5B88\u4F4F\u80DC\u679C\uFF0C${oppPlayerLabel ? `\u88AB${oppPlayerLabel}\u7387\u961F\u53CD\u6251\uFF0C` : ""}\u6700\u7EC8${scoreText}\u75DB\u5931\u597D\u5C40\u3002`,
+          scoreText,
+          oppName,
+          ...baseMeta,
+          contextTag: "\u9886\u5148\u88AB\u7FFB",
+          dramaScore: 87,
+          isPainful: true
+        });
+      }
+      if (round >= 5 && userRank > 0 && oppRank > 0) {
+        if (myGoals > oppGoals && userRank - oppRank >= 5) {
+          candidates.push({
+            id: `mem_s${this.state.seasonNumber}_r${round}_upset`,
+            round,
+            kind: "UPSET",
+            badge: "\u4EE5\u4E0B\u514B\u4E0A",
+            title: `\u7B2C${userRank}\u540D\u6380\u7FFB\u7B2C${oppRank}\u540D${oppName}\uFF01`,
+            summary: `\u7B2C${round}\u8F6E\u4EE5\u5F31\u80DC\u5F3A\uFF0C${userClub.name}\u7528${userFormation}\u9635\u578B${scoreText}\u51FB\u8D25\u6392\u540D\u7B2C${oppRank}\u7684${oppName}\u3002`,
+            scoreText,
+            oppName,
+            ...baseMeta,
+            contextTag: `\u7B2C${userRank}\u65A9\u7B2C${oppRank}`,
+            dramaScore: 88,
+            isPainful: false
+          });
+        } else if (myGoals < oppGoals && oppRank - userRank >= 6 && userRank <= 4) {
+          candidates.push({
+            id: `mem_s${this.state.seasonNumber}_r${round}_upset_pain`,
+            round,
+            kind: "UPSET",
+            badge: "\u9634\u6C9F\u7FFB\u8239",
+            title: `\u7206\u51B7\u4E0D\u654C\u7B2C${oppRank}\u540D${oppName}`,
+            summary: `\u7B2C${round}\u8F6E\u6392\u540D\u524D\u5217\u7684${userClub.name}\u610F\u5916\u5931\u624B\uFF0C${scoreText}\u8D1F\u4E8E${oppName}${oppPlayerLabel ? `(${oppPlayerLabel})` : ""}\u3002`,
+            scoreText,
+            oppName,
+            ...baseMeta,
+            contextTag: `\u7206\u51B7\u8F93\u7B2C${oppRank}`,
+            dramaScore: 84,
+            isPainful: true
+          });
+        }
+      }
+      const userRedPlayer = res.players.find((p) => p.team === userSide && p.redCard);
+      const oppRedPlayer = res.players.find((p) => p.team === oppSide && p.redCard);
+      if (userRedPlayer && myGoals >= oppGoals) {
+        candidates.push({
+          id: `mem_s${this.state.seasonNumber}_r${round}_red_stand`,
+          round,
+          kind: "RED_CARD_STAND",
+          badge: "\u5341\u4EBA\u94C1\u8840",
+          title: `${userRedPlayer.name}\u67D3\u7EA2\u4E0B\u4ECD${myGoals > oppGoals ? "\u529B\u514B" : "\u903C\u5E73"}${oppName}`,
+          summary: `\u7B2C${round}\u8F6E${userRedPlayer.name}\u88AB\u7F5A\u4E0B\u5C11\u6253\u4E00\u4EBA\uFF0C\u5168\u961F\u4F17\u5FD7\u6210\u57CE${scoreText}\u5B88\u4F4F\u79EF\u5206\uFF01`,
+          scoreText,
+          oppName,
+          playerName: userRedPlayer.name,
+          ...baseMeta,
+          contextTag: "\u5C11\u6253\u4E00\u4EBA",
+          dramaScore: myGoals > oppGoals ? 89 : 83,
+          isPainful: false
+        });
+      } else if (oppRedPlayer && myGoals < oppGoals) {
+        candidates.push({
+          id: `mem_s${this.state.seasonNumber}_r${round}_red_pain`,
+          round,
+          kind: "RED_CARD_STAND",
+          badge: "\u591A\u6253\u4E00\u4EBA\u5931\u5229",
+          title: `\u591A\u6253\u4E00\u4EBA\u4ECD\u8D1F\u4E8E${oppName}`,
+          summary: `\u7B2C${round}\u8F6E${oppName}\u7684${oppRedPlayer.name}\u67D3\u7EA2\u79BB\u573A\uFF0C\u4F46\u6211\u65B9\u672A\u80FD\u628A\u63E1\u4EBA\u6570\u4F18\u52BF\uFF0C${scoreText}\u60DC\u8D25\u3002`,
+          scoreText,
+          oppName,
+          ...baseMeta,
+          contextTag: "\u5F3A\u653B\u672A\u679C",
+          dramaScore: 81,
+          isPainful: true
+        });
+      }
+      const isRival = this.state.storyline?.id === "revenge" && this.state.storyline.rivalClubId === oppClubId;
+      const isTopClash = round >= 8 && userRank > 0 && oppRank > 0 && userRank <= 3 && oppRank <= 3;
+      if ((isTopClash || isRival) && myGoals !== oppGoals) {
+        candidates.push({
+          id: `mem_s${this.state.seasonNumber}_r${round}_clash`,
+          round,
+          kind: "TITLE_CLASH",
+          badge: isRival ? "\u5BBF\u654C\u6B7B\u78D5" : "\u5929\u738B\u5C71\u4E4B\u6218",
+          title: `${isRival ? "\u5BBF\u654C\u6218" : "\u699C\u9996\u6218"}${myGoals > oppGoals ? "\u529B\u514B" : "\u60DC\u8D25"}${oppName}`,
+          summary: `\u7B2C${round}\u8F6E${isTopClash ? `\u7B2C${userRank}\u540D\u4E0E\u7B2C${oppRank}\u540D\u5F3A\u5F3A\u5BF9\u8BDD` : "\u5BBF\u654C\u6069\u6028\u5BF9\u51B3"}\uFF0C\u6700\u7EC8${scoreText}\u5206\u51FA\u9AD8\u4E0B\u3002`,
+          scoreText,
+          oppName,
+          ...baseMeta,
+          contextTag: isRival ? "\u5BBF\u654C\u5FB7\u6BD4" : `\u524D${Math.max(userRank, oppRank)}\u5BF9\u8BDD`,
+          dramaScore: myGoals > oppGoals ? 86 : 82,
+          isPainful: myGoals < oppGoals
+        });
+      }
+      const hasRed = res.events.some((e) => e.type === "red_card");
+      const penaltyEv = res.events.find((e) => e.text?.includes("\u70B9\u7403"));
+      if (margin <= 1 && (hasRed && penaltyEv || penaltyEv && penaltyEv.minute >= 75)) {
+        const painful = myGoals < oppGoals;
+        candidates.push({
+          id: `mem_s${this.state.seasonNumber}_r${round}_var`,
+          round,
+          kind: "CONTROVERSY",
+          badge: "\u4E89\u8BAE\u5224\u7F5A",
+          title: painful ? `\u4E89\u8BAE\u7EA2\u70B9\u591C\u60DC\u8D25${oppName}` : `\u9876\u4F4F\u7EA2\u70B9\u5224\u7F5A\u6218${oppName}`,
+          summary: `\u7B2C${round}\u8F6E\u573A\u9762\u706B\u836F\u5473\u5341\u8DB3\uFF0C\u5173\u952E${hasRed ? "\u7EA2\u724C\u4E0E" : ""}\u70B9\u7403\u5224\u7F5A\u5DE6\u53F3\u6218\u5C40\uFF0C\u6700\u7EC8\u6BD4\u5206${scoreText}\u3002`,
+          scoreText,
+          oppName,
+          ...baseMeta,
+          contextTag: hasRed ? "\u7EA2\u724C+\u70B9\u7403" : "\u672B\u6BB5\u70B9\u7403",
+          minute: penaltyEv?.minute,
+          dramaScore: 82,
+          isPainful: painful
+        });
+      }
+      const totalGoals = myGoals + oppGoals;
+      if (totalGoals >= 6 || margin >= 4) {
+        const isRoutWin = myGoals - oppGoals >= 4;
+        const isRoutLoss = oppGoals - myGoals >= 4;
+        candidates.push({
+          id: `mem_s${this.state.seasonNumber}_r${round}_fest`,
+          round,
+          kind: "GOAL_FEST",
+          badge: isRoutWin ? "\u706B\u529B\u72C2\u98D9" : isRoutLoss ? "\u60E8\u75DB\u6E83\u8D25" : "\u8FDB\u7403\u5927\u6218",
+          title: isRoutWin ? `${scoreText}\u6A2A\u626B${oppName}` : isRoutLoss ? `${scoreText}\u60E8\u8D25${oppName}` : `${scoreText}\u5BF9\u653B\u5927\u6218${oppName}`,
+          summary: `\u7B2C${round}\u8F6E\u53CC\u65B9\u5927\u5F00\u5927\u5408\uFF0C${totalGoals}\u7C92\u8FDB\u7403\u5F15\u7206\u5168\u573A\uFF08${xgText}\uFF09\u3002`,
+          scoreText,
+          oppName,
+          ...baseMeta,
+          contextTag: `${totalGoals}\u7403\u76DB\u5BB4`,
+          dramaScore: isRoutWin ? 85 : isRoutLoss ? 83 : 82,
+          isPainful: isRoutLoss
+        });
+      }
+      const awakened = (res.unlockedHiddenTraits || []).find((u) => u.team === userSide);
+      if (awakened && myGoals >= oppGoals) {
+        candidates.push({
+          id: `mem_s${this.state.seasonNumber}_r${round}_awaken`,
+          round,
+          kind: "AWAKENING",
+          badge: "\u6F5C\u80FD\u89C9\u9192",
+          title: `${awakened.playerName} \u89C9\u9192\u3010${awakened.trait}\u3011`,
+          summary: `\u7B2C${round}\u8F6E\u6218${oppName}\u5173\u952E\u65F6\u523B\uFF0C${awakened.playerName}\u7A81\u7834\u6781\u9650\u5F53\u573A\u89C9\u9192\u3010${awakened.trait}\u3011\uFF0C\u7387\u961F${scoreText}\uFF01`,
+          scoreText,
+          oppName,
+          playerName: awakened.playerName,
+          ...baseMeta,
+          contextTag: `\u89C9\u9192\xB7${awakened.trait}`,
+          dramaScore: 84,
+          isPainful: false
+        });
+      }
+      const hatHero = res.players.filter((p) => p.team === userSide && p.matchStats.goals >= 3).sort((a, b) => b.matchStats.goals - a.matchStats.goals)[0];
+      if (hatHero) {
+        candidates.push({
+          id: `mem_s${this.state.seasonNumber}_r${round}_hat`,
+          round,
+          kind: "HEROIC",
+          badge: "\u4E2A\u4EBA\u5C01\u795E",
+          title: `${hatHero.name} \u6234\u5E3D\u4E3B\u5BB0\u6BD4\u8D5B`,
+          summary: `\u7B2C${round}\u8F6E${hatHero.name}\u5355\u573A\u8F70\u5165${hatHero.matchStats.goals}\u7403\uFF0C\u7387\u961F${scoreText}\u529B\u514B${oppName}\u3002`,
+          scoreText,
+          oppName,
+          playerName: hatHero.name,
+          ...baseMeta,
+          contextTag: `\u5355\u573A${hatHero.matchStats.goals}\u7403`,
+          dramaScore: 87,
+          isPainful: false
+        });
+      } else {
+        const gkHero = res.players.filter((p) => p.team === userSide && p.role === "GK" && p.matchStats.saves >= 8).sort((a, b) => b.matchStats.saves - a.matchStats.saves)[0];
+        if (gkHero && (myGoals > oppGoals || oppGoals === 0)) {
+          candidates.push({
+            id: `mem_s${this.state.seasonNumber}_r${round}_gk`,
+            round,
+            kind: "HEROIC",
+            badge: "\u95E8\u795E\u964D\u4E34",
+            title: `${gkHero.name} ${gkHero.matchStats.saves}\u6251\u5B88\u4F4F\u57CE\u6C60`,
+            summary: `\u7B2C${round}\u8F6E\u9762\u5BF9${oppName}\u72C2\u8F70\u6EE5\u70B8\uFF0C${gkHero.name}\u9AD8\u63A5\u4F4E\u6321\u505A\u51FA${gkHero.matchStats.saves}\u6B21\u6251\u6551\uFF0C${scoreText}\u5168\u8EAB\u800C\u9000\u3002`,
+            scoreText,
+            oppName,
+            playerName: gkHero.name,
+            ...baseMeta,
+            contextTag: `${gkHero.matchStats.saves}\u6B21\u6251\u6551`,
+            dramaScore: 81,
+            isPainful: false
+          });
+        }
+      }
+      if (candidates.length === 0) return;
+      candidates.sort((a, b) => b.dramaScore - a.dramaScore);
+      const best = candidates[0];
+      if (!this.state.seasonMemories) this.state.seasonMemories = [];
+      this.state.seasonMemories.push(best);
+      this.state.seasonMemories.sort((a, b) => b.dramaScore - a.dramaScore);
+      if (this.state.seasonMemories.length > 4) {
+        this.state.seasonMemories = this.state.seasonMemories.slice(0, 4);
       }
     }
     advanceAfterRound() {
@@ -10995,7 +11986,7 @@
           p.strainWarning = false;
           if ((p.injuredRounds ?? 0) > 0) p.injuredRounds = Math.max(0, (p.injuredRounds ?? 0) - 1);
         }
-        msg = `\u7406\u7597\u6062\u590D\uFF1A${tired.map((p) => p.name).join("\u3001")} \u6D88\u9664\u7D27\u7EF7/\u4F53\u80FD +14%`;
+        msg = `\u7406\u7597\u6062\u590D\uFF1A${tired.map((p) => p.name).join("\u3001")} \u6D88\u9664\u75B2\u60EB/\u4F53\u80FD +14%`;
       } else if (kind === "tactical") {
         for (const p of club.squad) {
           const cur = this.getPlayerFamiliarity(p, club.formation);
@@ -11278,6 +12269,9 @@
       const promoBonus = promotionStatus === "promoted" ? 40 : 0;
       const champBonus = tier === 1 && finalRank === 1 ? 100 : 0;
       let metaEarned = tierScaled + promoBonus + champBonus;
+      if ((this.state.metaLevels?.finance ?? 0) >= 5) {
+        metaEarned = Math.round(metaEarned * 1.15);
+      }
       let storyBonus = 0;
       if (this.state.storyline?.id === "underdog") {
         const next = Math.round(metaEarned * 1.25);
@@ -11297,6 +12291,7 @@
       if (regularRank <= 3) {
         tryUnlockAchievement(this.state, "ach_playoffs");
       }
+      const memories = [...this.state.seasonMemories ?? []].sort((a, b) => b.dramaScore - a.dramaScore).slice(0, 3);
       hof.records.push({
         seasonNumber: this.state.seasonNumber,
         clubName: this.getUserClub().name,
@@ -11309,7 +12304,8 @@
         storylineTitle: this.state.storyline?.title,
         topScorer: top ? { name: top.playerName, goals: top.goals } : null,
         tier,
-        promotionStatus
+        promotionStatus,
+        topMemory: memories[0] ?? null
       });
       const userClub = this.getUserClub();
       const metaLv = this.getMetaLevels();
@@ -11469,7 +12465,8 @@
         tier,
         tierName: tierInfo.name,
         promotionStatus,
-        newTier
+        newTier,
+        memories
       };
       this.state.lastSummary = summary;
       this.state.phase = "SEASON_END";
@@ -12444,8 +13441,8 @@
     },
     portal_prep: {
       stepNum: "S1 R1 \u6838\u5FC3 2/3 \xB7 \u8D5B\u524D\u6574\u5907",
-      title: "\u5929\u6C14\u5E94\u5BF9\u3001\u7406\u7597\u6D88\u7D27\u7EF7\u4E0E\u8C08\u8BDD",
-      body: "\u6BCF\u8F6E\u6709 1 \u6B21\u6574\u5907\u884C\u52A8\uFF1A\u7406\u7597\u53EF\u6D88\u9664\u808C\u8089\u7D27\u7EF7\u9632\u4F24\u75C5\uFF0C1\u5BF91\u8C08\u8BDD\u80FD\u62C9\u5347\u5173\u952E\u7403\u5458\u58EB\u6C14\u4E0E\u4E0B\u573A\u5C5E\u6027\u3002",
+      title: "\u5929\u6C14\u5E94\u5BF9\u3001\u7406\u7597\u6D88\u75B2\u60EB\u4E0E\u8C08\u8BDD",
+      body: "\u6BCF\u8F6E\u6709 1 \u6B21\u6574\u5907\u884C\u52A8\uFF1A\u7406\u7597\u53EF\u6D88\u9664\u75B2\u60EB\u72B6\u6001\u9632\u4F24\u75C5\uFF0C1\u5BF91\u8C08\u8BDD\u80FD\u62C9\u5347\u5173\u952E\u7403\u5458\u58EB\u6C14\u4E0E\u4E0B\u573A\u5C5E\u6027\u3002",
       x: 108,
       y: 356,
       w: 450,
@@ -12463,7 +13460,7 @@
     tactics: {
       stepNum: "S1 R1 \u6838\u5FC3 1/3 \xB7 \u6218\u672F\u4E0E\u8896\u6807",
       title: "\u76F4\u89C2\u6362\u4EBA\u3001\u72B6\u6001\u6807\u8BB0\u4E0E\u8896\u6807\u5149\u73AF",
-      body: "\u70B9\u51FB\u573A\u4E0A\u7403\u5458\u6216\u53F3\u4FA7\u201C\u6362\u4E0A\u201D\u53EF\u53CC\u5411\u6362\u4EBA\uFF0C\u7559\u610F[\u7D27\u7EF7/\u6545\u4E8B]\u6807\u8BB0\uFF1B\u70B9\u201C\u8BBEC\u201D\u4EFB\u547D\u961F\u957F\uFF0C\u672C\u4EBA+4\u5168\u961F+2\u51B7\u9759\u3002",
+      body: "\u70B9\u51FB\u573A\u4E0A\u7403\u5458\u6216\u53F3\u4FA7\u201C\u6362\u4E0A\u201D\u53EF\u53CC\u5411\u6362\u4EBA\uFF0C\u7559\u610F[\u75B2\u60EB/\u6545\u4E8B]\u6807\u8BB0\uFF1B\u70B9\u201C\u8BBEC\u201D\u4EFB\u547D\u961F\u957F\uFF0C\u672C\u4EBA+4\u5168\u961F+2\u51B7\u9759\u3002",
       x: 396,
       y: 136,
       w: 440,
@@ -14184,14 +15181,15 @@
           align: "center"
         });
       } else {
-        [...hof.records].reverse().slice(0, 6).forEach((rec, i) => {
-          const ry = 334 + i * 58;
+        [...hof.records].reverse().slice(0, 5).forEach((rec, i) => {
+          const hasMem = !!rec.topMemory;
+          const ry = 334 + i * 70;
           drawRoundRect(
             ctx2,
             lx + 20,
             ry,
             lw - 40,
-            50,
+            hasMem ? 62 : 50,
             7,
             THEME.BG_CARD,
             rec.isChampion ? THEME.GOLD : THEME.BORDER
@@ -14199,24 +15197,32 @@
           drawBadge(
             ctx2,
             lx + 32,
-            ry + 15,
+            ry + 12,
             42,
             20,
             `S${rec.seasonNumber}`,
             rec.isChampion ? THEME.GOLD : "#1E293B",
             rec.isChampion ? "#080C14" : THEME.TX1
           );
-          if (rec.isChampion) drawIcon(ctx2, "trophy", lx + 86, ry + 18, 13, THEME.GOLD_LIGHT);
-          drawText(ctx2, rec.clubName, rec.isChampion ? lx + 100 : lx + 86, ry + 18, {
+          if (rec.isChampion) drawIcon(ctx2, "trophy", lx + 86, ry + 16, 13, THEME.GOLD_LIGHT);
+          drawText(ctx2, rec.clubName, rec.isChampion ? lx + 100 : lx + 86, ry + 16, {
             size: 13,
             bold: true,
             color: rec.isChampion ? THEME.GOLD_LIGHT : THEME.TX1
           });
-          drawText(ctx2, `${rec.storylineTitle || "\u5E38\u89C4\u8D5B\u5B63"} \xB7 ${rec.points}\u5206 \xB7 ${rec.gf}/${rec.ga}`, lx + 86, ry + 36, {
+          drawText(ctx2, `${rec.storylineTitle || "\u5E38\u89C4\u8D5B\u5B63"} \xB7 ${rec.points}\u5206 \xB7 ${rec.gf}/${rec.ga}`, lx + 86, ry + 34, {
             size: 11,
             color: THEME.TX2
           });
-          drawText(ctx2, `\u7B2C ${rec.finalRank} \u540D`, lx + lw - 34, ry + 25, {
+          if (rec.topMemory) {
+            const mem = rec.topMemory;
+            const oppExtra = mem.oppPlayerName ? ` \xB7 \u654C\u65B9:${mem.oppPlayerName}` : "";
+            drawText(ctx2, `\u2605 ${mem.badge} \xB7 ${mem.title} (${mem.scoreText}${oppExtra})`, lx + 32, ry + 51, {
+              size: 10,
+              color: mem.isPainful ? "#FCA5A5" : THEME.GOLD_LIGHT
+            });
+          }
+          drawText(ctx2, `\u7B2C ${rec.finalRank} \u540D`, lx + lw - 34, ry + 22, {
             size: 13,
             bold: true,
             color: rec.isChampion ? THEME.GOLD_LIGHT : THEME.TX1,
@@ -14458,8 +15464,21 @@
       this.playerCaMap = /* @__PURE__ */ new Map();
       this.elapsedSec = 0;
       this.goalScorePopTimer = 0;
+      this.memoryHighlightTimer = 0;
       this.kickoffIntroTimer = 0;
       this.kickoffDuration = 2.2;
+    }
+    dispose() {
+      this.engine = null;
+      this.renderPlayers.clear();
+      this.tacticGhostTargets.clear();
+      this.storyTags.clear();
+      this.playerCaMap.clear();
+      this.ballTrail = [];
+      this.playerPulses = [];
+      this.playerFloatTags = [];
+      this.pitchRipples = [];
+      this.usedCardIds.clear();
     }
     getLineOfRole(role) {
       if (role === "GK") return "GK";
@@ -14624,6 +15643,9 @@
       if (this.goalScorePopTimer > 0) {
         this.goalScorePopTimer = Math.max(0, this.goalScorePopTimer - dtSec);
       }
+      if (this.memoryHighlightTimer > 0) {
+        this.memoryHighlightTimer = Math.max(0, this.memoryHighlightTimer - dtSec);
+      }
       SoundEngine.setMatchTension(
         st.minute >= 75 && Math.abs(st.homeScore - st.awayScore) <= 1 && st.phase !== "full_time"
       );
@@ -14709,6 +15731,9 @@
             };
             this.goalFlashTimer = 1.4;
             this.goalScorePopTimer = 0.65;
+            if (ev.narrativeTag === "LATE_WINNER" || ev.narrativeTag === "HATTRICK" || ev.minute >= 85 && Math.abs(st.homeScore - st.awayScore) <= 1) {
+              this.memoryHighlightTimer = 2.8;
+            }
             this.goalFlashSide = ev.pos.x > PITCH.HALF_X ? "right" : "left";
             this.pitchRipples.push({ x: ev.pos.x, y: ev.pos.y, color: "#FACC15", timer: 0.9, maxTimer: 0.9, maxR: 38 });
             if (ev.minute >= 80 && Math.abs(st.homeScore - st.awayScore) <= 1 && !this.isPaused && this.speed >= 4) {
@@ -14893,22 +15918,11 @@
         });
       }
       drawRoundRect(ctx2, PITCH_RECT.x - 8, PITCH_RECT.y - 8, PITCH_RECT.w + 16, PITCH_RECT.h + 16, 12, "#0B1810", THEME.BORDER);
-      const stageImg = AssetLoader.get("pitch_stage_bg");
-      if (stageImg && typeof ctx2.drawImage === "function") {
-        ctx2.save();
-        ctx2.beginPath();
-        ctx2.rect(PITCH_RECT.x - 6, PITCH_RECT.y - 6, PITCH_RECT.w + 12, PITCH_RECT.h + 12);
-        ctx2.clip();
-        ctx2.drawImage(stageImg, PITCH_RECT.x - 24, PITCH_RECT.y - 16, PITCH_RECT.w + 48, PITCH_RECT.h + 32);
-        ctx2.restore();
-      }
       const sw = PITCH_RECT.w / 10;
       for (let i = 0; i < 10; i++) {
         ctx2.fillStyle = i % 2 === 0 ? THEME.BG_PITCH : THEME.BG_PITCH_ALT;
-        ctx2.globalAlpha = stageImg ? 0.24 : 1;
         ctx2.fillRect(PITCH_RECT.x + i * sw, PITCH_RECT.y, sw, PITCH_RECT.h);
       }
-      ctx2.globalAlpha = 1;
       ctx2.strokeStyle = "rgba(255,255,255,0.42)";
       ctx2.lineWidth = 1.5;
       ctx2.strokeRect(PITCH_RECT.x, PITCH_RECT.y, PITCH_RECT.w, PITCH_RECT.h);
@@ -15271,6 +16285,9 @@
           color: THEME.GOLD_LIGHT,
           align: "center"
         });
+        if (this.memoryHighlightTimer > 0) {
+          drawBadge(ctx2, 560, 152, 160, 22, "\u2605 \u8F7D\u5165\u8D5B\u5B63\u8BB0\u5FC6", "#78350F", "#FEF08A");
+        }
       } else if (this.cardBanner) {
         drawRoundRect(ctx2, 390, 102, 500, 38, 10, "rgba(14,22,40,0.92)", this.cardBanner.color, 1.8);
         drawText(ctx2, this.cardBanner.text, 640, 121, {
@@ -16774,7 +17791,7 @@
       );
       drawWrappedText(
         ctx2,
-        strainList.length > 0 ? `\u961F\u533B\u63D0\u9192\uFF1A${strainList.slice(0, 2).map((p) => `${p.name}(${(p.injuredRounds ?? 0) > 0 ? "\u4F24\u505C" : (p.suspendedRounds ?? 0) > 0 ? "\u505C\u8D5B" : "\u7D27\u7EF7"})`).join("\u3001")} \xB7 \u5EFA\u8BAE\u8F6E\u6362` : "\u5168\u961F\u5065\u5EB7\u5EA6\u826F\u597D\uFF0C\u65E0\u4F24\u505C\u6216\u808C\u8089\u7D27\u7EF7\u9884\u8B66",
+        strainList.length > 0 ? `\u961F\u533B\u63D0\u9192\uFF1A${strainList.slice(0, 2).map((p) => `${p.name}(${(p.injuredRounds ?? 0) > 0 ? "\u4F24\u505C" : (p.suspendedRounds ?? 0) > 0 ? "\u505C\u8D5B" : "\u75B2\u60EB"})`).join("\u3001")} \xB7 \u5EFA\u8BAE\u8F6E\u6362` : "\u5168\u961F\u5065\u5EB7\u5EA6\u826F\u597D\uFF0C\u65E0\u4F24\u505C\u6216\u4F53\u80FD\u75B2\u60EB\u9884\u8B66",
         996,
         210,
         240,
@@ -17093,6 +18110,12 @@
       this.catEnterTimer = 0;
       this.packAnim = null;
       this.resetCardRevealAnim();
+    }
+    dispose() {
+      this.lastMatch = null;
+      this.packAnim = null;
+      this.selectedCandidateId = null;
+      this.selectedDropId = null;
     }
     resetCardRevealAnim() {
       this.dealTimer = 0;
@@ -17597,6 +18620,27 @@
           desc: "\u89E6\u53D1\u5168\u961F\u4F53\u80FD\u56DE\u6EE1\u3001\u5408\u7EC3\u9ED8\u5951\u66B4\u6DA8\u6216\u7403\u63A2\u5BC6\u62A5\u89C9\u9192\u9690\u85CF\u7279\u8D28",
           color: "#FB923C",
           elemKey: "elem_press"
+        },
+        trait_forge: {
+          title: "\u4E34\u65F6\u5FBD\u7AE0 \xB7 \u4E34\u573A\u89C9\u9192",
+          badge: "\u6301\u7EED3~5\u8F6E / \u591A\u4F4D\u7F6E",
+          desc: "\u8D50\u4E88\u6301\u7EED 5 \u8F6E\u7684\u5F15\u64CE\u94F6\u6807\u3001\u6301\u7EED 3 \u8F6E\u7684\u4E34\u65F6\u91D1\u6807+\u8D85\u9891\uFF0C\u6216\u89E3\u9501\u7B2C\u4E8C\u4F4D\u7F6E",
+          color: "#F472B6",
+          elemKey: "elem_blitz"
+        },
+        tactical_pact: {
+          title: "\u66F4\u8863\u5BA4\u5951\u7EA6 \xB7 \u53CC\u5203\u5251",
+          badge: "\u9AD8\u98CE\u9669\u9AD8\u56DE\u62A5\u8D4C\u7EA6",
+          desc: "\u7B7E\u7F72\u4EE5\u4F53\u529B/\u5C40\u90E8\u5C5E\u6027\u6362\u53D6\u6218\u529B\u66B4\u6DA8\u6216\u9ED1\u5E02 Meta/\u5907\u6218\u70B9\u70BC\u91D1\u7684\u7279\u6B8A\u5951\u7EA6",
+          color: "#F87171",
+          elemKey: "elem_press"
+        },
+        chemistry_forge: {
+          title: "\u5316\u5B66\u8FDE\u7EBF \xB7 \u5B97\u5E08\u8715\u53D8",
+          badge: "\u9EC4\u91D1\u8FDE\u7EBF / \u5361\u724C\u8D85\u9891",
+          desc: "\u76F4\u63A5\u94F8\u9020\u9996\u53D1\u9EC4\u91D1\u8FDE\u7EBF\u3001\u9635\u578B\u5B97\u5E08\u704C\u9876(+Meta)\u6216\u4E3A\u9AD8\u8D39\u6307\u6325\u5361\u964D\u8D39\u8D85\u9891",
+          color: "#2DD4BF",
+          elemKey: "elem_pass"
         }
       };
       const cardBackArt = AssetLoader.get("command_card_back");
@@ -17727,7 +18771,8 @@
       }
       if (rw.pendingStatOptionId && !rw.completed) {
         const opt = rw.options.find((o) => o.id === rw.pendingStatOptionId);
-        drawText(ctx2, `\u5DF2\u9009\u3010${opt?.title || "\u5355\u4F53\u7279\u8BAD\u5361"}\u3011\u2014 \u8BF7\u70B9\u51FB 1 \u540D\u7403\u5458\u7ACB\u5373\u5B8C\u6210\u7279\u8BAD\uFF1A`, 640, 108, {
+        const isTraitForge = opt?.category === "trait_forge";
+        drawText(ctx2, `\u5DF2\u9009\u3010${opt?.title || "\u4E13\u9879\u5F3A\u5316"}\u3011\u2014 \u8BF7\u70B9\u51FB 1 \u540D\u7403\u5458\u7ACB\u5373\u751F\u6548\uFF1A`, 640, 108, {
           size: 16,
           bold: true,
           color: THEME.GOLD_LIGHT,
@@ -17744,15 +18789,20 @@
           drawBadge(ctx2, px + 10, py + 8, 38, 20, p.role, tierColor(p.tier));
           drawText(ctx2, p.name, px + 58, py + 18, { size: 13, bold: true });
           drawText(ctx2, `${p.age}\u5C81 \xB7 CA ${p.ca}`, px + 168, py + 18, { size: 12, color: THEME.GOLD_LIGHT, mono: true });
-          const attrKey = opt?.statBoost?.attr ?? "shooting";
-          drawText(ctx2, `${opt?.statBoost?.attrLabel || "\u5C5E\u6027"}: ${p.attributes[attrKey]}`, px + 360, py + 18, {
-            size: 12,
-            color: "#38BDF8"
-          });
-          drawButton(ctx2, hits, px + 480, py + 5, 90, 26, "\u7279\u8BAD\u6B64\u4EBA", () => {
+          if (isTraitForge) {
+            const infoTxt = opt?.traitForge?.kind === "unlock_role" ? `\u517C:${p.secondaryRoles?.join("/") || "\u65E0"}` : `\u91D1:${p.goldTraits?.length ?? 0} \u94F6:${p.silverTraits?.slice(0, 2).join("/") || "\u65E0"}`;
+            drawText(ctx2, infoTxt, px + 266, py + 18, { size: 11.5, color: "#F472B6" });
+          } else {
+            const attrKey = opt?.statBoost?.attr ?? "shooting";
+            drawText(ctx2, `${opt?.statBoost?.attrLabel || "\u5C5E\u6027"}: ${p.attributes[attrKey]}`, px + 360, py + 18, {
+              size: 12,
+              color: "#38BDF8"
+            });
+          }
+          drawButton(ctx2, hits, px + 480, py + 5, 90, 26, isTraitForge ? "\u79FB\u690D\u6539\u9020" : "\u7279\u8BAD\u6B64\u4EBA", () => {
             league.applyPostMatchRewardOption(rw.pendingStatOptionId, p.id);
             SoundEngine.playRewardChime();
-            this.fx.onBurst?.(px + 290, py + 18, THEME.GOLD_LIGHT);
+            this.fx.onBurst?.(px + 290, py + 18, isTraitForge ? "#F472B6" : THEME.GOLD_LIGHT);
             onSave();
           }, { variant: "gold", fontSize: 11 });
         });
@@ -17898,7 +18948,8 @@
         }
         ctx2.restore();
         if (fp >= 0.8) {
-          drawButton(ctx2, hits, cx + 24, cy + ch - 62, cw - 48, 42, opt.category === "stat_boost" ? "\u9009\u62E9\u5E76\u6307\u5B9A\u7403\u5458 \u25B6" : "\u786E\u8BA4\u9886\u53D6 \u25B6", () => {
+          const needsPlayerTarget = opt.category === "stat_boost" || opt.category === "trait_forge";
+          drawButton(ctx2, hits, cx + 24, cy + ch - 62, cw - 48, 42, needsPlayerTarget ? "\u9009\u62E9\u5E76\u6307\u5B9A\u7403\u5458 \u25B6" : "\u786E\u8BA4\u9886\u53D6 \u25B6", () => {
             const res = league.applyPostMatchRewardOption(opt.id);
             if (!res.needsTarget) {
               SoundEngine.playRewardChime();
@@ -18160,6 +19211,7 @@
       this.ceremonyBurstDone = false;
       this.selectedRewardId = null;
       this.trainFocus = "auto";
+      this.memoryIdx = 0;
       this.notice = "\u70B9\u9009\u5DE6\u4FA7\u8D5B\u5B63\u5F15\u63F4\u65B0\u79C0\uFF0C\u518D\u70B9\u53F3\u4FA7\u4EFB\u610F\u8001\u5C06\u5373\u53EF\u4E00\u5BF9\u4E00\u4EA4\u6362\u5E76\u4FDD\u7559\u81F3\u4E0B\u8D5B\u5B63";
     }
     resetIntro() {
@@ -18167,6 +19219,7 @@
       this.enterTimer = 0;
       this.ceremonyBurstDone = false;
       this.selectedRewardId = null;
+      this.memoryIdx = 0;
     }
     update(dtSec) {
       this.animClock += dtSec;
@@ -18299,9 +19352,9 @@
         drawText(ctx2, aw.value, 490, ay + 39, { size: 18, bold: true, color: aw.color, align: "right", mono: true });
         ctx2.restore();
       });
-      drawChamferPanel(ctx2, 544, 118, 672, 162, 12, THEME.BG_CARD, THEME.BORDER_GOLD, 1.2);
-      drawText(ctx2, "Meta \u6559\u7EC3\u70B9\u6570\u7ED3\u7B97\u660E\u7EC6", 564, 142, { size: 14, bold: true, color: THEME.GOLD_LIGHT });
-      drawText(ctx2, `\u5F53\u524D\u603B\u8BA1\uFF1A${st.metaPointsTotal} pt`, 1196, 142, { size: 15, bold: true, color: THEME.GREEN, align: "right", mono: true });
+      drawChamferPanel(ctx2, 544, 118, 672, 128, 12, THEME.BG_CARD, THEME.BORDER_GOLD, 1.2);
+      drawText(ctx2, "Meta \u6559\u7EC3\u70B9\u6570\u7ED3\u7B97\u660E\u7EC6", 564, 138, { size: 13.5, bold: true, color: THEME.GOLD_LIGHT });
+      drawText(ctx2, `\u5F53\u524D\u603B\u8BA1\uFF1A${st.metaPointsTotal} pt`, 1196, 138, { size: 14, bold: true, color: THEME.GREEN, align: "right", mono: true });
       const bd = summary?.metaBreakdown;
       const items = [
         ["\u6392\u540D\u57FA\u7840\u5956\u52B1", `+${bd?.rankBase ?? summary?.metaPointsEarned ?? 0} pt`, THEME.TX1],
@@ -18311,34 +19364,95 @@
       ];
       items.forEach(([lbl, val, col], idx) => {
         const ix = 564 + idx * 160;
-        drawRoundRect(ctx2, ix, 168, 148, 92, 8, "rgba(14, 22, 40, 0.85)", idx === 3 ? THEME.GOLD_LIGHT : THEME.BORDER);
-        drawText(ctx2, lbl, ix + 74, 194, { size: 11, color: THEME.TX2, align: "center" });
-        drawText(ctx2, val, ix + 74, 232, { size: 18, bold: true, color: col, align: "center", mono: true });
+        drawRoundRect(ctx2, ix, 158, 148, 74, 8, "rgba(14, 22, 40, 0.85)", idx === 3 ? THEME.GOLD_LIGHT : THEME.BORDER);
+        drawText(ctx2, lbl, ix + 74, 180, { size: 10.5, color: THEME.TX2, align: "center" });
+        drawText(ctx2, val, ix + 74, 210, { size: 17, bold: true, color: col, align: "center", mono: true });
       });
-      drawChamferPanel(ctx2, 544, 294, 672, 310, 12, THEME.BG_CARD, THEME.BORDER_GOLD, 1.4, THEME.GOLD_LIGHT);
-      drawText(ctx2, "\u8D5B\u5B63\u7ED3\u7B97\u4E13\u5C5E\u5B9D\u7BB1 \xB7 \u8BF7\u4EFB\u9009 1 \u9879\u5E26\u5165\u4E0B\u8D5B\u5B63", 564, 320, { size: 15, bold: true, color: THEME.GOLD_LIGHT });
+      const memories = summary?.memories ?? [];
+      if (memories.length > 0) {
+        this.memoryIdx = (this.memoryIdx % memories.length + memories.length) % memories.length;
+      } else {
+        this.memoryIdx = 0;
+      }
+      const topMem = memories[this.memoryIdx];
+      const memAccent = topMem?.isPainful ? "#FCA5A5" : THEME.GOLD_LIGHT;
+      drawChamferPanel(ctx2, 544, 254, 672, 118, 12, THEME.BG_CARD, topMem ? memAccent : THEME.BORDER, 1.3, memAccent);
+      drawText(ctx2, "\u8D5B\u5B63\u8BB0\u5FC6\u660E\u4FE1\u7247 \xB7 SEASON MEMORY", 564, 274, { size: 13.5, bold: true, color: memAccent });
+      if (topMem) {
+        drawBadge(ctx2, 832, 263, 76, 20, topMem.badge, topMem.isPainful ? "#7F1D1D" : "#78350F", memAccent);
+        if (topMem.contextTag) {
+          drawBadge(ctx2, 914, 263, 78, 20, topMem.contextTag, "#1E293B", "#38BDF8");
+        }
+        if (memories.length > 1) {
+          drawButton(ctx2, hits, 1086, 262, 28, 22, "\u25C0", () => {
+            this.memoryIdx = (this.memoryIdx - 1 + memories.length) % memories.length;
+          }, { variant: "ghost", fontSize: 10 });
+          drawText(ctx2, `${this.memoryIdx + 1}/${memories.length}`, 1138, 273, {
+            size: 11,
+            bold: true,
+            color: THEME.TX2,
+            align: "center",
+            mono: true
+          });
+          drawButton(ctx2, hits, 1162, 262, 28, 22, "\u25B6", () => {
+            this.memoryIdx = (this.memoryIdx + 1) % memories.length;
+          }, { variant: "ghost", fontSize: 10 });
+        } else {
+          drawText(
+            ctx2,
+            topMem.isPainful ? "\u300C\u518D\u6765\u4E00\u5C40\u300D\u590D\u4EC7\u94A9\u5B50\uFF1A\u4E0B\u8D5B\u5B63\u627E\u56DE\u573A\u5B50\uFF01" : "\u9AD8\u5149\u65F6\u523B\u5DF2\u5C01\u5B58\u8363\u8A89\u5BA4",
+            1196,
+            274,
+            { size: 11, bold: true, color: topMem.isPainful ? "#FCA5A5" : THEME.GREEN, align: "right" }
+          );
+        }
+        drawText(ctx2, topMem.title, 564, 300, { size: 14.5, bold: true, color: THEME.TX1 });
+        drawWrappedText(ctx2, topMem.summary, 564, 320, 632, 16, { size: 11, color: THEME.TX2, maxLines: 2 });
+        const metaChips = [];
+        if (topMem.userFormation && topMem.oppFormation) {
+          metaChips.push(`${topMem.userFormation} vs ${topMem.oppFormation}${topMem.oppStyle ? `(${topMem.oppStyle})` : ""}`);
+        }
+        if (topMem.xgText) metaChips.push(topMem.xgText);
+        if (topMem.possessionText) metaChips.push(topMem.possessionText);
+        if (topMem.oppPlayerName) metaChips.push(`\u654C\u65B9\u7126\u70B9:${topMem.oppPlayerName}`);
+        if (topMem.assistPlayerName) metaChips.push(`\u52A9\u653B:${topMem.assistPlayerName}`);
+        if (metaChips.length > 0) {
+          drawText(ctx2, metaChips.slice(0, 4).join("  \xB7  "), 564, 358, {
+            size: 10,
+            color: "#7DD3FC"
+          });
+        }
+      } else {
+        drawText(ctx2, "\u672C\u8D5B\u5B63\u6CE2\u6F9C\u4E0D\u60CA \xB7 \u671F\u5F85\u4E0B\u8D5B\u5B63\u4E66\u5199\u7EDD\u6740\u4E0E\u9006\u8F6C\u540D\u573A\u9762", 880, 318, {
+          size: 12.5,
+          color: THEME.TX3,
+          align: "center"
+        });
+      }
+      drawChamferPanel(ctx2, 544, 380, 672, 224, 12, THEME.BG_CARD, THEME.BORDER_GOLD, 1.4, THEME.GOLD_LIGHT);
+      drawText(ctx2, "\u8D5B\u5B63\u7ED3\u7B97\u4E13\u5C5E\u5B9D\u7BB1 \xB7 \u8BF7\u4EFB\u9009 1 \u9879\u5E26\u5165\u4E0B\u8D5B\u5B63", 564, 402, { size: 14, bold: true, color: THEME.GOLD_LIGHT });
       const bonusOpts = summary?.seasonBonusOptions ?? [];
       const claimedId = summary?.seasonBonusClaimedId;
       if (claimedId) {
-        drawRoundRect(ctx2, 564, 356, 632, 224, 10, "rgba(20, 83, 45, 0.25)", THEME.GREEN, 1.8);
-        drawFoilShimmer(ctx2, 564, 356, 632, 224, this.animClock * 1.1, "rgba(74, 222, 128, 0.22)");
-        drawBadge(ctx2, 800, 388, 160, 28, "\u8D5B\u5B63\u5B9D\u7BB1\u5DF2\u5F00\u542F \u2713", "#14532D", THEME.GREEN);
-        drawText(ctx2, summary?.seasonBonusSummary || "\u8D5B\u5B63\u5956\u52B1\u5DF2\u53D1\u653E\uFF01", 880, 454, {
-          size: 18,
+        drawRoundRect(ctx2, 564, 422, 632, 166, 10, "rgba(20, 83, 45, 0.25)", THEME.GREEN, 1.8);
+        drawFoilShimmer(ctx2, 564, 422, 632, 166, this.animClock * 1.1, "rgba(74, 222, 128, 0.22)");
+        drawBadge(ctx2, 800, 442, 160, 26, "\u8D5B\u5B63\u5B9D\u7BB1\u5DF2\u5F00\u542F \u2713", "#14532D", THEME.GREEN);
+        drawText(ctx2, summary?.seasonBonusSummary || "\u8D5B\u5B63\u5956\u52B1\u5DF2\u53D1\u653E\uFF01", 880, 496, {
+          size: 16,
           bold: true,
           color: THEME.GOLD_LIGHT,
           align: "center"
         });
-        drawButton(ctx2, hits, 720, 504, 320, 46, "\u4E0B\u4E00\u6B65\uFF1A\u4F11\u8D5B\u671F\u5F15\u63F4\u4E0E\u7279\u8BAD \u25B6", () => {
+        drawButton(ctx2, hits, 720, 534, 320, 40, "\u4E0B\u4E00\u6B65\uFF1A\u4F11\u8D5B\u671F\u5F15\u63F4\u4E0E\u7279\u8BAD \u25B6", () => {
           this.viewMode = "roster_prep";
-        }, { variant: "gold", fontSize: 14 });
+        }, { variant: "gold", fontSize: 13 });
       } else if (bonusOpts.length > 0) {
         const colors = ["#C084FC", "#38BDF8", THEME.GOLD_LIGHT];
         bonusOpts.forEach((opt, oi) => {
           const bx = 564 + oi * 214;
-          const by = 348;
+          const by = 418;
           const bw = 202;
-          const bh = 236;
+          const bh = 176;
           const col = colors[oi % colors.length];
           const hovered = hits.isHovered(bx, by, bw, bh);
           drawChamferPanel(
@@ -18354,9 +19468,9 @@
             col
           );
           drawFoilShimmer(ctx2, bx, by, bw, bh, this.animClock + oi * 0.5, col + "33");
-          drawBadge(ctx2, bx + 14, by + 16, 118, 22, opt.badge, "#1E293B", col);
-          drawText(ctx2, opt.title, bx + 14, by + 64, { size: 14, bold: true, color: THEME.TX1 });
-          drawWrappedText(ctx2, opt.subtitle, bx + 14, by + 94, bw - 28, 19, { size: 11.5, color: THEME.TX2, maxLines: 4 });
+          drawBadge(ctx2, bx + 12, by + 12, 114, 20, opt.badge, "#1E293B", col);
+          drawText(ctx2, opt.title, bx + 12, by + 50, { size: 13, bold: true, color: THEME.TX1 });
+          drawWrappedText(ctx2, opt.subtitle, bx + 12, by + 74, bw - 24, 16, { size: 10.5, color: THEME.TX2, maxLines: 3 });
           const claim = () => {
             const res = league.pickSeasonBonusReward(opt.id);
             if (res.ok) {
@@ -18366,11 +19480,11 @@
               actions.onSave?.();
             }
           };
-          drawButton(ctx2, hits, bx + 14, by + bh - 50, bw - 28, 36, "\u5F00\u542F\u5B9D\u7BB1 \u2728", claim, { variant: "gold", fontSize: 12 });
+          drawButton(ctx2, hits, bx + 12, by + bh - 40, bw - 24, 30, "\u5F00\u542F\u5B9D\u7BB1 \u2728", claim, { variant: "gold", fontSize: 11.5 });
           hits.add(bx, by, bw, bh, claim);
         });
       } else {
-        drawText(ctx2, "\u70B9\u51FB\u53F3\u4E0B\u89D2\u8FDB\u5165\u4F11\u8D5B\u671F\u5F15\u63F4\u4E0E\u7279\u8BAD", 880, 460, { size: 14, color: THEME.TX2, align: "center" });
+        drawText(ctx2, "\u70B9\u51FB\u53F3\u4E0B\u89D2\u8FDB\u5165\u4F11\u8D5B\u671F\u5F15\u63F4\u4E0E\u7279\u8BAD", 880, 504, { size: 14, color: THEME.TX2, align: "center" });
       }
       drawButton(ctx2, hits, 64, 620, 200, 48, "\u8FD4\u56DE\u5EFA\u961F\u4E3B\u9875", actions.onGoTitle, {
         variant: "ghost",
@@ -19059,7 +20173,7 @@
           drawBadge(ctx2, 988, ry + 4, 52, 17, storyTag, "#312E81", "#C4B5FD");
         }
         if (p.strainWarning && !isBlocked) {
-          drawBadge(ctx2, 1044, ry + 4, 32, 17, "\u7D27\u7EF7", "#78350F", "#FBBF24");
+          drawBadge(ctx2, 1044, ry + 4, 32, 17, "\u75B2\u60EB", "#78350F", "#FBBF24");
         } else if (p.morale === "high") {
           drawBadge(ctx2, 1044, ry + 4, 32, 17, "\u9AD8\u6602", "#14532D", "#4ADE80");
         } else if (p.morale === "low") {
@@ -19990,8 +21104,10 @@
           SoundEngine.setScene("menu");
           this.league.completeCurrentRoundWithUserResult(result);
           this.postMatchScreen.setLastMatch(result);
+          this.matchScreen.dispose();
           this.save();
           if (this.league.getState().phase === "SEASON_END") {
+            this.postMatchScreen.dispose();
             this.setRoute("season_end", "SEASON FINALE");
           } else {
             this.setRoute("post_match", "FULL TIME \xB7 \u8D5B\u540E\u590D\u76D8");
@@ -20004,6 +21120,7 @@
           this.hits,
           this.league,
           () => {
+            this.postMatchScreen.dispose();
             this.syncRouteFromPhase();
           },
           () => this.save(),
@@ -20241,7 +21358,6 @@
     function loop(now) {
       const dtSec = Math.min(0.05, (now - lastTs) / 1e3);
       lastTs = now;
-      applyHiDPI();
       app.update(dtSec);
       app.render(ctx);
       requestAnimationFrame(loop);

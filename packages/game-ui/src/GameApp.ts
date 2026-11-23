@@ -479,8 +479,10 @@ export class GameApp {
         SoundEngine.setScene('menu');
         this.league.completeCurrentRoundWithUserResult(result);
         this.postMatchScreen.setLastMatch(result);
+        this.matchScreen.dispose();
         this.save();
         if (this.league.getState().phase === 'SEASON_END') {
+          this.postMatchScreen.dispose();
           this.setRoute('season_end', 'SEASON FINALE');
         } else {
           this.setRoute('post_match', 'FULL TIME · 赛后复盘');
@@ -493,6 +495,7 @@ export class GameApp {
         this.hits,
         this.league,
         () => {
+          this.postMatchScreen.dispose();
           this.syncRouteFromPhase();
         },
         () => this.save(),

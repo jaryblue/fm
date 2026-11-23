@@ -23,6 +23,7 @@ import {
   generateTierPyramid,
   rollSeasonStoryline,
   rollSecondaryRoles,
+  SECONDARY_ROLE_POOL,
 } from './PlayerPool';
 import {
   createDefaultMetaLevels,
@@ -102,6 +103,7 @@ import {
   PostMatchRewardState,
   PrepTrainingKind,
   SeasonBonusOption,
+  SeasonMemory,
   SeasonSummary,
   StandingRow,
   TacticalPresetSlot,
@@ -218,6 +220,7 @@ export class LeagueManager {
     ensureChronicles(this.state);
     if (this.state.stayedTierCount === undefined) this.state.stayedTierCount = 0;
     if (this.state.winlessStreak === undefined) this.state.winlessStreak = 0;
+    if (!this.state.seasonMemories) this.state.seasonMemories = [];
     if (this.state.phase === 'REGULAR_SEASON' && !this.state.interMatchPrep) {
       this.state.interMatchPrep = createInterMatchPrep(this.state, this.getUserClub());
     }
@@ -693,6 +696,7 @@ export class LeagueManager {
       discoveredRecipes: [],
       hallOfFame,
       tutorialDone,
+      seasonMemories: [],
       lastSummary: null,
       currentTier,
       leaguePyramid: pyramid,
@@ -1651,25 +1655,33 @@ export class LeagueManager {
           attrs.goalkeeping = clampAttr(attrs.goalkeeping + perk.effect.goalkeepingBonus);
         }
       }
-      // 战术技能网已点亮节点永久加成（体系与阵型匹配时触发 ×2 共鸣）
+      // 战术技能网已点亮节点永久加成（单维被动上限 +12，防止 124 节点无限膨胀）
       if (club.isUser) {
         const webUnlocked = this.getSkillWebUnlocked();
+        const swDelta: Partial<Record<keyof PlayerAttributes, number>> = {};
         for (const nid of webUnlocked) {
           const node = SKILL_WEB_NODES.find(n => n.id === nid);
           if (!node) continue;
           if (node.targetRoles && !node.targetRoles.includes(p.role)) continue;
           const mul = isNodeResonating(node, club.formation, club.style) ? 2 : 1;
           const ef = node.effect;
-          if (ef.passing) attrs.passing = clampAttr(attrs.passing + ef.passing * mul);
-          if (ef.shooting) attrs.shooting = clampAttr(attrs.shooting + ef.shooting * mul);
-          if (ef.dribbling) attrs.dribbling = clampAttr(attrs.dribbling + ef.dribbling * mul);
-          if (ef.pace) attrs.pace = clampAttr(attrs.pace + ef.pace * mul);
-          if (ef.defending) attrs.defending = clampAttr(attrs.defending + ef.defending * mul);
-          if (ef.positioning) attrs.positioning = clampAttr(attrs.positioning + ef.positioning * mul);
-          if (ef.composure) attrs.composure = clampAttr(attrs.composure + ef.composure * mul);
-          if (ef.stamina) attrs.stamina = clampAttr(attrs.stamina + ef.stamina * mul);
-          if (ef.strength) attrs.strength = clampAttr(attrs.strength + ef.strength * mul);
-          if (ef.goalkeeping && p.role === 'GK') attrs.goalkeeping = clampAttr(attrs.goalkeeping + ef.goalkeeping * mul);
+          const addSw = (k: keyof PlayerAttributes, val?: number) => {
+            if (val) swDelta[k] = (swDelta[k] ?? 0) + val * mul;
+          };
+          addSw('passing', ef.passing);
+          addSw('shooting', ef.shooting);
+          addSw('dribbling', ef.dribbling);
+          addSw('pace', ef.pace);
+          addSw('defending', ef.defending);
+          addSw('positioning', ef.positioning);
+          addSw('composure', ef.composure);
+          addSw('stamina', ef.stamina);
+          addSw('strength', ef.strength);
+          if (p.role === 'GK') addSw('goalkeeping', ef.goalkeeping);
+        }
+        for (const k of Object.keys(swDelta) as Array<keyof PlayerAttributes>) {
+          const capped = Math.min(12, swDelta[k] ?? 0);
+          attrs[k] = clampAttr(attrs[k] + capped);
         }
       }
 
@@ -1722,15 +1734,52 @@ export class LeagueManager {
         }
       }
 
+      // L3 静态总加成软上限（+15 以内全额生效，超过部分按 0.5 折算，总增益封顶 +24）
+      if (club.isUser) {
+        for (const k of Object.keys(attrs) as Array<keyof PlayerAttributes>) {
+          const baseVal = p.attributes[k];
+          const delta = attrs[k] - baseVal;
+          if (delta > 15) {
+            const softDelta = Math.min(24, 15 + Math.round((delta - 15) * 0.5));
+            attrs[k] = clampAttr(baseVal + softDelta);
+          }
+        }
+      } else {
+        // L3 分级 AI 战术素养补正（第 7~6 级 +0，第 5~1 级逐级提升 +2 ~ +10）
+        const curTier = this.state.currentTier ?? 7;
+        const aiTierBonus = curTier <= 5 ? (6 - curTier) * 2 : 0;
+        if (aiTierBonus > 0) {
+          attrs.passing = clampAttr(attrs.passing + aiTierBonus);
+          attrs.shooting = clampAttr(attrs.shooting + aiTierBonus);
+          attrs.defending = clampAttr(attrs.defending + aiTierBonus);
+          attrs.positioning = clampAttr(attrs.positioning + aiTierBonus);
+          attrs.composure = clampAttr(attrs.composure + aiTierBonus);
+          if (p.role === 'GK') attrs.goalkeeping = clampAttr(attrs.goalkeeping + aiTierBonus);
+        }
+      }
+
+      const mergedTraits = p.traits ? [...p.traits] : [];
+      const mergedGold = p.goldTraits ? [...p.goldTraits] : [];
+      const mergedSilver = p.silverTraits ? [...p.silverTraits] : [];
+      for (const tt of p.tempTraits ?? []) {
+        if (tt.remainingMatches <= 0) continue;
+        if (!mergedTraits.includes(tt.trait)) mergedTraits.push(tt.trait);
+        if (tt.tier === 'gold') {
+          if (!mergedGold.includes(tt.trait)) mergedGold.push(tt.trait);
+        } else if (!mergedSilver.includes(tt.trait) && !mergedGold.includes(tt.trait)) {
+          mergedSilver.push(tt.trait);
+        }
+      }
+
       return {
         id: p.id,
         name: p.name,
         role: p.role,
         shirtNumber: p.shirtNumber,
         attributes: attrs,
-        traits: p.traits ? [...p.traits] : [],
-        goldTraits: p.goldTraits ? [...p.goldTraits] : [],
-        silverTraits: p.silverTraits ? [...p.silverTraits] : [],
+        traits: mergedTraits,
+        goldTraits: mergedGold,
+        silverTraits: mergedSilver,
         hiddenTrait: p.hiddenTrait,
         fitness: p.fitness,
         strainWarning: p.strainWarning,
@@ -1742,21 +1791,35 @@ export class LeagueManager {
     const starterSet = new Set(club.starterIds);
     const subs: PlayerInput[] = club.squad
       .filter(p => !starterSet.has(p.id) && (p.suspendedRounds ?? 0) <= 0 && (p.injuredRounds ?? 0) <= 0)
-      .map(p => ({
-        id: p.id,
-        name: p.name,
-        role: p.role,
-        shirtNumber: p.shirtNumber,
-        attributes: { ...p.attributes },
-        traits: p.traits ? [...p.traits] : [],
-        goldTraits: p.goldTraits ? [...p.goldTraits] : [],
-        silverTraits: p.silverTraits ? [...p.silverTraits] : [],
-        hiddenTrait: p.hiddenTrait,
-        fitness: p.fitness,
-        strainWarning: p.strainWarning,
-        isCaptain: p.id === this.getCaptainId(club),
-        formationFamiliarity: club.isUser ? this.getPlayerFamiliarity(p, club.formation) : undefined,
-      }));
+      .map(p => {
+        const sTraits = p.traits ? [...p.traits] : [];
+        const sGold = p.goldTraits ? [...p.goldTraits] : [];
+        const sSilver = p.silverTraits ? [...p.silverTraits] : [];
+        for (const tt of p.tempTraits ?? []) {
+          if (tt.remainingMatches <= 0) continue;
+          if (!sTraits.includes(tt.trait)) sTraits.push(tt.trait);
+          if (tt.tier === 'gold') {
+            if (!sGold.includes(tt.trait)) sGold.push(tt.trait);
+          } else if (!sSilver.includes(tt.trait) && !sGold.includes(tt.trait)) {
+            sSilver.push(tt.trait);
+          }
+        }
+        return {
+          id: p.id,
+          name: p.name,
+          role: p.role,
+          shirtNumber: p.shirtNumber,
+          attributes: { ...p.attributes },
+          traits: sTraits,
+          goldTraits: sGold,
+          silverTraits: sSilver,
+          hiddenTrait: p.hiddenTrait,
+          fitness: p.fitness,
+          strainWarning: p.strainWarning,
+          isCaptain: p.id === this.getCaptainId(club),
+          formationFamiliarity: club.isUser ? this.getPlayerFamiliarity(p, club.formation) : undefined,
+        };
+      });
 
     const tacticalMods = club.isUser
       ? computeSkillWebMods(this.getSkillWebUnlocked(), club.formation, club.style)
@@ -2053,10 +2116,20 @@ export class LeagueManager {
       );
     }
 
+    for (const p of userClubNow.squad) {
+      if (p.tempTraits && p.tempTraits.length > 0) {
+        p.tempTraits = p.tempTraits
+          .map(t => ({ ...t, remainingMatches: t.remainingMatches - 1 }))
+          .filter(t => t.remainingMatches > 0);
+      }
+    }
+
+    this.captureSeasonMemory(userFixture, userMatchResult, userClubNow);
+
     this.advanceAfterRound();
     if (this.state.phase !== 'SEASON_END') {
-      this.state.pendingPostMatchReward = this.createPostMatchRewardState(userWon);
       this.state.interMatchPrep = createInterMatchPrep(this.state, userClubNow);
+      this.state.pendingPostMatchReward = this.createPostMatchRewardState(userWon);
       if (this.state.phase === 'REGULAR_SEASON' && !this.state.pendingStoryEvent) {
         const chrEvent = evaluateChronicleTrigger(this.state, userClubNow, this.getStandings());
         if (chrEvent) this.state.pendingStoryEvent = chrEvent;
@@ -2068,16 +2141,38 @@ export class LeagueManager {
   }
 
   private createPostMatchRewardState(won: boolean): PostMatchRewardState {
-    const allCats: PostMatchRewardCategory[] = ['player', 'stat_boost', 'line_boost', 'craft_card', 'event'];
-    const pool = [...allCats];
-    for (let i = pool.length - 1; i > 0; i--) {
-      const j = Math.floor(Math.random() * (i + 1));
-      [pool[i], pool[j]] = [pool[j], pool[i]];
-    }
+    const allCats: PostMatchRewardCategory[] = [
+      'player',
+      'stat_boost',
+      'line_boost',
+      'craft_card',
+      'event',
+      'trait_forge',
+      'tactical_pact',
+      'chemistry_forge',
+    ];
+    const club = this.getUserClub();
+    const recent = new Set(this.state.recentRewardCategories ?? []);
+    const tiredCount = club.squad.filter(p => (p.fitness ?? 100) < 72).length;
+    const hasHighCostCard = this.getCoachDeck().some(c => c.cost >= 2);
+
+    // 上下文智能加权 + 防连续重复：优先抽取上一轮未出现过的门类
+    const scored = allCats.map(cat => {
+      let weight = recent.has(cat) ? 0.35 : 1.5;
+      if (!won && (cat === 'tactical_pact' || cat === 'trait_forge' || cat === 'player')) weight += 0.55;
+      if (tiredCount >= 3 && (cat === 'event' || cat === 'tactical_pact')) weight += 0.5;
+      if (hasHighCostCard && (cat === 'chemistry_forge' || cat === 'craft_card')) weight += 0.45;
+      if ((this.state.currentRound % 3 === 0) && cat === 'trait_forge') weight += 0.4;
+      return { cat, score: weight * (0.65 + Math.random() * 0.7) };
+    });
+    scored.sort((a, b) => b.score - a.score);
+    const picked = scored.slice(0, 3).map(s => s.cat);
+    this.state.recentRewardCategories = picked;
+
     return {
       round: this.state.currentRound,
       won,
-      categories: pool.slice(0, 3),
+      categories: picked,
       chosenCategory: null,
       options: [],
       pendingStatOptionId: null,
@@ -2158,7 +2253,7 @@ export class LeagueManager {
         });
       });
     } else if (cat === 'craft_card') {
-      const focuses: CraftFocus[] = ['attack', 'defense', 'balanced'];
+      const focuses: CraftFocus[] = ['balanced', 'endure', 'surge'];
       const e1 = TACTICAL_ELEMENTS[Math.floor(Math.random() * TACTICAL_ELEMENTS.length)];
       const e2 = TACTICAL_ELEMENTS[Math.floor(Math.random() * TACTICAL_ELEMENTS.length)];
       const synth = synthesizeChemistry([e1.id, e2.id], focuses[Math.floor(Math.random() * focuses.length)], true);
@@ -2188,9 +2283,164 @@ export class LeagueManager {
         rarity: 'common',
         craftReward: { kind: 'elements', elements: [{ id: elA.id, name: elA.name, count: 2 }, { id: elB.id, name: elB.name, count: 1 }] },
       });
+    } else if (cat === 'trait_forge') {
+      const silverPool = [
+        { trait: '远射重炮', desc: '禁区外远射(18m+) xG +25%，适合前腰/中场/前锋' },
+        { trait: '致命直塞', desc: '直塞球决策倾向与穿透收益提升，撕裂防线利器' },
+        { trait: '禁区狐狸', desc: '禁区内射门期望进球 xG +18%，射手质变徽章' },
+        { trait: '精准铲断', desc: '抢断成功率 +10% 且犯规风险降低 35%' },
+        { trait: '铁肺覆盖', desc: '全场奔跑体能消耗降低 40%，攻防永动机' },
+        { trait: '精准传中', desc: '边路传中决策与到位率提升，两翼体系核心' },
+        { trait: '节拍器', desc: '短传与中场组织成功率 +5%，传控大脑必备' },
+      ];
+      const pickedSilver = silverPool[Math.floor(Math.random() * silverPool.length)];
+      options.push({
+        id: 'pm_tf_silver',
+        category: 'trait_forge',
+        title: `临时银标：赐予【${pickedSilver.trait}】(5轮)`,
+        subtitle: `指定 1 名球员未来 5 轮获得该引擎银标（若已有则临时升金标+ 3轮！）`,
+        rarity: 'rare',
+        traitForge: { kind: 'grant_silver', trait: pickedSilver.trait, durationRounds: 5, description: pickedSilver.desc },
+      });
+      options.push({
+        id: 'pm_tf_gold',
+        category: 'trait_forge',
+        title: '临时金标+：PlayStyle+超频 (3轮)',
+        subtitle: '指定 1 名球员，将其首枚银标在未来 3 轮升华为金标+(2倍引擎加成)！',
+        rarity: 'epic',
+        traitForge: { kind: 'upgrade_gold', durationRounds: 3, description: '指定球员临时晋升 1 枚金标特质（3轮）' },
+      });
+      options.push({
+        id: 'pm_tf_role',
+        category: 'trait_forge',
+        title: '全能改造：解锁第二位置 + 站位+1',
+        subtitle: '指定 1 名球员习得兼容次选位置并提升站位/传球 +1',
+        rarity: 'rare',
+        traitForge: { kind: 'unlock_role', description: '解锁新次选位置并提升站位与传球 +1' },
+      });
+    } else if (cat === 'tactical_pact') {
+      const pactPool: PostMatchRewardOption[] = [
+        {
+          id: 'pm_tp_blitz',
+          category: 'tactical_pact',
+          title: '契约·高压透支：攻击群射速 +3',
+          subtitle: '代价：全队当前体能 -16% | 收益：全队前锋/中场射门+3、速度+3',
+          rarity: 'epic',
+          pactReward: { kind: 'blitz_overdrive', description: '前锋/中场射门+3、速度+3，全队体能 -16%' },
+        },
+        {
+          id: 'pm_tp_iron',
+          category: 'tactical_pact',
+          title: '契约·铁血死守：防线扑救 +4',
+          subtitle: '代价：全队前锋射门 -2 | 收益：全队后卫抢断+4、门将扑救+4',
+          rarity: 'epic',
+          pactReward: { kind: 'iron_fortress', description: '后卫抢断+4、门将扑救+4，前锋射门 -2' },
+        },
+        {
+          id: 'pm_tp_youth',
+          category: 'tactical_pact',
+          title: '契约·青春风暴：U23 全面暴涨',
+          subtitle: '代价：28岁+老将体能上限 -2 | 收益：全队U23新星传射速各 +2',
+          rarity: 'rare',
+          pactReward: { kind: 'youth_gamble', description: 'U23新星传射速各+2，老将体能 -2' },
+        },
+        {
+          id: 'pm_tp_vet',
+          category: 'tactical_pact',
+          title: '契约·老兵燃尽：老将关键球 +4',
+          subtitle: '代价：27岁+老将体能 -18% | 收益：27岁+老将冷静+5、传球+3、射门+3',
+          rarity: 'rare',
+          pactReward: { kind: 'veteran_last_dance', description: '27+老将冷静+5传射+3，当前体能 -18%' },
+        },
+        {
+          id: 'pm_tp_alchemy',
+          category: 'tactical_pact',
+          title: '契约·黑市炼金：Meta与备战点双收',
+          subtitle: '代价：消耗最多 2 元素 | 收益：Meta +50pt、下轮备战点 +1、全队冷静 +1',
+          rarity: 'epic',
+          pactReward: { kind: 'black_market_alchemy', description: '消耗最多2元素换取 Meta +50pt、备战点 +1 及冷静+1' },
+        },
+        {
+          id: 'pm_tp_stamina',
+          category: 'tactical_pact',
+          title: '契约·极限体能：消除伤病隐患',
+          subtitle: '代价：全队体能统一锁定 74% | 收益：全队体能上限 +4 且清空疲劳警告',
+          rarity: 'rare',
+          pactReward: { kind: 'stamina_limit_break', description: '全队体能+4并清空疲劳警告，当前体能置为74%' },
+        },
+      ];
+      for (let i = pactPool.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [pactPool[i], pactPool[j]] = [pactPool[j], pactPool[i]];
+      }
+      options.push(...pactPool.slice(0, 3));
+    } else if (cat === 'chemistry_forge') {
+      const chemPool: PostMatchRewardOption[] = [
+        {
+          id: 'pm_cf_gold',
+          category: 'chemistry_forge',
+          title: '铸造【黄金连线】：首发默契质变',
+          subtitle: '当前首发最具潜力的一对阵型连线立即默契 +25 并封号【黄金连线】',
+          rarity: 'epic',
+          chemReward: { kind: 'golden_link', description: '一对首发核心连线默契 +25 并解锁黄金连线' },
+        },
+        {
+          id: 'pm_cf_form',
+          category: 'chemistry_forge',
+          title: '阵型宗师灌顶：熟练度 + Meta 基金',
+          subtitle: '全队当前阵型熟练度 +12%、宗师经验 +3，并额外获赠 Meta +15pt',
+          rarity: 'rare',
+          chemReward: { kind: 'formation_master', description: '全队当前阵型熟练度 +12，宗师经验 +3，Meta +15pt' },
+        },
+        {
+          id: 'pm_cf_spine',
+          category: 'chemistry_forge',
+          title: '中轴脊梁共鸣：门卫腰锋齐升',
+          subtitle: '队内核心 GK/CB/CM/ST 各选1名主将冷静+2、站位+2，中轴默契 +10',
+          rarity: 'epic',
+          chemReward: { kind: 'spine_boost', description: '中轴线主将冷静/站位 +2，中轴默契 +10' },
+        },
+        {
+          id: 'pm_cf_overclock',
+          category: 'chemistry_forge',
+          title: '指挥卡超频降费：战术能量减负',
+          subtitle: '卡库内 1 张高费卡(2+费)能量消耗 -1 且持续时间 +2 分（若无则赠 Meta +25pt）',
+          rarity: 'epic',
+          chemReward: { kind: 'card_overclock', description: '高费指挥卡费用 -1、持续 +2 分钟' },
+        },
+      ];
+      for (let i = chemPool.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [chemPool[i], chemPool[j]] = [chemPool[j], chemPool[i]];
+      }
+      options.push(...chemPool.slice(0, 3));
     } else {
       const chrons = ensureChronicles(this.state);
       const evPool: PostMatchRewardOption[] = [];
+      evPool.push({
+        id: 'pm_ev_meta',
+        category: 'event',
+        title: '理事会嘉奖：Meta 天赋 +35pt',
+        subtitle: '直接入账教练天赋树与 SkillWeb 技能网点数 +35pt',
+        rarity: 'epic',
+        eventReward: { kind: 'meta_grant', amount: 35, description: '直接获得 Meta 天赋点数 +35pt' },
+      });
+      evPool.push({
+        id: 'pm_ev_prep',
+        category: 'event',
+        title: '战术室加班：下轮备战点 +2',
+        subtitle: '下轮赛前整备行动点 +2（可多做理疗/演练/侦察）且 Meta +10pt',
+        rarity: 'epic',
+        eventReward: { kind: 'prep_actions', amount: 2, description: '下轮赛前备战行动点 +2，Meta +10pt' },
+      });
+      evPool.push({
+        id: 'pm_ev_intel',
+        category: 'event',
+        title: '球探密电：摸透下轮对手 +45%',
+        subtitle: '下轮对手球探了解度直接 +45%（解锁更多破绽线索）且 Meta +15pt',
+        rarity: 'rare',
+        eventReward: { kind: 'scout_intel', amount: 45, description: '下轮对手了解度 +45%，Meta +15pt' },
+      });
       if (chrons.relegation_fight.status === 'active') {
         evPool.push({
           id: 'pm_ev_heal',
@@ -2314,6 +2564,73 @@ export class LeagueManager {
       return { ok: true, summary: rw.summaryText };
     }
 
+    if (opt.category === 'trait_forge' && opt.traitForge) {
+      if (!targetPlayerId) {
+        rw.pendingStatOptionId = opt.id;
+        return { ok: true, needsTarget: true };
+      }
+      const target = club.squad.find(p => p.id === targetPlayerId);
+      if (!target) return { ok: false, reason: '未找到目标球员' };
+      const tf = opt.traitForge;
+      const dur = tf.durationRounds ?? 4;
+      target.tempTraits = target.tempTraits ? [...target.tempTraits] : [];
+
+      const upsertTempTrait = (trait: string, tier: 'silver' | 'gold', rounds: number) => {
+        const existing = target.tempTraits!.find(t => t.trait === trait);
+        if (existing) {
+          if (tier === 'gold') existing.tier = 'gold';
+          existing.remainingMatches = Math.max(existing.remainingMatches, rounds);
+        } else {
+          target.tempTraits!.push({ trait, tier, remainingMatches: rounds });
+        }
+      };
+
+      if (tf.kind === 'grant_silver' && tf.trait) {
+        const trait = target.role === 'GK' && tf.trait !== '精准长传' && tf.trait !== '节拍器' ? '门线神扑' : tf.trait;
+        const alreadyGold = target.goldTraits?.includes(trait);
+        const alreadySilver = target.silverTraits?.includes(trait) || target.traits?.includes(trait);
+        if (alreadyGold) {
+          target.attributes.composure = clampAttr(target.attributes.composure + 2);
+          target.ca = computeWeightedCA(target.role, target.attributes);
+          rw.summaryText = `${target.name} 已拥有金标【${trait}】，额外强化冷静 +2 (CA ${target.ca})`;
+        } else if (alreadySilver) {
+          upsertTempTrait(trait, 'gold', Math.max(3, dur - 2));
+          rw.summaryText = `${target.name} 的【${trait}】临时共鸣升为金标+（持续 ${Math.max(3, dur - 2)} 轮）！`;
+        } else {
+          upsertTempTrait(trait, 'silver', dur);
+          rw.summaryText = `${target.name} 获得临时银标特质【${trait}】（持续 ${dur} 轮）！`;
+        }
+      } else if (tf.kind === 'upgrade_gold') {
+        const promotable = target.silverTraits?.[0] ?? target.traits?.find(t => !(target.goldTraits ?? []).includes(t));
+        if (promotable) {
+          upsertTempTrait(promotable, 'gold', dur);
+          rw.summaryText = `${target.name} 的【${promotable}】临时超频为金标+（持续 ${dur} 轮，2倍引擎加成）！`;
+        } else {
+          const fallbackGold = target.role === 'GK' ? '门线神扑' : ['CB', 'LB', 'RB'].includes(target.role) ? '精准铲断' : '节拍器';
+          upsertTempTrait(fallbackGold, 'gold', dur);
+          rw.summaryText = `${target.name} 临时觉醒金标+【${fallbackGold}】（持续 ${dur} 轮）！`;
+        }
+      } else if (tf.kind === 'unlock_role') {
+        const pool = SECONDARY_ROLE_POOL[target.role] ?? [];
+        const existing = new Set(target.secondaryRoles ?? []);
+        const newRole = pool.find(r => !existing.has(r));
+        target.secondaryRoles = [...existing];
+        if (newRole) target.secondaryRoles.push(newRole);
+        target.attributes.positioning = clampAttr(target.attributes.positioning + 1);
+        target.attributes.passing = clampAttr(target.attributes.passing + 1);
+        target.ca = computeWeightedCA(target.role, target.attributes);
+        rw.summaryText = newRole
+          ? `${target.name} 解锁次选位置【${newRole}】，站位/传球 +1 (CA ${target.ca})`
+          : `${target.name} 全位置熟稔度提升，站位/传球 +1 (CA ${target.ca})`;
+      }
+
+      const rIdx = roster.findIndex(r => r.id === target.id);
+      if (rIdx >= 0) roster[rIdx] = JSON.parse(JSON.stringify(target));
+      rw.pendingStatOptionId = null;
+      rw.completed = true;
+      return { ok: true, summary: rw.summaryText };
+    }
+
     if (opt.category === 'line_boost' && opt.lineBoost) {
       const lb = opt.lineBoost;
       let count = 0;
@@ -2367,9 +2684,193 @@ export class LeagueManager {
       return { ok: true, summary: rw.summaryText };
     }
 
+    if (opt.category === 'tactical_pact' && opt.pactReward) {
+      const pr = opt.pactReward;
+      if (pr.kind === 'blitz_overdrive') {
+        for (const p of club.squad) {
+          if (['ST', 'LW', 'RW', 'CAM', 'CM', 'LM', 'RM'].includes(p.role)) {
+            p.attributes.shooting = clampAttr(p.attributes.shooting + 3);
+            p.attributes.pace = clampAttr(p.attributes.pace + 3);
+            p.ca = computeWeightedCA(p.role, p.attributes);
+          }
+          p.fitness = Math.max(30, (p.fitness ?? 100) - 16);
+        }
+        rw.summaryText = '高压透支契约生效：中前场射门/速度 +3，全队体能 -16%';
+      } else if (pr.kind === 'iron_fortress') {
+        for (const p of club.squad) {
+          if (p.role === 'GK') p.attributes.goalkeeping = clampAttr(p.attributes.goalkeeping + 4);
+          else if (['CB', 'LB', 'RB', 'LWB', 'RWB', 'CDM'].includes(p.role)) {
+            p.attributes.defending = clampAttr(p.attributes.defending + 4);
+          } else if (['ST', 'LW', 'RW'].includes(p.role)) {
+            p.attributes.shooting = clampAttr(p.attributes.shooting - 2);
+          }
+          p.ca = computeWeightedCA(p.role, p.attributes);
+        }
+        rw.summaryText = '铁血死守契约生效：防线抢断/门将扑救 +4，前锋射门 -2';
+      } else if (pr.kind === 'youth_gamble') {
+        let u23Count = 0;
+        for (const p of club.squad) {
+          if (p.age <= 23) {
+            p.attributes.passing = clampAttr(p.attributes.passing + 2);
+            p.attributes.shooting = clampAttr(p.attributes.shooting + 2);
+            p.attributes.pace = clampAttr(p.attributes.pace + 2);
+            p.ca = computeWeightedCA(p.role, p.attributes);
+            u23Count++;
+          } else if (p.age >= 28) {
+            p.attributes.stamina = clampAttr(p.attributes.stamina - 2);
+            p.ca = computeWeightedCA(p.role, p.attributes);
+          }
+        }
+        rw.summaryText = `青春风暴契约生效：${u23Count}名U23传射速 +2，28+老将体能 -2`;
+      } else if (pr.kind === 'veteran_last_dance') {
+        let vetCount = 0;
+        for (const p of club.squad) {
+          if (p.age >= 27) {
+            p.attributes.composure = clampAttr(p.attributes.composure + 5);
+            p.attributes.passing = clampAttr(p.attributes.passing + 3);
+            p.attributes.shooting = clampAttr(p.attributes.shooting + 3);
+            p.ca = computeWeightedCA(p.role, p.attributes);
+            p.fitness = Math.max(28, (p.fitness ?? 100) - 18);
+            vetCount++;
+          }
+        }
+        rw.summaryText = vetCount > 0
+          ? `老兵燃尽契约生效：${vetCount}名老将冷静+5传射+3，当前体能 -18%`
+          : '队内暂无27+老将，改赠全队冷静 +1';
+        if (vetCount === 0) {
+          for (const p of club.squad) p.attributes.composure = clampAttr(p.attributes.composure + 1);
+        }
+      } else if (pr.kind === 'black_market_alchemy') {
+        const inv = this.getElementInventory();
+        let spent = 0;
+        for (const el of TACTICAL_ELEMENTS) {
+          while ((inv[el.id] ?? 0) > 0 && spent < 2) {
+            inv[el.id] -= 1;
+            spent++;
+          }
+        }
+        this.state.metaPointsTotal += 50;
+        if (this.state.interMatchPrep) {
+          this.state.interMatchPrep.actionsLeft += 1;
+        }
+        for (const p of club.squad) {
+          p.attributes.composure = clampAttr(p.attributes.composure + 1);
+          p.ca = computeWeightedCA(p.role, p.attributes);
+        }
+        rw.summaryText = `黑市炼金完成：消耗 ${spent} 元素，入账 Meta +50pt、下轮备战点 +1、全队冷静 +1`;
+      } else if (pr.kind === 'stamina_limit_break') {
+        for (const p of club.squad) {
+          p.attributes.stamina = clampAttr(p.attributes.stamina + 4);
+          p.strainWarning = false;
+          p.fitness = 74;
+          p.ca = computeWeightedCA(p.role, p.attributes);
+        }
+        rw.summaryText = '极限体能契约生效：全队体能上限 +4、清空疲劳警告，体能锁定 74%';
+      }
+      rw.completed = true;
+      return { ok: true, summary: rw.summaryText };
+    }
+
+    if (opt.category === 'chemistry_forge' && opt.chemReward) {
+      const cr = opt.chemReward;
+      if (cr.kind === 'golden_link') {
+        const links = this.getChemistryLinks();
+        const squadMap = new Map(club.squad.map(p => [p.id, p]));
+        const specs = getFormationLinks(club, squadMap);
+        const picked = specs.sort((a, b) => {
+          const la = getOrCreateChemistryLink(links, a.playerA, a.playerB).score;
+          const lb = getOrCreateChemistryLink(links, b.playerA, b.playerB).score;
+          return la - lb;
+        })[0];
+        if (picked) {
+          const lk = getOrCreateChemistryLink(links, picked.playerA, picked.playerB);
+          lk.score = Math.min(100, lk.score + 25);
+          lk.title = '黄金连线';
+          rw.summaryText = `黄金连线铸成：${picked.playerA.name} × ${picked.playerB.name} 默契 +25（当前 ${lk.score}）`;
+        } else {
+          this.state.metaPointsTotal += 25;
+          rw.summaryText = '暂无可连线首发，改赠 Meta +25pt';
+        }
+      } else if (cr.kind === 'formation_master') {
+        for (const p of club.squad) {
+          const cur = this.getPlayerFamiliarity(p, club.formation);
+          p.formationFamiliarity = p.formationFamiliarity ?? {};
+          p.formationFamiliarity[club.formation] = Math.min(100, cur + 12);
+        }
+        const m = this.getTacticalMastery();
+        m.formations[club.formation] = Math.min(15, (m.formations[club.formation] ?? 0) + 3);
+        this.state.metaPointsTotal += 15;
+        rw.summaryText = `阵型宗师灌顶：全队【${club.formation}】熟练度 +12%、宗师经验 +3、Meta +15pt`;
+      } else if (cr.kind === 'spine_boost') {
+        const spineRoles = new Set(['GK', 'CB', 'CDM', 'CM', 'CAM', 'ST']);
+        const boosted: string[] = [];
+        const starterList = club.starterIds
+          .map(id => club.squad.find(p => p.id === id))
+          .filter((p): p is DraftPlayer => !!p && spineRoles.has(p.role))
+          .slice(0, 4);
+        for (const p of starterList) {
+          p.attributes.composure = clampAttr(p.attributes.composure + 2);
+          p.attributes.positioning = clampAttr(p.attributes.positioning + 2);
+          p.ca = computeWeightedCA(p.role, p.attributes);
+          boosted.push(p.name);
+        }
+        const links = this.getChemistryLinks();
+        for (let i = 0; i < starterList.length; i++) {
+          for (let j = i + 1; j < starterList.length; j++) {
+            const lk = getOrCreateChemistryLink(links, starterList[i], starterList[j]);
+            lk.score = Math.min(100, lk.score + 10);
+          }
+        }
+        rw.summaryText = `中轴共鸣：${boosted.join('·')} 冷静/站位 +2，中轴默契 +10`;
+      } else if (cr.kind === 'card_overclock') {
+        const deck = this.getCoachDeck();
+        const highCost = deck.find(c => c.cost >= 2);
+        if (highCost) {
+          highCost.cost = Math.max(1, highCost.cost - 1);
+          highCost.durationMinutes += 2;
+          rw.summaryText = `超频成功：【${highCost.name}】费用降至 ${highCost.cost}，持续 +2分`;
+        } else {
+          this.state.metaPointsTotal += 25;
+          rw.summaryText = '卡库均为 1 费卡，改赠 Meta +25pt';
+        }
+      }
+      rw.completed = true;
+      return { ok: true, summary: rw.summaryText };
+    }
+
     if (opt.category === 'event' && opt.eventReward) {
       const ev = opt.eventReward;
-      if (ev.kind === 'heal_all') {
+      if (ev.kind === 'meta_grant') {
+        const pts = ev.amount ?? 35;
+        this.state.metaPointsTotal += pts;
+        rw.summaryText = `理事会嘉奖：Meta 天赋点数 +${pts}pt（当前 ${this.state.metaPointsTotal}pt）`;
+      } else if (ev.kind === 'prep_actions') {
+        const actGain = ev.amount ?? 2;
+        if (this.state.interMatchPrep) {
+          this.state.interMatchPrep.actionsLeft += actGain;
+        }
+        this.state.metaPointsTotal += 10;
+        rw.summaryText = `战术室加班：下轮赛前备战点 +${actGain}（当前 ${this.state.interMatchPrep?.actionsLeft ?? actGain} 点）且 Meta +10pt`;
+      } else if (ev.kind === 'scout_intel') {
+        const intelGain = ev.amount ?? 45;
+        this.state.metaPointsTotal += 15;
+        const prep = this.state.interMatchPrep;
+        if (prep?.matchupIntel) {
+          const rec = getOpponentIntelRecord(this.state, prep.matchupIntel.oppClubId);
+          rec.familiarity = Math.min(100, rec.familiarity + intelGain);
+          const refreshed = buildOpponentMatchupIntel(this.state, club);
+          if (refreshed) {
+            refreshed.chosenCounterId = prep.matchupIntel.chosenCounterId;
+            refreshed.spotCorrect = prep.matchupIntel.spotCorrect;
+            refreshed.scoutedThisRound = prep.matchupIntel.scoutedThisRound;
+            prep.matchupIntel = refreshed;
+          }
+          rw.summaryText = `球探密电：【${prep.matchupIntel.oppClubName}】了解度 +${intelGain}%（当前 ${rec.familiarity}%），Meta +15pt`;
+        } else {
+          this.state.metaPointsTotal += 15;
+          rw.summaryText = '球探密电归档：Meta 额外 +30pt';
+        }
+      } else if (ev.kind === 'heal_all') {
         for (const p of club.squad) p.fitness = 100;
         rw.summaryText = '神医理疗生效：全队体能已恢复至 100%';
       } else if (ev.kind === 'devil_training') {
@@ -2522,6 +3023,374 @@ export class LeagueManager {
           rp.fitness = sp.fitness;
         }
       }
+    }
+  }
+
+  private captureSeasonMemory(fixture: FixtureMatch, res: MatchState, userClub: LeagueClub): void {
+    const userIsHome = fixture.homeClubId === this.state.userClubId;
+    const userSide: 'home' | 'away' = userIsHome ? 'home' : 'away';
+    const oppSide: 'home' | 'away' = userIsHome ? 'away' : 'home';
+    const oppClubId = userIsHome ? fixture.awayClubId : fixture.homeClubId;
+    const oppClub = this.state.clubs.find(c => c.id === oppClubId);
+    const oppName = oppClub?.name ?? '对手';
+    const myGoals = userIsHome ? fixture.homeGoals : fixture.awayGoals;
+    const oppGoals = userIsHome ? fixture.awayGoals : fixture.homeGoals;
+    const scoreText = `${myGoals}:${oppGoals}`;
+    const round = this.state.currentRound;
+    const margin = Math.abs(myGoals - oppGoals);
+
+    const styleLabels: Record<TacticalStyle, string> = {
+      tiki_taka: '传控渗透',
+      gegenpress: '高位逼抢',
+      balanced: '均衡阵地',
+      wing_play: '两翼齐飞',
+      counter: '快速反击',
+      park_bus: '铁桶防反',
+    };
+    const userFormation = userClub.formation;
+    const oppFormation = oppClub?.formation ?? (userIsHome ? res.awayFormation : res.homeFormation) ?? '4-4-2';
+    const oppStyle = oppClub ? styleLabels[oppClub.style] : undefined;
+
+    const myStats = userIsHome ? res.stats.home : res.stats.away;
+    const oppStats = userIsHome ? res.stats.away : res.stats.home;
+    const totPoss = (myStats.possessionTicks + oppStats.possessionTicks) || 1;
+    const myPossPct = Math.round((myStats.possessionTicks / totPoss) * 100);
+    const xgText = `xG ${myStats.xG.toFixed(2)} : ${oppStats.xG.toFixed(2)}`;
+    const possessionText = `控球 ${myPossPct}% : ${100 - myPossPct}%`;
+
+    const standings = this.getStandings();
+    const userRank = standings.findIndex(s => s.clubId === this.state.userClubId) + 1;
+    const oppRank = standings.findIndex(s => s.clubId === oppClubId) + 1;
+
+    // 找出敌方焦点球员与我方关键助攻手
+    const oppStandout = [...res.players]
+      .filter(p => p.team === oppSide)
+      .sort((a, b) =>
+        (b.matchStats.goals * 4 + b.matchStats.assists * 2 + (b.redCard ? 2 : 0) + b.matchStats.saves * 0.5) -
+        (a.matchStats.goals * 4 + a.matchStats.assists * 2 + (a.redCard ? 2 : 0) + a.matchStats.saves * 0.5)
+      )[0];
+    const oppPlayerLabel = oppStandout
+      ? `${oppStandout.name}(${oppStandout.matchStats.goals > 0 ? `${oppStandout.matchStats.goals}球` : oppStandout.redCard ? '红牌' : oppStandout.role === 'GK' ? `${oppStandout.matchStats.saves}扑` : oppStandout.role})`
+      : undefined;
+
+    const userTopAssister = [...res.players]
+      .filter(p => p.team === userSide && p.matchStats.assists > 0)
+      .sort((a, b) => b.matchStats.assists - a.matchStats.assists)[0];
+
+    const baseMeta = {
+      oppPlayerName: oppPlayerLabel,
+      assistPlayerName: userTopAssister?.name,
+      userFormation,
+      oppFormation,
+      oppStyle,
+      xgText,
+      possessionText,
+    };
+
+    const candidates: SeasonMemory[] = [];
+    const goalEvents = res.events.filter(e => e.type === 'goal');
+
+    // 追踪比赛过程中的最大落后/领先分差，用于逆转判定
+    let hScore = 0;
+    let aScore = 0;
+    let maxUserDeficit = 0;
+    let maxUserLead = 0;
+    for (const ev of goalEvents) {
+      if (ev.team === 'home') hScore++;
+      else aScore++;
+      const diff = userIsHome ? (hScore - aScore) : (aScore - hScore);
+      if (diff < 0 && -diff > maxUserDeficit) maxUserDeficit = -diff;
+      if (diff > 0 && diff > maxUserLead) maxUserLead = diff;
+    }
+
+    // 1. LATE_WINNER: 85'+ 决定胜负/绝平的关键进球
+    if (margin <= 1 && goalEvents.length > 0) {
+      const lastGoal = goalEvents[goalEvents.length - 1];
+      if (lastGoal.minute >= 85) {
+        const userScored = lastGoal.team === userSide;
+        if (userScored && myGoals >= oppGoals) {
+          const isWin = myGoals > oppGoals;
+          const assister = lastGoal.assistPlayerName ?? userTopAssister?.name;
+          candidates.push({
+            id: `mem_s${this.state.seasonNumber}_r${round}_late`,
+            round,
+            kind: 'LATE_WINNER',
+            badge: isWin ? '读秒绝杀' : '压哨绝平',
+            title: `第${lastGoal.minute}分钟 ${lastGoal.playerName} ${isWin ? '绝杀' : '绝平'}！`,
+            summary: `第${round}轮${userIsHome ? '主场' : '客场'}战${oppName}(${oppFormation})，${assister ? `${assister}送出致命助攻，` : ''}${lastGoal.playerName}第${lastGoal.minute}分钟一锤定音，${scoreText}带走积分。`,
+            scoreText,
+            oppName,
+            playerName: lastGoal.playerName,
+            ...baseMeta,
+            assistPlayerName: assister,
+            contextTag: userIsHome ? '主场绝杀' : '客场绝杀',
+            minute: lastGoal.minute,
+            dramaScore: (isWin ? 95 : 89) + Math.min(5, lastGoal.minute - 85),
+            isPainful: false,
+          });
+        } else if (!userScored && myGoals <= oppGoals) {
+          const isLoss = myGoals < oppGoals;
+          candidates.push({
+            id: `mem_s${this.state.seasonNumber}_r${round}_late_pain`,
+            round,
+            kind: 'LATE_WINNER',
+            badge: isLoss ? '惨遭绝杀' : '痛失三分',
+            title: `第${lastGoal.minute}分钟遭${oppName}·${lastGoal.playerName}绝杀`,
+            summary: `第${round}轮读秒时刻被${oppName}的${lastGoal.playerName}破门，${scoreText}抱憾而归。`,
+            scoreText,
+            oppName,
+            playerName: lastGoal.playerName,
+            ...baseMeta,
+            oppPlayerName: `${lastGoal.playerName}(${lastGoal.minute}'绝杀)`,
+            contextTag: '读秒失守',
+            minute: lastGoal.minute,
+            dramaScore: (isLoss ? 92 : 85) + Math.min(5, lastGoal.minute - 85),
+            isPainful: true,
+          });
+        }
+      }
+    }
+
+    // 2. COMEBACK: 落后2球及以上完成翻盘/追平，或领先2球及以上被翻盘
+    if (maxUserDeficit >= 2 && myGoals >= oppGoals) {
+      const won = myGoals > oppGoals;
+      candidates.push({
+        id: `mem_s${this.state.seasonNumber}_r${round}_comeback`,
+        round,
+        kind: 'COMEBACK',
+        badge: won ? '惊天逆转' : '绝地追平',
+        title: won ? `落后${maxUserDeficit}球逆转${oppName}！` : `落后${maxUserDeficit}球顽强追平${oppName}`,
+        summary: `第${round}轮一度落后${maxUserDeficit}球仍未放弃，${userClub.name}(${userFormation})连追反扑，终场定格在${scoreText}。`,
+        scoreText,
+        oppName,
+        ...baseMeta,
+        contextTag: `逆转${maxUserDeficit}球`,
+        dramaScore: won ? 91 : 85,
+        isPainful: false,
+      });
+    } else if (maxUserLead >= 2 && myGoals < oppGoals) {
+      candidates.push({
+        id: `mem_s${this.state.seasonNumber}_r${round}_choke`,
+        round,
+        kind: 'COMEBACK',
+        badge: '遭逆转翻盘',
+        title: `两球领先被${oppName}逆转`,
+        summary: `第${round}轮手握${maxUserLead}球优势却没能守住胜果，${oppPlayerLabel ? `被${oppPlayerLabel}率队反扑，` : ''}最终${scoreText}痛失好局。`,
+        scoreText,
+        oppName,
+        ...baseMeta,
+        contextTag: '领先被翻',
+        dramaScore: 87,
+        isPainful: true,
+      });
+    }
+
+    // 3. UPSET: 以下克上 / 爆冷翻车 (排名相差 >= 5 名)
+    if (round >= 5 && userRank > 0 && oppRank > 0) {
+      if (myGoals > oppGoals && userRank - oppRank >= 5) {
+        candidates.push({
+          id: `mem_s${this.state.seasonNumber}_r${round}_upset`,
+          round,
+          kind: 'UPSET',
+          badge: '以下克上',
+          title: `第${userRank}名掀翻第${oppRank}名${oppName}！`,
+          summary: `第${round}轮以弱胜强，${userClub.name}用${userFormation}阵型${scoreText}击败排名第${oppRank}的${oppName}。`,
+          scoreText,
+          oppName,
+          ...baseMeta,
+          contextTag: `第${userRank}斩第${oppRank}`,
+          dramaScore: 88,
+          isPainful: false,
+        });
+      } else if (myGoals < oppGoals && oppRank - userRank >= 6 && userRank <= 4) {
+        candidates.push({
+          id: `mem_s${this.state.seasonNumber}_r${round}_upset_pain`,
+          round,
+          kind: 'UPSET',
+          badge: '阴沟翻船',
+          title: `爆冷不敌第${oppRank}名${oppName}`,
+          summary: `第${round}轮排名前列的${userClub.name}意外失手，${scoreText}负于${oppName}${oppPlayerLabel ? `(${oppPlayerLabel})` : ''}。`,
+          scoreText,
+          oppName,
+          ...baseMeta,
+          contextTag: `爆冷输第${oppRank}`,
+          dramaScore: 84,
+          isPainful: true,
+        });
+      }
+    }
+
+    // 4. RED_CARD_STAND: 少打一人抢分/失利
+    const userRedPlayer = res.players.find(p => p.team === userSide && p.redCard);
+    const oppRedPlayer = res.players.find(p => p.team === oppSide && p.redCard);
+    if (userRedPlayer && myGoals >= oppGoals) {
+      candidates.push({
+        id: `mem_s${this.state.seasonNumber}_r${round}_red_stand`,
+        round,
+        kind: 'RED_CARD_STAND',
+        badge: '十人铁血',
+        title: `${userRedPlayer.name}染红下仍${myGoals > oppGoals ? '力克' : '逼平'}${oppName}`,
+        summary: `第${round}轮${userRedPlayer.name}被罚下少打一人，全队众志成城${scoreText}守住积分！`,
+        scoreText,
+        oppName,
+        playerName: userRedPlayer.name,
+        ...baseMeta,
+        contextTag: '少打一人',
+        dramaScore: myGoals > oppGoals ? 89 : 83,
+        isPainful: false,
+      });
+    } else if (oppRedPlayer && myGoals < oppGoals) {
+      candidates.push({
+        id: `mem_s${this.state.seasonNumber}_r${round}_red_pain`,
+        round,
+        kind: 'RED_CARD_STAND',
+        badge: '多打一人失利',
+        title: `多打一人仍负于${oppName}`,
+        summary: `第${round}轮${oppName}的${oppRedPlayer.name}染红离场，但我方未能把握人数优势，${scoreText}惜败。`,
+        scoreText,
+        oppName,
+        ...baseMeta,
+        contextTag: '强攻未果',
+        dramaScore: 81,
+        isPainful: true,
+      });
+    }
+
+    // 5. TITLE_CLASH: 天王山之战 / 宿敌死磕
+    const isRival = this.state.storyline?.id === 'revenge' && this.state.storyline.rivalClubId === oppClubId;
+    const isTopClash = round >= 8 && userRank > 0 && oppRank > 0 && userRank <= 3 && oppRank <= 3;
+    if ((isTopClash || isRival) && myGoals !== oppGoals) {
+      candidates.push({
+        id: `mem_s${this.state.seasonNumber}_r${round}_clash`,
+        round,
+        kind: 'TITLE_CLASH',
+        badge: isRival ? '宿敌死磕' : '天王山之战',
+        title: `${isRival ? '宿敌战' : '榜首战'}${myGoals > oppGoals ? '力克' : '惜败'}${oppName}`,
+        summary: `第${round}轮${isTopClash ? `第${userRank}名与第${oppRank}名强强对话` : '宿敌恩怨对决'}，最终${scoreText}分出高下。`,
+        scoreText,
+        oppName,
+        ...baseMeta,
+        contextTag: isRival ? '宿敌德比' : `前${Math.max(userRank, oppRank)}对话`,
+        dramaScore: myGoals > oppGoals ? 86 : 82,
+        isPainful: myGoals < oppGoals,
+      });
+    }
+
+    // 6. CONTROVERSY: 红牌+点球 或 75'+ 点球且分差<=1
+    const hasRed = res.events.some(e => e.type === 'red_card');
+    const penaltyEv = res.events.find(e => e.text?.includes('点球'));
+    if (margin <= 1 && ((hasRed && penaltyEv) || (penaltyEv && penaltyEv.minute >= 75))) {
+      const painful = myGoals < oppGoals;
+      candidates.push({
+        id: `mem_s${this.state.seasonNumber}_r${round}_var`,
+        round,
+        kind: 'CONTROVERSY',
+        badge: '争议判罚',
+        title: painful ? `争议红点夜惜败${oppName}` : `顶住红点判罚战${oppName}`,
+        summary: `第${round}轮场面火药味十足，关键${hasRed ? '红牌与' : ''}点球判罚左右战局，最终比分${scoreText}。`,
+        scoreText,
+        oppName,
+        ...baseMeta,
+        contextTag: hasRed ? '红牌+点球' : '末段点球',
+        minute: penaltyEv?.minute,
+        dramaScore: 82,
+        isPainful: painful,
+      });
+    }
+
+    // 7. GOAL_FEST: 进球大战(>=6球) 或 >=4球屠杀/惨败
+    const totalGoals = myGoals + oppGoals;
+    if (totalGoals >= 6 || margin >= 4) {
+      const isRoutWin = myGoals - oppGoals >= 4;
+      const isRoutLoss = oppGoals - myGoals >= 4;
+      candidates.push({
+        id: `mem_s${this.state.seasonNumber}_r${round}_fest`,
+        round,
+        kind: 'GOAL_FEST',
+        badge: isRoutWin ? '火力狂飙' : isRoutLoss ? '惨痛溃败' : '进球大战',
+        title: isRoutWin ? `${scoreText}横扫${oppName}` : isRoutLoss ? `${scoreText}惨败${oppName}` : `${scoreText}对攻大战${oppName}`,
+        summary: `第${round}轮双方大开大合，${totalGoals}粒进球引爆全场（${xgText}）。`,
+        scoreText,
+        oppName,
+        ...baseMeta,
+        contextTag: `${totalGoals}球盛宴`,
+        dramaScore: isRoutWin ? 85 : isRoutLoss ? 83 : 82,
+        isPainful: isRoutLoss,
+      });
+    }
+
+    // 8. AWAKENING: 隐藏特质觉醒夜
+    const awakened = (res.unlockedHiddenTraits || []).find(u => u.team === userSide);
+    if (awakened && myGoals >= oppGoals) {
+      candidates.push({
+        id: `mem_s${this.state.seasonNumber}_r${round}_awaken`,
+        round,
+        kind: 'AWAKENING',
+        badge: '潜能觉醒',
+        title: `${awakened.playerName} 觉醒【${awakened.trait}】`,
+        summary: `第${round}轮战${oppName}关键时刻，${awakened.playerName}突破极限当场觉醒【${awakened.trait}】，率队${scoreText}！`,
+        scoreText,
+        oppName,
+        playerName: awakened.playerName,
+        ...baseMeta,
+        contextTag: `觉醒·${awakened.trait}`,
+        dramaScore: 84,
+        isPainful: false,
+      });
+    }
+
+    // 9. HEROIC: 帽子戏法 或 门将单场>=8次扑救零封/取胜
+    const hatHero = res.players
+      .filter(p => p.team === userSide && p.matchStats.goals >= 3)
+      .sort((a, b) => b.matchStats.goals - a.matchStats.goals)[0];
+    if (hatHero) {
+      candidates.push({
+        id: `mem_s${this.state.seasonNumber}_r${round}_hat`,
+        round,
+        kind: 'HEROIC',
+        badge: '个人封神',
+        title: `${hatHero.name} 戴帽主宰比赛`,
+        summary: `第${round}轮${hatHero.name}单场轰入${hatHero.matchStats.goals}球，率队${scoreText}力克${oppName}。`,
+        scoreText,
+        oppName,
+        playerName: hatHero.name,
+        ...baseMeta,
+        contextTag: `单场${hatHero.matchStats.goals}球`,
+        dramaScore: 87,
+        isPainful: false,
+      });
+    } else {
+      const gkHero = res.players
+        .filter(p => p.team === userSide && p.role === 'GK' && p.matchStats.saves >= 8)
+        .sort((a, b) => b.matchStats.saves - a.matchStats.saves)[0];
+      if (gkHero && (myGoals > oppGoals || oppGoals === 0)) {
+        candidates.push({
+          id: `mem_s${this.state.seasonNumber}_r${round}_gk`,
+          round,
+          kind: 'HEROIC',
+          badge: '门神降临',
+          title: `${gkHero.name} ${gkHero.matchStats.saves}扑守住城池`,
+          summary: `第${round}轮面对${oppName}狂轰滥炸，${gkHero.name}高接低挡做出${gkHero.matchStats.saves}次扑救，${scoreText}全身而退。`,
+          scoreText,
+          oppName,
+          playerName: gkHero.name,
+          ...baseMeta,
+          contextTag: `${gkHero.matchStats.saves}次扑救`,
+          dramaScore: 81,
+          isPainful: false,
+        });
+      }
+    }
+
+    if (candidates.length === 0) return;
+    candidates.sort((a, b) => b.dramaScore - a.dramaScore);
+    const best = candidates[0];
+    if (!this.state.seasonMemories) this.state.seasonMemories = [];
+    this.state.seasonMemories.push(best);
+    // 按戏剧分排序，保留最多 4 条高光记忆（优先不同类型多样性）
+    this.state.seasonMemories.sort((a, b) => b.dramaScore - a.dramaScore);
+    if (this.state.seasonMemories.length > 4) {
+      this.state.seasonMemories = this.state.seasonMemories.slice(0, 4);
     }
   }
 
@@ -3028,6 +3897,9 @@ export class LeagueManager {
     const promoBonus = promotionStatus === 'promoted' ? 40 : 0;
     const champBonus = tier === 1 && finalRank === 1 ? 100 : 0;
     let metaEarned = tierScaled + promoBonus + champBonus;
+    if ((this.state.metaLevels?.finance ?? 0) >= 5) {
+      metaEarned = Math.round(metaEarned * 1.15);
+    }
     let storyBonus = 0;
     if (this.state.storyline?.id === 'underdog') {
       const next = Math.round(metaEarned * 1.25);
@@ -3048,6 +3920,9 @@ export class LeagueManager {
     if (regularRank <= 3) {
       tryUnlockAchievement(this.state, 'ach_playoffs');
     }
+    const memories = [...(this.state.seasonMemories ?? [])]
+      .sort((a, b) => b.dramaScore - a.dramaScore)
+      .slice(0, 3);
     hof.records.push({
       seasonNumber: this.state.seasonNumber,
       clubName: this.getUserClub().name,
@@ -3061,6 +3936,7 @@ export class LeagueManager {
       topScorer: top ? { name: top.playerName, goals: top.goals } : null,
       tier,
       promotionStatus,
+      topMemory: memories[0] ?? null,
     });
 
     const userClub = this.getUserClub();
@@ -3248,6 +4124,7 @@ export class LeagueManager {
       tierName: tierInfo.name,
       promotionStatus,
       newTier,
+      memories,
     };
 
     this.state.lastSummary = summary;

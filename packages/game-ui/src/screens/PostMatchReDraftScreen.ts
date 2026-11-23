@@ -65,6 +65,13 @@ export class PostMatchReDraftScreen {
     this.resetCardRevealAnim();
   }
 
+  public dispose(): void {
+    this.lastMatch = null;
+    this.packAnim = null;
+    this.selectedCandidateId = null;
+    this.selectedDropId = null;
+  }
+
   private resetCardRevealAnim(): void {
     this.dealTimer = 0;
     this.flipped = [false, false, false];
@@ -676,6 +683,27 @@ export class PostMatchReDraftScreen {
         color: '#FB923C',
         elemKey: 'elem_press',
       },
+      trait_forge: {
+        title: '临时徽章 · 临场觉醒',
+        badge: '持续3~5轮 / 多位置',
+        desc: '赐予持续 5 轮的引擎银标、持续 3 轮的临时金标+超频，或解锁第二位置',
+        color: '#F472B6',
+        elemKey: 'elem_blitz',
+      },
+      tactical_pact: {
+        title: '更衣室契约 · 双刃剑',
+        badge: '高风险高回报赌约',
+        desc: '签署以体力/局部属性换取战力暴涨或黑市 Meta/备战点炼金的特殊契约',
+        color: '#F87171',
+        elemKey: 'elem_press',
+      },
+      chemistry_forge: {
+        title: '化学连线 · 宗师蜕变',
+        badge: '黄金连线 / 卡牌超频',
+        desc: '直接铸造首发黄金连线、阵型宗师灌顶(+Meta)或为高费指挥卡降费超频',
+        color: '#2DD4BF',
+        elemKey: 'elem_pass',
+      },
     };
 
     const cardBackArt = AssetLoader.get('command_card_back');
@@ -819,10 +847,11 @@ export class PostMatchReDraftScreen {
       return;
     }
 
-    // 状态 B：单体特训卡待指定受训球员
+    // 状态 B：单体特训卡 / 特质移植待指定受训球员
     if (rw.pendingStatOptionId && !rw.completed) {
       const opt = rw.options.find(o => o.id === rw.pendingStatOptionId);
-      drawText(ctx, `已选【${opt?.title || '单体特训卡'}】— 请点击 1 名球员立即完成特训：`, 640, 108, {
+      const isTraitForge = opt?.category === 'trait_forge';
+      drawText(ctx, `已选【${opt?.title || '专项强化'}】— 请点击 1 名球员立即生效：`, 640, 108, {
         size: 16,
         bold: true,
         color: THEME.GOLD_LIGHT,
@@ -839,15 +868,22 @@ export class PostMatchReDraftScreen {
         drawBadge(ctx, px + 10, py + 8, 38, 20, p.role, tierColor(p.tier));
         drawText(ctx, p.name, px + 58, py + 18, { size: 13, bold: true });
         drawText(ctx, `${p.age}岁 · CA ${p.ca}`, px + 168, py + 18, { size: 12, color: THEME.GOLD_LIGHT, mono: true });
-        const attrKey = opt?.statBoost?.attr ?? 'shooting';
-        drawText(ctx, `${opt?.statBoost?.attrLabel || '属性'}: ${p.attributes[attrKey]}`, px + 360, py + 18, {
-          size: 12,
-          color: '#38BDF8',
-        });
-        drawButton(ctx, hits, px + 480, py + 5, 90, 26, '特训此人', () => {
+        if (isTraitForge) {
+          const infoTxt = opt?.traitForge?.kind === 'unlock_role'
+            ? `兼:${p.secondaryRoles?.join('/') || '无'}`
+            : `金:${p.goldTraits?.length ?? 0} 银:${p.silverTraits?.slice(0, 2).join('/') || '无'}`;
+          drawText(ctx, infoTxt, px + 266, py + 18, { size: 11.5, color: '#F472B6' });
+        } else {
+          const attrKey = opt?.statBoost?.attr ?? 'shooting';
+          drawText(ctx, `${opt?.statBoost?.attrLabel || '属性'}: ${p.attributes[attrKey]}`, px + 360, py + 18, {
+            size: 12,
+            color: '#38BDF8',
+          });
+        }
+        drawButton(ctx, hits, px + 480, py + 5, 90, 26, isTraitForge ? '移植改造' : '特训此人', () => {
           league.applyPostMatchRewardOption(rw.pendingStatOptionId!, p.id);
           SoundEngine.playRewardChime();
-          this.fx.onBurst?.(px + 290, py + 18, THEME.GOLD_LIGHT);
+          this.fx.onBurst?.(px + 290, py + 18, isTraitForge ? '#F472B6' : THEME.GOLD_LIGHT);
           onSave();
         }, { variant: 'gold', fontSize: 11 });
       });
@@ -1017,7 +1053,8 @@ export class PostMatchReDraftScreen {
       ctx.restore();
 
       if (fp >= 0.8) {
-        drawButton(ctx, hits, cx + 24, cy + ch - 62, cw - 48, 42, opt.category === 'stat_boost' ? '选择并指定球员 ▶' : '确认领取 ▶', () => {
+        const needsPlayerTarget = opt.category === 'stat_boost' || opt.category === 'trait_forge';
+        drawButton(ctx, hits, cx + 24, cy + ch - 62, cw - 48, 42, needsPlayerTarget ? '选择并指定球员 ▶' : '确认领取 ▶', () => {
           const res = league.applyPostMatchRewardOption(opt.id);
           if (!res.needsTarget) {
             SoundEngine.playRewardChime();

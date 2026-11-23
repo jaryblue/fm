@@ -87,8 +87,22 @@ export class MatchDayScreen {
   private playerCaMap = new Map<string, number>();
   private elapsedSec = 0;
   private goalScorePopTimer = 0;
+  private memoryHighlightTimer = 0;
   private kickoffIntroTimer = 0;
   private readonly kickoffDuration = 2.2;
+
+  public dispose(): void {
+    this.engine = null;
+    this.renderPlayers.clear();
+    this.tacticGhostTargets.clear();
+    this.storyTags.clear();
+    this.playerCaMap.clear();
+    this.ballTrail = [];
+    this.playerPulses = [];
+    this.playerFloatTags = [];
+    this.pitchRipples = [];
+    this.usedCardIds.clear();
+  }
 
   private getLineOfRole(role: string): 'GK' | 'DEF' | 'MID' | 'ATT' {
     if (role === 'GK') return 'GK';
@@ -267,6 +281,9 @@ export class MatchDayScreen {
     if (this.goalScorePopTimer > 0) {
       this.goalScorePopTimer = Math.max(0, this.goalScorePopTimer - dtSec);
     }
+    if (this.memoryHighlightTimer > 0) {
+      this.memoryHighlightTimer = Math.max(0, this.memoryHighlightTimer - dtSec);
+    }
     SoundEngine.setMatchTension(
       st.minute >= 75 && Math.abs(st.homeScore - st.awayScore) <= 1 && st.phase !== 'full_time'
     );
@@ -362,6 +379,13 @@ export class MatchDayScreen {
           };
           this.goalFlashTimer = 1.4;
           this.goalScorePopTimer = 0.65;
+          if (
+            ev.narrativeTag === 'LATE_WINNER' ||
+            ev.narrativeTag === 'HATTRICK' ||
+            (ev.minute >= 85 && Math.abs(st.homeScore - st.awayScore) <= 1)
+          ) {
+            this.memoryHighlightTimer = 2.8;
+          }
           this.goalFlashSide = ev.pos.x > PITCH.HALF_X ? 'right' : 'left';
           this.pitchRipples.push({ x: ev.pos.x, y: ev.pos.y, color: '#FACC15', timer: 0.9, maxTimer: 0.9, maxR: 38 });
           if (ev.minute >= 80 && Math.abs(st.homeScore - st.awayScore) <= 1 && !this.isPaused && this.speed >= 4) {
@@ -587,22 +611,11 @@ export class MatchDayScreen {
     }
 
     drawRoundRect(ctx, PITCH_RECT.x - 8, PITCH_RECT.y - 8, PITCH_RECT.w + 16, PITCH_RECT.h + 16, 12, '#0B1810', THEME.BORDER);
-    const stageImg = AssetLoader.get('pitch_stage_bg');
-    if (stageImg && typeof ctx.drawImage === 'function') {
-      ctx.save();
-      ctx.beginPath();
-      ctx.rect(PITCH_RECT.x - 6, PITCH_RECT.y - 6, PITCH_RECT.w + 12, PITCH_RECT.h + 12);
-      ctx.clip();
-      ctx.drawImage(stageImg, PITCH_RECT.x - 24, PITCH_RECT.y - 16, PITCH_RECT.w + 48, PITCH_RECT.h + 32);
-      ctx.restore();
-    }
     const sw = PITCH_RECT.w / 10;
     for (let i = 0; i < 10; i++) {
       ctx.fillStyle = i % 2 === 0 ? THEME.BG_PITCH : THEME.BG_PITCH_ALT;
-      ctx.globalAlpha = stageImg ? 0.24 : 1;
       ctx.fillRect(PITCH_RECT.x + i * sw, PITCH_RECT.y, sw, PITCH_RECT.h);
     }
-    ctx.globalAlpha = 1;
     ctx.strokeStyle = 'rgba(255,255,255,0.42)';
     ctx.lineWidth = 1.5;
     ctx.strokeRect(PITCH_RECT.x, PITCH_RECT.y, PITCH_RECT.w, PITCH_RECT.h);
@@ -1001,6 +1014,9 @@ export class MatchDayScreen {
         color: THEME.GOLD_LIGHT,
         align: 'center',
       });
+      if (this.memoryHighlightTimer > 0) {
+        drawBadge(ctx, 560, 152, 160, 22, '★ 载入赛季记忆', '#78350F', '#FEF08A');
+      }
     } else if (this.cardBanner) {
       drawRoundRect(ctx, 390, 102, 500, 38, 10, 'rgba(14,22,40,0.92)', this.cardBanner.color, 1.8);
       drawText(ctx, this.cardBanner.text, 640, 121, {

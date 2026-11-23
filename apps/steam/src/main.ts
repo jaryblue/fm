@@ -202,7 +202,6 @@ async function boot(): Promise<void> {
   function loop(now: number) {
     const dtSec = Math.min(0.05, (now - lastTs) / 1000);
     lastTs = now;
-    applyHiDPI();
     app.update(dtSec);
     app.render(ctx);
     requestAnimationFrame(loop);

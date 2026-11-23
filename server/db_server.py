@@ -105,7 +105,23 @@ class GameRequestHandler(SimpleHTTPRequestHandler):
                     (key,),
                 ).fetchone()
             if not row:
-                self._send_json(HTTPStatus.NOT_FOUND, {"ok": False, "error": "not found"})
+                # 首次使用某个口令时没有存档属于正常状态。
+                # 返回 200 + 空 data，避免浏览器把正常的“空档”记录成资源加载错误。
+                self._send_json(
+                    HTTPStatus.OK,
+                    {
+                        "ok": True,
+                        "key": key,
+                        "data": "",
+                        "meta": {
+                            "seasonNumber": 1,
+                            "currentRound": 1,
+                            "currentTier": 7,
+                            "clubName": "",
+                        },
+                        "updatedAt": 0,
+                    },
+                )
                 return
             self._send_json(
                 HTTPStatus.OK,

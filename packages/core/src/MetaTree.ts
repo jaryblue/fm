@@ -39,9 +39,9 @@ export const META_BRANCHES: MetaBranchDef[] = [
     maxLevel: 5,
     costs: [40, 80, 140, 200, 280],
     levelDescriptions: [
-      '开局 Shuffle Draft 预算 +60 (共 1,340)',
-      '开局 Shuffle Draft 预算 +120 (共 1,400)',
-      '开局预算 +180 (共 1,460)，且 Re-Draft 换人上限 +1',
+      '开局 Shuffle Draft 预算 +60 (共 2,140)',
+      '开局 Shuffle Draft 预算 +120 (共 2,200)',
+      '开局预算 +180 (共 2,260)，且 Re-Draft 换人上限 +1',
       '每赛季开局额外获赠 2 个随机基础战术元素',
       '豪门赞助：赛季结算 Meta 点数奖励额外 +15%',
     ],

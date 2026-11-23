@@ -13,8 +13,8 @@ export const LEAGUE_TIERS: LeagueTierDef[] = [
   { tier: 3, name: '第3级 · 甲级联赛',     shortLabel: '甲级', baseCA: 66, promoteCount: 3, relegateCount: 3, metaMul: 1.30 },
   { tier: 4, name: '第4级 · 乙级联赛',     shortLabel: '乙级', baseCA: 60, promoteCount: 3, relegateCount: 3, metaMul: 1.15 },
   { tier: 5, name: '第5级 · 丙级联赛',     shortLabel: '丙级', baseCA: 54, promoteCount: 3, relegateCount: 3, metaMul: 1.00 },
-  { tier: 6, name: '第6级 · 地区联赛',     shortLabel: '地区', baseCA: 48, promoteCount: 3, relegateCount: 3, metaMul: 0.90 },
-  { tier: 7, name: '第7级 · 社区业余联赛', shortLabel: '业余', baseCA: 42, promoteCount: 3, relegateCount: 0, metaMul: 0.80 },
+  { tier: 6, name: '第6级 · 地区联赛',     shortLabel: '地区', baseCA: 48, promoteCount: 3, relegateCount: 3, metaMul: 0.95 },
+  { tier: 7, name: '第7级 · 社区业余联赛', shortLabel: '业余', baseCA: 42, promoteCount: 3, relegateCount: 0, metaMul: 0.90 },
 ];
 
 export function getLeagueTierInfo(tier: number): LeagueTierDef {

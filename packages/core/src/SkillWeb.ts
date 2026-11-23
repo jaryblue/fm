@@ -105,8 +105,8 @@ const STYLE_ANGLES: Record<TacticalStyle, { angle: number; name: string; color: 
   },
   balanced: {
     angle: 150, name: '均衡原点', color: '#2DD4BF', originId: 'ori_bal',
-    desc: '均衡阵地起点：全队 传球+1 防守+1 体能+2',
-    eff: { passing: 1, defending: 1, stamina: 2 }, mods: { staminaDrainMul: 0.96 },
+    desc: '均衡阵地起点：全队 传球+2 防守+2 体能+2，解锁中场后插上',
+    eff: { passing: 2, defending: 2, stamina: 2 }, mods: { staminaDrainMul: 0.94, boxCrashBonus: 1 },
   },
   tiki_taka: {
     angle: -150, name: '传控原点', color: '#38BDF8', originId: 'ori_tiki',
@@ -157,7 +157,7 @@ const FORMATION_SPECS: Array<{
   { f: '3-4-2-1', sys: '3-back', angle: 45, roles: ['CAM', 'LWB', 'RWB'], desc: '双影锋内收+翼卫拉边（使用 3-4-2-1 时效果×2）', eff: { dribbling: 2, passing: 2 }, mods: { dualOverlap: true } },
   { f: '3-4-1-2', sys: '3-back', angle: 65, roles: ['CAM', 'ST'], desc: '前腰直塞驱动双前锋（使用 3-4-1-2 时效果×2）', eff: { passing: 2, shooting: 2 }, mods: { throughPassBias: 0.03 } },
   // 5-back (4)
-  { f: '5-4-1', sys: '5-back', angle: 115, roles: ['CB', 'GK', 'LWB', 'RWB'], desc: '五后卫低位铁桶与单锋偷鸡（使用 5-4-1 时效果×2）', eff: { defending: 3, goalkeeping: 2 }, mods: { lineShift: -3 } },
+  { f: '5-4-1', sys: '5-back', angle: 115, roles: ['CB', 'GK', 'LWB', 'RWB'], desc: '五后卫低位铁桶与长传直塞反击（使用 5-4-1 时效果×2）', eff: { defending: 2, pace: 2, passing: 1 }, mods: { throughPassBias: 0.04, gkQuickLaunch: true } },
   { f: '5-3-2', sys: '5-back', angle: 140, roles: ['CB', 'ST'], desc: '五人防线配双前锋快反（使用 5-3-2 时效果×2）', eff: { defending: 2, pace: 2 }, mods: { gkQuickLaunch: true } },
   { f: '5-2-3', sys: '5-back', angle: 165, roles: ['LW', 'RW', 'ST'], desc: '稳守后场长传三叉戟（使用 5-2-3 时效果×2）', eff: { pace: 2, shooting: 2 }, mods: { throughPassBias: 0.03 } },
   { f: '5-2-1-2', sys: '5-back', angle: 190, roles: ['CAM', 'LWB', 'RWB'], desc: '五卫前腰反击枢纽（使用 5-2-1-2 时效果×2）', eff: { passing: 2, defending: 2 }, mods: { overlapDepthBonus: 2 } },
@@ -820,9 +820,14 @@ export function computeSkillWebMods(
     staminaDrainMul: 1.0,
   };
 
+  const activeSys = getDefenseSystem(formation);
   for (const id of unlockedIds) {
     const node = map.get(id);
     if (!node?.mods) continue;
+    // 仅激活与当前战术流派/防线体系/阵型相容的行为因子（通用奇点与无标签节点始终生效），避免跨流派节点互相拉扯降智
+    if (node.formationTag && node.formationTag !== formation) continue;
+    if (node.styleTag && node.styleTag !== style) continue;
+    if (node.systemTag && node.systemTag !== activeSys) continue;
     const mul = isNodeResonating(node, formation, style) ? 2 : 1;
     const m = node.mods;
     if (m.overlapDepthBonus) mods.overlapDepthBonus! += m.overlapDepthBonus * mul;

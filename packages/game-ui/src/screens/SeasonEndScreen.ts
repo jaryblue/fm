@@ -29,6 +29,7 @@ export class SeasonEndScreen {
   private ceremonyBurstDone = false;
   private selectedRewardId: string | null = null;
   private trainFocus: 'auto' | 'attack' | 'playmake' | 'defense' = 'auto';
+  private memoryIdx = 0;
   private notice = '点选左侧赛季引援新秀，再点右侧任意老将即可一对一交换并保留至下赛季';
 
   public resetIntro(): void {
@@ -36,6 +37,7 @@ export class SeasonEndScreen {
     this.enterTimer = 0;
     this.ceremonyBurstDone = false;
     this.selectedRewardId = null;
+    this.memoryIdx = 0;
   }
 
   public update(dtSec: number): void {
@@ -214,9 +216,9 @@ export class SeasonEndScreen {
     });
 
     // 右栏上半：Meta 点数结算明细
-    drawChamferPanel(ctx, 544, 118, 672, 162, 12, THEME.BG_CARD, THEME.BORDER_GOLD, 1.2);
-    drawText(ctx, 'Meta 教练点数结算明细', 564, 142, { size: 14, bold: true, color: THEME.GOLD_LIGHT });
-    drawText(ctx, `当前总计：${st.metaPointsTotal} pt`, 1196, 142, { size: 15, bold: true, color: THEME.GREEN, align: 'right', mono: true });
+    drawChamferPanel(ctx, 544, 118, 672, 128, 12, THEME.BG_CARD, THEME.BORDER_GOLD, 1.2);
+    drawText(ctx, 'Meta 教练点数结算明细', 564, 138, { size: 13.5, bold: true, color: THEME.GOLD_LIGHT });
+    drawText(ctx, `当前总计：${st.metaPointsTotal} pt`, 1196, 138, { size: 14, bold: true, color: THEME.GREEN, align: 'right', mono: true });
 
     const bd = summary?.metaBreakdown;
     const items: Array<[string, string, string]> = [
@@ -227,38 +229,101 @@ export class SeasonEndScreen {
     ];
     items.forEach(([lbl, val, col], idx) => {
       const ix = 564 + idx * 160;
-      drawRoundRect(ctx, ix, 168, 148, 92, 8, 'rgba(14, 22, 40, 0.85)', idx === 3 ? THEME.GOLD_LIGHT : THEME.BORDER);
-      drawText(ctx, lbl, ix + 74, 194, { size: 11, color: THEME.TX2, align: 'center' });
-      drawText(ctx, val, ix + 74, 232, { size: 18, bold: true, color: col, align: 'center', mono: true });
+      drawRoundRect(ctx, ix, 158, 148, 74, 8, 'rgba(14, 22, 40, 0.85)', idx === 3 ? THEME.GOLD_LIGHT : THEME.BORDER);
+      drawText(ctx, lbl, ix + 74, 180, { size: 10.5, color: THEME.TX2, align: 'center' });
+      drawText(ctx, val, ix + 74, 210, { size: 17, bold: true, color: col, align: 'center', mono: true });
     });
 
+    // 右栏中部：赛季记忆明信片（支持多条轮播 + 敌方球员/阵型/xG/控球详情）
+    const memories = summary?.memories ?? [];
+    if (memories.length > 0) {
+      this.memoryIdx = ((this.memoryIdx % memories.length) + memories.length) % memories.length;
+    } else {
+      this.memoryIdx = 0;
+    }
+    const topMem = memories[this.memoryIdx];
+    const memAccent = topMem?.isPainful ? '#FCA5A5' : THEME.GOLD_LIGHT;
+    drawChamferPanel(ctx, 544, 254, 672, 118, 12, THEME.BG_CARD, topMem ? memAccent : THEME.BORDER, 1.3, memAccent);
+    drawText(ctx, '赛季记忆明信片 · SEASON MEMORY', 564, 274, { size: 13.5, bold: true, color: memAccent });
+    if (topMem) {
+      drawBadge(ctx, 832, 263, 76, 20, topMem.badge, topMem.isPainful ? '#7F1D1D' : '#78350F', memAccent);
+      if (topMem.contextTag) {
+        drawBadge(ctx, 914, 263, 78, 20, topMem.contextTag, '#1E293B', '#38BDF8');
+      }
+      if (memories.length > 1) {
+        drawButton(ctx, hits, 1086, 262, 28, 22, '◀', () => {
+          this.memoryIdx = (this.memoryIdx - 1 + memories.length) % memories.length;
+        }, { variant: 'ghost', fontSize: 10 });
+        drawText(ctx, `${this.memoryIdx + 1}/${memories.length}`, 1138, 273, {
+          size: 11,
+          bold: true,
+          color: THEME.TX2,
+          align: 'center',
+          mono: true,
+        });
+        drawButton(ctx, hits, 1162, 262, 28, 22, '▶', () => {
+          this.memoryIdx = (this.memoryIdx + 1) % memories.length;
+        }, { variant: 'ghost', fontSize: 10 });
+      } else {
+        drawText(
+          ctx,
+          topMem.isPainful ? '「再来一局」复仇钩子：下赛季找回场子！' : '高光时刻已封存荣誉室',
+          1196,
+          274,
+          { size: 11, bold: true, color: topMem.isPainful ? '#FCA5A5' : THEME.GREEN, align: 'right' }
+        );
+      }
+      drawText(ctx, topMem.title, 564, 300, { size: 14.5, bold: true, color: THEME.TX1 });
+      drawWrappedText(ctx, topMem.summary, 564, 320, 632, 16, { size: 11, color: THEME.TX2, maxLines: 2 });
+      const metaChips: string[] = [];
+      if (topMem.userFormation && topMem.oppFormation) {
+        metaChips.push(`${topMem.userFormation} vs ${topMem.oppFormation}${topMem.oppStyle ? `(${topMem.oppStyle})` : ''}`);
+      }
+      if (topMem.xgText) metaChips.push(topMem.xgText);
+      if (topMem.possessionText) metaChips.push(topMem.possessionText);
+      if (topMem.oppPlayerName) metaChips.push(`敌方焦点:${topMem.oppPlayerName}`);
+      if (topMem.assistPlayerName) metaChips.push(`助攻:${topMem.assistPlayerName}`);
+      if (metaChips.length > 0) {
+        drawText(ctx, metaChips.slice(0, 4).join('  ·  '), 564, 358, {
+          size: 10,
+          color: '#7DD3FC',
+        });
+      }
+    } else {
+      drawText(ctx, '本赛季波澜不惊 · 期待下赛季书写绝杀与逆转名场面', 880, 318, {
+        size: 12.5,
+        color: THEME.TX3,
+        align: 'center',
+      });
+    }
+
     // 右栏下半：赛季结算专属宝箱（3选1）
-    drawChamferPanel(ctx, 544, 294, 672, 310, 12, THEME.BG_CARD, THEME.BORDER_GOLD, 1.4, THEME.GOLD_LIGHT);
-    drawText(ctx, '赛季结算专属宝箱 · 请任选 1 项带入下赛季', 564, 320, { size: 15, bold: true, color: THEME.GOLD_LIGHT });
+    drawChamferPanel(ctx, 544, 380, 672, 224, 12, THEME.BG_CARD, THEME.BORDER_GOLD, 1.4, THEME.GOLD_LIGHT);
+    drawText(ctx, '赛季结算专属宝箱 · 请任选 1 项带入下赛季', 564, 402, { size: 14, bold: true, color: THEME.GOLD_LIGHT });
 
     const bonusOpts = summary?.seasonBonusOptions ?? [];
     const claimedId = summary?.seasonBonusClaimedId;
 
     if (claimedId) {
-      drawRoundRect(ctx, 564, 356, 632, 224, 10, 'rgba(20, 83, 45, 0.25)', THEME.GREEN, 1.8);
-      drawFoilShimmer(ctx, 564, 356, 632, 224, this.animClock * 1.1, 'rgba(74, 222, 128, 0.22)');
-      drawBadge(ctx, 800, 388, 160, 28, '赛季宝箱已开启 ✓', '#14532D', THEME.GREEN);
-      drawText(ctx, summary?.seasonBonusSummary || '赛季奖励已发放！', 880, 454, {
-        size: 18,
+      drawRoundRect(ctx, 564, 422, 632, 166, 10, 'rgba(20, 83, 45, 0.25)', THEME.GREEN, 1.8);
+      drawFoilShimmer(ctx, 564, 422, 632, 166, this.animClock * 1.1, 'rgba(74, 222, 128, 0.22)');
+      drawBadge(ctx, 800, 442, 160, 26, '赛季宝箱已开启 ✓', '#14532D', THEME.GREEN);
+      drawText(ctx, summary?.seasonBonusSummary || '赛季奖励已发放！', 880, 496, {
+        size: 16,
         bold: true,
         color: THEME.GOLD_LIGHT,
         align: 'center',
       });
-      drawButton(ctx, hits, 720, 504, 320, 46, '下一步：休赛期引援与特训 ▶', () => {
+      drawButton(ctx, hits, 720, 534, 320, 40, '下一步：休赛期引援与特训 ▶', () => {
         this.viewMode = 'roster_prep';
-      }, { variant: 'gold', fontSize: 14 });
+      }, { variant: 'gold', fontSize: 13 });
     } else if (bonusOpts.length > 0) {
       const colors = ['#C084FC', '#38BDF8', THEME.GOLD_LIGHT];
       bonusOpts.forEach((opt, oi) => {
         const bx = 564 + oi * 214;
-        const by = 348;
+        const by = 418;
         const bw = 202;
-        const bh = 236;
+        const bh = 176;
         const col = colors[oi % colors.length];
         const hovered = hits.isHovered(bx, by, bw, bh);
 
@@ -275,9 +340,9 @@ export class SeasonEndScreen {
           col
         );
         drawFoilShimmer(ctx, bx, by, bw, bh, this.animClock + oi * 0.5, col + '33');
-        drawBadge(ctx, bx + 14, by + 16, 118, 22, opt.badge, '#1E293B', col);
-        drawText(ctx, opt.title, bx + 14, by + 64, { size: 14, bold: true, color: THEME.TX1 });
-        drawWrappedText(ctx, opt.subtitle, bx + 14, by + 94, bw - 28, 19, { size: 11.5, color: THEME.TX2, maxLines: 4 });
+        drawBadge(ctx, bx + 12, by + 12, 114, 20, opt.badge, '#1E293B', col);
+        drawText(ctx, opt.title, bx + 12, by + 50, { size: 13, bold: true, color: THEME.TX1 });
+        drawWrappedText(ctx, opt.subtitle, bx + 12, by + 74, bw - 24, 16, { size: 10.5, color: THEME.TX2, maxLines: 3 });
 
         const claim = () => {
           const res = league.pickSeasonBonusReward(opt.id);
@@ -288,11 +353,11 @@ export class SeasonEndScreen {
             actions.onSave?.();
           }
         };
-        drawButton(ctx, hits, bx + 14, by + bh - 50, bw - 28, 36, '开启宝箱 ✨', claim, { variant: 'gold', fontSize: 12 });
+        drawButton(ctx, hits, bx + 12, by + bh - 40, bw - 24, 30, '开启宝箱 ✨', claim, { variant: 'gold', fontSize: 11.5 });
         hits.add(bx, by, bw, bh, claim);
       });
     } else {
-      drawText(ctx, '点击右下角进入休赛期引援与特训', 880, 460, { size: 14, color: THEME.TX2, align: 'center' });
+      drawText(ctx, '点击右下角进入休赛期引援与特训', 880, 504, { size: 14, color: THEME.TX2, align: 'center' });
     }
 
     // 底部操作按钮

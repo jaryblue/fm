@@ -342,13 +342,13 @@ export function synthesizeChemistry(
     // 以撒式高风险高回报：进攻/速度大幅飙升，但付出体能与轻微防线代价
     shooting += 8;
     pace += 7;
-    penaltyFitnessDelta = -8;
-    if (counts.blitz >= 2) penaltyAllDefDelta = -3;
+    penaltyFitnessDelta = -4;
+    if (counts.blitz >= 2) penaltyAllDefDelta = -1;
   } else if (rawInstability >= 2.0 || len >= 3) {
     stability = '双刃剑';
     stabilityColor = '#F59E0B';
     isCorrupted = counts.press >= 2 || counts.blitz >= 2;
-    if (counts.press >= 2) penaltyFitnessDelta = -6;
+    if (counts.press >= 2) penaltyFitnessDelta = -3;
   }
 
   // 等级与能量消耗
@@ -406,7 +406,7 @@ export function synthesizeChemistry(
     id: commit ? `card_chem_${++craftSeq}_${Date.now().toString(36)}` : 'preview',
     name: `${prefix}${coreName}`,
     cost,
-    durationMinutes: (level >= 3 ? 14 : 11) + (focus === 'endure' ? 5 : 0),
+    durationMinutes: (level >= 4 ? 18 : level === 3 ? 16 : 11) + (focus === 'endure' ? 5 : 0),
     targetLine,
     passingDelta: passing > 0 ? passing : undefined,
     shootingDelta: shooting > 0 ? shooting : undefined,
@@ -463,19 +463,20 @@ export function upgradeCommandCard(card: CommandCard): boolean {
 export function fuseTwoCards(a: CommandCard, b: CommandCard): CommandCard {
   const nextLv = Math.min(4, Math.max(a.level ?? 1, b.level ?? 1) + 1);
   const chain = a.chainEffect || b.chainEffect || (nextLv >= 3 ? CHAIN_POOL[(a.name.length + b.name.length) % CHAIN_POOL.length] : undefined);
+  const capFuse = (v: number) => (v > 0 ? Math.min(14, v) : undefined);
   const card: CommandCard = {
     id: `card_fuse_${++craftSeq}_${Date.now().toString(36)}`,
     name: `融合·${a.name.slice(0, 3)}${b.name.slice(0, 3)}`,
     cost: Math.min(3, Math.max(a.cost, b.cost)),
     durationMinutes: Math.max(a.durationMinutes, b.durationMinutes) + 2,
     targetLine: nextLv >= 4 ? 'ALL' : (a.targetLine === b.targetLine ? a.targetLine : 'MID'),
-    passingDelta: (a.passingDelta ?? 0) + Math.ceil((b.passingDelta ?? 0) * 0.5) || undefined,
-    shootingDelta: (a.shootingDelta ?? 0) + Math.ceil((b.shootingDelta ?? 0) * 0.5) || undefined,
-    defendingDelta: (a.defendingDelta ?? 0) + Math.ceil((b.defendingDelta ?? 0) * 0.5) || undefined,
-    paceDelta: (a.paceDelta ?? 0) + Math.ceil((b.paceDelta ?? 0) * 0.5) || undefined,
-    composureDelta: (a.composureDelta ?? 0) + Math.ceil((b.composureDelta ?? 0) * 0.5) || undefined,
-    goalkeepingDelta: (a.goalkeepingDelta ?? 0) + Math.ceil((b.goalkeepingDelta ?? 0) * 0.5) || undefined,
-    fitnessInstantDelta: (a.fitnessInstantDelta ?? 0) + (b.fitnessInstantDelta ?? 0) || undefined,
+    passingDelta: capFuse((a.passingDelta ?? 0) + Math.ceil((b.passingDelta ?? 0) * 0.5)),
+    shootingDelta: capFuse((a.shootingDelta ?? 0) + Math.ceil((b.shootingDelta ?? 0) * 0.5)),
+    defendingDelta: capFuse((a.defendingDelta ?? 0) + Math.ceil((b.defendingDelta ?? 0) * 0.5)),
+    paceDelta: capFuse((a.paceDelta ?? 0) + Math.ceil((b.paceDelta ?? 0) * 0.5)),
+    composureDelta: capFuse((a.composureDelta ?? 0) + Math.ceil((b.composureDelta ?? 0) * 0.5)),
+    goalkeepingDelta: capFuse((a.goalkeepingDelta ?? 0) + Math.ceil((b.goalkeepingDelta ?? 0) * 0.5)),
+    fitnessInstantDelta: capFuse((a.fitnessInstantDelta ?? 0) + (b.fitnessInstantDelta ?? 0)),
     penaltyFitnessDelta: a.penaltyFitnessDelta || b.penaltyFitnessDelta,
     penaltyAllDefDelta: a.penaltyAllDefDelta || b.penaltyAllDefDelta,
     chainEffect: chain,

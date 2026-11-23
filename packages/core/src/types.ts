@@ -14,6 +14,12 @@ import { CommandCard, ElementId } from './CommandCards';
 export type PlayerTier = 'S' | 'A' | 'B' | 'C';
 export type PlayerMorale = 'low' | 'normal' | 'high';
 
+export interface TempTraitBuff {
+  trait: string;
+  tier: 'silver' | 'gold';
+  remainingMatches: number;
+}
+
 export interface DraftPlayer extends PlayerInput {
   ca: number;              // 综合能力 55 - 92
   cost: number;            // 选秀预算点 (40 - 130)
@@ -23,6 +29,7 @@ export interface DraftPlayer extends PlayerInput {
   traits?: string[];       // 实装引擎词条列表
   goldTraits?: string[];   // FC26 金标 PlayStyle+（2倍加成）
   silverTraits?: string[]; // FC26 银标 PlayStyle（基础加成）
+  tempTraits?: TempTraitBuff[]; // 赛后肉鸽等获得的临时特质（持续若干轮后自动过期）
   hiddenTrait?: string;    // 触发式隐藏词条（未觉醒前不显示名称）
   seasonYellowsSinceBan?: number;
   suspendedRounds?: number;
@@ -319,6 +326,41 @@ export interface SeasonBonusOption {
   badge: string;
 }
 
+export type SeasonMemoryKind =
+  | 'LATE_WINNER'
+  | 'COMEBACK'
+  | 'CONTROVERSY'
+  | 'HEROIC'
+  | 'UPSET'
+  | 'GOAL_FEST'
+  | 'RED_CARD_STAND'
+  | 'AWAKENING'
+  | 'TITLE_CLASH';
+
+export interface SeasonMemory {
+  id: string;
+  round: number;
+  kind: SeasonMemoryKind;
+  badge: string;
+  title: string;
+  summary: string;
+  scoreText: string;
+  oppName: string;
+  playerName?: string;
+  oppPlayerName?: string;
+  assistPlayerName?: string;
+  userFormation?: string;
+  oppFormation?: string;
+  oppStyle?: string;
+  xgText?: string;
+  possessionText?: string;
+  contextTag?: string;
+  details?: string[];
+  minute?: number;
+  dramaScore: number;
+  isPainful?: boolean;
+}
+
 export interface SeasonSummary {
   finalRank: number;
   isChampion: boolean;
@@ -341,6 +383,7 @@ export interface SeasonSummary {
   seasonBonusOptions?: SeasonBonusOption[];
   seasonBonusClaimedId?: string | null;
   seasonBonusSummary?: string;
+  memories?: SeasonMemory[];
   tier?: number;
   tierName?: string;
   promotionStatus?: 'promoted' | 'relegated' | 'stayed';
@@ -358,6 +401,7 @@ export interface SeasonHistoryRecord {
   isChampion: boolean;
   storylineTitle?: string;
   topScorer?: { name: string; goals: number } | null;
+  topMemory?: SeasonMemory | null;
   tier?: number;
   promotionStatus?: 'promoted' | 'relegated' | 'stayed';
 }
@@ -432,6 +476,8 @@ export interface LeagueSaveState {
   hallOfFame?: HallOfFameData;
   tutorialDone?: TutorialProgress;
   pendingPostMatchReward?: PostMatchRewardState | null;
+  recentRewardCategories?: PostMatchRewardCategory[];
+  seasonMemories?: SeasonMemory[];
   lastSummary: SeasonSummary | null;
 }
 
@@ -443,7 +489,15 @@ export interface ChemistryLink {
   title?: string;
 }
 
-export type PostMatchRewardCategory = 'player' | 'stat_boost' | 'line_boost' | 'craft_card' | 'event';
+export type PostMatchRewardCategory =
+  | 'player'
+  | 'stat_boost'
+  | 'line_boost'
+  | 'craft_card'
+  | 'event'
+  | 'trait_forge'
+  | 'tactical_pact'
+  | 'chemistry_forge';
 
 export interface PostMatchRewardOption {
   id: string;
@@ -455,7 +509,24 @@ export interface PostMatchRewardOption {
   statBoost?: { attr: keyof PlayerAttributes; attrLabel: string; delta: number };
   lineBoost?: { line: 'GK' | 'DEF' | 'MID' | 'ATT'; lineLabel: string; attr: keyof PlayerAttributes; attrLabel: string; delta: number };
   craftReward?: { kind: 'new_card' | 'upgrade_card' | 'elements'; card?: CommandCard; elements?: Array<{ id: ElementId; name: string; count: number }> };
-  eventReward?: { kind: 'heal_all' | 'reveal_hidden' | 'devil_training' | 'scout_meta' | 'team_familiarity' | 'pair_chemistry' | 'captain_mentor'; description: string };
+  eventReward?: {
+    kind:
+      | 'heal_all'
+      | 'reveal_hidden'
+      | 'devil_training'
+      | 'scout_meta'
+      | 'team_familiarity'
+      | 'pair_chemistry'
+      | 'captain_mentor'
+      | 'meta_grant'
+      | 'prep_actions'
+      | 'scout_intel';
+    description: string;
+    amount?: number;
+  };
+  traitForge?: { kind: 'grant_silver' | 'upgrade_gold' | 'unlock_role'; trait?: string; durationRounds?: number; description: string };
+  pactReward?: { kind: 'blitz_overdrive' | 'iron_fortress' | 'youth_gamble' | 'veteran_last_dance' | 'black_market_alchemy' | 'stamina_limit_break'; description: string };
+  chemReward?: { kind: 'golden_link' | 'formation_master' | 'spine_boost' | 'card_overclock'; description: string };
 }
 
 export interface PostMatchRewardState {

@@ -610,7 +610,7 @@ export class MatchEngine {
           skillId: sk.id,
           name: sk.name,
           situationLabel: sk.situationLabel,
-          powerLabel: hasCardBoost ? `${sk.powerLabel} (卡牌共振+35%威力)` : sk.powerLabel,
+          powerLabel: hasCardBoost ? `${sk.powerLabel} (卡牌共振+20%威力)` : sk.powerLabel,
           expiresTick: s.tick + 12,
           isCardBoosted: hasCardBoost,
         };
@@ -629,7 +629,7 @@ export class MatchEngine {
     if (s.minute < cdEnd) return { ok: false };
 
     const hasCardBoost = s.activeBuffs.some(bf => bf.team === team && !bf.effect.id.startsWith('sk_'));
-    const mul = hasCardBoost ? 1.35 : 1.0;
+    const mul = hasCardBoost ? 1.20 : 1.0;
     const eff: CommandCardEffect = {
       ...sk.effect,
       passingDelta: sk.effect.passingDelta ? Math.round(sk.effect.passingDelta * mul) : undefined,
@@ -645,7 +645,7 @@ export class MatchEngine {
     s.skillUses = s.skillUses ?? {};
     s.skillUses[skillId] = uses + 1;
     s.skillCooldowns = s.skillCooldowns ?? {};
-    const effCd = hasCardBoost ? Math.round(sk.cooldownMinutes * 0.6) : sk.cooldownMinutes;
+    const effCd = hasCardBoost ? Math.round(sk.cooldownMinutes * 0.75) : sk.cooldownMinutes;
     s.skillCooldowns[skillId] = s.minute + effCd;
     s.activeSkillPrompt = null;
     return { ok: true, boosted: hasCardBoost };
@@ -829,10 +829,22 @@ export class MatchEngine {
         const attPower = holder.attributes.dribbling * 0.7 + holder.attributes.strength * 0.3 + frenzyHolderEdge;
         const tackleGoldMul = def.goldTraits?.includes('精准铲断') ? 2 : 1;
         const traitTackleBonus = def.traits?.includes('精准铲断') ? 0.10 * tackleGoldMul : 0;
-        const styleTackleBonus = oppStyle === 'gegenpress' ? 0.08 : 0;
+        const styleTackleBonus =
+          oppStyle === 'gegenpress' ? 0.06 :
+          oppStyle === 'park_bus' && toRelativeX(holder.pos.x, this.getAttackDir(holder.team)) >= 68 ? 0.05 : 0;
+        const defFatigueTacklePenalty = def.fitness < 65 ? -0.10 : 0;
+        const holderStyle = holder.team === 'home' ? this.state.homeStyle : this.state.awayStyle;
+        const holderForm = holder.team === 'home' ? this.state.homeFormation : this.state.awayFormation;
+        const holderRelX = toRelativeX(holder.pos.x, this.getAttackDir(holder.team));
+        const counterStyleTackleMod =
+          (oppStyle === 'gegenpress' && holderStyle === 'tiki_taka' && holderRelX < 55 ? 0.08 : 0) +
+          ((oppStyle === 'gegenpress' || oppStyle === 'wing_play') && (holderStyle === 'counter' || holderStyle === 'park_bus') && holderRelX < 58 ? -0.10 : 0) +
+          (holderStyle === 'balanced' && (oppStyle === 'gegenpress' || oppStyle === 'tiki_taka') ? 0.03 : 0) +
+          (getDefenseSystem(holderForm) === '5-back' && holderRelX >= 52 ? -0.03 : 0) +
+          (getDefenseSystem(holderForm) === '4-back' && holderRelX < 52 ? -0.03 : 0);
         const blitzBonus = this.hasActiveMechanic(oppTeam, 'high_press_blitz') ? 0.12 : 0;
         const traitFoulMul = def.traits?.includes('精准铲断') ? (def.goldTraits?.includes('精准铲断') ? 0.45 : 0.65) : 1.0;
-        const tackleWinProb = clamp(0.45 + ((defPower - attPower) / 100) * 0.55 + traitTackleBonus + styleTackleBonus + blitzBonus, 0.15, 0.92);
+        const tackleWinProb = clamp(0.45 + ((defPower - attPower) / 100) * 0.55 + traitTackleBonus + styleTackleBonus + defFatigueTacklePenalty + counterStyleTackleMod + blitzBonus, 0.15, 0.92);
 
         // 约 24% 概率动作过大造成犯规
         if (Math.random() < 0.24 * pressMul * traitFoulMul) {
@@ -938,18 +950,46 @@ export class MatchEngine {
     if (hasBloodFrenzy) {
       xG = Math.min(0.68, xG * 1.10);
     }
+    const myStyleShot = shooter.team === 'home' ? this.state.homeStyle : this.state.awayStyle;
+    const myFormShot = shooter.team === 'home' ? this.state.homeFormation : this.state.awayFormation;
+    const oppStyleShot = shooter.team === 'home' ? this.state.awayStyle : this.state.homeStyle;
+    const oppFormShot = shooter.team === 'home' ? this.state.awayFormation : this.state.homeFormation;
+    const oppIs5Back = getDefenseSystem(oppFormShot) === '5-back';
+    if ((myStyleShot === 'counter' || myStyleShot === 'park_bus') && (oppStyleShot === 'gegenpress' || oppStyleShot === 'wing_play')) {
+      xG = Math.min(0.68, xG + (myStyleShot === 'counter' ? 0.08 : 0.05));
+    } else if (myStyleShot === 'park_bus' && oppStyleShot !== 'park_bus') {
+      xG = Math.min(0.68, xG + 0.03);
+    } else if (myStyleShot === 'counter' && oppStyleShot !== 'park_bus') {
+      xG = Math.min(0.68, xG + 0.02);
+    } else if (oppStyleShot === 'gegenpress' && dist >= 18 && dist < 24) {
+      xG = Math.min(0.68, xG + 0.02);
+    } else if (myStyleShot === 'tiki_taka' && oppStyleShot === 'park_bus') {
+      xG = Math.min(0.68, xG + 0.04);
+    }
+    if (getDefenseSystem(myFormShot) === '5-back' && toRelativeX(shooter.pos.x, dir) > 50) {
+      xG = Math.min(0.68, xG + (myFormShot === '5-4-1' ? 0.02 : 0.01));
+    }
+    if (getDefenseSystem(myFormShot) === '4-back' && toRelativeX(shooter.pos.x, dir) > 70) {
+      xG = Math.min(0.68, xG + 0.02);
+    }
     shooter.hasBall = false;
     shooter.matchStats.shots++;
     this.state.stats[shooter.team].shots++;
     this.state.stats[shooter.team].xG += xG;
 
-    // 决定是否射正门框范围内（受 shooting 与距离影响，五大联赛平均射正率 ~34%-38%）
-    const fatiguePenalty = shooter.fitness < 55 ? ((55 - shooter.fitness) / 35) * 0.10 : 0;
-    const effectiveShoot = Math.min(99, shooter.attributes.shooting + (hasBloodFrenzy ? 8 : 0));
+    // 决定是否射正门框范围内（受 shooting、疲惫、五后卫/铁桶密集干扰与距离影响）
+    const fatiguePenalty = shooter.fitness < 62 ? ((62 - shooter.fitness) / 38) * 0.11 : 0;
+    const strainPenalty = shooter.strainWarning ? 0.04 : 0;
+    const antiAttackShotPenalty =
+      (oppIs5Back && (myStyleShot === 'wing_play' || getDefenseSystem(myFormShot) === '3-back') ? 0.08 : 0) +
+      (oppStyleShot === 'park_bus' && (myStyleShot === 'wing_play' || myStyleShot === 'gegenpress') ? 0.07 : 0);
+    const rawShoot = Math.min(99, shooter.attributes.shooting + (hasBloodFrenzy ? 8 : 0));
+    const effectiveShoot = rawShoot > 80 ? 80 + (rawShoot - 80) * 1.35 : rawShoot;
+    const longDistPenalty = dist >= 22 && !hasLongShotCannon ? (dist - 20) * 0.015 : 0;
     const onTargetProb = clamp(
-      0.20 + (effectiveShoot / 99) * 0.30 - (dist / 35) * 0.14 - fatiguePenalty + (hasLongShotCannon ? 0.14 : 0),
-      0.14,
-      hasLongShotCannon ? 0.72 : 0.62
+      0.24 + (effectiveShoot / 99) * 0.34 - (dist / 32) * 0.16 - longDistPenalty - fatiguePenalty - strainPenalty - antiAttackShotPenalty + (hasLongShotCannon ? 0.14 : 0),
+      0.10,
+      hasLongShotCannon ? 0.74 : 0.68
     );
     const onTarget = Math.random() < onTargetProb;
     if (onTarget) {
@@ -982,7 +1022,32 @@ export class MatchEngine {
         if (p.team === b.lastTouchTeam || p.redCard || p.stunTicks > 0) continue;
         const d = dist2D(p.pos, b.pos);
         if (d < 2.2) {
-          const interceptChance = clamp(0.52 + (p.attributes.defending / 99) * 0.40, 0.42, 0.88);
+          const passTeam: TeamSide = b.lastTouchTeam ?? 'home';
+          const passStyle = passTeam === 'home' ? this.state.homeStyle : this.state.awayStyle;
+          const defStyleInt = p.team === 'home' ? this.state.homeStyle : this.state.awayStyle;
+          const defFormInt = p.team === 'home' ? this.state.homeFormation : this.state.awayFormation;
+          const defIs5Back = getDefenseSystem(defFormInt) === '5-back';
+          let interceptMod = 0;
+          if (defStyleInt === 'gegenpress' && (b.passType === 'through' || b.passType === 'long')) {
+            interceptMod -= (passStyle === 'counter' || passStyle === 'park_bus') ? 0.10 : 0.03;
+          }
+          if ((defIs5Back || defStyleInt === 'park_bus') && b.passType === 'cross') {
+            interceptMod += 0.14;
+          }
+          if ((defIs5Back || defStyleInt === 'park_bus') && passStyle === 'counter' && b.passType === 'through') {
+            interceptMod += 0.05;
+          }
+          if (passStyle === 'counter' && (b.passType === 'through' || b.passType === 'long')) {
+            interceptMod -= 0.05;
+          }
+          const passerObj = b.lastPasserId ? this.state.players.find(pl => pl.id === b.lastPasserId) : null;
+          const passerPass = passerObj ? passerObj.attributes.passing : 65;
+          const isLoftedPass = b.passType === 'cross' || b.passType === 'long';
+          const passerResist =
+            ((passerPass - 60) / 100) * 0.28 +
+            (passerObj?.traits?.includes('节拍器') ? (passerObj.goldTraits?.includes('节拍器') ? 0.08 : 0.05) : 0) +
+            (isLoftedPass && passerObj?.traits?.includes('精准长传') ? (passerObj.goldTraits?.includes('精准长传') ? 0.10 : 0.06) : 0);
+          const interceptChance = clamp(0.50 + ((p.attributes.defending - 60) / 100) * 0.28 - passerResist + interceptMod, 0.24, 0.86);
           if (Math.random() < interceptChance) {
             p.matchStats.interceptions++;
             this.state.stats[p.team].interceptions++;
@@ -1026,10 +1091,15 @@ export class MatchEngine {
       // 如果是高质量边路传中到禁区，抢点前锋有较高概率直接头球/垫射
       const tStyle = target.team === 'home' ? this.state.homeStyle : this.state.awayStyle;
       const tMods = target.team === 'home' ? this.homeMods : this.awayMods;
-      const baseCrossFinish = tStyle === 'wing_play' || (tMods.crossBias ?? 0) > 0.03 ? 0.66 : 0.50;
+      const baseCrossFinish = tStyle === 'wing_play' || (tMods.crossBias ?? 0) > 0.03 ? 0.52 : 0.49;
+      const defFormCross = target.team === 'home' ? this.state.awayFormation : this.state.homeFormation;
+      const defStyleCross = target.team === 'home' ? this.state.awayStyle : this.state.homeStyle;
+      const antiCrossPenalty =
+        (getDefenseSystem(defFormCross) === '5-back' ? 0.22 : 0) +
+        (defStyleCross === 'park_bus' ? 0.16 : 0);
       const crossFinishProb = clamp(
-        baseCrossFinish + (this.hasActiveMechanic(target.team, 'wing_overload') ? 0.20 : 0),
-        0.30,
+        baseCrossFinish + (this.hasActiveMechanic(target.team, 'wing_overload') ? 0.20 : 0) - antiCrossPenalty,
+        0.18,
         0.92
       );
       if (b.passType === 'cross' && target.role !== 'GK' && Math.random() < crossFinishProb) {
@@ -1060,8 +1130,12 @@ export class MatchEngine {
     const defForm = defTeam === 'home' ? this.state.homeFormation : this.state.awayFormation;
     const isFiveBack = getDefenseSystem(defForm) === '5-back';
     const hasIronWall = this.hasActiveMechanic(defTeam, 'iron_wall_block');
-    const blockDist = (defStyle === 'park_bus' || isFiveBack ? 1.60 : 1.15) + (hasIronWall ? 0.25 : 0);
-    const blockProb = (defStyle === 'park_bus' || isFiveBack ? 0.33 : 0.24) + (hasIronWall ? 0.18 : 0);
+    const shootForm = shootTeam === 'home' ? this.state.homeFormation : this.state.awayFormation;
+    const shootStyle = shootTeam === 'home' ? this.state.homeStyle : this.state.awayStyle;
+    const fiveVsCounterTarget = isFiveBack && (getDefenseSystem(shootForm) === '3-back' || shootStyle === 'wing_play') ? 0.10 : 0;
+    const busVsCounterTarget = defStyle === 'park_bus' && (shootStyle === 'wing_play' || shootStyle === 'gegenpress') ? 0.09 : 0;
+    const blockDist = (defStyle === 'park_bus' || isFiveBack ? 1.36 : 1.08) + (hasIronWall ? 0.25 : 0);
+    const blockProb = (defStyle === 'park_bus' || isFiveBack ? 0.22 : 0.18) + fiveVsCounterTarget + busVsCounterTarget + (hasIronWall ? 0.16 : 0);
     if (b.pos.z < 1.9) {
       for (const p of this.state.players) {
         if (p.team !== defTeam || p.redCard || p.role === 'GK') continue;
@@ -1106,16 +1180,21 @@ export class MatchEngine {
       return;
     }
 
-    // 3. 门将扑救判定（校准：射正转化率使场均总进球稳定在 2.5 - 2.8）
+    // 3. 门将扑救判定（L1+L2 校准：AI 内战总进球 2.3~2.7，零封率 28%~35%，并拉开 80+ 高分区分化）
     const gk = this.state.players.find(p => p.team === defTeam && p.role === 'GK');
-    const gkAttr = gk ? gk.attributes.goalkeeping : 65;
+    const rawGk = gk ? gk.attributes.goalkeeping : 65;
+    const gkAttr = rawGk > 80 ? 80 + (rawGk - 80) * 1.15 : rawGk;
     const frenzyShootBonus = shooter && this.hasActiveMechanic(shooter.team, 'blood_frenzy') && this.isTrailing(shooter.team) ? 8 : 0;
-    const shooterAttr = shooter ? (Math.min(99, shooter.attributes.shooting + frenzyShootBonus) * 0.65 + shooter.attributes.composure * 0.35) : 70;
+    const rawShooterShoot = shooter ? Math.min(99, shooter.attributes.shooting + frenzyShootBonus) : 70;
+    const rawShooterComp = shooter ? shooter.attributes.composure : 70;
+    const baseShooterAttr = rawShooterShoot * 0.65 + rawShooterComp * 0.35;
+    const shooterAttr = baseShooterAttr > 80 ? 80 + (baseShooterAttr - 80) * 1.15 : baseShooterAttr;
     const gkGoldMul = gk?.goldTraits?.includes('门线神扑') ? 2 : 1;
-    const gkTraitBonus = gk?.traits?.includes('门线神扑') ? 0.07 * gkGoldMul : 0;
-    const gkSaveBonus = ((gkAttr - 65) / 100) * 0.22 + gkTraitBonus;
-    const attrDiffBonus = ((shooterAttr - gkAttr) / 100) * 0.18;
-    const goalProb = clamp(0.24 + b.shotXG * 0.78 + attrDiffBonus - gkSaveBonus, 0.12, 0.68);
+    const gkTraitBonus = gk?.traits?.includes('门线神扑') ? 0.045 * gkGoldMul : 0;
+    const gkSaveBonus = ((rawGk - 65) / 100) * 0.16 + gkTraitBonus;
+    const attrDiffBonus = ((shooterAttr - gkAttr) / 100) * 0.28;
+    const strainGoalPenalty = shooter?.strainWarning ? 0.04 : 0;
+    const goalProb = clamp(0.33 + b.shotXG * 0.88 + attrDiffBonus - gkSaveBonus - strainGoalPenalty, 0.16, 0.76);
 
     if (Math.random() < goalProb) {
       // 进球！
@@ -1255,6 +1334,7 @@ export class MatchEngine {
       Math.abs(victim.pos.y - PITCH.GOAL_Y) <= PITCH.PENALTY_BOX_HALF_W;
 
     if (inPenaltyBox) {
+      this.pushEvent('commentary', victim.team, victim.id, victim.name, victim.pos, `⚖️ 禁区内放倒 ${victim.name}，主裁判果断判罚点球！`, undefined, 'important');
       this.setDeadBall(victim.team, 'penalty', victim.pos, 6);
     } else {
       this.setDeadBall(victim.team, 'freekick', victim.pos, 5);
@@ -1365,7 +1445,9 @@ export class MatchEngine {
       // 高位逼抢主要压榨中前场与边路；中卫线以整体前压为主，避免全队同速率掉血
       const styleDrain =
         style === 'gegenpress'
-          ? (p.role === 'CB' ? 1.12 : p.role === 'GK' ? 1.0 : 1.25)
+          ? (p.role === 'CB' ? 1.06 : p.role === 'GK' ? 1.0 : 1.18)
+          : style === 'balanced'
+          ? (p.role === 'GK' ? 1.0 : 1.04)
           : (p.role === 'GK' ? 1.0 : 0.7 + rawPress * 0.3);
 
       // 阵型负荷系数：三后卫翼卫与边卫跑动更重，五后卫中卫更省力，双中场比三中场更累
@@ -1373,8 +1455,8 @@ export class MatchEngine {
       if (defSys === '3-back' && (p.role === 'LWB' || p.role === 'RWB' || p.role === 'CB')) {
         formFactor = 1.10;
       } else if (defSys === '5-back') {
-        if (p.role === 'CB') formFactor = 0.90;
-        else if (p.role === 'LWB' || p.role === 'RWB') formFactor = 1.06;
+        if (p.role === 'CB') formFactor = 0.96;
+        else if (p.role === 'LWB' || p.role === 'RWB') formFactor = 1.08;
       }
       if ((formation === '4-4-2' || formation === '4-2-2-2') && (p.role === 'CM' || p.role === 'CDM')) {
         formFactor *= 1.08;

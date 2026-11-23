@@ -289,16 +289,16 @@ export const FORMATIONS: Record<FormationName, FormationSlot[]> = {
   // ==================== 五后卫体系 (4种) ====================
   '5-4-1': [
     { role: 'GK', baseX: 5, baseY: 34 },
-    { role: 'LWB', baseX: 27, baseY: 9 },
+    { role: 'LWB', baseX: 28, baseY: 9 },
     { role: 'CB', baseX: 21, baseY: 21 },
     { role: 'CB', baseX: 20, baseY: 34 },
     { role: 'CB', baseX: 21, baseY: 47 },
-    { role: 'RWB', baseX: 27, baseY: 59 },
-    { role: 'LM', baseX: 45, baseY: 13 },
-    { role: 'CM', baseX: 44, baseY: 27 },
-    { role: 'CM', baseX: 44, baseY: 41 },
-    { role: 'RM', baseX: 45, baseY: 55 },
-    { role: 'ST', baseX: 69, baseY: 34 },
+    { role: 'RWB', baseX: 28, baseY: 59 },
+    { role: 'LM', baseX: 50, baseY: 13 },
+    { role: 'CM', baseX: 47, baseY: 27 },
+    { role: 'CM', baseX: 47, baseY: 41 },
+    { role: 'RM', baseX: 50, baseY: 55 },
+    { role: 'ST', baseX: 71, baseY: 34 },
   ],
   '5-3-2': [
     { role: 'GK', baseX: 5, baseY: 34 },
@@ -385,6 +385,9 @@ export function getDynamicAnchor(
   let roleModX = 0;
   let roleModY = 0;
   if (hasPossession === true) {
+    if ((style === 'park_bus' || style === 'counter') && ['ST', 'LW', 'RW', 'CAM'].includes(slot.role)) {
+      roleModX += 9;
+    }
     if (slot.role === 'ST' && (mods?.falseNineDrop ?? 0) > 0 && relBallX >= 36 && relBallX <= 66) {
       roleModX = -Math.min(6, (mods?.falseNineDrop ?? 0) * 0.5);
     } else if (slot.role === 'LB' || slot.role === 'RB' || slot.role === 'LWB' || slot.role === 'RWB') {
