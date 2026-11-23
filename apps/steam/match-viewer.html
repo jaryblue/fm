@@ -1,0 +1,564 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>FM-League · 纯 2D 实时引擎观赛验收台 (1280×720)</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      background: #05080f;
+      color: #e2e8f0;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "PingFang SC", sans-serif;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+      padding: 12px;
+      gap: 10px;
+    }
+    .toolbar {
+      width: 1280px;
+      max-width: 100%;
+      background: #0d1424;
+      border: 1px solid rgba(255,255,255,0.08);
+      border-radius: 10px;
+      padding: 8px 14px;
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      font-size: 13px;
+    }
+    .group { display: flex; align-items: center; gap: 8px; }
+    button, select {
+      background: #16223b;
+      color: #e2e8f0;
+      border: 1px solid rgba(255,255,255,0.14);
+      border-radius: 6px;
+      padding: 5px 10px;
+      font-size: 12px;
+      cursor: pointer;
+    }
+    button:hover { background: #1e2f52; }
+    button.active {
+      background: #d4a843;
+      color: #090d16;
+      font-weight: 700;
+      border-color: #d4a843;
+    }
+    label { color: #94a3b8; font-size: 12px; display: flex; align-items: center; gap: 4px; }
+    canvas {
+      width: 1280px;
+      max-width: 100%;
+      height: auto;
+      aspect-ratio: 1280 / 720;
+      border-radius: 12px;
+      border: 1px solid rgba(255,255,255,0.1);
+      box-shadow: 0 20px 60px rgba(0,0,0,0.65);
+      background: #080c14;
+    }
+  </style>
+</head>
+<body>
+  <div class="toolbar">
+    <div class="group">
+      <button id="btnPlayPause" class="active">暂停</button>
+      <button class="speed-btn active" data-speed="1">1x</button>
+      <button class="speed-btn" data-speed="2">2x</button>
+      <button class="speed-btn" data-speed="4">4x</button>
+      <button class="speed-btn" data-speed="8">8x</button>
+      <button id="btnRestart">重新开球</button>
+    </div>
+
+    <div class="group">
+      <label>主队(红):
+        <select id="homeForm">
+          <option value="4-3-3" selected>4-3-3</option>
+          <option value="4-4-2">4-4-2</option>
+          <option value="4-2-3-1">4-2-3-1</option>
+          <option value="3-5-2">3-5-2</option>
+          <option value="5-4-1">5-4-1</option>
+        </select>
+        <select id="homeStyle">
+          <option value="tiki_taka" selected>传控渗透</option>
+          <option value="gegenpress">高位逼抢</option>
+          <option value="balanced">均衡阵地</option>
+          <option value="wing_play">两翼齐飞</option>
+          <option value="counter">快速反击</option>
+          <option value="park_bus">铁桶防反</option>
+        </select>
+      </label>
+
+      <label>客队(蓝):
+        <select id="awayForm">
+          <option value="4-4-2" selected>4-4-2</option>
+          <option value="4-3-3">4-3-3</option>
+          <option value="4-2-3-1">4-2-3-1</option>
+          <option value="3-5-2">3-5-2</option>
+          <option value="5-4-1">5-4-1</option>
+        </select>
+        <select id="awayStyle">
+          <option value="counter" selected>快速反击</option>
+          <option value="balanced">均衡阵地</option>
+          <option value="gegenpress">高位逼抢</option>
+          <option value="tiki_taka">传控渗透</option>
+          <option value="wing_play">两翼齐飞</option>
+          <option value="park_bus">铁桶防反</option>
+        </select>
+      </label>
+    </div>
+
+    <div class="group">
+      <label><input type="checkbox" id="chkVectors" checked /> 显示跑位目标线</label>
+    </div>
+  </div>
+
+  <canvas id="gameCanvas" width="1280" height="720"></canvas>
+
+  <script src="./engine.iife.js"></script>
+  <script>
+    const { MatchEngine, FORMATIONS, PITCH } = window.FMLeagueEngine;
+
+    const canvas = document.getElementById('gameCanvas');
+    const ctx = canvas.getContext('2d');
+
+    // UI 状态
+    let isPaused = false;
+    let speedMultiplier = 1;
+    let showVectors = true;
+    let engine = null;
+
+    // 60fps 平滑插值位置缓存
+    const renderPlayers = new Map();
+    let renderBall = { x: 52.5, y: 34, z: 0 };
+    let tickAccumulator = 0;
+
+    function randInt(min, max) {
+      return Math.floor(Math.random() * (max - min + 1)) + min;
+    }
+
+    function makeTeam(name, formation, style, baseCA) {
+      const slots = FORMATIONS[formation];
+      const players = slots.map((s, idx) => {
+        const isGK = s.role === 'GK';
+        const isDef = ['CB', 'LB', 'RB', 'LWB', 'RWB', 'CDM'].includes(s.role);
+        const isAtt = ['ST', 'LW', 'RW', 'CAM'].includes(s.role);
+        const j = () => randInt(-5, 5);
+        const c = (v) => Math.max(35, Math.min(99, v));
+        return {
+          id: `${name}_${idx}`,
+          name: `${s.role}${idx + 1}`,
+          role: s.role,
+          shirtNumber: idx + 1,
+          fitness: 100,
+          attributes: {
+            passing: c(baseCA + (isDef ? -2 : 4) + j()),
+            shooting: c(baseCA + (isAtt ? 8 : isDef ? -15 : -2) + j()),
+            dribbling: c(baseCA + (isAtt ? 6 : isDef ? -8 : 3) + j()),
+            pace: c(baseCA + (['LW', 'RW', 'LB', 'RB'].includes(s.role) ? 7 : 0) + j()),
+            strength: c(baseCA + (['CB', 'ST', 'CDM'].includes(s.role) ? 6 : -3) + j()),
+            defending: c(baseCA + (isDef ? 10 : isAtt ? -25 : -4) + j()),
+            positioning: c(baseCA + j()),
+            composure: c(baseCA + j()),
+            stamina: c(baseCA + 5 + j()),
+            goalkeeping: c(isGK ? baseCA + 8 + j() : 25),
+          },
+        };
+      });
+      return { name, formation, style, players };
+    }
+
+    function startNewMatch() {
+      const hf = document.getElementById('homeForm').value;
+      const hs = document.getElementById('homeStyle').value;
+      const af = document.getElementById('awayForm').value;
+      const as = document.getElementById('awayStyle').value;
+
+      engine = new MatchEngine(
+        makeTeam('星辰联', hf, hs, 76),
+        makeTeam('铁壁城', af, as, 75)
+      );
+      renderPlayers.clear();
+      const st = engine.getState();
+      for (const p of st.players) {
+        renderPlayers.set(p.id, { x: p.pos.x, y: p.pos.y });
+      }
+      renderBall = { x: st.ball.pos.x, y: st.ball.pos.y, z: st.ball.pos.z };
+      tickAccumulator = 0;
+    }
+
+    // 控件绑定
+    const btnPlayPause = document.getElementById('btnPlayPause');
+    btnPlayPause.onclick = () => {
+      isPaused = !isPaused;
+      btnPlayPause.textContent = isPaused ? '继续' : '暂停';
+      btnPlayPause.classList.toggle('active', !isPaused);
+    };
+
+    document.querySelectorAll('.speed-btn').forEach(btn => {
+      btn.onclick = () => {
+        speedMultiplier = Number(btn.dataset.speed);
+        document.querySelectorAll('.speed-btn').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+      };
+    });
+
+    document.getElementById('btnRestart').onclick = startNewMatch;
+    document.getElementById('chkVectors').onchange = (e) => { showVectors = e.target.checked; };
+
+    ['homeForm', 'homeStyle'].forEach(id => {
+      document.getElementById(id).onchange = () => {
+        if (!engine) return;
+        engine.setTactics('home', document.getElementById('homeForm').value, document.getElementById('homeStyle').value);
+      };
+    });
+    ['awayForm', 'awayStyle'].forEach(id => {
+      document.getElementById(id).onchange = () => {
+        if (!engine) return;
+        engine.setTactics('away', document.getElementById('awayForm').value, document.getElementById('awayStyle').value);
+      };
+    });
+
+    // 绘制圆角矩形
+    function roundRect(x, y, w, h, r, fill, stroke) {
+      ctx.beginPath();
+      ctx.roundRect(x, y, w, h, r);
+      if (fill) { ctx.fillStyle = fill; ctx.fill(); }
+      if (stroke) { ctx.strokeStyle = stroke; ctx.lineWidth = 1; ctx.stroke(); }
+    }
+
+    // 球场坐标系映射到 Canvas 中央球场矩形
+    const PITCH_RECT = { x: 266, y: 88, w: 748, h: 484 }; // 105:68 ≈ 1.545
+    function toScreen(px, py) {
+      return {
+        x: PITCH_RECT.x + (px / PITCH.LENGTH) * PITCH_RECT.w,
+        y: PITCH_RECT.y + (py / PITCH.WIDTH) * PITCH_RECT.h,
+      };
+    }
+
+    function drawPitch() {
+      const { x, y, w, h } = PITCH_RECT;
+      roundRect(x - 10, y - 10, w + 20, h + 20, 12, '#0b1810', 'rgba(255,255,255,0.08)');
+
+      // 草皮条纹
+      const stripes = 10;
+      const sw = w / stripes;
+      for (let i = 0; i < stripes; i++) {
+        ctx.fillStyle = i % 2 === 0 ? '#113a21' : '#144226';
+        ctx.fillRect(x + i * sw, y, sw, h);
+      }
+
+      ctx.strokeStyle = 'rgba(255,255,255,0.45)';
+      ctx.lineWidth = 1.6;
+      ctx.strokeRect(x, y, w, h);
+
+      // 中线与中圈
+      ctx.beginPath();
+      ctx.moveTo(x + w / 2, y);
+      ctx.lineTo(x + w / 2, y + h);
+      ctx.stroke();
+
+      ctx.beginPath();
+      ctx.arc(x + w / 2, y + h / 2, (9.15 / PITCH.LENGTH) * w, 0, Math.PI * 2);
+      ctx.stroke();
+
+      // 左右禁区
+      const boxW = (16.5 / PITCH.LENGTH) * w;
+      const boxH = (40.32 / PITCH.WIDTH) * h;
+      const sixW = (5.5 / PITCH.LENGTH) * w;
+      const sixH = (18.32 / PITCH.WIDTH) * h;
+      const goalW = 8;
+      const goalH = (7.32 / PITCH.WIDTH) * h;
+
+      ctx.strokeRect(x, y + (h - boxH) / 2, boxW, boxH);
+      ctx.strokeRect(x + w - boxW, y + (h - boxH) / 2, boxW, boxH);
+      ctx.strokeRect(x, y + (h - sixH) / 2, sixW, sixH);
+      ctx.strokeRect(x + w - sixW, y + (h - sixH) / 2, sixW, sixH);
+
+      // 球门框
+      ctx.fillStyle = 'rgba(255,255,255,0.22)';
+      ctx.fillRect(x - goalW, y + (h - goalH) / 2, goalW, goalH);
+      ctx.fillRect(x + w, y + (h - goalH) / 2, goalW, goalH);
+    }
+
+    function drawScoreboard(st) {
+      roundRect(16, 14, 1248, 56, 10, '#0e1628', 'rgba(255,255,255,0.08)');
+      ctx.textBaseline = 'middle';
+
+      // 主队
+      ctx.fillStyle = '#ef4444';
+      ctx.beginPath(); ctx.arc(460, 42, 8, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = '#f8fafc';
+      ctx.font = 'bold 18px sans-serif';
+      ctx.textAlign = 'right';
+      ctx.fillText(st.homeName, 440, 42);
+
+      // 比分
+      roundRect(580, 22, 120, 40, 8, '#16223b', '#d4a843');
+      ctx.fillStyle = '#f8fafc';
+      ctx.font = 'bold 24px monospace';
+      ctx.textAlign = 'center';
+      ctx.fillText(`${st.homeScore} : ${st.awayScore}`, 640, 43);
+
+      // 客队
+      ctx.fillStyle = '#3b82f6';
+      ctx.beginPath(); ctx.arc(820, 42, 8, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = '#f8fafc';
+      ctx.font = 'bold 18px sans-serif';
+      ctx.textAlign = 'left';
+      ctx.fillText(st.awayName, 840, 42);
+
+      // 时间与阶段
+      const phaseText =
+        st.phase === 'first_half' ? '上半场' :
+        st.phase === 'half_time' ? '中场休息' :
+        st.phase === 'second_half' ? '下半场' : '全场结束';
+      ctx.fillStyle = '#d4a843';
+      ctx.font = 'bold 15px monospace';
+      ctx.textAlign = 'left';
+      ctx.fillText(`${phaseText}  ${st.minute}'`, 34, 42);
+
+      ctx.fillStyle = '#94a3b8';
+      ctx.font = '12px sans-serif';
+      ctx.textAlign = 'right';
+      ctx.fillText(`进攻方向: ${st.homeAttackDir === 1 ? '主队 → 右' : '← 主队左'}  |  倍速 ${speedMultiplier}x`, 1244, 42);
+    }
+
+    function drawLeftCommentary(st) {
+      roundRect(16, 84, 234, 620, 10, '#0e1628', 'rgba(255,255,255,0.08)');
+      ctx.fillStyle = '#d4a843';
+      ctx.font = 'bold 13px sans-serif';
+      ctx.textAlign = 'left';
+      ctx.fillText('实时文字直播', 30, 108);
+
+      const important = st.events
+        .filter(e => e.type !== 'pass')
+        .slice(-16)
+        .reverse();
+
+      let cy = 136;
+      for (const ev of important) {
+        const isGoal = ev.type === 'goal';
+        if (isGoal) roundRect(24, cy - 12, 218, 28, 5, 'rgba(212,168,67,0.16)');
+        ctx.fillStyle = isGoal ? '#facc15' : ev.team === 'home' ? '#fca5a5' : '#93c5fd';
+        ctx.font = 'bold 11px monospace';
+        ctx.fillText(`${ev.minute}'`, 30, cy);
+
+        ctx.fillStyle = isGoal ? '#fef08a' : '#cbd5e1';
+        ctx.font = '11px sans-serif';
+        const txt = ev.text.length > 17 ? ev.text.slice(0, 17) + '…' : ev.text;
+        ctx.fillText(txt, 58, cy);
+        cy += 34;
+        if (cy > 688) break;
+      }
+    }
+
+    function drawRightStats(st) {
+      roundRect(1030, 84, 234, 620, 10, '#0e1628', 'rgba(255,255,255,0.08)');
+      ctx.fillStyle = '#d4a843';
+      ctx.font = 'bold 13px sans-serif';
+      ctx.textAlign = 'left';
+      ctx.fillText('实时比赛数据', 1046, 108);
+
+      const h = st.stats.home;
+      const a = st.stats.away;
+      const totalPoss = h.possessionTicks + a.possessionTicks || 1;
+      const hPoss = Math.round((h.possessionTicks / totalPoss) * 100);
+      const aPoss = 100 - hPoss;
+      const hAcc = h.passes > 0 ? Math.round((h.passesSuccess / h.passes) * 100) : 0;
+      const aAcc = a.passes > 0 ? Math.round((a.passesSuccess / a.passes) * 100) : 0;
+
+      const rows = [
+        ['控球率', `${hPoss}%`, `${aPoss}%`, hPoss / 100],
+        ['射门 (射正)', `${h.shots} (${h.shotsOnTarget})`, `${a.shots} (${a.shotsOnTarget})`, h.shots / Math.max(1, h.shots + a.shots)],
+        ['预期进球 xG', h.xG.toFixed(2), a.xG.toFixed(2), h.xG / Math.max(0.01, h.xG + a.xG)],
+        ['传球 (成功率)', `${h.passes} (${hAcc}%)`, `${a.passes} (${aAcc}%)`, h.passes / Math.max(1, h.passes + a.passes)],
+        ['抢断', `${h.tackles}`, `${a.tackles}`, h.tackles / Math.max(1, h.tackles + a.tackles)],
+        ['拦截', `${h.interceptions}`, `${a.interceptions}`, h.interceptions / Math.max(1, h.interceptions + a.interceptions)],
+        ['门将扑救', `${h.saves}`, `${a.saves}`, h.saves / Math.max(1, h.saves + a.saves)],
+        ['角球', `${h.corners}`, `${a.corners}`, h.corners / Math.max(1, h.corners + a.corners)],
+        ['犯规 (黄牌)', `${h.fouls} (${h.yellowCards})`, `${a.fouls} (${a.yellowCards})`, h.fouls / Math.max(1, h.fouls + a.fouls)],
+        ['越位', `${h.offsides}`, `${a.offsides}`, h.offsides / Math.max(1, h.offsides + a.offsides)],
+      ];
+
+      let ry = 144;
+      for (const [label, hv, av, ratio] of rows) {
+        ctx.fillStyle = '#f8fafc';
+        ctx.font = 'bold 12px monospace';
+        ctx.textAlign = 'left';
+        ctx.fillText(hv, 1046, ry);
+        ctx.textAlign = 'right';
+        ctx.fillText(av, 1248, ry);
+        ctx.fillStyle = '#94a3b8';
+        ctx.font = '11px sans-serif';
+        ctx.textAlign = 'center';
+        ctx.fillText(label, 1147, ry);
+
+        // 对比条
+        roundRect(1046, ry + 10, 202, 5, 2, '#1e293b');
+        const r = Math.max(0.05, Math.min(0.95, isNaN(ratio) ? 0.5 : ratio));
+        roundRect(1046, ry + 10, 202 * r, 5, 2, '#ef4444');
+        roundRect(1046 + 202 * r, ry + 10, 202 * (1 - r), 5, 2, '#3b82f6');
+        ry += 54;
+      }
+    }
+
+    function drawBottomInfo(st) {
+      roundRect(266, 592, 748, 112, 10, '#0e1628', 'rgba(255,255,255,0.08)');
+      ctx.fillStyle = '#94a3b8';
+      ctx.font = '12px sans-serif';
+      ctx.textAlign = 'left';
+      const holder = st.ball.holderId ? st.players.find(p => p.id === st.ball.holderId) : null;
+      const ballDesc = holder
+        ? `当前持球: ${holder.team === 'home' ? st.homeName : st.awayName} · ${holder.name} (${holder.role})`
+        : `球状态: ${st.ball.mode === 'pass' ? '传球飞行中' : st.ball.mode === 'shot' ? '射门飞行中' : st.ball.mode}`;
+      ctx.fillText(ballDesc, 284, 622);
+      ctx.fillText(`主队阵型: ${st.homeFormation} (${st.homeStyle})   vs   客队阵型: ${st.awayFormation} (${st.awayStyle})`, 284, 648);
+      ctx.fillStyle = '#64748b';
+      ctx.fillText('提示：勾选“显示跑位目标线”可观察引擎每帧的动态阵型锚点、前插拉扯与防守逼抢路线。', 284, 676);
+    }
+
+    function drawEntities(st) {
+      // 1. 跑位目标线 & 传球目标线
+      if (showVectors) {
+        for (const p of st.players) {
+          if (p.redCard) continue;
+          const rp = renderPlayers.get(p.id) || p.pos;
+          const s1 = toScreen(rp.x, rp.y);
+          const s2 = toScreen(p.targetPos.x, p.targetPos.y);
+          ctx.strokeStyle = p.team === 'home' ? 'rgba(239,68,68,0.22)' : 'rgba(59,130,246,0.22)';
+          ctx.lineWidth = 1;
+          ctx.setLineDash([3, 3]);
+          ctx.beginPath();
+          ctx.moveTo(s1.x, s1.y);
+          ctx.lineTo(s2.x, s2.y);
+          ctx.stroke();
+        }
+        ctx.setLineDash([]);
+
+        if (st.ball.mode === 'pass' && st.ball.targetPlayerId) {
+          const tgt = st.players.find(p => p.id === st.ball.targetPlayerId);
+          if (tgt) {
+            const b1 = toScreen(renderBall.x, renderBall.y);
+            const b2 = toScreen(tgt.pos.x, tgt.pos.y);
+            ctx.strokeStyle = 'rgba(250,204,21,0.55)';
+            ctx.lineWidth = 1.6;
+            ctx.beginPath();
+            ctx.moveTo(b1.x, b1.y);
+            ctx.lineTo(b2.x, b2.y);
+            ctx.stroke();
+          }
+        }
+      }
+
+      // 2. 球员圆点 + 号码 + 角色
+      for (const p of st.players) {
+        if (p.redCard) continue;
+        const rp = renderPlayers.get(p.id) || p.pos;
+        const sp = toScreen(rp.x, rp.y);
+
+        if (p.hasBall) {
+          ctx.strokeStyle = '#facc15';
+          ctx.lineWidth = 2.2;
+          ctx.beginPath();
+          ctx.arc(sp.x, sp.y, 13.5, 0, Math.PI * 2);
+          ctx.stroke();
+        }
+
+        const fill = p.role === 'GK'
+          ? (p.team === 'home' ? '#f97316' : '#06b6d4')
+          : (p.team === 'home' ? '#dc2626' : '#2563eb');
+
+        ctx.fillStyle = fill;
+        ctx.beginPath();
+        ctx.arc(sp.x, sp.y, 10, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.strokeStyle = '#ffffff';
+        ctx.lineWidth = 1.4;
+        ctx.stroke();
+
+        ctx.fillStyle = '#ffffff';
+        ctx.font = 'bold 9px sans-serif';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(String(p.shirtNumber), sp.x, sp.y + 0.5);
+
+        ctx.fillStyle = 'rgba(226,232,240,0.85)';
+        ctx.font = '9px sans-serif';
+        ctx.fillText(p.role, sp.x, sp.y + 17);
+      }
+
+      // 3. 足球（带 Z 轴高度阴影与缩放）
+      const sb = toScreen(renderBall.x, renderBall.y);
+      const zLift = Math.max(0, Math.min(18, renderBall.z * 3.5));
+      const ballRadius = Math.max(2, 5 + zLift * 0.12);
+      // 地面阴影
+      ctx.fillStyle = 'rgba(0,0,0,0.45)';
+      ctx.beginPath();
+      ctx.ellipse(sb.x, sb.y + 2, 5.5, 3, 0, 0, Math.PI * 2);
+      ctx.fill();
+
+      // 球体
+      ctx.fillStyle = '#ffffff';
+      ctx.beginPath();
+      ctx.arc(sb.x, sb.y - zLift, ballRadius, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.strokeStyle = '#0f172a';
+      ctx.lineWidth = 1.2;
+      ctx.stroke();
+    }
+
+    let lastTs = performance.now();
+    function loop(now) {
+      const dtSec = Math.min(0.05, (now - lastTs) / 1000);
+      lastTs = now;
+
+      if (engine && !isPaused) {
+        // 逻辑层 10Hz，1x = 每秒 10 ticks
+        tickAccumulator += dtSec * 10 * speedMultiplier;
+        let steps = 0;
+        while (tickAccumulator >= 1 && steps < 16) {
+          engine.step();
+          tickAccumulator -= 1;
+          steps++;
+        }
+      }
+
+      if (engine) {
+        const st = engine.getState();
+        // 60fps 平滑插值
+        const lerp = 0.28;
+        for (const p of st.players) {
+          const cur = renderPlayers.get(p.id) || { x: p.pos.x, y: p.pos.y };
+          cur.x += (p.pos.x - cur.x) * lerp;
+          cur.y += (p.pos.y - cur.y) * lerp;
+          renderPlayers.set(p.id, cur);
+        }
+        renderBall.x += (st.ball.pos.x - renderBall.x) * 0.45;
+        renderBall.y += (st.ball.pos.y - renderBall.y) * 0.45;
+        renderBall.z += (st.ball.pos.z - renderBall.z) * 0.45;
+
+        // 渲染 1280×720 画面
+        ctx.clearRect(0, 0, 1280, 720);
+        ctx.fillStyle = '#080c14';
+        ctx.fillRect(0, 0, 1280, 720);
+
+        drawScoreboard(st);
+        drawLeftCommentary(st);
+        drawPitch();
+        drawRightStats(st);
+        drawBottomInfo(st);
+        drawEntities(st);
+      }
+
+      requestAnimationFrame(loop);
+    }
+
+    startNewMatch();
+    requestAnimationFrame(loop);
+  </script>
+</body>
+</html>

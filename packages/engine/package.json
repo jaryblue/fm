@@ -1,0 +1,11 @@
+{
+  "name": "@fm-league/engine",
+  "version": "0.1.0",
+  "description": "纯 2D 实时足球比赛模拟引擎（零平台依赖）",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "tsc",
+    "sim:100": "tsc && node dist/sim-100.js"
+  }
+}

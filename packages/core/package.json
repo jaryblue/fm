@@ -1,0 +1,14 @@
+{
+  "name": "@fm-league/core",
+  "version": "0.1.0",
+  "description": "FM27 Shuffle Draft 选秀与轻度 Rogue 联赛核心逻辑",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "tsc",
+    "sim:season": "node dist/sim-season.js"
+  },
+  "dependencies": {
+    "@fm-league/engine": "0.1.0"
+  }
+}

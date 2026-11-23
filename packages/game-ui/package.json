@@ -1,0 +1,14 @@
+{
+  "name": "@fm-league/game-ui",
+  "version": "0.1.0",
+  "description": "1280x720 纯 Canvas 2D 跨平台游戏界面层（Steam & 微信小游戏通用）",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "tsc"
+  },
+  "dependencies": {
+    "@fm-league/core": "0.1.0",
+    "@fm-league/engine": "0.1.0"
+  }
+}
