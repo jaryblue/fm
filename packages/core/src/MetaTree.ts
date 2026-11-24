@@ -41,7 +41,7 @@ export const META_BRANCHES: MetaBranchDef[] = [
     levelDescriptions: [
       '开局 Shuffle Draft 预算 +60 (共 2,140)',
       '开局 Shuffle Draft 预算 +120 (共 2,200)',
-      '开局预算 +180 (共 2,260)，且 Re-Draft 换人上限 +1',
+      '开局预算 +180 (共 2,260)，且赛后3选1新援保底 CA +2',
       '每赛季开局额外获赠 2 个随机基础战术元素',
       '豪门赞助：赛季结算 Meta 点数奖励额外 +15%',
     ],
@@ -54,9 +54,9 @@ export const META_BRANCHES: MetaBranchDef[] = [
     maxLevel: 5,
     costs: [40, 80, 140, 200, 280],
     levelDescriptions: [
-      '全队传球与射门 +1，Re-Draft 稀有词条权重提升',
+      '全队传球与射门 +1，赛季词条盲盒稀有权重提升',
       '全队传球、射门与防守 +2',
-      '全队传球、射门与防守 +3，Re-Draft 词条扩为 4 选 1',
+      '全队传球、射门与防守 +3，赛季词条盲盒扩为 4 选 1',
       '比赛日中场休息额外回复 +2 战术能量（共+2）',
       '战术实验室：每次使用战术/阵型获得的熟练度经验翻倍',
     ],

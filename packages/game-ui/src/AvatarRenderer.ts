@@ -158,15 +158,55 @@ export function drawPlayerAvatar(
     if (hairImg) ctx.drawImage(hairImg, dx, dy, sq, sq);
     if (accImg) ctx.drawImage(accImg, dx, dy, sq, sq);
   } else {
-    // 降级兜底：位置图
-    const roleAssetId =
-      player.role === 'GK' ? 'role_gk' :
-      ['CB', 'LB', 'RB', 'LWB', 'RWB'].includes(player.role) ? 'role_def' :
-      ['CDM', 'CM', 'CAM', 'LM', 'RM'].includes(player.role) ? 'role_mid' : 'role_att';
-    const roleImg = AssetLoader.get(roleAssetId);
-    if (roleImg && typeof ctx.drawImage === 'function') {
-      ctx.drawImage(roleImg, x, y, w, h);
+    // 轻量程序化矢量头像兜底（肤色 × 发型 × 五官 × 俱乐部球衣领口）
+    const skins = ['#F8D5B8', '#EAC096', '#D49E6A', '#AE7349', '#7B4B2A', '#FDE2C8'];
+    const hairs = ['#1E293B', '#3E2723', '#78350F', '#D97706', '#0F172A', '#94A3B8'];
+    const skin = skins[faceIdx % skins.length];
+    const hair = hairs[(hairIdx + (player.age >= 31 ? 5 : 0)) % hairs.length];
+    const cx = x + w * 0.5;
+    const headY = y + h * 0.42;
+    const headR = Math.min(w, h) * 0.27;
+
+    ctx.fillStyle = primary;
+    ctx.beginPath();
+    ctx.moveTo(x + w * 0.12, y + h);
+    ctx.quadraticCurveTo(cx, y + h * 0.64, x + w * 0.88, y + h);
+    ctx.closePath();
+    ctx.fill();
+    ctx.strokeStyle = secondary;
+    ctx.lineWidth = 1.6;
+    ctx.beginPath();
+    ctx.arc(cx, y + h * 0.72, headR * 0.55, 0.15 * Math.PI, 0.85 * Math.PI);
+    ctx.stroke();
+
+    ctx.fillStyle = skin;
+    ctx.fillRect(cx - headR * 0.28, headY + headR * 0.55, headR * 0.56, headR * 0.55);
+    ctx.beginPath();
+    ctx.ellipse(cx, headY, headR * 0.88, headR, 0, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.fillStyle = hair;
+    ctx.beginPath();
+    if (hairIdx % 3 === 0) {
+      ctx.arc(cx, headY - headR * 0.24, headR * 0.92, Math.PI, Math.PI * 2);
+    } else if (hairIdx % 3 === 1) {
+      ctx.ellipse(cx, headY - headR * 0.55, headR * 0.96, headR * 0.52, -0.1, 0, Math.PI * 2);
+    } else {
+      ctx.arc(cx, headY - headR * 0.16, headR * 0.94, Math.PI * 0.92, Math.PI * 2.08);
     }
+    ctx.fill();
+
+    ctx.fillStyle = '#0F172A';
+    ctx.beginPath();
+    ctx.arc(cx - headR * 0.34, headY - headR * 0.04, Math.max(1.2, headR * 0.10), 0, Math.PI * 2);
+    ctx.arc(cx + headR * 0.34, headY - headR * 0.04, Math.max(1.2, headR * 0.10), 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.strokeStyle = 'rgba(15, 23, 42, 0.55)';
+    ctx.lineWidth = 1.2;
+    ctx.beginPath();
+    ctx.arc(cx, headY + headR * 0.36, headR * 0.26, 0.15 * Math.PI, 0.85 * Math.PI);
+    ctx.stroke();
   }
   ctx.restore();
 

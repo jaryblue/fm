@@ -50,9 +50,9 @@ export class PostMatchReDraftScreen {
     bursted: boolean;
   } | null = null;
   private dealTimer = 0;
-  private flipped: [boolean, boolean, boolean] = [false, false, false];
-  private flipTimers: [number, number, number] = [0, 0, 0];
-  private flipSoundPlayed: [boolean, boolean, boolean] = [false, false, false];
+  private flipped: boolean[] = [false, false, false, false];
+  private flipTimers: number[] = [0, 0, 0, 0];
+  private flipSoundPlayed: boolean[] = [false, false, false, false];
   private fx: PostMatchFxCallbacks = {};
 
   public setLastMatch(match: MatchState): void {
@@ -74,9 +74,9 @@ export class PostMatchReDraftScreen {
 
   private resetCardRevealAnim(): void {
     this.dealTimer = 0;
-    this.flipped = [false, false, false];
-    this.flipTimers = [0, 0, 0];
-    this.flipSoundPlayed = [false, false, false];
+    this.flipped = [false, false, false, false];
+    this.flipTimers = [0, 0, 0, 0];
+    this.flipSoundPlayed = [false, false, false, false];
   }
 
   public update(dtSec: number): void {
@@ -101,8 +101,8 @@ export class PostMatchReDraftScreen {
     }
 
     this.dealTimer += dtSec;
-    const autoThresholds = [0.46, 0.82, 1.18];
-    for (let i = 0; i < 3; i++) {
+    const autoThresholds = [0.46, 0.82, 1.18, 1.54];
+    for (let i = 0; i < this.flipped.length; i++) {
       if (!this.flipped[i] && this.dealTimer >= autoThresholds[i]) {
         this.flipped[i] = true;
       }
@@ -626,6 +626,36 @@ export class PostMatchReDraftScreen {
       step2Done ? THEME.GREEN : step1Done ? THEME.GOLD_LIGHT : THEME.TX3
     );
 
+    const cadence = rw.cadence ?? 'normal';
+    const cadBadgeText = cadence === 'crisis' ? '连败救火轮' : cadence === 'focus' ? '焦点强强轮' : '常规赛后轮';
+    const cadBadgeBg = cadence === 'crisis' ? '#7F1D1D' : cadence === 'focus' ? '#78350F' : '#1E293B';
+    const cadBadgeCol = cadence === 'crisis' ? THEME.RED_LIGHT : cadence === 'focus' ? THEME.GOLD_LIGHT : '#94A3B8';
+    drawBadge(ctx, 608, 29, 108, 26, cadBadgeText, cadBadgeBg, cadBadgeCol);
+
+    if ((rw.rerollsLeft ?? 0) > 0 && !rw.completed && !rw.pendingStatOptionId) {
+      const prepLeft = st.interMatchPrep?.actionsLeft ?? 0;
+      const canReroll = prepLeft > 0 || st.metaPointsTotal >= 8;
+      const rerollLabel = prepLeft > 0 ? '重抽 (1备战点)' : '重抽 (8 Meta)';
+      drawButton(
+        ctx,
+        hits,
+        1076,
+        24,
+        174,
+        36,
+        rerollLabel,
+        () => {
+          const rRes = league.rerollPostMatchReward();
+          if (rRes.ok) {
+            if (rw.chosenCategory) this.resetCardRevealAnim();
+            SoundEngine.playClick();
+            onSave();
+          }
+        },
+        { variant: 'primary', disabled: !canReroll, fontSize: 12 }
+      );
+    }
+
     if (rw.completed) {
       drawButton(
         ctx,
@@ -703,6 +733,20 @@ export class PostMatchReDraftScreen {
         desc: '直接铸造首发黄金连线、阵型宗师灌顶(+Meta)或为高费指挥卡降费超频',
         color: '#2DD4BF',
         elemKey: 'elem_pass',
+      },
+      gamble: {
+        title: '风险博弈 · 三态对赌',
+        badge: '绿正 / 红负 / 金暴击',
+        desc: '按当前联赛等级定制的风险事件：x%常规正收益、y%负面代价、z%超额暴击',
+        color: '#FACC15',
+        elemKey: 'elem_blitz',
+      },
+      season_perk: {
+        title: '赛季战术词条 · 永久强化',
+        badge: '里程碑必出 · 3/4选1',
+        desc: '从 3~4 张赛季级战术词条中任选 1 张永久激活，同系叠加 2 张触发共振',
+        color: '#F59E0B',
+        elemKey: 'elem_blitz',
       },
     };
 
@@ -892,14 +936,19 @@ export class PostMatchReDraftScreen {
 
     // 状态 C：第二步 展开 3 个具体选项（或展示已完成结果）
     if (rw.completed) {
-      drawChamferPanel(ctx, 260, 200, 760, 280, 14, THEME.BG_PANEL, THEME.GREEN, 2, THEME.GREEN);
-      drawFoilShimmer(ctx, 260, 200, 760, 280, this.animClock * 1.1, 'rgba(74, 222, 128, 0.20)');
-      drawBadge(ctx, 560, 232, 160, 28, '赛后奖励已领取', '#14532D', THEME.GREEN);
-      drawText(ctx, rw.summaryText || '奖励已生效', 640, 316, {
-        size: 22,
+      const rolledOpt = rw.options.find(o => o.gamble?.rolledTier);
+      const rolledTier = rolledOpt?.gamble?.rolledTier;
+      const resCol = rolledTier === 'jackpot' ? THEME.GOLD_LIGHT : rolledTier === 'negative' ? THEME.RED_LIGHT : THEME.GREEN;
+      const resBadgeBg = rolledTier === 'jackpot' ? '#78350F' : rolledTier === 'negative' ? '#7F1D1D' : '#14532D';
+      const resBadgeTxt = rolledTier === 'jackpot' ? '超额暴击！' : rolledTier === 'negative' ? '触发代价' : rolledTier === 'positive' ? '稳健收益' : '赛后奖励已领取';
+      drawChamferPanel(ctx, 240, 196, 800, 290, 14, THEME.BG_PANEL, resCol, 2, resCol);
+      drawFoilShimmer(ctx, 240, 196, 800, 290, this.animClock * 1.1, resCol + '33');
+      drawBadge(ctx, 560, 224, 160, 28, resBadgeTxt, resBadgeBg, resCol);
+      drawWrappedText(ctx, rw.summaryText || '奖励已生效', 290, 286, 700, 28, {
+        size: 19,
         bold: true,
-        color: THEME.GOLD_LIGHT,
-        align: 'center',
+        color: rolledTier === 'negative' ? '#FCA5A5' : THEME.GOLD_LIGHT,
+        maxLines: 3,
       });
       drawButton(
         ctx,
@@ -930,19 +979,23 @@ export class PostMatchReDraftScreen {
       align: 'center',
     });
 
-    const allRevealed = this.flipped.every(Boolean) && this.flipTimers.every(t => t >= 0.35);
+    const optCount = rw.options.length;
+    const allRevealed = rw.options.every((_, idx) => this.flipped[idx] && this.flipTimers[idx] >= 0.35);
     if (!allRevealed) {
       drawButton(ctx, hits, 1072, 102, 160, 32, '一键全翻 ✨', () => {
-        this.flipped = [true, true, true];
-        this.flipTimers = [0.22, 0.22, 0.22];
+        this.flipped = [true, true, true, true];
+        this.flipTimers = [0.22, 0.22, 0.22, 0.22];
       }, { variant: 'primary', fontSize: 12 });
     }
 
+    const cw = optCount >= 4 ? 276 : 340;
+    const ch = 376;
+    const gap = optCount >= 4 ? 24 : 44;
+    const startX = (THEME.W - (optCount * cw + (optCount - 1) * gap)) / 2;
+
     rw.options.forEach((opt, idx) => {
-      const targetX = 86 + idx * 384;
+      const targetX = startX + idx * (cw + gap);
       const targetY = 174;
-      const cw = 340;
-      const ch = 376;
 
       // 发牌飞入插值 (0 -> 0.36s)
       const dealP = easeOutBack(Math.max(0, Math.min(1, (this.dealTimer - idx * 0.05) / 0.34)));
@@ -1049,16 +1102,51 @@ export class PostMatchReDraftScreen {
           cy + 288,
           { size: 12, color: THEME.GOLD_LIGHT, align: 'center', mono: true }
         );
+      } else if (opt.gamble) {
+        const g = opt.gamble;
+        const barX = cx + 24;
+        const barY = cy + 186;
+        const barW = cw - 48;
+        const barH = 14;
+        const wPos = Math.round((barW * g.positive.prob) / 100);
+        const wNeg = Math.round((barW * g.negative.prob) / 100);
+        const wJack = Math.max(4, barW - wPos - wNeg);
+
+        drawRoundRect(ctx, barX - 1, barY - 1, barW + 2, barH + 2, 5, '#090D16', THEME.BORDER);
+        ctx.fillStyle = '#22C55E';
+        ctx.fillRect(barX, barY, wPos, barH);
+        ctx.fillStyle = '#EF4444';
+        ctx.fillRect(barX + wPos, barY, wNeg, barH);
+        ctx.fillStyle = '#FACC15';
+        ctx.fillRect(barX + wPos + wNeg, barY, wJack, barH);
+
+        drawText(ctx, `${g.positive.prob}% 正 · ${g.positive.label}`, barX, cy + 216, { size: 11.5, bold: true, color: '#4ADE80' });
+        drawText(ctx, `${g.negative.prob}% 负 · ${g.negative.label}`, barX, cy + 236, { size: 11.5, bold: true, color: '#F87171' });
+        drawText(ctx, `${g.jackpot.prob}% 暴 · ${g.jackpot.label}`, barX, cy + 256, { size: 11.5, bold: true, color: '#FACC15' });
+        if (g.modifierHint) {
+          drawWrappedText(ctx, `校准：${g.modifierHint}`, barX, cy + 278, barW, 15, { size: 10.5, color: THEME.TX3, maxLines: 2 });
+        }
       }
       ctx.restore();
 
       if (fp >= 0.8) {
         const needsPlayerTarget = opt.category === 'stat_boost' || opt.category === 'trait_forge';
-        drawButton(ctx, hits, cx + 24, cy + ch - 62, cw - 48, 42, needsPlayerTarget ? '选择并指定球员 ▶' : '确认领取 ▶', () => {
+        const btnTxt = opt.category === 'gamble' ? '开奖博弈 🎲' : needsPlayerTarget ? '选择并指定球员 ▶' : '确认领取 ▶';
+        drawButton(ctx, hits, cx + 24, cy + ch - 62, cw - 48, 42, btnTxt, () => {
           const res = league.applyPostMatchRewardOption(opt.id);
           if (!res.needsTarget) {
-            SoundEngine.playRewardChime();
-            this.fx.onBurst?.(targetX + cw / 2, targetY + ch / 2, THEME.GREEN);
+            if (res.gambleTier === 'jackpot') {
+              SoundEngine.playBreakthrough();
+              this.fx.onBurst?.(targetX + cw / 2, targetY + ch / 2, THEME.GOLD_LIGHT);
+              this.fx.onShake?.(6, 0.2);
+            } else if (res.gambleTier === 'negative') {
+              SoundEngine.playClick();
+              this.fx.onBurst?.(targetX + cw / 2, targetY + ch / 2, THEME.RED_LIGHT);
+              this.fx.onShake?.(4, 0.14);
+            } else {
+              SoundEngine.playRewardChime();
+              this.fx.onBurst?.(targetX + cw / 2, targetY + ch / 2, THEME.GREEN);
+            }
           } else {
             SoundEngine.playClick();
           }

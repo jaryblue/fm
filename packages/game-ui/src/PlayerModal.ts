@@ -91,8 +91,8 @@ export class PlayerModal {
     // 弹窗内部点击不关闭
     hits.add(mx, my, mw, mh, () => {});
 
-    // 头部 + 球员分层拼接头像
-    drawPlayerAvatar(ctx, mx + 24, my + 20, 54, 68, p, undefined, { radius: 6 });
+    // 头部 + 球员分层拼接/程序化矢量头像
+    drawPlayerAvatar(ctx, mx + 22, my + 16, 62, 74, p, undefined, { radius: 8 });
 
     const revealedSet = this.scoutFog ? this.getRevealedKeys(p, this.revealCount) : null;
 

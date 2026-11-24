@@ -477,6 +477,7 @@ export interface LeagueSaveState {
   tutorialDone?: TutorialProgress;
   pendingPostMatchReward?: PostMatchRewardState | null;
   recentRewardCategories?: PostMatchRewardCategory[];
+  recentGambleEventIds?: string[];
   seasonMemories?: SeasonMemory[];
   lastSummary: SeasonSummary | null;
 }
@@ -489,6 +490,55 @@ export interface ChemistryLink {
   title?: string;
 }
 
+export type PostMatchRoundCadence = 'normal' | 'focus' | 'crisis';
+export type LeagueTierBracket = 'grassroots' | 'pro' | 'elite' | 'all';
+export type GambleOutcomeTier = 'positive' | 'negative' | 'jackpot';
+
+export interface GambleOutcomeEffect {
+  fitnessDelta?: number;           // 全队或指定球员体能增减
+  targetPlayerId?: string;
+  moraleShift?: PlayerMorale;      // 士气变化
+  injureStarterRounds?: number;    // 负面：随机1名首发轻伤轮次
+  metaDelta?: number;              // Meta 点数变化（常规封顶 5~15，超额 25）
+  prepActionsDelta?: number;       // 备战行动点变化
+  scoutIntelDelta?: number;        // 下轮对手了解度变化
+  elementsGain?: number;           // 赠送随机战术元素数量
+  grantCardLevel?: number;         // 赠送指定等级指挥卡
+  tempTrait?: { trait: string; tier: 'silver' | 'gold'; rounds: number };
+  teamFamiliarityDelta?: number;   // 当前阵型熟练度增减
+  pairChemistryDelta?: number;     // 随机首发连线默契增减
+  attrDelta?: { attr: keyof PlayerAttributes; delta: number; scope: 'target' | 'u23' | 'veteran' | 'att' | 'def' };
+  nextMatchBuff?: {
+    passingBonus?: number;
+    shootingBonus?: number;
+    defendingBonus?: number;
+    paceBonus?: number;
+    composureBonus?: number;
+    note: string;
+  };
+}
+
+export interface TriStateGambleOutcome {
+  tier: GambleOutcomeTier;
+  prob: number;     // 整数百分比 (0..100)，三态之和 = 100
+  label: string;    // 简短结果标题
+  summary: string;  // 结算说明
+  effect: GambleOutcomeEffect;
+}
+
+export interface TriStateGambleSpec {
+  eventId: string;
+  bracket: LeagueTierBracket;
+  tierMin: number;
+  tierMax: number;
+  positive: TriStateGambleOutcome; // x% 常规正收益
+  negative: TriStateGambleOutcome; // y% 负面代价
+  jackpot: TriStateGambleOutcome;  // z% 超额暴击收益
+  modifierHint?: string;           // 玩家如何干预概率的提示
+  rolledTier?: GambleOutcomeTier;
+  rolledText?: string;
+}
+
 export type PostMatchRewardCategory =
   | 'player'
   | 'stat_boost'
@@ -497,7 +547,9 @@ export type PostMatchRewardCategory =
   | 'event'
   | 'trait_forge'
   | 'tactical_pact'
-  | 'chemistry_forge';
+  | 'chemistry_forge'
+  | 'gamble'
+  | 'season_perk';
 
 export interface PostMatchRewardOption {
   id: string;
@@ -506,6 +558,7 @@ export interface PostMatchRewardOption {
   subtitle: string;
   rarity: 'common' | 'rare' | 'epic';
   player?: DraftPlayer;
+  perk?: TacticalPerk;
   statBoost?: { attr: keyof PlayerAttributes; attrLabel: string; delta: number };
   lineBoost?: { line: 'GK' | 'DEF' | 'MID' | 'ATT'; lineLabel: string; attr: keyof PlayerAttributes; attrLabel: string; delta: number };
   craftReward?: { kind: 'new_card' | 'upgrade_card' | 'elements'; card?: CommandCard; elements?: Array<{ id: ElementId; name: string; count: number }> };
@@ -527,11 +580,14 @@ export interface PostMatchRewardOption {
   traitForge?: { kind: 'grant_silver' | 'upgrade_gold' | 'unlock_role'; trait?: string; durationRounds?: number; description: string };
   pactReward?: { kind: 'blitz_overdrive' | 'iron_fortress' | 'youth_gamble' | 'veteran_last_dance' | 'black_market_alchemy' | 'stamina_limit_break'; description: string };
   chemReward?: { kind: 'golden_link' | 'formation_master' | 'spine_boost' | 'card_overclock'; description: string };
+  gamble?: TriStateGambleSpec;
 }
 
 export interface PostMatchRewardState {
   round: number;
   won: boolean;
+  cadence?: PostMatchRoundCadence;
+  rerollsLeft?: number;
   categories: PostMatchRewardCategory[];
   chosenCategory: PostMatchRewardCategory | null;
   options: PostMatchRewardOption[];

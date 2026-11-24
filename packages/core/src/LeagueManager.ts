@@ -86,12 +86,14 @@ import {
   generateAIDraftSquad,
 } from './ShuffleDraft';
 import { computeStandings, generateRoundRobinFixtures, getLeagueTierInfo, TOTAL_TIERS } from './LeagueScheduler';
+import { getRoundCadence, rollTieredGambleOptions, rollTriStateGamble } from './PostMatchEvents';
 import {
   ChemistryLink,
   ChronicleProgress,
   ClubDirectoryEntry,
   DraftPlayer,
   FixtureMatch,
+  GambleOutcomeTier,
   HallOfFameData,
   InterMatchPrepState,
   LeagueClub,
@@ -121,7 +123,7 @@ export interface NewSeasonOptions {
 
 const AI_FORMATIONS: FormationName[] = ['4-3-3', '4-2-3-1', '4-4-2', '4-1-2-1-2', '3-5-2', '3-4-2-1', '5-4-1', '5-3-2'];
 const AI_STYLES: TacticalStyle[] = ['balanced', 'tiki_taka', 'gegenpress', 'counter', 'wing_play'];
-const RE_DRAFT_ROUNDS = new Set([8, 17, 26]);
+const RE_DRAFT_ROUNDS = new Set([8, 16, 24]);
 export const TOTAL_REGULAR_ROUNDS = 34;
 export const MAX_CLUB_ROSTER = 40;
 export const SEASON_SQUAD_SIZE = 26;
@@ -221,6 +223,11 @@ export class LeagueManager {
     if (this.state.stayedTierCount === undefined) this.state.stayedTierCount = 0;
     if (this.state.winlessStreak === undefined) this.state.winlessStreak = 0;
     if (!this.state.seasonMemories) this.state.seasonMemories = [];
+    if (this.state.phase === 'RE_DRAFT') {
+      this.state.reDraft = null;
+      this.state.phase = 'REGULAR_SEASON';
+      this.state.currentRound = Math.min(TOTAL_REGULAR_ROUNDS, (this.state.currentRound ?? 1) + 1);
+    }
     if (this.state.phase === 'REGULAR_SEASON' && !this.state.interMatchPrep) {
       this.state.interMatchPrep = createInterMatchPrep(this.state, this.getUserClub());
     }
@@ -2126,10 +2133,11 @@ export class LeagueManager {
 
     this.captureSeasonMemory(userFixture, userMatchResult, userClubNow);
 
+    const completedRound = this.state.currentRound;
     this.advanceAfterRound();
     if (this.state.phase !== 'SEASON_END') {
       this.state.interMatchPrep = createInterMatchPrep(this.state, userClubNow);
-      this.state.pendingPostMatchReward = this.createPostMatchRewardState(userWon);
+      this.state.pendingPostMatchReward = this.createPostMatchRewardState(userWon, completedRound);
       if (this.state.phase === 'REGULAR_SEASON' && !this.state.pendingStoryEvent) {
         const chrEvent = evaluateChronicleTrigger(this.state, userClubNow, this.getStandings());
         if (chrEvent) this.state.pendingStoryEvent = chrEvent;
@@ -2140,44 +2148,96 @@ export class LeagueManager {
     }
   }
 
-  private createPostMatchRewardState(won: boolean): PostMatchRewardState {
-    const allCats: PostMatchRewardCategory[] = [
-      'player',
-      'stat_boost',
-      'line_boost',
-      'craft_card',
-      'event',
-      'trait_forge',
-      'tactical_pact',
-      'chemistry_forge',
-    ];
-    const club = this.getUserClub();
-    const recent = new Set(this.state.recentRewardCategories ?? []);
-    const tiredCount = club.squad.filter(p => (p.fitness ?? 100) < 72).length;
-    const hasHighCostCard = this.getCoachDeck().some(c => c.cost >= 2);
-
-    // 上下文智能加权 + 防连续重复：优先抽取上一轮未出现过的门类
-    const scored = allCats.map(cat => {
-      let weight = recent.has(cat) ? 0.35 : 1.5;
-      if (!won && (cat === 'tactical_pact' || cat === 'trait_forge' || cat === 'player')) weight += 0.55;
-      if (tiredCount >= 3 && (cat === 'event' || cat === 'tactical_pact')) weight += 0.5;
-      if (hasHighCostCard && (cat === 'chemistry_forge' || cat === 'craft_card')) weight += 0.45;
-      if ((this.state.currentRound % 3 === 0) && cat === 'trait_forge') weight += 0.4;
-      return { cat, score: weight * (0.65 + Math.random() * 0.7) };
-    });
-    scored.sort((a, b) => b.score - a.score);
-    const picked = scored.slice(0, 3).map(s => s.cat);
+  private createPostMatchRewardState(won: boolean, completedRound = this.state.currentRound): PostMatchRewardState {
+    const cadence = getRoundCadence(completedRound, this.state.winlessStreak ?? 0);
+    const picked = this.rollPostMatchCategories(won, cadence, completedRound);
     this.state.recentRewardCategories = picked;
 
     return {
-      round: this.state.currentRound,
+      round: completedRound,
       won,
+      cadence,
+      rerollsLeft: 1,
       categories: picked,
       chosenCategory: null,
       options: [],
       pendingStatOptionId: null,
       completed: false,
     };
+  }
+
+  private rollPostMatchCategories(
+    won: boolean,
+    cadence: 'normal' | 'focus' | 'crisis',
+    round = this.state.currentRound
+  ): PostMatchRewardCategory[] {
+    const pool: PostMatchRewardCategory[] = cadence === 'normal'
+      ? ['event', 'craft_card', 'trait_forge', 'gamble', 'chemistry_forge']
+      : ['player', 'stat_boost', 'line_boost', 'craft_card', 'event', 'trait_forge', 'tactical_pact', 'chemistry_forge', 'gamble'];
+    const club = this.getUserClub();
+    const recent = new Set(this.state.recentRewardCategories ?? []);
+    const tiredCount = club.squad.filter(p => (p.fitness ?? 100) < 72).length;
+    const hasHighCostCard = this.getCoachDeck().some(c => c.cost >= 2);
+
+    const scored = pool.map(cat => {
+      let weight = recent.has(cat) ? 0.35 : 1.5;
+      if (!won && (cat === 'tactical_pact' || cat === 'trait_forge' || cat === 'player' || cat === 'gamble')) weight += 0.55;
+      if (tiredCount >= 3 && (cat === 'event' || cat === 'tactical_pact' || cat === 'gamble')) weight += 0.5;
+      if (hasHighCostCard && (cat === 'chemistry_forge' || cat === 'craft_card')) weight += 0.45;
+      if ((round % 3 === 0) && cat === 'trait_forge') weight += 0.4;
+      return { cat, score: weight * (0.65 + Math.random() * 0.7) };
+    });
+    scored.sort((a, b) => b.score - a.score);
+
+    if (RE_DRAFT_ROUNDS.has(round)) {
+      const other = scored.find(s => s.cat !== 'gamble' && s.cat !== 'season_perk')?.cat ?? 'player';
+      const res: PostMatchRewardCategory[] = ['season_perk', 'gamble', other];
+      for (let i = res.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [res[i], res[j]] = [res[j], res[i]];
+      }
+      return res;
+    }
+
+    if (cadence !== 'normal') {
+      const others = scored.filter(s => s.cat !== 'gamble').slice(0, 2).map(s => s.cat);
+      const res: PostMatchRewardCategory[] = [...others, 'gamble'];
+      for (let i = res.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [res[i], res[j]] = [res[j], res[i]];
+      }
+      return res;
+    }
+    return scored.slice(0, 3).map(s => s.cat);
+  }
+
+  public rerollPostMatchReward(): { ok: boolean; costLabel?: string; reason?: string } {
+    const rw = this.state.pendingPostMatchReward;
+    if (!rw || rw.completed) return { ok: false, reason: '当前没有可重抽的赛后奖励' };
+    if (rw.pendingStatOptionId) return { ok: false, reason: '请先完成当前球员指定' };
+    if ((rw.rerollsLeft ?? 0) <= 0) return { ok: false, reason: '本轮重抽次数已用完' };
+
+    let costLabel = '';
+    if (this.state.interMatchPrep && this.state.interMatchPrep.actionsLeft > 0) {
+      this.state.interMatchPrep.actionsLeft -= 1;
+      costLabel = '消耗 1 备战点';
+    } else if (this.state.metaPointsTotal >= 8) {
+      this.state.metaPointsTotal -= 8;
+      costLabel = '消耗 8 Meta';
+    } else {
+      return { ok: false, reason: '需要 1 备战点或 8 Meta 方可重抽' };
+    }
+
+    rw.rerollsLeft = (rw.rerollsLeft ?? 1) - 1;
+    if (!rw.chosenCategory) {
+      const cadence = rw.cadence ?? getRoundCadence(rw.round, this.state.winlessStreak ?? 0);
+      const picked = this.rollPostMatchCategories(rw.won, cadence, rw.round);
+      rw.categories = picked;
+      this.state.recentRewardCategories = picked;
+      return { ok: true, costLabel };
+    }
+    this.pickPostMatchRewardCategory(rw.chosenCategory);
+    return { ok: true, costLabel };
   }
 
   public pickPostMatchRewardCategory(cat: PostMatchRewardCategory): { ok: boolean; reason?: string } {
@@ -2193,7 +2253,13 @@ export class LeagueManager {
     const options: PostMatchRewardOption[] = [];
 
     if (cat === 'player') {
-      const cands = generateShuffleSet(3, tierBase + winBonus, tierBase + 13 + winBonus);
+      const financeBonus = this.getMetaLevels().finance >= 3 ? 2 : 0;
+      const milestoneBonus = RE_DRAFT_ROUNDS.has(rw.round) ? 4 : 0;
+      const cands = generateShuffleSet(
+        3,
+        tierBase + winBonus + financeBonus + milestoneBonus,
+        tierBase + 13 + winBonus + financeBonus + (RE_DRAFT_ROUNDS.has(rw.round) ? 3 : 0)
+      );
       cands.forEach((p, idx) => {
         options.push({
           id: `pm_p_${idx}_${p.id}`,
@@ -2202,6 +2268,20 @@ export class LeagueManager {
           subtitle: `${p.age}岁${p.secondaryRoles?.length ? ' · 兼 ' + p.secondaryRoles.join('/') : ''} · ${p.traits?.slice(0, 2).join('/') || '均衡'}`,
           rarity: p.tier === 'S' ? 'epic' : p.tier === 'A' ? 'rare' : 'common',
           player: p,
+        });
+      });
+    } else if (cat === 'season_perk') {
+      const club = this.getUserClub();
+      const offer = createReDraftOffer(rw.round, club.perks.map(p => p.id), this.getMetaLevels(), tier);
+      offer.perkChoices.forEach((pk, idx) => {
+        const catLabel = pk.category === 'attack' ? '进攻系' : pk.category === 'defense' ? '防守系' : '控制系';
+        options.push({
+          id: `pm_sp_${idx}_${pk.id}`,
+          category: 'season_perk',
+          title: `赛季词条：${pk.name}`,
+          subtitle: `[${catLabel}] ${pk.description}`,
+          rarity: pk.rarity,
+          perk: pk,
         });
       });
     } else if (cat === 'stat_boost') {
@@ -2356,9 +2436,9 @@ export class LeagueManager {
           id: 'pm_tp_alchemy',
           category: 'tactical_pact',
           title: '契约·黑市炼金：Meta与备战点双收',
-          subtitle: '代价：消耗最多 2 元素 | 收益：Meta +50pt、下轮备战点 +1、全队冷静 +1',
+          subtitle: '代价：消耗最多 2 元素 | 收益：Meta +25pt、下轮备战点 +1、全队冷静 +1',
           rarity: 'epic',
-          pactReward: { kind: 'black_market_alchemy', description: '消耗最多2元素换取 Meta +50pt、备战点 +1 及冷静+1' },
+          pactReward: { kind: 'black_market_alchemy', description: '消耗最多2元素换取 Meta +25pt、备战点 +1 及冷静+1' },
         },
         {
           id: 'pm_tp_stamina',
@@ -2414,16 +2494,29 @@ export class LeagueManager {
         [chemPool[i], chemPool[j]] = [chemPool[j], chemPool[i]];
       }
       options.push(...chemPool.slice(0, 3));
+    } else if (cat === 'gamble') {
+      const gambleOpts = rollTieredGambleOptions({
+        tier,
+        round: rw.round,
+        won: rw.won,
+        winlessStreak: this.state.winlessStreak ?? 0,
+        club: this.getUserClub(),
+        metaLevels: this.getMetaLevels(),
+        recentEventIds: this.state.recentGambleEventIds ?? [],
+      }, 3);
+      options.push(...gambleOpts);
+      const usedIds = gambleOpts.map(o => o.gamble?.eventId).filter((x): x is string => !!x);
+      this.state.recentGambleEventIds = [...(this.state.recentGambleEventIds ?? []), ...usedIds].slice(-9);
     } else {
       const chrons = ensureChronicles(this.state);
       const evPool: PostMatchRewardOption[] = [];
       evPool.push({
         id: 'pm_ev_meta',
         category: 'event',
-        title: '理事会嘉奖：Meta 天赋 +35pt',
-        subtitle: '直接入账教练天赋树与 SkillWeb 技能网点数 +35pt',
-        rarity: 'epic',
-        eventReward: { kind: 'meta_grant', amount: 35, description: '直接获得 Meta 天赋点数 +35pt' },
+        title: '理事会嘉奖：Meta 天赋 +15pt',
+        subtitle: '直接入账教练天赋树与 SkillWeb 技能网点数 +15pt',
+        rarity: 'rare',
+        eventReward: { kind: 'meta_grant', amount: 15, description: '直接获得 Meta 天赋点数 +15pt' },
       });
       evPool.push({
         id: 'pm_ev_prep',
@@ -2514,7 +2607,7 @@ export class LeagueManager {
   public applyPostMatchRewardOption(
     optionId: string,
     targetPlayerId?: string
-  ): { ok: boolean; needsTarget?: boolean; summary?: string; reason?: string } {
+  ): { ok: boolean; needsTarget?: boolean; summary?: string; gambleTier?: GambleOutcomeTier; reason?: string } {
     const rw = this.state.pendingPostMatchReward;
     if (!rw || rw.completed) return { ok: false, reason: '奖励已完成或不存在' };
     const opt = rw.options.find(o => o.id === optionId);
@@ -2542,6 +2635,16 @@ export class LeagueManager {
       }
       rw.completed = true;
       rw.summaryText = `新援入队：${p.name} (${p.role} · CA ${p.ca})`;
+      return { ok: true, summary: rw.summaryText };
+    }
+
+    if (opt.category === 'season_perk' && opt.perk) {
+      club.perks.push(opt.perk);
+      if (computePerkSynergies(club.perks).synergies.length > 0) {
+        tryUnlockAchievement(this.state, 'ach_synergy');
+      }
+      rw.completed = true;
+      rw.summaryText = `激活赛季战术词条【${opt.perk.name}】：${opt.perk.description}`;
       return { ok: true, summary: rw.summaryText };
     }
 
@@ -2749,7 +2852,7 @@ export class LeagueManager {
             spent++;
           }
         }
-        this.state.metaPointsTotal += 50;
+        this.state.metaPointsTotal += 25;
         if (this.state.interMatchPrep) {
           this.state.interMatchPrep.actionsLeft += 1;
         }
@@ -2757,7 +2860,7 @@ export class LeagueManager {
           p.attributes.composure = clampAttr(p.attributes.composure + 1);
           p.ca = computeWeightedCA(p.role, p.attributes);
         }
-        rw.summaryText = `黑市炼金完成：消耗 ${spent} 元素，入账 Meta +50pt、下轮备战点 +1、全队冷静 +1`;
+        rw.summaryText = `黑市炼金完成：消耗 ${spent} 元素，入账 Meta +25pt、下轮备战点 +1、全队冷静 +1`;
       } else if (pr.kind === 'stamina_limit_break') {
         for (const p of club.squad) {
           p.attributes.stamina = clampAttr(p.attributes.stamina + 4);
@@ -2932,6 +3035,128 @@ export class LeagueManager {
       }
       rw.completed = true;
       return { ok: true, summary: rw.summaryText };
+    }
+
+    if (opt.category === 'gamble' && opt.gamble) {
+      const rolledTier = rollTriStateGamble(opt.gamble);
+      const outcome = opt.gamble[rolledTier];
+      opt.gamble.rolledTier = rolledTier;
+      opt.gamble.rolledText = outcome.summary;
+      const ef = outcome.effect;
+      const target = ef.targetPlayerId ? club.squad.find(p => p.id === ef.targetPlayerId) : undefined;
+
+      if (ef.fitnessDelta !== undefined) {
+        const list = target ? [target] : club.squad;
+        for (const p of list) {
+          p.fitness = Math.max(20, Math.min(100, (p.fitness ?? 100) + ef.fitnessDelta));
+          if (p.fitness >= 70) p.strainWarning = false;
+        }
+      }
+      if (ef.moraleShift && target) {
+        target.morale = ef.moraleShift;
+      }
+      if (ef.injureStarterRounds && ef.injureStarterRounds > 0) {
+        const starterSet = new Set(club.starterIds);
+        const pool = club.squad.filter(p => starterSet.has(p.id) && (p.injuredRounds ?? 0) === 0);
+        const victim = pool[Math.floor(Math.random() * pool.length)];
+        if (victim) {
+          victim.injuredRounds = (victim.injuredRounds ?? 0) + ef.injureStarterRounds;
+          this.replaceUnavailableStarters(club);
+        }
+      }
+      if (ef.metaDelta !== undefined) {
+        this.state.metaPointsTotal = Math.max(0, this.state.metaPointsTotal + ef.metaDelta);
+      }
+      if (ef.prepActionsDelta !== undefined && this.state.interMatchPrep) {
+        this.state.interMatchPrep.actionsLeft = Math.max(0, this.state.interMatchPrep.actionsLeft + ef.prepActionsDelta);
+      }
+      if (ef.scoutIntelDelta !== undefined && this.state.interMatchPrep?.matchupIntel) {
+        const prep = this.state.interMatchPrep;
+        const intel = prep.matchupIntel;
+        if (intel) {
+          const rec = getOpponentIntelRecord(this.state, intel.oppClubId);
+          rec.familiarity = Math.max(0, Math.min(100, rec.familiarity + ef.scoutIntelDelta));
+          const refreshed = buildOpponentMatchupIntel(this.state, club);
+          if (refreshed) {
+            refreshed.chosenCounterId = intel.chosenCounterId;
+            refreshed.spotCorrect = intel.spotCorrect;
+            refreshed.scoutedThisRound = intel.scoutedThisRound;
+            prep.matchupIntel = refreshed;
+          }
+        }
+      }
+      if (ef.elementsGain && ef.elementsGain > 0) {
+        const inv = this.getElementInventory();
+        for (let i = 0; i < ef.elementsGain; i++) {
+          const el = TACTICAL_ELEMENTS[Math.floor(Math.random() * TACTICAL_ELEMENTS.length)];
+          inv[el.id] = (inv[el.id] ?? 0) + 1;
+        }
+      }
+      if (ef.grantCardLevel && ef.grantCardLevel >= 1) {
+        const e1 = TACTICAL_ELEMENTS[Math.floor(Math.random() * TACTICAL_ELEMENTS.length)];
+        const e2 = TACTICAL_ELEMENTS[Math.floor(Math.random() * TACTICAL_ELEMENTS.length)];
+        const synth = synthesizeChemistry([e1.id, e2.id], 'balanced', true);
+        for (let lv = 1; lv < Math.min(4, ef.grantCardLevel); lv++) {
+          upgradeCommandCard(synth.card);
+        }
+        const deck = this.getCoachDeck();
+        if (deck.length < 12) {
+          deck.push(synth.card);
+          const loadout = this.getLoadoutIds();
+          if (loadout.length < 4) loadout.push(synth.card.id);
+        } else {
+          this.state.metaPointsTotal += 15;
+        }
+      }
+      if (ef.tempTrait && target) {
+        target.tempTraits = target.tempTraits ? [...target.tempTraits] : [];
+        const existing = target.tempTraits.find(t => t.trait === ef.tempTrait!.trait);
+        if (existing) {
+          if (ef.tempTrait.tier === 'gold') existing.tier = 'gold';
+          existing.remainingMatches = Math.max(existing.remainingMatches, ef.tempTrait.rounds);
+        } else {
+          target.tempTraits.push({
+            trait: ef.tempTrait.trait,
+            tier: ef.tempTrait.tier,
+            remainingMatches: ef.tempTrait.rounds,
+          });
+        }
+      }
+      if (ef.teamFamiliarityDelta !== undefined) {
+        for (const p of club.squad) {
+          const cur = this.getPlayerFamiliarity(p, club.formation);
+          p.formationFamiliarity = p.formationFamiliarity ?? {};
+          p.formationFamiliarity[club.formation] = Math.max(0, Math.min(100, cur + ef.teamFamiliarityDelta));
+        }
+      }
+      if (ef.pairChemistryDelta !== undefined) {
+        const links = this.getChemistryLinks();
+        const squadMap = new Map(club.squad.map(p => [p.id, p]));
+        const specs = getFormationLinks(club, squadMap);
+        if (specs.length > 0) {
+          const picked = specs[Math.floor(Math.random() * specs.length)];
+          const lk = getOrCreateChemistryLink(links, picked.playerA, picked.playerB);
+          lk.score = Math.max(0, Math.min(100, lk.score + ef.pairChemistryDelta));
+          if (lk.score >= 85) lk.title = '黄金连线';
+        }
+      }
+      if (ef.nextMatchBuff && this.state.interMatchPrep) {
+        const prev = this.state.interMatchPrep.nextMatchBuff ?? {};
+        this.state.interMatchPrep.nextMatchBuff = {
+          ...prev,
+          passingBonus: (prev.passingBonus ?? 0) + (ef.nextMatchBuff.passingBonus ?? 0),
+          shootingBonus: (prev.shootingBonus ?? 0) + (ef.nextMatchBuff.shootingBonus ?? 0),
+          defendingBonus: (prev.defendingBonus ?? 0) + (ef.nextMatchBuff.defendingBonus ?? 0),
+          paceBonus: (prev.paceBonus ?? 0) + (ef.nextMatchBuff.paceBonus ?? 0),
+          composureBonus: (prev.composureBonus ?? 0) + (ef.nextMatchBuff.composureBonus ?? 0),
+          note: ef.nextMatchBuff.note,
+        };
+      }
+
+      const tierTag = rolledTier === 'jackpot' ? '超额暴击' : rolledTier === 'negative' ? '触发代价' : '常规收益';
+      rw.completed = true;
+      rw.summaryText = `[${tierTag}] ${outcome.label}：${outcome.summary}`;
+      return { ok: true, summary: rw.summaryText, gambleTier: rolledTier };
     }
 
     return { ok: false, reason: '未知奖励类型' };
@@ -3398,7 +3623,7 @@ export class LeagueManager {
     const r = this.state.currentRound;
     const tier = this.state.currentTier ?? 7;
 
-    // 常规赛第 8、17、26 轮结束后触发 Re-Draft（AI 球队同步补强）
+    // 常规赛第 8、16、24 轮结束后，AI 球队同步补强（玩家侧的赛季词条与强援已并入赛后 3 选 1）
     if (this.state.phase === 'REGULAR_SEASON' && RE_DRAFT_ROUNDS.has(r)) {
       for (const aiClub of this.state.clubs) {
         if (aiClub.isUser) continue;
@@ -3419,16 +3644,6 @@ export class LeagueManager {
         }
         aiClub.starterIds = autoSelectStarters(aiClub.squad, aiClub.formation);
       }
-
-      const club = this.getUserClub();
-      this.state.reDraft = createReDraftOffer(
-        r,
-        club.perks.map(p => p.id),
-        this.getMetaLevels(),
-        tier
-      );
-      this.state.phase = 'RE_DRAFT';
-      return;
     }
 
     // 34 轮双循环常规赛全部结束 -> 直接按积分榜排名结算并执行 7 级联赛升降级
@@ -3441,6 +3656,10 @@ export class LeagueManager {
 
     // 常规赛下一轮
     this.state.currentRound = r + 1;
+    if ((this.state.currentRound === 9 || this.state.currentRound === 17) && this.state.storyline) {
+      const mappedRound = this.state.currentRound === 9 ? 3 : 5;
+      this.state.pendingStoryEvent = createMidSeasonChoice(this.state.storyline, mappedRound);
+    }
   }
 
   // ==================== 4. Re-Draft 补强 ====================

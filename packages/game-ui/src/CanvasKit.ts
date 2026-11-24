@@ -406,10 +406,10 @@ export function drawBroadcastHeader(
   }
 }
 
-export type NavRailTab = 'portal' | 'tactics' | 'cards' | 'meta' | 'hof' | 'title';
+export type NavRailTab = 'portal' | 'league' | 'tactics' | 'cards' | 'meta' | 'hof' | 'title';
 
 /**
- * 统一左侧垂直导航轨道（门户/战术/合成/天赋/荣誉/主页）
+ * 统一左侧垂直导航轨道（门户/联赛/战术/合成/天赋/荣誉/主页）
  */
 export function drawNavRail(
   ctx: CanvasRenderingContext2D,
@@ -419,7 +419,8 @@ export function drawNavRail(
 ): void {
   drawChamferPanel(ctx, 14, 80, 68, 624, 10, 'rgba(11, 17, 30, 0.92)', THEME.BORDER, 1, THEME.BORDER_GOLD);
   const items: Array<{ key: NavRailTab; label: string; icon: IconName }> = [
-    { key: 'portal', label: '门户', icon: 'chart' },
+    { key: 'portal', label: '门户', icon: 'ball' },
+    { key: 'league', label: '联赛', icon: 'chart' },
     { key: 'tactics', label: '战术', icon: 'tactics' },
     { key: 'cards', label: '合成', icon: 'craft' },
     { key: 'meta', label: '天赋', icon: 'talent' },
@@ -427,19 +428,19 @@ export function drawNavRail(
   ];
 
   items.forEach((item, i) => {
-    const iy = 96 + i * 74;
+    const iy = 90 + i * 70;
     const isAct = activeTab === item.key;
-    const hovered = hits.isHovered(20, iy, 56, 62);
+    const hovered = hits.isHovered(20, iy, 56, 60);
     if (isAct) {
-      drawRoundRect(ctx, 20, iy, 56, 62, 8, 'rgba(212,168,67,0.18)', THEME.GOLD, 1.4);
-      drawRoundRect(ctx, 14, iy + 10, 4, 42, 2, THEME.GOLD_LIGHT);
+      drawRoundRect(ctx, 20, iy, 56, 60, 8, 'rgba(212,168,67,0.18)', THEME.GOLD, 1.4);
+      drawRoundRect(ctx, 14, iy + 10, 4, 40, 2, THEME.GOLD_LIGHT);
     } else if (hovered) {
-      drawRoundRect(ctx, 20, iy, 56, 62, 8, 'rgba(30,45,77,0.7)', THEME.BORDER);
+      drawRoundRect(ctx, 20, iy, 56, 60, 8, 'rgba(30,45,77,0.7)', THEME.BORDER);
     }
     const col = isAct ? THEME.GOLD_LIGHT : hovered ? THEME.TX1 : THEME.TX2;
-    drawIcon(ctx, item.icon, 48, iy + 22, 20, col);
-    drawText(ctx, item.label, 48, iy + 48, { size: 11, bold: isAct, color: col, align: 'center' });
-    hits.add(20, iy, 56, 62, () => {
+    drawIcon(ctx, item.icon, 48, iy + 21, 20, col);
+    drawText(ctx, item.label, 48, iy + 46, { size: 11, bold: isAct, color: col, align: 'center' });
+    hits.add(20, iy, 56, 60, () => {
       SoundEngine.playClick();
       onNavigate(item.key);
     });

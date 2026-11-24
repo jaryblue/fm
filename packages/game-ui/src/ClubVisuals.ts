@@ -270,11 +270,18 @@ export function drawJerseyIcon(
   ctx.stroke();
 
   if (shirtNumber !== undefined) {
-    ctx.font = `bold ${Math.max(8, Math.round(s * 0.34))}px monospace`;
-    ctx.fillStyle = '#FFFFFF';
+    const numStr = String(shirtNumber);
+    const numSize = numStr.length >= 2 ? Math.max(8.5, Math.round(s * 0.35)) : Math.max(9.5, Math.round(s * 0.39));
+    const numY = cy + s * 0.16;
+    ctx.font = `bold ${numSize}px monospace`;
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
-    ctx.fillText(String(shirtNumber), cx, cy + s * 0.08);
+    ctx.lineJoin = 'round';
+    ctx.strokeStyle = 'rgba(8, 12, 20, 0.90)';
+    ctx.lineWidth = Math.max(2.2, s * 0.11);
+    ctx.strokeText(numStr, cx, numY);
+    ctx.fillStyle = '#FFFFFF';
+    ctx.fillText(numStr, cx, numY);
   }
   ctx.restore();
 }

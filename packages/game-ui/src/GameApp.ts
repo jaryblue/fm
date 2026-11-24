@@ -19,6 +19,7 @@ import { CardCraftScreen } from './screens/CardCraftScreen';
 import { ClubRosterScreen } from './screens/ClubRosterScreen';
 import { DraftScreen } from './screens/DraftScreen';
 import { HallOfFameScreen } from './screens/HallOfFameScreen';
+import { LeagueScreen } from './screens/LeagueScreen';
 import { MatchDayScreen } from './screens/MatchDayScreen';
 import { MetaScreen } from './screens/MetaScreen';
 import { PortalScreen } from './screens/PortalScreen';
@@ -35,6 +36,7 @@ export type ActiveRoute =
   | 'cards'
   | 'draft'
   | 'portal'
+  | 'league'
   | 'tactics'
   | 'match'
   | 'post_match'
@@ -70,6 +72,7 @@ export class GameApp {
   private cardCraftScreen = new CardCraftScreen();
   private draftScreen = new DraftScreen();
   private portalScreen = new PortalScreen();
+  private leagueScreen = new LeagueScreen();
   private tacticsScreen = new TacticsScreen();
   private matchScreen = new MatchDayScreen();
   private postMatchScreen = new PostMatchReDraftScreen();
@@ -127,13 +130,14 @@ export class GameApp {
   }
 
   private navigateFromRail(tab: NavRailTab): void {
+    const isSeasonTab = this.route === 'portal' || this.route === 'league' || this.route === 'tactics' || this.route === 'cards';
     if (tab === 'title') {
       this.setRoute('title');
     } else if (tab === 'meta') {
-      this.metaReturnRoute = this.route === 'portal' || this.route === 'tactics' || this.route === 'cards' ? this.route : 'portal';
+      this.metaReturnRoute = isSeasonTab ? this.route : 'portal';
       this.setRoute('meta');
     } else if (tab === 'hof') {
-      this.metaReturnRoute = this.route === 'portal' || this.route === 'tactics' || this.route === 'cards' ? this.route : 'portal';
+      this.metaReturnRoute = isSeasonTab ? this.route : 'portal';
       this.setRoute('hof');
     } else {
       this.setRoute(tab);
@@ -192,8 +196,8 @@ export class GameApp {
     if (this.route === 'meta') {
       return this.metaScreen.onWheel(deltaY, x, y);
     }
-    if (this.route === 'portal') {
-      return this.portalScreen.onWheel(deltaY);
+    if (this.route === 'league') {
+      return this.leagueScreen.onWheel(deltaY);
     }
     if (this.route === 'tactics') {
       return this.tacticsScreen.onWheel(deltaY);
@@ -221,6 +225,12 @@ export class GameApp {
         return;
       }
       if (this.route === 'tactics' && this.tacticsScreen.handleEscape()) {
+        return;
+      }
+      if (this.route === 'cards' && this.cardCraftScreen.handleEscape()) {
+        return;
+      }
+      if (this.route === 'meta' && this.metaScreen.handleEscape()) {
         return;
       }
     }
@@ -276,6 +286,7 @@ export class GameApp {
     const bgId: ArtAssetId =
       this.route === 'title' ||
       this.route === 'portal' ||
+      this.route === 'league' ||
       this.route === 'match' ||
       this.route === 'hof' ||
       this.route === 'season_end'
@@ -286,6 +297,7 @@ export class GameApp {
     const brightenBg =
       this.route === 'title' ||
       this.route === 'portal' ||
+      this.route === 'league' ||
       this.route === 'hof' ||
       this.route === 'season_end';
     drawBackdrop(ctx, bgId, this.elapsedTime, brightenBg);
@@ -448,6 +460,22 @@ export class GameApp {
           this.tutorialOverlay.render(ctx, this.hits, this.league, 'portal_scout', () => this.save());
         }
       }
+    } else if (this.route === 'league') {
+      this.leagueScreen.render(ctx, this.hits, this.league, {
+        onNavigate: (tab) => this.navigateFromRail(tab),
+        onSave: () => this.save(),
+        onStartMatch: () => {
+          this.matchScreen.start(
+            this.league,
+            () => {
+              this.shake.trigger(7, 0.28);
+              this.particles.burst(640, 140, THEME.GOLD_LIGHT, 28);
+            },
+            (intensity, dur) => this.shake.trigger(intensity, dur)
+          );
+          this.setRoute('match', 'MATCH DAY · KICKOFF');
+        },
+      });
     } else if (this.route === 'tactics') {
       this.tacticsScreen.render(ctx, this.hits, this.league, {
         onNavigate: (tab) => this.navigateFromRail(tab),

@@ -1,8 +1,8 @@
 /**
- * 卡牌背包与战术合成器（主次分明三栏结构 + 实体卡牌插画 + 无外框中栏展示）
- * - 左栏 (480px 主区)：出战手牌 (4槽, 右上角×可靠卸下) + 统一卡牌背包（基础卡 + 合成卡）
- * - 中栏 (270px 无外框辅区)：Tab 切换「卡牌详情」或「配方图鉴」，点击直接展示插画大卡或一键填配方
- * - 右栏 (398px 主区)：独立合成器（支持 1~4 张基础卡合成，或 2 张合成卡二合一融合升阶）
+ * 卡牌背包与战术合成器（双栏宽屏结构 + 点击浮层详情/配方）
+ * - 取消 270px 常驻中栏，将宽度释放给左栏背包 (660px) 与右栏合成器 (492px)
+ * - 保留「选卡入炉 → 实时预览 → 合成 → 装配手牌」同屏连续操作流
+ * - 卡牌详情（升阶/拆解）与配方图鉴改为点击弹出浮层
  */
 
 import {
@@ -47,7 +47,6 @@ const FOCUS_OPTIONS: Array<{ id: CraftFocus; label: string }> = [
 ];
 
 type BagFilter = 'all' | 'base' | 'crafted' | 'equipped';
-type MidTab = 'detail' | 'recipes';
 type SelectedItem = { kind: 'base'; elemId: ElementId } | { kind: 'card'; cardId: string };
 
 export class CardCraftScreen {
@@ -55,13 +54,26 @@ export class CardCraftScreen {
   private fuseSlots: [string | null, string | null] = [null, null];
   private focus: CraftFocus = 'balanced';
   private bagFilter: BagFilter = 'all';
-  private midTab: MidTab = 'detail';
   private bagPage = 0;
   private selected: SelectedItem | null = null;
-  private notice = '点击左侧卡牌查看详情，点「放入手牌」或「+ 入炉」';
+  private detailModalOpen = false;
+  private recipesModalOpen = false;
+  private notice = '点击卡面查看详情，或直接点「放入手牌 / + 入炉」快速构筑';
   private fusionFlash = 0;
   private animTime = 0;
   private slotPopTimers = [0, 0, 0, 0];
+
+  public handleEscape(): boolean {
+    if (this.detailModalOpen) {
+      this.detailModalOpen = false;
+      return true;
+    }
+    if (this.recipesModalOpen) {
+      this.recipesModalOpen = false;
+      return true;
+    }
+    return false;
+  }
 
   public update(dtSec: number): void {
     this.animTime += dtSec;
@@ -75,9 +87,6 @@ export class CardCraftScreen {
     }
   }
 
-  /**
-   * 根据卡牌等级 (Lv.1~4) 与负面反噬状态绘制动态等级粒子与黑色煞气粒子
-   */
   private drawCardAuraParticles(
     ctx: CanvasRenderingContext2D,
     x: number,
@@ -237,8 +246,12 @@ export class CardCraftScreen {
     const totalElements = TACTICAL_ELEMENTS.reduce((s, e) => s + (inv[e.id] ?? 0), 0);
     const cardBackImg = AssetLoader.get('command_card_back');
 
-    if (this.selected?.kind === 'card' && !deck.some(c => c.id === this.selected!.cardId)) {
-      this.selected = deck[0] ? { kind: 'card', cardId: deck[0].id } : { kind: 'base', elemId: 'press' };
+    if (this.selected && this.selected.kind === 'card') {
+      const selCardId = this.selected.cardId;
+      if (!deck.some(c => c.id === selCardId)) {
+        this.selected = deck[0] ? { kind: 'card', cardId: deck[0].id } : { kind: 'base', elemId: 'press' };
+        this.detailModalOpen = false;
+      }
     }
     if (!this.selected) {
       this.selected = deck[0] ? { kind: 'card', cardId: deck[0].id } : { kind: 'base', elemId: 'press' };
@@ -257,20 +270,29 @@ export class CardCraftScreen {
 
     drawNavRail(ctx, hits, 'cards', actions.onNavigate);
 
-    // ==================== 左栏 (主区 1, x: 96..576, w: 480)：出战手牌 + 卡牌背包 ====================
-    drawChamferPanel(ctx, 96, 80, 480, 624, 10, 'rgba(14, 22, 40, 0.94)', THEME.BORDER);
+    // ==================== 左栏 (x: 96..756, w: 660)：出战手牌 + 宽屏卡牌背包 ====================
+    drawChamferPanel(ctx, 96, 80, 660, 624, 10, 'rgba(14, 22, 40, 0.94)', THEME.BORDER);
 
-    // 1) 上部：出战手牌 (4槽位)
-    drawText(ctx, `出战手牌 (${loadoutIds.length}/4 · 比赛日携带)`, 112, 98, {
-      size: 13,
+    // 1) 上部：出战手牌 (4 宽屏槽位，每张 152×82)
+    drawText(ctx, `出战手牌 (${loadoutIds.length}/4 · 比赛日携带)`, 114, 100, {
+      size: 14,
       bold: true,
       color: THEME.GOLD_LIGHT,
     });
+    drawButton(ctx, hits, 640, 88, 100, 26, '配方图鉴 📖', () => {
+      this.recipesModalOpen = true;
+    }, { variant: 'primary', fontSize: 11 });
+
+    const selCardForQuickEquip =
+      this.selected && this.selected.kind === 'card'
+        ? deck.find(c => c.id === (this.selected as { kind: 'card'; cardId: string }).cardId)
+        : null;
+
     for (let i = 0; i < 4; i++) {
-      const sx = 110 + i * 114;
-      const sy = 114;
-      const sw = 108;
-      const sh = 78;
+      const sx = 114 + i * 158;
+      const sy = 118;
+      const sw = 150;
+      const sh = 82;
       const cid = loadoutIds[i];
       const card = cid ? deck.find(c => c.id === cid) : undefined;
       if (card) {
@@ -278,33 +300,32 @@ export class CardCraftScreen {
         const lvCol = this.lvColor(lv);
         const isSel = this.selected?.kind === 'card' && this.selected.cardId === card.id;
         const artImg = AssetLoader.get(this.cardArtId(card));
-        drawChamferPanel(ctx, sx, sy, sw, sh, 7, 'rgba(20, 34, 58, 0.96)', isSel ? THEME.GOLD_LIGHT : lvCol, isSel ? 1.8 : 1.2);
+        drawChamferPanel(ctx, sx, sy, sw, sh, 8, 'rgba(20, 34, 58, 0.96)', isSel ? THEME.GOLD_LIGHT : lvCol, isSel ? 1.8 : 1.2);
         if (artImg && typeof ctx.drawImage === 'function') {
           ctx.save();
           ctx.beginPath();
           ctx.rect(sx + 2, sy + 2, sw - 4, sh - 4);
           ctx.clip();
           ctx.globalAlpha = 0.22;
-          ctx.drawImage(artImg, sx + 34, sy, sw - 34, sh);
+          ctx.drawImage(artImg, sx + 48, sy, sw - 48, sh);
           ctx.restore();
         }
         this.drawCardAuraParticles(ctx, sx + 2, sy + 2, sw - 4, sh - 4, lv, !!card.isCorrupted, i + card.name.length, true);
-        drawBadge(ctx, sx + 6, sy + 6, 24, 15, `E${card.cost}`, '#1E3A5F', THEME.GOLD_LIGHT);
-        drawBadge(ctx, sx + 33, sy + 6, 28, 15, `Lv.${lv}`, '#0F172A', lvCol);
-        drawText(ctx, card.name.slice(0, 7), sx + 6, sy + 36, { size: 11, bold: true, color: THEME.TX1 });
+        drawBadge(ctx, sx + 8, sy + 7, 26, 16, `E${card.cost}`, '#1E3A5F', THEME.GOLD_LIGHT);
+        drawBadge(ctx, sx + 38, sy + 7, 32, 16, `Lv.${lv}`, '#0F172A', lvCol);
+        drawText(ctx, card.name.slice(0, 8), sx + 8, sy + 39, { size: 12.5, bold: true, color: THEME.TX1 });
         const mech = card.mechanic ? MECHANIC_LABELS[card.mechanic] : this.statSnippet(card);
-        drawText(ctx, mech.slice(0, 9), sx + 6, sy + 56, { size: 9, color: '#7DD3FC' });
+        drawText(ctx, mech.slice(0, 11), sx + 8, sy + 61, { size: 10.5, color: '#7DD3FC' });
 
-        // 先注册卡面选中，再注册右上角 × 移除（后注册优先响应！）
         hits.add(sx, sy, sw, sh, () => {
           SoundEngine.playClick();
           this.selected = { kind: 'card', cardId: card.id };
-          this.midTab = 'detail';
+          this.detailModalOpen = true;
         });
-        const xHover = hits.isHovered(sx + sw - 22, sy + 3, 18, 18);
-        drawRoundRect(ctx, sx + sw - 22, sy + 4, 17, 17, 4, xHover ? '#991B1B' : 'rgba(15, 23, 42, 0.85)', xHover ? THEME.RED_LIGHT : THEME.BORDER);
-        drawText(ctx, '×', sx + sw - 13.5, sy + 12.5, { size: 12, bold: true, color: xHover ? '#FFFFFF' : '#FCA5A5', align: 'center' });
-        hits.add(sx + sw - 24, sy + 2, 22, 22, () => {
+        const xHover = hits.isHovered(sx + sw - 24, sy + 4, 20, 20);
+        drawRoundRect(ctx, sx + sw - 24, sy + 5, 19, 19, 4, xHover ? '#991B1B' : 'rgba(15, 23, 42, 0.85)', xHover ? THEME.RED_LIGHT : THEME.BORDER);
+        drawText(ctx, '×', sx + sw - 14.5, sy + 14.5, { size: 13, bold: true, color: xHover ? '#FFFFFF' : '#FCA5A5', align: 'center' });
+        hits.add(sx + sw - 26, sy + 2, 24, 24, () => {
           const res = league.toggleLoadoutCard(card.id);
           if (!res.ok) this.notice = res.reason || '卸下失败';
           else {
@@ -314,27 +335,26 @@ export class CardCraftScreen {
           }
         });
       } else {
-        const selCard = this.selected?.kind === 'card' ? deck.find(c => c.id === this.selected!.cardId) : null;
-        const canQuickEquip = !!(selCard && !loadoutSet.has(selCard.id));
+        const canQuickEquip = !!(selCardForQuickEquip && !loadoutSet.has(selCardForQuickEquip.id));
         drawRoundRect(
           ctx,
           sx,
           sy,
           sw,
           sh,
-          7,
+          8,
           'rgba(11, 17, 30, 0.6)',
           canQuickEquip ? 'rgba(34, 197, 94, 0.45)' : 'rgba(148, 163, 184, 0.22)'
         );
-        drawText(ctx, `手牌槽 ${i + 1}`, sx + sw / 2, sy + 28, { size: 10, color: THEME.TX3, align: 'center' });
-        drawText(ctx, canQuickEquip ? '点此放入' : '空置', sx + sw / 2, sy + 48, {
-          size: 9.5,
+        drawText(ctx, `手牌槽 ${i + 1}`, sx + sw / 2, sy + 30, { size: 11.5, color: THEME.TX3, align: 'center' });
+        drawText(ctx, canQuickEquip ? '点此放入' : '空置', sx + sw / 2, sy + 54, {
+          size: 11,
           color: canQuickEquip ? THEME.GREEN : THEME.TX3,
           align: 'center',
         });
-        if (canQuickEquip && selCard) {
+        if (canQuickEquip && selCardForQuickEquip) {
           hits.add(sx, sy, sw, sh, () => {
-            const res = league.toggleLoadoutCard(selCard.id);
+            const res = league.toggleLoadoutCard(selCardForQuickEquip.id);
             if (res.ok) {
               SoundEngine.playClick();
               actions.onSave();
@@ -344,8 +364,8 @@ export class CardCraftScreen {
       }
     }
 
-    // 2) 下部：统一卡牌背包（基础卡 + 合成卡）
-    drawText(ctx, '卡牌背包', 112, 210, { size: 13, bold: true, color: THEME.TX1 });
+    // 2) 下部：统一卡牌背包（双列宽屏卡片，每张 308×142）
+    drawText(ctx, '卡牌背包（点卡面看详情与升阶）', 114, 222, { size: 13.5, bold: true, color: THEME.TX1 });
     const filters: Array<[BagFilter, string]> = [
       ['all', '全部'],
       ['base', '基础卡'],
@@ -353,10 +373,10 @@ export class CardCraftScreen {
       ['equipped', '出战中'],
     ];
     filters.forEach(([fk, fl], fi) => {
-      drawButton(ctx, hits, 326 + fi * 60, 198, 56, 24, fl, () => {
+      drawButton(ctx, hits, 456 + fi * 72, 209, 66, 26, fl, () => {
         this.bagFilter = fk;
         this.bagPage = 0;
-      }, { active: this.bagFilter === fk, fontSize: 10 });
+      }, { active: this.bagFilter === fk, fontSize: 11 });
     });
 
     type BagItem =
@@ -376,18 +396,18 @@ export class CardCraftScreen {
       }
     }
 
-    const pageSize = 6;
+    const pageSize = 8; // 4列 × 2行 = 8张标准竖版卡牌
     const totalPages = Math.max(1, Math.ceil(bagItems.length / pageSize));
     if (this.bagPage >= totalPages) this.bagPage = totalPages - 1;
     const visibleBag = bagItems.slice(this.bagPage * pageSize, (this.bagPage + 1) * pageSize);
 
     visibleBag.forEach((item, idx) => {
-      const col = idx % 2;
-      const row = Math.floor(idx / 2);
-      const bx = 110 + col * 230;
-      const by = 232 + row * 142;
-      const bw = 222;
-      const bh = 134;
+      const col = idx % 4;
+      const row = Math.floor(idx / 4);
+      const bx = 114 + col * 158;
+      const by = 242 + row * 204;
+      const bw = 150;
+      const bh = 194;
 
       if (item.kind === 'base') {
         const el = item.elem;
@@ -406,35 +426,40 @@ export class CardCraftScreen {
           isSel ? THEME.GOLD_LIGHT : usedInFlask > 0 ? el.color : THEME.BORDER,
           isSel || usedInFlask > 0 ? 1.6 : 1
         );
-        const elemImg = AssetLoader.get(`elem_${el.id}`);
-        if (elemImg && typeof ctx.drawImage === 'function') {
-          ctx.drawImage(elemImg, bx + 10, by + 10, 34, 34);
-        } else {
-          drawIcon(ctx, ELEM_ICON[el.id], bx + 27, by + 27, 18, el.color);
-        }
-        drawBadge(ctx, bx + 50, by + 10, 44, 16, '基础卡', '#1E293B', el.color);
-        drawText(ctx, `×${count}`, bx + bw - 10, by + 18, {
-          size: 14,
+        drawBadge(ctx, bx + 8, by + 8, 44, 16, '基础卡', '#1E293B', el.color);
+        drawText(ctx, `×${count}`, bx + bw - 10, by + 16, {
+          size: 13,
           bold: true,
           color: count > 0 ? THEME.GOLD_LIGHT : THEME.TX3,
           align: 'right',
           mono: true,
         });
-        drawText(ctx, `${el.name} [${el.symbol}]`, bx + 50, by + 36, { size: 13, bold: true, color: el.color });
-        drawWrappedText(ctx, el.desc, bx + 10, by + 56, bw - 20, 14, { size: 9.5, color: THEME.TX2, maxLines: 2 });
+        drawRoundRect(ctx, bx + 10, by + 30, bw - 20, 62, 6, 'rgba(8, 12, 20, 0.72)', el.color, 0.9);
+        const elemImg = AssetLoader.get(`elem_${el.id}`);
+        if (elemImg && typeof ctx.drawImage === 'function') {
+          ctx.drawImage(elemImg, bx + bw / 2 - 22, by + 39, 44, 44);
+        } else {
+          drawIcon(ctx, ELEM_ICON[el.id], bx + bw / 2, by + 61, 26, el.color);
+        }
+        drawText(ctx, `${el.name} [${el.symbol}]`, bx + bw / 2, by + 108, {
+          size: 13,
+          bold: true,
+          color: el.color,
+          align: 'center',
+        });
+        drawWrappedText(ctx, el.desc, bx + 10, by + 122, bw - 20, 14, { size: 9.5, color: THEME.TX2, maxLines: 2 });
 
-        hits.add(bx, by, bw, 94, () => {
+        hits.add(bx, by, bw, 152, () => {
           SoundEngine.playClick();
           this.selected = { kind: 'base', elemId: el.id };
-          this.midTab = 'detail';
+          this.detailModalOpen = true;
         });
 
         const canDirectHand = count > 0 && deck.length < 12 && loadoutIds.length < 4;
-        drawButton(ctx, hits, bx + 10, by + 98, 98, 26, '放入手牌 ▶', () => {
+        drawButton(ctx, hits, bx + 8, by + 158, 64, 26, '手牌 ▶', () => {
           const res = league.craftChemistryCard([el.id], 'balanced', true);
           if (res.ok && res.card) {
             this.selected = { kind: 'card', cardId: res.card.id };
-            this.midTab = 'detail';
             this.notice = `已提炼 Lv.1【${res.card.name}】并放入手牌！`;
             SoundEngine.playRewardChime();
             actions.onSave();
@@ -443,7 +468,7 @@ export class CardCraftScreen {
           }
         }, { variant: canDirectHand ? 'green' : 'ghost', disabled: !canDirectHand, fontSize: 10 });
 
-        drawButton(ctx, hits, bx + 114, by + 98, 98, 26, usedInFlask > 0 ? `已入炉 ×${usedInFlask}` : '+ 入炉合成', () => {
+        drawButton(ctx, hits, bx + 76, by + 158, 66, 26, usedInFlask > 0 ? `炉×${usedInFlask}` : '+ 入炉', () => {
           this.addBaseToForge(el.id);
         }, { variant: usedInFlask > 0 ? 'gold' : 'primary', disabled: count <= 0, fontSize: 10 });
       } else {
@@ -467,51 +492,54 @@ export class CardCraftScreen {
           isSel ? THEME.GOLD_LIGHT : inFuse ? '#C084FC' : equipped ? THEME.GREEN : lv >= 3 ? lvCol : THEME.BORDER,
           isSel || equipped || inFuse ? 1.6 : 1
         );
+        drawBadge(ctx, bx + 8, by + 8, 24, 16, `E${card.cost}`, '#1E3A5F', THEME.GOLD_LIGHT);
+        drawBadge(ctx, bx + 35, by + 8, 30, 16, `Lv.${lv}`, '#0F172A', lvCol);
+        if (equipped) {
+          drawBadge(ctx, bx + bw - 48, by + 8, 40, 16, '出战', '#14532D', THEME.GREEN);
+        } else if (elemImg && typeof ctx.drawImage === 'function') {
+          ctx.drawImage(elemImg, bx + bw - 26, by + 6, 18, 18);
+        }
+
+        drawRoundRect(ctx, bx + 8, by + 29, bw - 16, 66, 6, '#0B1220', lvCol, 0.9);
         if (artImg && typeof ctx.drawImage === 'function') {
           ctx.save();
           ctx.beginPath();
-          ctx.rect(bx + 2, by + 2, bw - 4, 52);
+          ctx.rect(bx + 9, by + 30, bw - 18, 64);
           ctx.clip();
-          ctx.globalAlpha = 0.28;
-          ctx.drawImage(artImg, bx + 80, by - 4, bw - 80, 64);
+          ctx.drawImage(artImg, bx + 9, by + 26, bw - 18, 72);
           ctx.restore();
         } else if (cardBackImg && typeof ctx.drawImage === 'function') {
           ctx.save();
           ctx.beginPath();
-          ctx.rect(bx + 2, by + 2, bw - 4, bh - 4);
+          ctx.rect(bx + 9, by + 30, bw - 18, 64);
           ctx.clip();
-          ctx.globalAlpha = 0.14;
-          ctx.drawImage(cardBackImg, bx, by, bw, bh);
+          ctx.globalAlpha = 0.25;
+          ctx.drawImage(cardBackImg, bx + 9, by + 30, bw - 18, 64);
           ctx.restore();
         }
-        this.drawCardAuraParticles(ctx, bx + 2, by + 2, bw - 4, 54, lv, !!card.isCorrupted, idx + card.name.length, true);
-        drawBadge(ctx, bx + 8, by + 8, 24, 16, `E${card.cost}`, '#1E3A5F', THEME.GOLD_LIGHT);
-        drawBadge(ctx, bx + 35, by + 8, 30, 16, `Lv.${lv}`, '#0F172A', lvCol);
-        if (elemImg && typeof ctx.drawImage === 'function') {
-          ctx.drawImage(elemImg, bx + 68, by + 7, 18, 18);
-        }
-        if (equipped) {
-          drawBadge(ctx, bx + bw - 54, by + 8, 46, 16, '出战中', '#14532D', THEME.GREEN);
-        }
-        drawText(ctx, card.name.slice(0, 9), bx + 8, by + 38, {
+        this.drawCardAuraParticles(ctx, bx + 9, by + 30, bw - 18, 64, lv, !!card.isCorrupted, idx + card.name.length, true);
+
+        drawText(ctx, card.name.slice(0, 8), bx + bw / 2, by + 110, {
           size: 13,
           bold: true,
           color: card.isCorrupted ? '#FCA5A5' : THEME.TX1,
+          align: 'center',
         });
-        const mechTxt = card.mechanic ? `⚡ ${MECHANIC_LABELS[card.mechanic]}` : this.statSnippet(card);
-        drawText(ctx, mechTxt.slice(0, 16), bx + 8, by + 58, { size: 10, bold: true, color: '#7DD3FC' });
-        drawText(ctx, `${LINE_LABELS[card.targetLine ?? 'ALL']} · ${card.durationMinutes}分`, bx + 8, by + 76, {
+        const mechTxt = card.mechanic ? `⚡${MECHANIC_LABELS[card.mechanic]}` : this.statSnippet(card);
+        drawText(ctx, mechTxt.slice(0, 12), bx + bw / 2, by + 128, { size: 10, bold: true, color: '#7DD3FC', align: 'center' });
+        drawText(ctx, `${LINE_LABELS[card.targetLine ?? 'ALL']} · ${card.durationMinutes}分`, bx + bw / 2, by + 144, {
           size: 9.5,
           color: THEME.TX2,
+          align: 'center',
         });
 
-        hits.add(bx, by, bw, 94, () => {
+        hits.add(bx, by, bw, 152, () => {
           SoundEngine.playClick();
           this.selected = { kind: 'card', cardId: card.id };
-          this.midTab = 'detail';
+          this.detailModalOpen = true;
         });
 
-        drawButton(ctx, hits, bx + 8, by + 98, 98, 26, equipped ? '移出手牌' : '放入手牌 ▶', () => {
+        drawButton(ctx, hits, bx + 8, by + 158, 64, 26, equipped ? '移出' : '出战', () => {
           const res = league.toggleLoadoutCard(card.id);
           if (!res.ok) this.notice = res.reason || '操作失败';
           else {
@@ -520,241 +548,89 @@ export class CardCraftScreen {
           }
         }, { variant: equipped ? 'green' : 'primary', fontSize: 10 });
 
-        drawButton(ctx, hits, bx + 114, by + 98, 100, 26, inFuse ? '已入融合' : '+ 融合升阶', () => {
+        drawButton(ctx, hits, bx + 76, by + 158, 66, 26, inFuse ? '已入炉' : '+ 融合', () => {
           this.addCardToForge(card.id);
         }, { variant: inFuse ? 'gold' : 'ghost', fontSize: 10 });
       }
     });
 
     if (totalPages > 1) {
-      drawButton(ctx, hits, 110, 666, 92, 26, '上一页', () => {
+      drawButton(ctx, hits, 114, 666, 108, 28, '上一页', () => {
         this.bagPage = Math.max(0, this.bagPage - 1);
-      }, { disabled: this.bagPage === 0, fontSize: 10 });
-      drawText(ctx, `第 ${this.bagPage + 1} / ${totalPages} 页`, 336, 679, {
-        size: 11,
+      }, { disabled: this.bagPage === 0, fontSize: 11 });
+      drawText(ctx, `第 ${this.bagPage + 1} / ${totalPages} 页`, 426, 680, {
+        size: 12,
         color: THEME.TX2,
         align: 'center',
       });
-      drawButton(ctx, hits, 470, 666, 92, 26, '下一页', () => {
+      drawButton(ctx, hits, 632, 666, 108, 28, '下一页', () => {
         this.bagPage = Math.min(totalPages - 1, this.bagPage + 1);
-      }, { disabled: this.bagPage >= totalPages - 1, fontSize: 10 });
+      }, { disabled: this.bagPage >= totalPages - 1, fontSize: 11 });
     }
 
-    // ==================== 中栏 (x: 586..856, w: 270)：无外框！直接悬浮展示插画大卡或配方 ====================
-    drawButton(ctx, hits, 594, 84, 124, 28, '卡牌详情', () => {
-      this.midTab = 'detail';
-    }, { active: this.midTab === 'detail', fontSize: 11 });
-    drawButton(ctx, hits, 724, 84, 124, 28, '配方图鉴', () => {
-      this.midTab = 'recipes';
-    }, { active: this.midTab === 'recipes', fontSize: 11 });
-
-    if (this.midTab === 'detail') {
-      if (this.selected?.kind === 'base') {
-        const el = TACTICAL_ELEMENTS.find(e => e.id === this.selected!.elemId) ?? TACTICAL_ELEMENTS[0];
-        const count = inv[el.id] ?? 0;
-        const elemImg = AssetLoader.get(`elem_${el.id}`);
-        drawChamferPanel(ctx, 594, 148, 254, 524, 12, 'rgba(17, 27, 49, 0.96)', el.color, 1.6, el.color);
-
-        drawRoundRect(ctx, 606, 160, 230, 176, 8, 'rgba(8, 12, 20, 0.85)', el.color);
-        if (elemImg && typeof ctx.drawImage === 'function') {
-          ctx.drawImage(elemImg, 661, 188, 120, 120);
-        } else {
-          drawIcon(ctx, ELEM_ICON[el.id], 721, 248, 52, el.color);
-        }
-        drawBadge(ctx, 614, 168, 52, 18, '基础卡', '#1E293B', el.color);
-        drawBadge(ctx, 774, 168, 54, 18, `×${count}`, '#0F172A', THEME.GOLD_LIGHT);
-
-        drawText(ctx, `${el.name} [${el.symbol}]`, 721, 358, { size: 18, bold: true, color: el.color, align: 'center' });
-        drawWrappedText(ctx, el.desc, 612, 384, 218, 18, { size: 11.5, color: THEME.TX1, maxLines: 4 });
-        drawRoundRect(ctx, 612, 470, 218, 118, 6, 'rgba(11, 17, 30, 0.78)');
-        drawWrappedText(ctx, '• 「放入手牌」：提炼 Lv.1 位置卡立即出战', 622, 482, 198, 18, { size: 10.5, color: '#7DD3FC', maxLines: 2 });
-        drawWrappedText(ctx, '• 「投入合成器」：1~4 张混搭合成高阶卡与连锁效果', 622, 526, 198, 18, { size: 10.5, color: '#7DD3FC', maxLines: 3 });
-        drawButton(ctx, hits, 612, 606, 218, 46, `+ 投入合成器 (${el.name})`, () => {
-          this.addBaseToForge(el.id);
-        }, { variant: 'primary', disabled: count <= 0, fontSize: 12, icon: 'craft' });
-      } else if (this.selected?.kind === 'card') {
-        const card = deck.find(c => c.id === this.selected!.cardId);
-        if (card) {
-          const lv = card.level ?? 1;
-          const lvCol = this.lvColor(lv);
-          const equipped = loadoutSet.has(card.id);
-          const artImg = AssetLoader.get(this.cardArtId(card));
-          const elemImg = AssetLoader.get(`elem_${this.cardElemId(card)}`);
-          const frameImg = lv >= 4 ? AssetLoader.get('card_frame_s') : lv === 3 ? AssetLoader.get('card_frame_a') : null;
-
-          drawChamferPanel(ctx, 594, 148, 254, 524, 12, 'rgba(17, 27, 49, 0.96)', lvCol, 1.8, lvCol);
-
-          drawRoundRect(ctx, 606, 160, 230, 182, 8, '#0B1220', lvCol);
-          if (artImg && typeof ctx.drawImage === 'function') {
-            ctx.save();
-            ctx.beginPath();
-            ctx.rect(608, 162, 226, 178);
-            ctx.clip();
-            ctx.drawImage(artImg, 608, 158, 226, 188);
-            ctx.restore();
-          }
-          this.drawCardAuraParticles(ctx, 608, 162, 226, 178, lv, !!card.isCorrupted, card.name.length + lv * 7, false);
-          if (frameImg && typeof ctx.drawImage === 'function') {
-            ctx.save();
-            ctx.globalAlpha = 0.72;
-            ctx.drawImage(frameImg, 604, 158, 234, 186);
-            ctx.restore();
-          }
-          drawBadge(ctx, 614, 168, 28, 18, `E${card.cost}`, '#1E3A5F', THEME.GOLD_LIGHT);
-          drawBadge(ctx, 646, 168, 36, 18, `Lv.${lv}`, '#0F172A', lvCol);
-          drawBadge(ctx, 766, 168, 62, 18, LINE_LABELS[card.targetLine ?? 'ALL'], '#0F172A', THEME.TX1);
-          if (elemImg && typeof ctx.drawImage === 'function') {
-            ctx.drawImage(elemImg, 796, 302, 34, 34);
-          }
-
-          drawText(ctx, card.name, 612, 362, { size: 16, bold: true, color: card.isCorrupted ? '#FCA5A5' : THEME.GOLD_LIGHT });
-          drawText(ctx, `持续 ${card.durationMinutes} 分钟`, 830, 362, { size: 10, color: THEME.TX2, align: 'right' });
-
-          let infoY = 382;
-          if (card.mechanic) {
-            drawRoundRect(ctx, 610, infoY, 222, 24, 5, 'rgba(56, 189, 248, 0.16)', 'rgba(56, 189, 248, 0.45)');
-            drawText(ctx, `⚡ ${MECHANIC_LABELS[card.mechanic]}`, 618, infoY + 12, { size: 10.5, bold: true, color: '#7DD3FC' });
-            infoY += 30;
-          }
-          if (card.chainEffect) {
-            drawRoundRect(ctx, 610, infoY, 222, 24, 5, 'rgba(192, 132, 252, 0.16)', 'rgba(192, 132, 252, 0.45)');
-            drawText(ctx, `🔗 ${card.chainEffect.label.slice(0, 15)}`, 618, infoY + 12, { size: 10, bold: true, color: '#E9D5FF' });
-            infoY += 30;
-          }
-          drawWrappedText(ctx, card.summary, 612, infoY + 4, 218, 17, { size: 11, color: THEME.TX1, maxLines: 5 });
-
-          drawButton(ctx, hits, 610, 576, 222, 38, equipped ? '移出出战手牌' : '放入出战手牌 ▶', () => {
-            const res = league.toggleLoadoutCard(card.id);
-            if (!res.ok) this.notice = res.reason || '操作失败';
-            else {
-              SoundEngine.playClick();
-              actions.onSave();
-            }
-          }, { variant: equipped ? 'green' : 'primary', fontSize: 12 });
-
-          const canUp = lv < 4 && totalElements > 0;
-          drawButton(ctx, hits, 610, 622, 108, 32, lv >= 4 ? '已满阶' : '升阶(1材)', () => {
-            const res = league.upgradeCoachCard(card.id);
-            if (res.ok) {
-              this.fusionFlash = 0.5;
-              this.notice = `【${card.name}】升阶至 Lv.${card.level}！`;
-              SoundEngine.playRewardChime();
-              actions.onBurst?.(721, 280, THEME.GOLD_LIGHT);
-              actions.onSave();
-            } else {
-              this.notice = res.reason || '升阶失败';
-            }
-          }, { variant: canUp ? 'primary' : 'ghost', disabled: !canUp, fontSize: 10 });
-
-          if (deck.length > 2) {
-            drawButton(ctx, hits, 724, 622, 108, 32, card.isCorrupted ? '拆解(+2)' : '拆解返材', () => {
-              const res = league.dismantleCoachCard(card.id);
-              if (res.ok) {
-                const rName = TACTICAL_ELEMENTS.find(e => e.id === res.refunded)?.name || '基础卡';
-                this.notice = `已拆解【${card.name}】，返还 ${res.count ?? 1} 张【${rName}】`;
-                actions.onSave();
-              }
-            }, { variant: 'danger', fontSize: 10 });
-          }
-        }
-      }
-    } else {
-      // 配方图鉴 Tab（无外框，直接悬浮配方卡）
-      drawText(ctx, '点击任意流派一键填入右侧合成器', 596, 130, { size: 11, color: '#7DD3FC' });
-      const recipes: Array<{ name: string; elems: ElementId[]; desc: string; col: string }> = [
-        { name: '高压抢断流', elems: ['press', 'blitz', 'iron'], desc: '定位球核武 + 高位压迫', col: '#EF4444' },
-        { name: '传控连锁流', elems: ['pass', 'pass', 'wing'], desc: '两翼超载 + 全线传导', col: '#38BDF8' },
-        { name: '铁血防反流', elems: ['iron', 'blitz', 'pass'], desc: '体能虹吸 + 稳固防守', col: '#22C55E' },
-        { name: '远射重炮流', elems: ['pass', 'pass', 'blitz'], desc: '30%远射xG + 连携共鸣', col: '#C084FC' },
-        { name: '门线铁壁流', elems: ['iron', 'iron'], desc: '禁区封堵+18% + 门将强化', col: '#10B981' },
-        { name: '暴走嗜血流', elems: ['blitz', 'blitz', 'wing'], desc: '落后+8射/速 + 高速突击', col: '#F59E0B' },
-      ];
-      recipes.forEach((rc, ri) => {
-        const ry = 150 + ri * 86;
-        const hovered = hits.isHovered(594, ry, 254, 76);
-        drawChamferPanel(ctx, 594, ry, 254, 76, 8, hovered ? THEME.BG_CARD_HOVER : 'rgba(17, 27, 49, 0.92)', hovered ? rc.col : THEME.BORDER);
-        rc.elems.forEach((eid, ei) => {
-          const eImg = AssetLoader.get(`elem_${eid}`);
-          if (eImg && typeof ctx.drawImage === 'function') {
-            ctx.drawImage(eImg, 764 + ei * 26, ry + 12, 22, 22);
-          }
-        });
-        drawText(ctx, rc.name, 608, ry + 22, { size: 13, bold: true, color: rc.col });
-        drawText(ctx, rc.desc, 608, ry + 42, { size: 10.5, color: THEME.TX2 });
-        const formulaTxt = rc.elems.map(e => TACTICAL_ELEMENTS.find(t => t.id === e)?.name).join(' + ');
-        drawText(ctx, `配方: ${formulaTxt}`, 608, ry + 60, { size: 9.5, color: THEME.GOLD_LIGHT });
-        hits.add(594, ry, 254, 76, () => {
-          SoundEngine.playClick();
-          this.fuseSlots = [null, null];
-          this.flask = [...rc.elems];
-          this.notice = `已装填【${rc.name}】，点右侧按钮即可合成！`;
-        });
-      });
-    }
-
-    // ==================== 右栏 (主区 2, x: 866..1264, w: 398)：独立合成器 ====================
-    drawChamferPanel(ctx, 866, 80, 398, 624, 10, 'rgba(14, 22, 40, 0.96)', THEME.BORDER_GOLD, 1.5, THEME.GOLD_LIGHT);
-    drawIcon(ctx, 'craft', 886, 102, 16, THEME.GOLD_LIGHT);
-    drawText(ctx, isFuseMode ? '合成器 · 双卡融合升阶' : '合成器 · 反应釜', 906, 102, {
-      size: 15,
+    // ==================== 右栏 (x: 772..1264, w: 492)：独立宽屏合成器 ====================
+    drawChamferPanel(ctx, 772, 80, 492, 624, 10, 'rgba(14, 22, 40, 0.96)', THEME.BORDER_GOLD, 1.5, THEME.GOLD_LIGHT);
+    drawIcon(ctx, 'craft', 794, 104, 18, THEME.GOLD_LIGHT);
+    drawText(ctx, isFuseMode ? '合成器 · 双卡融合升阶' : '合成器 · 反应釜', 816, 104, {
+      size: 16.5,
       bold: true,
       color: isFuseMode ? '#E9D5FF' : THEME.GOLD_LIGHT,
     });
-    drawButton(ctx, hits, 1180, 89, 70, 24, '清空炉', () => {
+    drawButton(ctx, hits, 1170, 90, 76, 26, '清空炉', () => {
       this.flask = [];
       this.fuseSlots = [null, null];
-    }, { variant: 'ghost', fontSize: 10, disabled: !isFuseMode && this.flask.length === 0 });
-    drawWrappedText(ctx, this.notice, 882, 120, 366, 14, { size: 10.5, color: '#7DD3FC', maxLines: 2 });
+    }, { variant: 'ghost', fontSize: 11, disabled: !isFuseMode && this.flask.length === 0 });
+    drawWrappedText(ctx, this.notice, 790, 124, 456, 16, { size: 11.5, color: '#7DD3FC', maxLines: 2 });
 
     if (!isFuseMode) {
       for (let i = 0; i < 4; i++) {
         const col = i % 2;
         const row = Math.floor(i / 2);
-        const sx = 882 + col * 186;
-        const sy = 156 + row * 72;
+        const sx = 790 + col * 232;
+        const sy = 160 + row * 74;
         const eid = this.flask[i];
         const edef = eid ? TACTICAL_ELEMENTS.find(e => e.id === eid) : null;
         const popT = this.slotPopTimers[i] ?? 0;
         const popScale = popT > 0 ? 1 + 0.12 * Math.sin((popT / 0.26) * Math.PI) : 1;
         ctx.save();
         if (popScale !== 1) {
-          ctx.translate(sx + 90, sy + 32);
+          ctx.translate(sx + 112, sy + 33);
           ctx.scale(popScale, popScale);
-          ctx.translate(-(sx + 90), -(sy + 32));
+          ctx.translate(-(sx + 112), -(sy + 33));
         }
-        drawChamferPanel(ctx, sx, sy, 180, 64, 8, 'rgba(19, 30, 54, 0.9)', edef ? edef.color : THEME.BORDER, edef ? 1.5 : 1);
+        drawChamferPanel(ctx, sx, sy, 224, 66, 8, 'rgba(19, 30, 54, 0.9)', edef ? edef.color : THEME.BORDER, edef ? 1.5 : 1);
         if (edef) {
           const img = AssetLoader.get(`elem_${edef.id}`);
-          if (img && typeof ctx.drawImage === 'function') ctx.drawImage(img, sx + 14, sy + 15, 34, 34);
-          drawText(ctx, edef.name, sx + 56, sy + 24, { size: 13, bold: true, color: edef.color });
-          drawText(ctx, `槽${i + 1} · 点移除`, sx + 56, sy + 44, { size: 9.5, color: THEME.TX3 });
-          hits.add(sx, sy, 180, 64, () => {
+          if (img && typeof ctx.drawImage === 'function') ctx.drawImage(img, sx + 14, sy + 15, 36, 36);
+          drawText(ctx, edef.name, sx + 60, sy + 24, { size: 14, bold: true, color: edef.color });
+          drawText(ctx, `槽${i + 1} · 点击移除`, sx + 60, sy + 46, { size: 10.5, color: THEME.TX3 });
+          hits.add(sx, sy, 224, 66, () => {
             SoundEngine.playClick();
             this.flask.splice(i, 1);
           });
         } else {
-          drawText(ctx, `+ 槽位 ${i + 1}`, sx + 90, sy + 32, { size: 12, color: THEME.TX3, align: 'center' });
+          drawText(ctx, `+ 反应槽位 ${i + 1}`, sx + 112, sy + 33, { size: 12.5, color: THEME.TX3, align: 'center' });
         }
         ctx.restore();
       }
 
       if (this.fusionFlash > 0) {
-        const r = 24 + (1 - this.fusionFlash / 0.6) * 115;
+        const r = 24 + (1 - this.fusionFlash / 0.6) * 125;
         ctx.save();
         ctx.globalAlpha = Math.min(1, this.fusionFlash * 2);
         ctx.strokeStyle = THEME.GOLD_LIGHT;
         ctx.lineWidth = 3.5;
         ctx.beginPath();
-        ctx.arc(1065, 224, r, 0, Math.PI * 2);
+        ctx.arc(1018, 228, r, 0, Math.PI * 2);
         ctx.stroke();
         ctx.restore();
       }
 
-      drawText(ctx, '催化倾向:', 882, 314, { size: 11, bold: true, color: THEME.TX2 });
+      drawText(ctx, '催化倾向:', 790, 322, { size: 12, bold: true, color: THEME.TX2 });
       FOCUS_OPTIONS.forEach((opt, fi) => {
-        drawButton(ctx, hits, 946 + fi * 102, 302, 96, 24, opt.label, () => {
+        drawButton(ctx, hits, 864 + fi * 128, 309, 120, 26, opt.label, () => {
           this.focus = opt.id;
-        }, { active: this.focus === opt.id, fontSize: 10 });
+        }, { active: this.focus === opt.id, fontSize: 11 });
       });
 
       if (this.flask.length > 0) {
@@ -768,10 +644,10 @@ export class CardCraftScreen {
 
         drawChamferPanel(
           ctx,
-          882,
-          340,
-          366,
-          272,
+          790,
+          348,
+          456,
+          266,
           10,
           pc.isCorrupted ? 'rgba(127, 29, 29, 0.28)' : 'rgba(20, 34, 58, 0.94)',
           sim.stabilityColor,
@@ -781,39 +657,39 @@ export class CardCraftScreen {
         if (pArtImg && typeof ctx.drawImage === 'function') {
           ctx.save();
           ctx.beginPath();
-          ctx.rect(884, 342, 362, 86);
+          ctx.rect(792, 350, 452, 92);
           ctx.clip();
           ctx.globalAlpha = 0.24;
-          ctx.drawImage(pArtImg, 1020, 336, 228, 100);
+          ctx.drawImage(pArtImg, 960, 344, 286, 108);
           ctx.restore();
         }
-        this.drawCardAuraParticles(ctx, 884, 342, 362, 86, pc.level, !!pc.isCorrupted, pc.name.length + this.flask.length * 13, false);
-        drawText(ctx, '产物预览 · PREVIEW', 896, 358, { size: 10, bold: true, color: THEME.TX3, mono: true });
-        drawBadge(ctx, 1170, 349, 64, 18, sim.stability, '#111827', sim.stabilityColor);
-        drawBadge(ctx, 896, 376, 30, 18, `E${pc.cost}`, '#1E3A5F', THEME.GOLD_LIGHT);
-        drawBadge(ctx, 930, 376, 38, 18, `Lv.${pc.level}`, '#0F172A', this.lvColor(pc.level));
-        drawBadge(ctx, 972, 376, 66, 18, LINE_LABELS[pc.targetLine ?? 'ALL'], '#1E293B', '#7DD3FC');
-        drawText(ctx, pc.name, 896, 414, {
-          size: 17,
+        this.drawCardAuraParticles(ctx, 792, 350, 452, 92, pc.level, !!pc.isCorrupted, pc.name.length + this.flask.length * 13, false);
+        drawText(ctx, '产物预览 · PREVIEW', 806, 368, { size: 11, bold: true, color: THEME.TX3, mono: true });
+        drawBadge(ctx, 1158, 357, 74, 20, sim.stability, '#111827', sim.stabilityColor);
+        drawBadge(ctx, 806, 386, 32, 19, `E${pc.cost}`, '#1E3A5F', THEME.GOLD_LIGHT);
+        drawBadge(ctx, 842, 386, 40, 19, `Lv.${pc.level}`, '#0F172A', this.lvColor(pc.level));
+        drawBadge(ctx, 886, 386, 72, 19, LINE_LABELS[pc.targetLine ?? 'ALL'], '#1E293B', '#7DD3FC');
+        drawText(ctx, pc.name, 806, 424, {
+          size: 18,
           bold: true,
           color: pc.isCorrupted ? '#FCA5A5' : THEME.GOLD_LIGHT,
         });
         if (pc.mechanic) {
-          drawRoundRect(ctx, 896, 434, 338, 24, 5, 'rgba(56, 189, 248, 0.16)', 'rgba(56, 189, 248, 0.45)');
-          drawText(ctx, `⚡ 机制：${MECHANIC_LABELS[pc.mechanic]}`, 906, 446, { size: 11, bold: true, color: '#7DD3FC' });
+          drawRoundRect(ctx, 806, 444, 424, 26, 6, 'rgba(56, 189, 248, 0.16)', 'rgba(56, 189, 248, 0.45)');
+          drawText(ctx, `⚡ 机制：${MECHANIC_LABELS[pc.mechanic]}`, 816, 457, { size: 12, bold: true, color: '#7DD3FC' });
         }
         if (pc.chainEffect) {
-          drawRoundRect(ctx, 896, 464, 338, 22, 5, 'rgba(192, 132, 252, 0.16)', 'rgba(192, 132, 252, 0.45)');
-          drawText(ctx, `🔗 ${pc.chainEffect.label}`, 906, 475, { size: 10, bold: true, color: '#E9D5FF' });
+          drawRoundRect(ctx, 806, 476, 424, 24, 6, 'rgba(192, 132, 252, 0.16)', 'rgba(192, 132, 252, 0.45)');
+          drawText(ctx, `🔗 ${pc.chainEffect.label}`, 816, 488, { size: 11, bold: true, color: '#E9D5FF' });
         }
-        drawWrappedText(ctx, pc.summary, 896, 496, 338, 17, { size: 11, color: THEME.TX1, maxLines: 5 });
+        drawWrappedText(ctx, pc.summary, 806, 510, 424, 19, { size: 12, color: THEME.TX1, maxLines: 5 });
 
         drawButton(
           ctx,
           hits,
-          882,
+          790,
           628,
-          366,
+          456,
           56,
           canCraft
             ? `⚡ 立即合成 Lv.${pc.level} 战术卡！`
@@ -825,71 +701,67 @@ export class CardCraftScreen {
             if (res.ok && res.card) {
               this.fusionFlash = 0.6;
               this.selected = { kind: 'card', cardId: res.card.id };
-              this.midTab = 'detail';
               this.notice = `⚡ 合成成功！【${res.card.name}】已收入左侧背包！`;
               SoundEngine.playRewardChime();
-              actions.onBurst?.(1065, 224, sim.stabilityColor);
-              actions.onBurst?.(721, 240, THEME.GOLD_LIGHT);
+              actions.onBurst?.(1018, 228, sim.stabilityColor);
               actions.onSave();
             } else {
               this.notice = res.reason || '合成失败';
             }
           },
-          { variant: canCraft ? 'gold' : 'ghost', disabled: !canCraft, fontSize: 14, icon: canCraft ? 'sparkle' : undefined }
+          { variant: canCraft ? 'gold' : 'ghost', disabled: !canCraft, fontSize: 15, icon: canCraft ? 'sparkle' : undefined }
         );
       } else {
-        drawChamferPanel(ctx, 882, 340, 366, 272, 10, 'rgba(19, 30, 54, 0.65)', THEME.BORDER);
-        drawText(ctx, '从左侧背包投入 1~4 张基础卡', 1065, 464, {
-          size: 12,
+        drawChamferPanel(ctx, 790, 348, 456, 266, 10, 'rgba(19, 30, 54, 0.65)', THEME.BORDER);
+        drawText(ctx, '从左侧背包投入 1~4 张基础卡', 1018, 452, {
+          size: 13.5,
           color: THEME.TX3,
           align: 'center',
         });
-        drawText(ctx, '或从中间「配方图鉴」点选流派', 1065, 488, {
-          size: 12,
-          color: THEME.TX3,
-          align: 'center',
-        });
+        drawButton(ctx, hits, 918, 486, 200, 38, '打开配方图鉴一键填炉 📖', () => {
+          this.recipesModalOpen = true;
+        }, { variant: 'primary', fontSize: 12 });
       }
     } else {
       const cA = this.fuseSlots[0] ? deck.find(c => c.id === this.fuseSlots[0]) : null;
       const cB = this.fuseSlots[1] ? deck.find(c => c.id === this.fuseSlots[1]) : null;
       [cA, cB].forEach((card, si) => {
-        const sy = 158 + si * 124;
-        drawChamferPanel(ctx, 882, sy, 366, 112, 9, 'rgba(20, 34, 58, 0.92)', card ? '#C084FC' : THEME.BORDER, card ? 1.5 : 1);
+        const sy = 160 + si * 124;
+        drawChamferPanel(ctx, 790, sy, 456, 112, 9, 'rgba(20, 34, 58, 0.92)', card ? '#C084FC' : THEME.BORDER, card ? 1.5 : 1);
         if (card) {
-          drawBadge(ctx, 896, sy + 12, 36, 18, `Lv.${card.level ?? 1}`, '#581C87', THEME.GOLD_LIGHT);
-          drawBadge(ctx, 936, sy + 12, 26, 18, `E${card.cost}`, '#1E3A5F', '#7DD3FC');
-          drawText(ctx, card.name, 970, sy + 21, { size: 13, bold: true, color: THEME.TX1 });
-          drawWrappedText(ctx, card.summary, 896, sy + 40, 338, 15, { size: 10, color: '#E9D5FF', maxLines: 3 });
-          drawText(ctx, '点击移除', 1236, sy + 96, { size: 9.5, color: THEME.TX3, align: 'right' });
-          hits.add(882, sy, 366, 112, () => {
+          drawBadge(ctx, 804, sy + 12, 38, 19, `Lv.${card.level ?? 1}`, '#581C87', THEME.GOLD_LIGHT);
+          drawBadge(ctx, 846, sy + 12, 28, 19, `E${card.cost}`, '#1E3A5F', '#7DD3FC');
+          drawText(ctx, card.name, 882, sy + 21, { size: 14, bold: true, color: THEME.TX1 });
+          drawWrappedText(ctx, card.summary, 804, sy + 42, 428, 17, { size: 11, color: '#E9D5FF', maxLines: 3 });
+          drawText(ctx, '点击移除', 1232, sy + 96, { size: 10.5, color: THEME.TX3, align: 'right' });
+          hits.add(790, sy, 456, 112, () => {
             SoundEngine.playClick();
             this.fuseSlots[si] = null;
           });
         } else {
-          drawText(ctx, `融合槽位 ${si + 1}（从左侧卡库点选）`, 1065, sy + 56, { size: 12, color: THEME.TX3, align: 'center' });
+          drawText(ctx, `融合槽位 ${si + 1}（从左侧卡库点选）`, 1018, sy + 56, { size: 13, color: THEME.TX3, align: 'center' });
         }
       });
 
-      drawChamferPanel(ctx, 882, 412, 366, 198, 9, 'rgba(168, 85, 247, 0.10)', '#A855F7');
-      drawText(ctx, '双卡二合一升阶说明', 898, 434, { size: 13, bold: true, color: '#E9D5FF' });
+      drawChamferPanel(ctx, 790, 412, 456, 198, 9, 'rgba(168, 85, 247, 0.10)', '#A855F7');
+      drawText(ctx, '双卡二合一升阶说明', 808, 436, { size: 14, bold: true, color: '#E9D5FF' });
       drawWrappedText(
         ctx,
         '将背包中两张战术卡投入上方融合槽，二合一生成更高阶的新卡（最高 Lv.4 全队生效），达到 Lv.3 以上自动觉醒连锁效果！',
-        898,
-        460,
-        334,
-        18,
-        { size: 11, color: THEME.TX2, maxLines: 5 }
+        808,
+        464,
+        420,
+        20,
+        { size: 12, color: THEME.TX2, maxLines: 5 }
       );
 
       const canFuse = !!(cA && cB && cA.id !== cB.id);
       drawButton(
         ctx,
         hits,
-        882,
+        790,
         628,
-        366,
+        456,
         56,
         canFuse ? '✨ 立即二合一融合！' : '请从左侧再选 1 张卡投入融合',
         () => {
@@ -899,17 +771,227 @@ export class CardCraftScreen {
           if (res.ok && res.card) {
             this.fusionFlash = 0.6;
             this.selected = { kind: 'card', cardId: res.card.id };
-            this.midTab = 'detail';
             this.notice = `✨ 融合成功！诞生 Lv.${res.card.level}【${res.card.name}】`;
             SoundEngine.playRewardChime();
-            actions.onBurst?.(1065, 280, '#C084FC');
+            actions.onBurst?.(1018, 280, '#C084FC');
             actions.onSave();
           } else {
             this.notice = res.reason || '融合失败';
           }
         },
-        { variant: canFuse ? 'gold' : 'ghost', disabled: !canFuse, fontSize: 14, icon: canFuse ? 'sparkle' : undefined }
+        { variant: canFuse ? 'gold' : 'ghost', disabled: !canFuse, fontSize: 15, icon: canFuse ? 'sparkle' : undefined }
       );
     }
+
+    if (this.detailModalOpen) {
+      this.renderDetailModal(ctx, hits, league, actions);
+    } else if (this.recipesModalOpen) {
+      this.renderRecipesModal(ctx, hits);
+    }
+  }
+
+  private renderDetailModal(
+    ctx: CanvasRenderingContext2D,
+    hits: HitRegistry,
+    league: LeagueManager,
+    actions: { onSave: () => void; onBurst?: (x: number, y: number, color?: string) => void }
+  ): void {
+    const sel = this.selected;
+    if (!sel) return;
+    const inv = league.getElementInventory();
+    const deck = league.getCoachDeck();
+    const loadoutSet = new Set(league.getLoadoutIds());
+    const totalElements = TACTICAL_ELEMENTS.reduce((s, e) => s + (inv[e.id] ?? 0), 0);
+
+    ctx.fillStyle = 'rgba(4, 7, 14, 0.84)';
+    ctx.fillRect(0, 0, THEME.W, THEME.H);
+    hits.clear();
+
+    // 标准竖版实体卡牌比例 (410×600，约 2:3 竖版比例)
+    const mx = 435;
+    const my = 60;
+    const mw = 410;
+    const mh = 600;
+
+    if (sel.kind === 'base') {
+      const el = TACTICAL_ELEMENTS.find(e => e.id === sel.elemId) ?? TACTICAL_ELEMENTS[0];
+      const count = inv[el.id] ?? 0;
+      const elemImg = AssetLoader.get(`elem_${el.id}`);
+      drawChamferPanel(ctx, mx, my, mw, mh, 14, 'rgba(17, 27, 49, 0.98)', el.color, 1.8, el.color);
+      drawBadge(ctx, mx + 22, my + 18, 58, 22, '基础卡', '#1E293B', el.color);
+      drawBadge(ctx, mx + 86, my + 18, 68, 22, `库存 ×${count}`, '#0F172A', THEME.GOLD_LIGHT);
+      drawButton(ctx, hits, mx + mw - 92, my + 14, 72, 30, '关闭', () => {
+        this.detailModalOpen = false;
+      }, { variant: 'ghost', fontSize: 11.5, icon: 'close' });
+
+      drawRoundRect(ctx, mx + 24, my + 54, mw - 48, 220, 10, 'rgba(8, 12, 20, 0.88)', el.color);
+      if (elemImg && typeof ctx.drawImage === 'function') {
+        ctx.drawImage(elemImg, mx + mw / 2 - 72, my + 92, 144, 144);
+      } else {
+        drawIcon(ctx, ELEM_ICON[el.id], mx + mw / 2, my + 164, 68, el.color);
+      }
+
+      drawText(ctx, `${el.name} [${el.symbol}]`, mx + mw / 2, my + 306, { size: 22, bold: true, color: el.color, align: 'center' });
+      drawWrappedText(ctx, el.desc, mx + 28, my + 338, mw - 56, 22, { size: 13, color: THEME.TX1, maxLines: 3 });
+
+      drawRoundRect(ctx, mx + 24, my + 416, mw - 48, 96, 8, 'rgba(11, 17, 30, 0.8)');
+      drawWrappedText(ctx, '• 「放入手牌」：提炼 Lv.1 位置卡立即出战', mx + 38, my + 432, mw - 76, 22, { size: 12, color: '#7DD3FC', maxLines: 2 });
+      drawWrappedText(ctx, '• 「投入合成器」：1~4 张混搭合成高阶卡与连锁效果', mx + 38, my + 466, mw - 76, 22, { size: 12, color: '#7DD3FC', maxLines: 2 });
+
+      drawButton(ctx, hits, mx + 24, my + 530, mw - 48, 46, `+ 投入合成器 (${el.name})`, () => {
+        this.addBaseToForge(el.id);
+        this.detailModalOpen = false;
+      }, { variant: 'primary', disabled: count <= 0, fontSize: 13.5, icon: 'craft' });
+      return;
+    }
+
+    const card = deck.find(c => c.id === sel.cardId);
+    if (!card) {
+      this.detailModalOpen = false;
+      return;
+    }
+
+    const lv = card.level ?? 1;
+    const lvCol = this.lvColor(lv);
+    const equipped = loadoutSet.has(card.id);
+    const artImg = AssetLoader.get(this.cardArtId(card));
+    const elemImg = AssetLoader.get(`elem_${this.cardElemId(card)}`);
+    const frameImg = lv >= 4 ? AssetLoader.get('card_frame_s') : lv === 3 ? AssetLoader.get('card_frame_a') : null;
+
+    drawChamferPanel(ctx, mx, my, mw, mh, 14, 'rgba(17, 27, 49, 0.98)', lvCol, 1.8, lvCol);
+    drawBadge(ctx, mx + 22, my + 18, 34, 22, `E${card.cost}`, '#1E3A5F', THEME.GOLD_LIGHT);
+    drawBadge(ctx, mx + 62, my + 18, 44, 22, `Lv.${lv}`, '#0F172A', lvCol);
+    drawBadge(ctx, mx + 112, my + 18, 76, 22, LINE_LABELS[card.targetLine ?? 'ALL'], '#0F172A', THEME.TX1);
+    drawButton(ctx, hits, mx + mw - 92, my + 14, 72, 30, '关闭', () => {
+      this.detailModalOpen = false;
+    }, { variant: 'ghost', fontSize: 11.5, icon: 'close' });
+
+    drawRoundRect(ctx, mx + 24, my + 54, mw - 48, 220, 10, '#0B1220', lvCol);
+    if (artImg && typeof ctx.drawImage === 'function') {
+      ctx.save();
+      ctx.beginPath();
+      ctx.rect(mx + 26, my + 56, mw - 52, 216);
+      ctx.clip();
+      ctx.drawImage(artImg, mx + 26, my + 52, mw - 52, 224);
+      ctx.restore();
+    }
+    this.drawCardAuraParticles(ctx, mx + 26, my + 56, mw - 52, 216, lv, !!card.isCorrupted, card.name.length + lv * 7, false);
+    if (frameImg && typeof ctx.drawImage === 'function') {
+      ctx.save();
+      ctx.globalAlpha = 0.72;
+      ctx.drawImage(frameImg, mx + 22, my + 52, mw - 44, 224);
+      ctx.restore();
+    }
+    if (elemImg && typeof ctx.drawImage === 'function') {
+      ctx.drawImage(elemImg, mx + mw - 72, my + 224, 38, 38);
+    }
+
+    drawText(ctx, card.name, mx + 24, my + 298, { size: 20, bold: true, color: card.isCorrupted ? '#FCA5A5' : THEME.GOLD_LIGHT });
+    drawText(ctx, `持续 ${card.durationMinutes} 分钟`, mx + mw - 24, my + 298, { size: 12, color: THEME.TX2, align: 'right' });
+
+    let infoY = my + 324;
+    if (card.mechanic) {
+      drawRoundRect(ctx, mx + 24, infoY, mw - 48, 28, 6, 'rgba(56, 189, 248, 0.16)', 'rgba(56, 189, 248, 0.45)');
+      drawText(ctx, `⚡ 机制：${MECHANIC_LABELS[card.mechanic]}`, mx + 36, infoY + 14, { size: 12, bold: true, color: '#7DD3FC' });
+      infoY += 35;
+    }
+    if (card.chainEffect) {
+      drawRoundRect(ctx, mx + 24, infoY, mw - 48, 28, 6, 'rgba(192, 132, 252, 0.16)', 'rgba(192, 132, 252, 0.45)');
+      drawText(ctx, `🔗 连锁：${card.chainEffect.label}`, mx + 36, infoY + 14, { size: 11.5, bold: true, color: '#E9D5FF' });
+      infoY += 35;
+    }
+    drawWrappedText(ctx, card.summary, mx + 24, infoY + 4, mw - 48, 20, { size: 12.5, color: THEME.TX1, maxLines: 4 });
+
+    drawButton(ctx, hits, mx + 24, my + 486, mw - 48, 42, equipped ? '移出出战手牌' : '放入出战手牌 ▶', () => {
+      const res = league.toggleLoadoutCard(card.id);
+      if (!res.ok) this.notice = res.reason || '操作失败';
+      else {
+        SoundEngine.playClick();
+        actions.onSave();
+      }
+    }, { variant: equipped ? 'green' : 'primary', fontSize: 13 });
+
+    const canUp = lv < 4 && totalElements > 0;
+    const upBtnW = deck.length > 2 ? (mw - 58) / 2 : mw - 48;
+    drawButton(ctx, hits, mx + 24, my + 538, upBtnW, 40, lv >= 4 ? '已达满阶' : '升阶 (+1材)', () => {
+      const res = league.upgradeCoachCard(card.id);
+      if (res.ok) {
+        this.fusionFlash = 0.5;
+        this.notice = `【${card.name}】升阶至 Lv.${card.level}！`;
+        SoundEngine.playRewardChime();
+        actions.onBurst?.(mx + mw / 2, my + 160, THEME.GOLD_LIGHT);
+        actions.onSave();
+      } else {
+        this.notice = res.reason || '升阶失败';
+      }
+    }, { variant: canUp ? 'primary' : 'ghost', disabled: !canUp, fontSize: 12 });
+
+    if (deck.length > 2) {
+      drawButton(ctx, hits, mx + 34 + upBtnW, my + 538, upBtnW, 40, card.isCorrupted ? '拆解 (+2材)' : '拆解 (+1材)', () => {
+        const res = league.dismantleCoachCard(card.id);
+        if (res.ok) {
+          const rName = TACTICAL_ELEMENTS.find(e => e.id === res.refunded)?.name || '基础卡';
+          this.notice = `已拆解【${card.name}】，返还 ${res.count ?? 1} 张【${rName}】`;
+          this.detailModalOpen = false;
+          actions.onSave();
+        }
+      }, { variant: 'danger', fontSize: 12 });
+    }
+  }
+
+  private renderRecipesModal(ctx: CanvasRenderingContext2D, hits: HitRegistry): void {
+    ctx.fillStyle = 'rgba(4, 7, 14, 0.84)';
+    ctx.fillRect(0, 0, THEME.W, THEME.H);
+    hits.clear();
+
+    const mx = 140;
+    const my = 72;
+    const mw = 1000;
+    const mh = 576;
+    drawChamferPanel(ctx, mx, my, mw, mh, 14, 'rgba(14, 22, 40, 0.98)', THEME.BORDER_GOLD, 1.6, THEME.GOLD_LIGHT);
+    drawText(ctx, '常用流派合成配方图鉴', mx + 28, my + 34, { size: 20, bold: true, color: THEME.GOLD_LIGHT });
+    drawText(ctx, '点击任意流派卡片，自动填入右侧合成器并关闭本页', mx + 28, my + 58, { size: 12.5, color: '#7DD3FC' });
+    drawButton(ctx, hits, mx + mw - 104, my + 20, 80, 34, '关闭', () => {
+      this.recipesModalOpen = false;
+    }, { variant: 'ghost', fontSize: 12, icon: 'close' });
+
+    const recipes: Array<{ name: string; elems: ElementId[]; desc: string; col: string }> = [
+      { name: '高压抢断流', elems: ['press', 'blitz', 'iron'], desc: '定位球核武 + 高位压迫', col: '#EF4444' },
+      { name: '传控连锁流', elems: ['pass', 'pass', 'wing'], desc: '两翼超载 + 全线传导', col: '#38BDF8' },
+      { name: '铁血防反流', elems: ['iron', 'blitz', 'pass'], desc: '体能虹吸 + 稳固防守', col: '#22C55E' },
+      { name: '远射重炮流', elems: ['pass', 'pass', 'blitz'], desc: '30%远射xG + 连携共鸣', col: '#C084FC' },
+      { name: '门线铁壁流', elems: ['iron', 'iron'], desc: '禁区封堵+18% + 门将强化', col: '#10B981' },
+      { name: '暴走嗜血流', elems: ['blitz', 'blitz', 'wing'], desc: '落后+8射/速 + 高速突击', col: '#F59E0B' },
+    ];
+
+    recipes.forEach((rc, ri) => {
+      const col = ri % 2;
+      const row = Math.floor(ri / 2);
+      const rx = mx + 28 + col * 480;
+      const ry = my + 90 + row * 154;
+      const rw = 464;
+      const rh = 136;
+      const hovered = hits.isHovered(rx, ry, rw, rh);
+      drawChamferPanel(ctx, rx, ry, rw, rh, 10, hovered ? THEME.BG_CARD_HOVER : THEME.BG_CARD, hovered ? rc.col : THEME.BORDER, hovered ? 1.6 : 1);
+      rc.elems.forEach((eid, ei) => {
+        const eImg = AssetLoader.get(`elem_${eid}`);
+        if (eImg && typeof ctx.drawImage === 'function') {
+          ctx.drawImage(eImg, rx + rw - 116 + ei * 34, ry + 18, 28, 28);
+        }
+      });
+      drawText(ctx, rc.name, rx + 20, ry + 32, { size: 17, bold: true, color: rc.col });
+      drawText(ctx, rc.desc, rx + 20, ry + 64, { size: 13, color: THEME.TX1 });
+      const formulaTxt = rc.elems.map(e => TACTICAL_ELEMENTS.find(t => t.id === e)?.name).join(' + ');
+      drawText(ctx, `配方：${formulaTxt}`, rx + 20, ry + 96, { size: 12, bold: true, color: THEME.GOLD_LIGHT });
+      drawText(ctx, '点击一键填炉 ▶', rx + rw - 20, ry + 108, { size: 11.5, color: '#7DD3FC', align: 'right' });
+
+      hits.add(rx, ry, rw, rh, () => {
+        SoundEngine.playClick();
+        this.fuseSlots = [null, null];
+        this.flask = [...rc.elems];
+        this.recipesModalOpen = false;
+        this.notice = `已装填【${rc.name}】，点下方按钮即可合成！`;
+      });
+    });
   }
 }

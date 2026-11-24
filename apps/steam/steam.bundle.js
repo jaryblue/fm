@@ -392,11 +392,18 @@
     ctx2.lineWidth = Math.max(1, s * 0.05);
     ctx2.stroke();
     if (shirtNumber !== void 0) {
-      ctx2.font = `bold ${Math.max(8, Math.round(s * 0.34))}px monospace`;
-      ctx2.fillStyle = "#FFFFFF";
+      const numStr = String(shirtNumber);
+      const numSize = numStr.length >= 2 ? Math.max(8.5, Math.round(s * 0.35)) : Math.max(9.5, Math.round(s * 0.39));
+      const numY = cy + s * 0.16;
+      ctx2.font = `bold ${numSize}px monospace`;
       ctx2.textAlign = "center";
       ctx2.textBaseline = "middle";
-      ctx2.fillText(String(shirtNumber), cx, cy + s * 0.08);
+      ctx2.lineJoin = "round";
+      ctx2.strokeStyle = "rgba(8, 12, 20, 0.90)";
+      ctx2.lineWidth = Math.max(2.2, s * 0.11);
+      ctx2.strokeText(numStr, cx, numY);
+      ctx2.fillStyle = "#FFFFFF";
+      ctx2.fillText(numStr, cx, numY);
     }
     ctx2.restore();
   }
@@ -1980,26 +1987,27 @@
   function drawNavRail(ctx2, hits, activeTab, onNavigate) {
     drawChamferPanel(ctx2, 14, 80, 68, 624, 10, "rgba(11, 17, 30, 0.92)", THEME.BORDER, 1, THEME.BORDER_GOLD);
     const items = [
-      { key: "portal", label: "\u95E8\u6237", icon: "chart" },
+      { key: "portal", label: "\u95E8\u6237", icon: "ball" },
+      { key: "league", label: "\u8054\u8D5B", icon: "chart" },
       { key: "tactics", label: "\u6218\u672F", icon: "tactics" },
       { key: "cards", label: "\u5408\u6210", icon: "craft" },
       { key: "meta", label: "\u5929\u8D4B", icon: "talent" },
       { key: "hof", label: "\u8363\u8A89", icon: "trophy" }
     ];
     items.forEach((item, i) => {
-      const iy = 96 + i * 74;
+      const iy = 90 + i * 70;
       const isAct = activeTab === item.key;
-      const hovered = hits.isHovered(20, iy, 56, 62);
+      const hovered = hits.isHovered(20, iy, 56, 60);
       if (isAct) {
-        drawRoundRect(ctx2, 20, iy, 56, 62, 8, "rgba(212,168,67,0.18)", THEME.GOLD, 1.4);
-        drawRoundRect(ctx2, 14, iy + 10, 4, 42, 2, THEME.GOLD_LIGHT);
+        drawRoundRect(ctx2, 20, iy, 56, 60, 8, "rgba(212,168,67,0.18)", THEME.GOLD, 1.4);
+        drawRoundRect(ctx2, 14, iy + 10, 4, 40, 2, THEME.GOLD_LIGHT);
       } else if (hovered) {
-        drawRoundRect(ctx2, 20, iy, 56, 62, 8, "rgba(30,45,77,0.7)", THEME.BORDER);
+        drawRoundRect(ctx2, 20, iy, 56, 60, 8, "rgba(30,45,77,0.7)", THEME.BORDER);
       }
       const col = isAct ? THEME.GOLD_LIGHT : hovered ? THEME.TX1 : THEME.TX2;
-      drawIcon(ctx2, item.icon, 48, iy + 22, 20, col);
-      drawText(ctx2, item.label, 48, iy + 48, { size: 11, bold: isAct, color: col, align: "center" });
-      hits.add(20, iy, 56, 62, () => {
+      drawIcon(ctx2, item.icon, 48, iy + 21, 20, col);
+      drawText(ctx2, item.label, 48, iy + 46, { size: 11, bold: isAct, color: col, align: "center" });
+      hits.add(20, iy, 56, 60, () => {
         SoundEngine.playClick();
         onNavigate(item.key);
       });
@@ -5895,7 +5903,7 @@
       levelDescriptions: [
         "\u5F00\u5C40 Shuffle Draft \u9884\u7B97 +60 (\u5171 2,140)",
         "\u5F00\u5C40 Shuffle Draft \u9884\u7B97 +120 (\u5171 2,200)",
-        "\u5F00\u5C40\u9884\u7B97 +180 (\u5171 2,260)\uFF0C\u4E14 Re-Draft \u6362\u4EBA\u4E0A\u9650 +1",
+        "\u5F00\u5C40\u9884\u7B97 +180 (\u5171 2,260)\uFF0C\u4E14\u8D5B\u540E3\u90091\u65B0\u63F4\u4FDD\u5E95 CA +2",
         "\u6BCF\u8D5B\u5B63\u5F00\u5C40\u989D\u5916\u83B7\u8D60 2 \u4E2A\u968F\u673A\u57FA\u7840\u6218\u672F\u5143\u7D20",
         "\u8C6A\u95E8\u8D5E\u52A9\uFF1A\u8D5B\u5B63\u7ED3\u7B97 Meta \u70B9\u6570\u5956\u52B1\u989D\u5916 +15%"
       ]
@@ -5908,9 +5916,9 @@
       maxLevel: 5,
       costs: [40, 80, 140, 200, 280],
       levelDescriptions: [
-        "\u5168\u961F\u4F20\u7403\u4E0E\u5C04\u95E8 +1\uFF0CRe-Draft \u7A00\u6709\u8BCD\u6761\u6743\u91CD\u63D0\u5347",
+        "\u5168\u961F\u4F20\u7403\u4E0E\u5C04\u95E8 +1\uFF0C\u8D5B\u5B63\u8BCD\u6761\u76F2\u76D2\u7A00\u6709\u6743\u91CD\u63D0\u5347",
         "\u5168\u961F\u4F20\u7403\u3001\u5C04\u95E8\u4E0E\u9632\u5B88 +2",
-        "\u5168\u961F\u4F20\u7403\u3001\u5C04\u95E8\u4E0E\u9632\u5B88 +3\uFF0CRe-Draft \u8BCD\u6761\u6269\u4E3A 4 \u9009 1",
+        "\u5168\u961F\u4F20\u7403\u3001\u5C04\u95E8\u4E0E\u9632\u5B88 +3\uFF0C\u8D5B\u5B63\u8BCD\u6761\u76F2\u76D2\u6269\u4E3A 4 \u9009 1",
         "\u6BD4\u8D5B\u65E5\u4E2D\u573A\u4F11\u606F\u989D\u5916\u56DE\u590D +2 \u6218\u672F\u80FD\u91CF\uFF08\u5171+2\uFF09",
         "\u6218\u672F\u5B9E\u9A8C\u5BA4\uFF1A\u6BCF\u6B21\u4F7F\u7528\u6218\u672F/\u9635\u578B\u83B7\u5F97\u7684\u719F\u7EC3\u5EA6\u7ECF\u9A8C\u7FFB\u500D"
       ]
@@ -8893,10 +8901,593 @@
     };
   }
 
+  // packages/core/src/PostMatchEvents.ts
+  function getRoundCadence(round, winlessStreak) {
+    if (winlessStreak >= 2) return "crisis";
+    if (round % 4 === 0) return "focus";
+    return "normal";
+  }
+  function computeAdjustedProbs(base, adjust) {
+    const jAdd = Math.max(0, Math.min(20, Math.round(adjust.jackBonus ?? 0)));
+    const nSub = Math.max(0, Math.min(base.neg - 8, Math.round(adjust.negReduce ?? 0)));
+    const neg = Math.max(8, base.neg - nSub);
+    const jack = Math.min(45, base.jack + jAdd);
+    const pos = Math.max(10, 100 - neg - jack);
+    return { pos, neg, jack };
+  }
+  function rollTriStateGamble(spec) {
+    const roll = Math.random() * 100;
+    if (roll < spec.jackpot.prob) return "jackpot";
+    if (roll < spec.jackpot.prob + spec.negative.prob) return "negative";
+    return "positive";
+  }
+  function pickKeyPlayers(club) {
+    const squad = club.squad;
+    const starterSet = new Set(club.starterIds);
+    const starters = squad.filter((p) => starterSet.has(p.id));
+    const captain = squad.find((p) => p.id === club.captainId) ?? starters[0] ?? squad[0];
+    const topScorer = [...squad].sort((a, b) => b.seasonStats.goals - a.seasonStats.goals || b.ca - a.ca)[0] ?? squad[0];
+    const u23 = [...squad].filter((p) => p.age <= 23).sort((a, b) => b.ca - a.ca)[0] ?? squad[0];
+    const veteran = [...squad].filter((p) => p.age >= 27).sort((a, b) => b.ca - a.ca)[0] ?? squad[0];
+    return { captain, topScorer, u23, veteran };
+  }
+  var TIER_GAMBLE_TEMPLATES = [
+    // ==================== 1. 草根与地区联赛专属 (Tier 7 ~ 6) ====================
+    {
+      id: "gr_part_time_extra",
+      bracket: "grassroots",
+      tierMin: 6,
+      tierMax: 7,
+      cadences: ["normal", "focus", "crisis"],
+      rarity: "rare",
+      build: (ctx2) => {
+        const { u23 } = pickKeyPlayers(ctx2.club);
+        const p = computeAdjustedProbs(
+          { pos: 55, neg: 25, jack: 20 },
+          { jackBonus: ctx2.won ? 5 : 0, negReduce: ctx2.metaLevels.fitness * 2 }
+        );
+        return {
+          id: `pm_gb_gr_part_${ctx2.round}`,
+          category: "gamble",
+          title: `\u8349\u6839\u591C\u8BAD\u8D4C\u7EA6\uFF1A${u23.name} \u7559\u5802\u52A0\u7EC3`,
+          subtitle: `${p.pos}%\u4E0B\u573A\u4F20\u5C04+2 | ${p.neg}%\u62BD\u7B4B\u4F53\u80FD-15% | ${p.jack}%\u4E34\u65F6\u89C9\u9192\u94F6\u6807(4\u8F6E)`,
+          rarity: "rare",
+          gamble: {
+            eventId: "gr_part_time_extra",
+            bracket: "grassroots",
+            tierMin: 6,
+            tierMax: 7,
+            modifierHint: "\u8D62\u7403\u63D0\u9AD8\u8D85\u989D\u6982\u7387\uFF0C\u4F53\u80FD\u533B\u7597\u7B49\u7EA7\u964D\u4F4E\u62BD\u7B4B\u98CE\u9669",
+            positive: {
+              tier: "positive",
+              prob: p.pos,
+              label: "\u52A0\u7EC3\u89C1\u6548",
+              summary: `${u23.name} \u624B\u611F\u706B\u70ED\uFF0C\u4E0B\u573A\u6BD4\u8D5B\u5168\u961F\u4F20\u7403/\u5C04\u95E8 +2`,
+              effect: { nextMatchBuff: { passingBonus: 2, shootingBonus: 2, note: "\u8349\u6839\u591C\u8BAD\u751F\u6548\uFF1A\u4E0B\u573A\u4F20\u7403/\u5C04\u95E8 +2" } }
+            },
+            negative: {
+              tier: "negative",
+              prob: p.neg,
+              label: "\u8FC7\u5EA6\u75B2\u52B3",
+              summary: `${u23.name} \u517C\u804C\u6253\u5DE5\u53E0\u52A0\u52A0\u7EC3\u5BFC\u81F4\u75B2\u60EB\uFF0C\u4F53\u80FD -15%`,
+              effect: { targetPlayerId: u23.id, fitnessDelta: -15, moraleShift: "low" }
+            },
+            jackpot: {
+              tier: "jackpot",
+              prob: p.jack,
+              label: "\u8349\u6839\u5F00\u7A8D\uFF01",
+              summary: `${u23.name} \u7A81\u7834\u74F6\u9888\uFF0C\u83B7\u5F97\u6301\u7EED 4 \u8F6E\u7684\u4E34\u65F6\u94F6\u6807\u3010\u7981\u533A\u72D0\u72F8\u3011\u4E14\u4E0B\u573A\u5C04\u95E8 +3\uFF01`,
+              effect: {
+                targetPlayerId: u23.id,
+                tempTrait: { trait: "\u7981\u533A\u72D0\u72F8", tier: "silver", rounds: 4 },
+                nextMatchBuff: { shootingBonus: 3, note: "\u8349\u6839\u5F00\u7A8D\uFF1A\u4E0B\u573A\u5C04\u95E8 +3" }
+              }
+            }
+          }
+        };
+      }
+    },
+    {
+      id: "gr_sponsor_bet",
+      bracket: "grassroots",
+      tierMin: 6,
+      tierMax: 7,
+      cadences: ["normal", "focus"],
+      rarity: "common",
+      build: (ctx2) => {
+        const p = computeAdjustedProbs(
+          { pos: 52, neg: 28, jack: 20 },
+          { jackBonus: ctx2.metaLevels.finance * 3, negReduce: ctx2.metaLevels.finance * 2 }
+        );
+        return {
+          id: `pm_gb_gr_spon_${ctx2.round}`,
+          category: "gamble",
+          title: "\u793E\u533A\u8D5E\u52A9\u5546\u5BF9\u8D4C\uFF1A\u7403\u573A\u5E7F\u544A\u724C",
+          subtitle: `${p.pos}%\u83B71\u5143\u7D20+8pt | ${p.neg}%\u62631\u5907\u6218\u70B9\u611F\u5B98\u5E72\u6270 | ${p.jack}%\u5165\u8D262\u5143\u7D20+20pt`,
+          rarity: "common",
+          gamble: {
+            eventId: "gr_sponsor_bet",
+            bracket: "grassroots",
+            tierMin: 6,
+            tierMax: 7,
+            modifierHint: "\u8D22\u653F\u57FA\u5EFA\u7B49\u7EA7\u8D8A\u9AD8\uFF0C\u8D5E\u52A9\u66B4\u51FB\u7387\u8D8A\u9AD8",
+            positive: {
+              tier: "positive",
+              prob: p.pos,
+              label: "\u8D5E\u52A9\u5230\u4F4D",
+              summary: "\u793E\u533A\u5546\u5BB6\u6309\u7EA6\u7ED3\u6B3E\uFF1A\u83B7\u5F97\u6218\u672F\u5143\u7D20 \xD71 \u53CA Meta +8pt",
+              effect: { elementsGain: 1, metaDelta: 8 }
+            },
+            negative: {
+              tier: "negative",
+              prob: p.neg,
+              label: "\u5546\u4E1A\u626F\u76AE",
+              summary: "\u573A\u5730\u534F\u8C03\u5360\u7528\u8BAD\u7EC3\u65F6\u95F4\uFF0C\u4E0B\u8F6E\u5907\u6218\u884C\u52A8\u70B9 -1",
+              effect: { prepActionsDelta: -1 }
+            },
+            jackpot: {
+              tier: "jackpot",
+              prob: p.jack,
+              label: "\u5927\u989D\u51A0\u540D\uFF01",
+              summary: "\u793E\u533A\u91D1\u4E3B\u8FFD\u52A0\u9884\u7B97\uFF1A\u5165\u8D26\u6218\u672F\u5143\u7D20 \xD72\u3001Meta +20pt\u3001\u5907\u6218\u70B9 +1\uFF01",
+              effect: { elementsGain: 2, metaDelta: 20, prepActionsDelta: 1 }
+            }
+          }
+        };
+      }
+    },
+    {
+      id: "gr_mud_pitch",
+      bracket: "grassroots",
+      tierMin: 6,
+      tierMax: 7,
+      cadences: ["normal", "crisis"],
+      rarity: "rare",
+      build: (ctx2) => {
+        const p = computeAdjustedProbs(
+          { pos: 55, neg: 25, jack: 20 },
+          { jackBonus: ctx2.metaLevels.fitness * 3, negReduce: ctx2.metaLevels.fitness * 3 }
+        );
+        return {
+          id: `pm_gb_gr_mud_${ctx2.round}`,
+          category: "gamble",
+          title: "\u6CE5\u6CDE\u8349\u76AE\u62A2\u4FEE\u4E0E\u51B0\u6577\u6062\u590D",
+          subtitle: `${p.pos}%\u5168\u961F\u4F53\u80FD+15% | ${p.neg}%\u968F\u673A1\u9996\u53D1\u8F7B\u4F241\u8F6E | ${p.jack}%\u5168\u961F\u56DE\u6EE1+\u4E0B\u573A\u9632\u62A2+3`,
+          rarity: "rare",
+          gamble: {
+            eventId: "gr_mud_pitch",
+            bracket: "grassroots",
+            tierMin: 6,
+            tierMax: 7,
+            modifierHint: "\u4F53\u80FD\u533B\u7597\u7B49\u7EA7\u53EF\u663E\u8457\u538B\u4F4E\u53D7\u4F24\u6982\u7387",
+            positive: {
+              tier: "positive",
+              prob: p.pos,
+              label: "\u51B0\u6577\u8212\u7F13",
+              summary: "\u571F\u6CD5\u51B0\u6577\u6709\u6548\u7F13\u89E3\u808C\u8089\u9178\u75DB\uFF1A\u5168\u961F\u4F53\u80FD +15%",
+              effect: { fitnessDelta: 15 }
+            },
+            negative: {
+              tier: "negative",
+              prob: p.neg,
+              label: "\u573A\u5730\u6ED1\u5012",
+              summary: "\u8349\u76AE\u79EF\u6C34\u5BFC\u81F4 1 \u540D\u9996\u53D1\u811A\u8E1D\u8F7B\u626D\uFF0C\u4E0B\u8F6E\u4F11\u6218",
+              effect: { injureStarterRounds: 1 }
+            },
+            jackpot: {
+              tier: "jackpot",
+              prob: p.jack,
+              label: "\u94C1\u8840\u9002\u5E94\uFF01",
+              summary: "\u5168\u961F\u4F53\u80FD +35% \u5E76\u78E8\u70BC\u51FA\u4E0B\u573A\u9632\u7EBF\u62A2\u65AD +3 \u7684\u786C\u4ED7\u610F\u5FD7\uFF01",
+              effect: {
+                fitnessDelta: 35,
+                nextMatchBuff: { defendingBonus: 3, note: "\u6CE5\u6CDE\u786C\u4ED7\u610F\u5FD7\uFF1A\u4E0B\u573A\u9632\u5B88 +3" }
+              }
+            }
+          }
+        };
+      }
+    },
+    // ==================== 2. 职业中游联赛专属 (Tier 5 ~ 3) ====================
+    {
+      id: "pro_black_scout",
+      bracket: "pro",
+      tierMin: 3,
+      tierMax: 5,
+      cadences: ["normal", "focus"],
+      rarity: "rare",
+      build: (ctx2) => {
+        const p = computeAdjustedProbs(
+          { pos: 52, neg: 28, jack: 20 },
+          { jackBonus: ctx2.metaLevels.scout * 3, negReduce: ctx2.metaLevels.scout * 2 }
+        );
+        return {
+          id: `pm_gb_pro_scout_${ctx2.round}`,
+          category: "gamble",
+          title: "\u9ED1\u5E02\u7403\u63A2\u5BC6\u62A5\uFF1A\u6218\u672F\u60C5\u62A5\u4EA4\u6613",
+          subtitle: `${p.pos}%\u4E86\u89E3\u5EA6+35%\u4E14\u9001Lv.2\u624B\u724C | ${p.neg}%\u60C5\u62A5\u70DF\u96FE(-20%\u4E86\u89E3) | ${p.jack}%\u76F4\u63A5\u7A7A\u964DLv.3\u6307\u6325\u5361`,
+          rarity: "rare",
+          gamble: {
+            eventId: "pro_black_scout",
+            bracket: "pro",
+            tierMin: 3,
+            tierMax: 5,
+            modifierHint: "\u7403\u63A2\u7F51\u7EDC\u7B49\u7EA7\u8D8A\u9AD8\uFF0C\u8D8A\u5BB9\u6613\u622A\u83B7 Lv.3 \u6210\u54C1\u5361",
+            positive: {
+              tier: "positive",
+              prob: p.pos,
+              label: "\u7EBF\u62A5\u51C6\u786E",
+              summary: "\u6478\u6E05\u4E0B\u8F6E\u5BF9\u624B\u5F31\u70B9\uFF08\u4E86\u89E3\u5EA6 +35%\uFF09\u5E76\u83B7\u8D60 Lv.2 \u6218\u672F\u6307\u6325\u5361",
+              effect: { scoutIntelDelta: 35, grantCardLevel: 2 }
+            },
+            negative: {
+              tier: "negative",
+              prob: p.neg,
+              label: "\u906D\u9047\u53CD\u95F4",
+              summary: "\u6536\u5230\u5047\u60C5\u62A5\u8BEF\u5BFC\u5907\u6218\uFF08\u4E86\u89E3\u5EA6 -20%\uFF0C\u4E0B\u8F6E\u5907\u6218\u70B9 -1\uFF09",
+              effect: { scoutIntelDelta: -20, prepActionsDelta: -1 }
+            },
+            jackpot: {
+              tier: "jackpot",
+              prob: p.jack,
+              label: "\u7EDD\u5BC6\u84DD\u56FE\uFF01",
+              summary: "\u622A\u83B7\u5BF9\u624B\u5B8C\u6574\u6218\u672F\u624B\u518C\uFF1A\u4E86\u89E3\u5EA6 +60% \u4E14\u83B7\u8D60 Lv.3 \u9AD8\u9636\u6307\u6325\u5361\uFF01",
+              effect: { scoutIntelDelta: 60, grantCardLevel: 3 }
+            }
+          }
+        };
+      }
+    },
+    {
+      id: "pro_media_mindgame",
+      bracket: "pro",
+      tierMin: 3,
+      tierMax: 5,
+      cadences: ["normal", "focus", "crisis"],
+      rarity: "rare",
+      build: (ctx2) => {
+        const { captain } = pickKeyPlayers(ctx2.club);
+        const capHigh = captain.morale === "high";
+        const p = computeAdjustedProbs(
+          { pos: 55, neg: 25, jack: 20 },
+          { jackBonus: capHigh ? 6 : 0, negReduce: capHigh ? 8 : 0 }
+        );
+        return {
+          id: `pm_gb_pro_media_${ctx2.round}`,
+          category: "gamble",
+          title: `\u8D5B\u540E\u65B0\u95FB\u6218\uFF1A${captain.name} \u56DE\u5E94\u5A92\u4F53\u8D28\u7591`,
+          subtitle: `${p.pos}%\u5168\u961F\u9ED8\u5951+6 | ${p.neg}%\u8206\u8BBA\u53CD\u566C(\u6838\u5FC3\u58EB\u6C14\u4F4E\u8FF7) | ${p.jack}%\u5168\u961F\u9635\u578B\u719F\u5EA6+10%+\u5907\u6218\u70B9+1`,
+          rarity: "rare",
+          gamble: {
+            eventId: "pro_media_mindgame",
+            bracket: "pro",
+            tierMin: 3,
+            tierMax: 5,
+            modifierHint: "\u961F\u957F\u58EB\u6C14\u9AD8\u6602\u65F6\uFF0C\u6297\u538B\u56DE\u5E94\u6210\u529F\u7387\u5927\u5E45\u63D0\u5347",
+            positive: {
+              tier: "positive",
+              prob: p.pos,
+              label: "\u4F17\u5FD7\u6210\u57CE",
+              summary: "\u5F3A\u786C\u53D1\u58F0\u51DD\u805A\u66F4\u8863\u5BA4\uFF1A\u9996\u53D1\u8FDE\u7EBF\u9ED8\u5951 +6",
+              effect: { pairChemistryDelta: 6 }
+            },
+            negative: {
+              tier: "negative",
+              prob: p.neg,
+              label: "\u8206\u8BBA\u5931\u63A7",
+              summary: `\u5A92\u4F53\u65AD\u7AE0\u53D6\u4E49\u5F15\u53D1\u5185\u8017\uFF0C${captain.name} \u58EB\u6C14\u8F6C\u4F4E\u8FF7`,
+              effect: { targetPlayerId: captain.id, moraleShift: "low" }
+            },
+            jackpot: {
+              tier: "jackpot",
+              prob: p.jack,
+              label: "\u53CD\u5BA2\u4E3A\u4E3B\uFF01",
+              summary: "\u961F\u957F\u53D1\u8A00\u5F15\u7206\u5168\u961F\u6597\u5FD7\uFF1A\u5168\u961F\u5F53\u524D\u9635\u578B\u719F\u7EC3\u5EA6 +10%\u3001\u5907\u6218\u70B9 +1\u3001Meta +15pt\uFF01",
+              effect: { teamFamiliarityDelta: 10, prepActionsDelta: 1, metaDelta: 15 }
+            }
+          }
+        };
+      }
+    },
+    {
+      id: "pro_schedule_sprint",
+      bracket: "pro",
+      tierMin: 3,
+      tierMax: 5,
+      cadences: ["focus", "crisis"],
+      rarity: "epic",
+      build: (ctx2) => {
+        const p = computeAdjustedProbs(
+          { pos: 50, neg: 30, jack: 20 },
+          { jackBonus: ctx2.metaLevels.coaching * 2, negReduce: ctx2.metaLevels.fitness * 2 }
+        );
+        return {
+          id: `pm_gb_pro_sprint_${ctx2.round}`,
+          category: "gamble",
+          title: "\u9B54\u9B3C\u8D5B\u7A0B\u8D4C\u5C40\uFF1A\u9AD8\u5F3A\u5EA6\u6218\u672F\u95ED\u95E8\u7EC3",
+          subtitle: `${p.pos}%\u9635\u578B\u719F\u5EA6+8%\u4E14\u4E0B\u573A\u63A7\u7403\u4F20\u7403+2 | ${p.neg}%\u5168\u961F\u4F53\u80FD-14% | ${p.jack}%\u5168\u961F\u9635\u578B\u719F\u5EA6+15%\u4E14\u51B7\u9759+3`,
+          rarity: "epic",
+          gamble: {
+            eventId: "pro_schedule_sprint",
+            bracket: "pro",
+            tierMin: 3,
+            tierMax: 5,
+            modifierHint: "\u6218\u672F\u5E55\u50DA\u7B49\u7EA7\u63D0\u9AD8\u8D85\u989D\u6536\u76CA\u6982\u7387",
+            positive: {
+              tier: "positive",
+              prob: p.pos,
+              label: "\u6F14\u7EC3\u987A\u7545",
+              summary: "\u5168\u961F\u5F53\u524D\u9635\u578B\u719F\u7EC3\u5EA6 +8%\uFF0C\u4E0B\u573A\u4F20\u7403 +2",
+              effect: {
+                teamFamiliarityDelta: 8,
+                nextMatchBuff: { passingBonus: 2, note: "\u95ED\u95E8\u6F14\u7EC3\u751F\u6548\uFF1A\u4E0B\u573A\u4F20\u7403 +2" }
+              }
+            },
+            negative: {
+              tier: "negative",
+              prob: p.neg,
+              label: "\u64CD\u4E4B\u8FC7\u6025",
+              summary: "\u5BC6\u95ED\u9AD8\u5F3A\u5EA6\u52A0\u7EC3\u6D88\u8017\u8FC7\u5927\uFF1A\u5168\u961F\u4F53\u80FD -14%",
+              effect: { fitnessDelta: -14 }
+            },
+            jackpot: {
+              tier: "jackpot",
+              prob: p.jack,
+              label: "\u6218\u672F\u987F\u609F\uFF01",
+              summary: "\u5168\u961F\u9635\u578B\u719F\u7EC3\u5EA6 +15%\uFF0C\u4E0B\u573A\u4F20\u7403/\u51B7\u9759/\u9632\u5B88\u5404 +3\uFF01",
+              effect: {
+                teamFamiliarityDelta: 15,
+                nextMatchBuff: { passingBonus: 3, composureBonus: 3, defendingBonus: 3, note: "\u6218\u672F\u987F\u609F\uFF1A\u4E0B\u573A\u4F20/\u51B7/\u9632 +3" }
+              }
+            }
+          }
+        };
+      }
+    },
+    // ==================== 3. 豪门与顶级联赛专属 (Tier 2 ~ 1) ====================
+    {
+      id: "el_star_ego_clash",
+      bracket: "elite",
+      tierMin: 1,
+      tierMax: 2,
+      cadences: ["normal", "focus", "crisis"],
+      rarity: "epic",
+      build: (ctx2) => {
+        const { topScorer } = pickKeyPlayers(ctx2.club);
+        const p = computeAdjustedProbs(
+          { pos: 50, neg: 30, jack: 20 },
+          { jackBonus: ctx2.won ? 6 : 0, negReduce: ctx2.metaLevels.coaching * 2 }
+        );
+        return {
+          id: `pm_gb_el_ego_${ctx2.round}`,
+          category: "gamble",
+          title: `\u9876\u7EA7\u66F4\u8863\u5BA4\u535A\u5F08\uFF1A${topScorer.name} \u6218\u672F\u6838\u5FC3\u6743`,
+          subtitle: `${p.pos}%\u6388\u5176\u91D1\u6807+(3\u8F6E) | ${p.neg}%\u66F4\u8863\u5BA4\u5206\u6B67(\u9ED8\u5951-4/\u4F53\u80FD-10%) | ${p.jack}%\u6388\u91D1\u6807+(5\u8F6E)+\u5168\u961F\u4E0B\u573A\u653B+4`,
+          rarity: "epic",
+          gamble: {
+            eventId: "el_star_ego_clash",
+            bracket: "elite",
+            tierMin: 1,
+            tierMax: 2,
+            modifierHint: "\u9876\u7EA7\u8054\u8D5B\u9AD8\u538B\u51B3\u7B56\uFF1A\u80DC\u5229\u4F59\u5A01\u6216\u9AD8\u6559\u7EC3\u7B49\u7EA7\u80FD\u538B\u4F4E\u5185\u8017\u98CE\u9669",
+            positive: {
+              tier: "positive",
+              prob: p.pos,
+              label: "\u786E\u7ACB\u6838\u5FC3",
+              summary: `${topScorer.name} \u627F\u62C5\u7EDD\u5BF9\u6838\u5FC3\u804C\u8D23\uFF0C\u83B7\u5F97\u4E34\u65F6\u91D1\u6807+\u3010\u81F4\u547D\u76F4\u585E\u3011(3\u8F6E)`,
+              effect: {
+                targetPlayerId: topScorer.id,
+                moraleShift: "high",
+                tempTrait: { trait: "\u81F4\u547D\u76F4\u585E", tier: "gold", rounds: 3 }
+              }
+            },
+            negative: {
+              tier: "negative",
+              prob: p.neg,
+              label: "\u8BDD\u8BED\u6743\u5206\u88C2",
+              summary: "\u7403\u6743\u5206\u914D\u5F15\u53D1\u4E0D\u6EE1\uFF1A\u5168\u961F\u4F53\u80FD -10%\uFF0C\u90E8\u5206\u8FDE\u7EBF\u9ED8\u5951\u4E0B\u964D",
+              effect: { fitnessDelta: -10, pairChemistryDelta: -4 }
+            },
+            jackpot: {
+              tier: "jackpot",
+              prob: p.jack,
+              label: "\u53CC\u6838\u5171\u632F\uFF01",
+              summary: `${topScorer.name} \u83B7\u5F97 5 \u8F6E\u91D1\u6807+\u3010\u7981\u533A\u72D0\u72F8\u3011\uFF0C\u4E0B\u573A\u5168\u961F\u5C04\u95E8/\u901F\u5EA6 +4\uFF01`,
+              effect: {
+                targetPlayerId: topScorer.id,
+                moraleShift: "high",
+                tempTrait: { trait: "\u7981\u533A\u72D0\u72F8", tier: "gold", rounds: 5 },
+                nextMatchBuff: { shootingBonus: 4, paceBonus: 4, note: "\u8C6A\u95E8\u53CC\u6838\u5171\u632F\uFF1A\u4E0B\u573A\u5C04/\u901F +4" }
+              }
+            }
+          }
+        };
+      }
+    },
+    {
+      id: "el_bio_overclock",
+      bracket: "elite",
+      tierMin: 1,
+      tierMax: 2,
+      cadences: ["focus", "crisis"],
+      rarity: "epic",
+      build: (ctx2) => {
+        const p = computeAdjustedProbs(
+          { pos: 52, neg: 28, jack: 20 },
+          { jackBonus: ctx2.metaLevels.fitness * 3, negReduce: ctx2.metaLevels.fitness * 2 }
+        );
+        return {
+          id: `pm_gb_el_bio_${ctx2.round}`,
+          category: "gamble",
+          title: "\u8C6A\u95E8\u8FD0\u52A8\u79D1\u5B66\uFF1A\u9AD8\u538B\u8D85\u9891\u6062\u590D\u534F\u8BAE",
+          subtitle: `${p.pos}%\u5168\u961F\u4F53\u80FD+25%\u4E14\u4E0B\u573A\u901F\u5EA6+2 | ${p.neg}%\u8FC7\u8F7D\u8B66\u544A(1\u9996\u53D1\u4F241\u8F6E) | ${p.jack}%\u5168\u961F\u4F53\u80FD\u56DE\u6EE1+\u4E0B\u573A\u5168\u5C5E\u6027+3`,
+          rarity: "epic",
+          gamble: {
+            eventId: "el_bio_overclock",
+            bracket: "elite",
+            tierMin: 1,
+            tierMax: 2,
+            modifierHint: "\u4F53\u80FD\u533B\u7597\u5BA4\u7B49\u7EA7\u76F4\u63A5\u63D0\u5347\u8D85\u9891\u6210\u529F\u7387",
+            positive: {
+              tier: "positive",
+              prob: p.pos,
+              label: "\u6307\u6807\u62C9\u6EE1",
+              summary: "\u5168\u961F\u4F53\u80FD +25%\uFF0C\u4E0B\u573A\u6BD4\u8D5B\u5168\u961F\u901F\u5EA6 +2",
+              effect: { fitnessDelta: 25, nextMatchBuff: { paceBonus: 2, note: "\u8FD0\u52A8\u79D1\u5B66\u8D85\u9891\uFF1A\u4E0B\u573A\u901F\u5EA6 +2" } }
+            },
+            negative: {
+              tier: "negative",
+              prob: p.neg,
+              label: "\u8D1F\u8377\u8D85\u6807",
+              summary: "\u9AD8\u5F3A\u5EA6\u6062\u590D\u5F15\u53D1\u5FAE\u808C\u6495\u88C2\uFF1A\u968F\u673A 1 \u540D\u9996\u53D1\u4F24\u505C 1 \u8F6E",
+              effect: { injureStarterRounds: 1 }
+            },
+            jackpot: {
+              tier: "jackpot",
+              prob: p.jack,
+              label: "\u5B8C\u7F8E\u5DC5\u5CF0\u72B6\u6001\uFF01",
+              summary: "\u5168\u961F\u4F53\u80FD\u56DE\u6EE1\uFF0C\u4E0B\u573A\u6BD4\u8D5B\u5168\u961F\u5C04\u95E8/\u4F20\u7403/\u901F\u5EA6/\u9632\u5B88 +3\uFF01",
+              effect: {
+                fitnessDelta: 100,
+                nextMatchBuff: {
+                  shootingBonus: 3,
+                  passingBonus: 3,
+                  paceBonus: 3,
+                  defendingBonus: 3,
+                  note: "\u5DC5\u5CF0\u72B6\u6001\uFF1A\u4E0B\u573A\u5168\u961F\u653B\u9632\u901F\u4F20 +3"
+                }
+              }
+            }
+          }
+        };
+      }
+    },
+    // ==================== 4. 全等级通用参数化博弈 (Tier 7 ~ 1) ====================
+    {
+      id: "all_veteran_gamble",
+      bracket: "all",
+      tierMin: 1,
+      tierMax: 7,
+      cadences: ["normal", "focus", "crisis"],
+      rarity: "rare",
+      build: (ctx2) => {
+        const { veteran } = pickKeyPlayers(ctx2.club);
+        const p = computeAdjustedProbs(
+          { pos: 56, neg: 24, jack: 20 },
+          { jackBonus: ctx2.won ? 4 : 0, negReduce: ctx2.metaLevels.fitness * 2 }
+        );
+        return {
+          id: `pm_gb_all_vet_${ctx2.round}`,
+          category: "gamble",
+          title: `\u8001\u5175\u71C3\u5C3D\u7533\u8BF7\uFF1A${veteran.name} \u5E26\u4F24\u8BF7\u6218`,
+          subtitle: `${p.pos}%\u4E0B\u573A\u51B7\u9759/\u4F20\u7403+3 | ${p.neg}%\u8001\u5C06\u4F53\u80FD-18% | ${p.jack}%\u8001\u5C06\u4E34\u65F6\u91D1\u6807\u3010\u8282\u62CD\u5668\u3011(4\u8F6E)+\u9ED8\u5951+8`,
+          rarity: "rare",
+          gamble: {
+            eventId: "all_veteran_gamble",
+            bracket: "all",
+            tierMin: 1,
+            tierMax: 7,
+            modifierHint: "\u8001\u5C06\u51FA\u6218\u610F\u5FD7\uFF1A\u80DC\u573A\u53EF\u63D0\u9AD8\u91D1\u6807\u7206\u53D1\u6982\u7387",
+            positive: {
+              tier: "positive",
+              prob: p.pos,
+              label: "\u8001\u9053\u7A33\u5065",
+              summary: `${veteran.name} \u7A33\u4F4F\u519B\u5FC3\uFF0C\u4E0B\u573A\u5168\u961F\u51B7\u9759 +3\u3001\u4F20\u7403 +2`,
+              effect: { nextMatchBuff: { composureBonus: 3, passingBonus: 2, note: "\u8001\u5175\u7A33\u5FC3\uFF1A\u4E0B\u573A\u51B7\u9759+3\u4F20\u7403+2" } }
+            },
+            negative: {
+              tier: "negative",
+              prob: p.neg,
+              label: "\u4F53\u80FD\u900F\u652F",
+              summary: `${veteran.name} \u65E7\u4F24\u9690\u9690\u4F5C\u75DB\uFF0C\u4F53\u80FD -18%`,
+              effect: { targetPlayerId: veteran.id, fitnessDelta: -18 }
+            },
+            jackpot: {
+              tier: "jackpot",
+              prob: p.jack,
+              label: "\u8001\u5175\u4F20\u5947\u591C\uFF01",
+              summary: `${veteran.name} \u89C9\u9192 4 \u8F6E\u91D1\u6807+\u3010\u8282\u62CD\u5668\u3011\uFF0C\u4E14\u6838\u5FC3\u8FDE\u7EBF\u9ED8\u5951 +8\uFF01`,
+              effect: {
+                targetPlayerId: veteran.id,
+                tempTrait: { trait: "\u8282\u62CD\u5668", tier: "gold", rounds: 4 },
+                pairChemistryDelta: 8
+              }
+            }
+          }
+        };
+      }
+    },
+    {
+      id: "all_tactical_alchemy",
+      bracket: "all",
+      tierMin: 1,
+      tierMax: 7,
+      cadences: ["normal", "focus"],
+      rarity: "rare",
+      build: (ctx2) => {
+        const p = computeAdjustedProbs(
+          { pos: 54, neg: 26, jack: 20 },
+          { jackBonus: ctx2.metaLevels.coaching * 2, negReduce: ctx2.metaLevels.finance * 2 }
+        );
+        return {
+          id: `pm_gb_all_alch_${ctx2.round}`,
+          category: "gamble",
+          title: "\u6218\u672F\u5B9E\u9A8C\u5BA4\uFF1A\u6B8B\u9875\u878D\u5408\u8BD5\u70BC",
+          subtitle: `${p.pos}%\u83B7\u5F972\u5143\u7D20+Lv.2\u5361 | ${p.neg}%\u5B9E\u9A8C\u70B8\u7089(\u5907\u6218\u70B9-1) | ${p.jack}%\u76F4\u63A5\u5408\u6210Lv.4\u6EE1\u9636\u5168\u961F\u5361`,
+          rarity: "rare",
+          gamble: {
+            eventId: "all_tactical_alchemy",
+            bracket: "all",
+            tierMin: 1,
+            tierMax: 7,
+            modifierHint: "\u6218\u672F\u5E55\u50DA\u4E0E\u8D22\u653F\u57FA\u5EFA\u5206\u522B\u63D0\u5347\u6210\u5361\u7387\u4E0E\u5BB9\u9519\u7387",
+            positive: {
+              tier: "positive",
+              prob: p.pos,
+              label: "\u63D0\u70BC\u6210\u529F",
+              summary: "\u83B7\u5F97 2 \u5F20\u968F\u673A\u57FA\u7840\u6218\u672F\u5143\u7D20\u4E0E 1 \u5F20 Lv.2 \u6307\u6325\u5361",
+              effect: { elementsGain: 2, grantCardLevel: 2 }
+            },
+            negative: {
+              tier: "negative",
+              prob: p.neg,
+              label: "\u5B9E\u9A8C\u70B8\u7089",
+              summary: "\u6218\u672F\u677F\u63A8\u6F14\u8D85\u65F6\uFF0C\u4E0B\u8F6E\u8D5B\u524D\u5907\u6218\u70B9 -1",
+              effect: { prepActionsDelta: -1 }
+            },
+            jackpot: {
+              tier: "jackpot",
+              prob: p.jack,
+              label: "\u5B8C\u7F8E\u70BC\u6210\uFF01",
+              summary: "\u76F4\u63A5\u70BC\u6210 1 \u5F20 Lv.4 \u6EE1\u9636\u5168\u961F\u751F\u6548\u6218\u672F\u6307\u6325\u5361 + Meta 15pt\uFF01",
+              effect: { grantCardLevel: 4, metaDelta: 15 }
+            }
+          }
+        };
+      }
+    }
+  ];
+  function rollTieredGambleOptions(ctx2, count = 3) {
+    const cadence = getRoundCadence(ctx2.round, ctx2.winlessStreak);
+    const recentSet = new Set(ctx2.recentEventIds);
+    const eligible = TIER_GAMBLE_TEMPLATES.filter(
+      (t) => ctx2.tier >= t.tierMin && ctx2.tier <= t.tierMax
+    );
+    const weighted = eligible.map((t) => {
+      let w = t.bracket !== "all" ? 2.2 : 1;
+      if (t.cadences.includes(cadence)) w += 1;
+      if (recentSet.has(t.id)) w *= 0.2;
+      return { tpl: t, score: w * (0.6 + Math.random() * 0.8) };
+    });
+    weighted.sort((a, b) => b.score - a.score);
+    const picked = weighted.slice(0, count).map((w) => w.tpl.build(ctx2));
+    return picked;
+  }
+
   // packages/core/src/LeagueManager.ts
   var AI_FORMATIONS = ["4-3-3", "4-2-3-1", "4-4-2", "4-1-2-1-2", "3-5-2", "3-4-2-1", "5-4-1", "5-3-2"];
   var AI_STYLES = ["balanced", "tiki_taka", "gegenpress", "counter", "wing_play"];
-  var RE_DRAFT_ROUNDS = /* @__PURE__ */ new Set([8, 17, 26]);
+  var RE_DRAFT_ROUNDS = /* @__PURE__ */ new Set([8, 16, 24]);
   var TOTAL_REGULAR_ROUNDS = 34;
   var MAX_CLUB_ROSTER = 40;
   var SEASON_SQUAD_SIZE = 26;
@@ -8982,6 +9573,11 @@
       if (this.state.stayedTierCount === void 0) this.state.stayedTierCount = 0;
       if (this.state.winlessStreak === void 0) this.state.winlessStreak = 0;
       if (!this.state.seasonMemories) this.state.seasonMemories = [];
+      if (this.state.phase === "RE_DRAFT") {
+        this.state.reDraft = null;
+        this.state.phase = "REGULAR_SEASON";
+        this.state.currentRound = Math.min(TOTAL_REGULAR_ROUNDS, (this.state.currentRound ?? 1) + 1);
+      }
       if (this.state.phase === "REGULAR_SEASON" && !this.state.interMatchPrep) {
         this.state.interMatchPrep = createInterMatchPrep(this.state, this.getUserClub());
       }
@@ -10653,10 +11249,11 @@
         }
       }
       this.captureSeasonMemory(userFixture, userMatchResult, userClubNow);
+      const completedRound = this.state.currentRound;
       this.advanceAfterRound();
       if (this.state.phase !== "SEASON_END") {
         this.state.interMatchPrep = createInterMatchPrep(this.state, userClubNow);
-        this.state.pendingPostMatchReward = this.createPostMatchRewardState(userWon);
+        this.state.pendingPostMatchReward = this.createPostMatchRewardState(userWon, completedRound);
         if (this.state.phase === "REGULAR_SEASON" && !this.state.pendingStoryEvent) {
           const chrEvent = evaluateChronicleTrigger(this.state, userClubNow, this.getStandings());
           if (chrEvent) this.state.pendingStoryEvent = chrEvent;
@@ -10666,41 +11263,82 @@
         this.state.interMatchPrep = null;
       }
     }
-    createPostMatchRewardState(won) {
-      const allCats = [
-        "player",
-        "stat_boost",
-        "line_boost",
-        "craft_card",
-        "event",
-        "trait_forge",
-        "tactical_pact",
-        "chemistry_forge"
-      ];
-      const club = this.getUserClub();
-      const recent = new Set(this.state.recentRewardCategories ?? []);
-      const tiredCount = club.squad.filter((p) => (p.fitness ?? 100) < 72).length;
-      const hasHighCostCard = this.getCoachDeck().some((c) => c.cost >= 2);
-      const scored = allCats.map((cat) => {
-        let weight = recent.has(cat) ? 0.35 : 1.5;
-        if (!won && (cat === "tactical_pact" || cat === "trait_forge" || cat === "player")) weight += 0.55;
-        if (tiredCount >= 3 && (cat === "event" || cat === "tactical_pact")) weight += 0.5;
-        if (hasHighCostCard && (cat === "chemistry_forge" || cat === "craft_card")) weight += 0.45;
-        if (this.state.currentRound % 3 === 0 && cat === "trait_forge") weight += 0.4;
-        return { cat, score: weight * (0.65 + Math.random() * 0.7) };
-      });
-      scored.sort((a, b) => b.score - a.score);
-      const picked = scored.slice(0, 3).map((s) => s.cat);
+    createPostMatchRewardState(won, completedRound = this.state.currentRound) {
+      const cadence = getRoundCadence(completedRound, this.state.winlessStreak ?? 0);
+      const picked = this.rollPostMatchCategories(won, cadence, completedRound);
       this.state.recentRewardCategories = picked;
       return {
-        round: this.state.currentRound,
+        round: completedRound,
         won,
+        cadence,
+        rerollsLeft: 1,
         categories: picked,
         chosenCategory: null,
         options: [],
         pendingStatOptionId: null,
         completed: false
       };
+    }
+    rollPostMatchCategories(won, cadence, round = this.state.currentRound) {
+      const pool = cadence === "normal" ? ["event", "craft_card", "trait_forge", "gamble", "chemistry_forge"] : ["player", "stat_boost", "line_boost", "craft_card", "event", "trait_forge", "tactical_pact", "chemistry_forge", "gamble"];
+      const club = this.getUserClub();
+      const recent = new Set(this.state.recentRewardCategories ?? []);
+      const tiredCount = club.squad.filter((p) => (p.fitness ?? 100) < 72).length;
+      const hasHighCostCard = this.getCoachDeck().some((c) => c.cost >= 2);
+      const scored = pool.map((cat) => {
+        let weight = recent.has(cat) ? 0.35 : 1.5;
+        if (!won && (cat === "tactical_pact" || cat === "trait_forge" || cat === "player" || cat === "gamble")) weight += 0.55;
+        if (tiredCount >= 3 && (cat === "event" || cat === "tactical_pact" || cat === "gamble")) weight += 0.5;
+        if (hasHighCostCard && (cat === "chemistry_forge" || cat === "craft_card")) weight += 0.45;
+        if (round % 3 === 0 && cat === "trait_forge") weight += 0.4;
+        return { cat, score: weight * (0.65 + Math.random() * 0.7) };
+      });
+      scored.sort((a, b) => b.score - a.score);
+      if (RE_DRAFT_ROUNDS.has(round)) {
+        const other = scored.find((s) => s.cat !== "gamble" && s.cat !== "season_perk")?.cat ?? "player";
+        const res = ["season_perk", "gamble", other];
+        for (let i = res.length - 1; i > 0; i--) {
+          const j = Math.floor(Math.random() * (i + 1));
+          [res[i], res[j]] = [res[j], res[i]];
+        }
+        return res;
+      }
+      if (cadence !== "normal") {
+        const others = scored.filter((s) => s.cat !== "gamble").slice(0, 2).map((s) => s.cat);
+        const res = [...others, "gamble"];
+        for (let i = res.length - 1; i > 0; i--) {
+          const j = Math.floor(Math.random() * (i + 1));
+          [res[i], res[j]] = [res[j], res[i]];
+        }
+        return res;
+      }
+      return scored.slice(0, 3).map((s) => s.cat);
+    }
+    rerollPostMatchReward() {
+      const rw = this.state.pendingPostMatchReward;
+      if (!rw || rw.completed) return { ok: false, reason: "\u5F53\u524D\u6CA1\u6709\u53EF\u91CD\u62BD\u7684\u8D5B\u540E\u5956\u52B1" };
+      if (rw.pendingStatOptionId) return { ok: false, reason: "\u8BF7\u5148\u5B8C\u6210\u5F53\u524D\u7403\u5458\u6307\u5B9A" };
+      if ((rw.rerollsLeft ?? 0) <= 0) return { ok: false, reason: "\u672C\u8F6E\u91CD\u62BD\u6B21\u6570\u5DF2\u7528\u5B8C" };
+      let costLabel = "";
+      if (this.state.interMatchPrep && this.state.interMatchPrep.actionsLeft > 0) {
+        this.state.interMatchPrep.actionsLeft -= 1;
+        costLabel = "\u6D88\u8017 1 \u5907\u6218\u70B9";
+      } else if (this.state.metaPointsTotal >= 8) {
+        this.state.metaPointsTotal -= 8;
+        costLabel = "\u6D88\u8017 8 Meta";
+      } else {
+        return { ok: false, reason: "\u9700\u8981 1 \u5907\u6218\u70B9\u6216 8 Meta \u65B9\u53EF\u91CD\u62BD" };
+      }
+      rw.rerollsLeft = (rw.rerollsLeft ?? 1) - 1;
+      if (!rw.chosenCategory) {
+        const cadence = rw.cadence ?? getRoundCadence(rw.round, this.state.winlessStreak ?? 0);
+        const picked = this.rollPostMatchCategories(rw.won, cadence, rw.round);
+        rw.categories = picked;
+        this.state.recentRewardCategories = picked;
+        return { ok: true, costLabel };
+      }
+      this.pickPostMatchRewardCategory(rw.chosenCategory);
+      return { ok: true, costLabel };
     }
     pickPostMatchRewardCategory(cat) {
       const rw = this.state.pendingPostMatchReward;
@@ -10713,7 +11351,13 @@
       const tierBase = 38 + (7 - Math.max(1, Math.min(7, tier))) * 6;
       const options = [];
       if (cat === "player") {
-        const cands = generateShuffleSet(3, tierBase + winBonus, tierBase + 13 + winBonus);
+        const financeBonus = this.getMetaLevels().finance >= 3 ? 2 : 0;
+        const milestoneBonus = RE_DRAFT_ROUNDS.has(rw.round) ? 4 : 0;
+        const cands = generateShuffleSet(
+          3,
+          tierBase + winBonus + financeBonus + milestoneBonus,
+          tierBase + 13 + winBonus + financeBonus + (RE_DRAFT_ROUNDS.has(rw.round) ? 3 : 0)
+        );
         cands.forEach((p, idx) => {
           options.push({
             id: `pm_p_${idx}_${p.id}`,
@@ -10722,6 +11366,20 @@
             subtitle: `${p.age}\u5C81${p.secondaryRoles?.length ? " \xB7 \u517C " + p.secondaryRoles.join("/") : ""} \xB7 ${p.traits?.slice(0, 2).join("/") || "\u5747\u8861"}`,
             rarity: p.tier === "S" ? "epic" : p.tier === "A" ? "rare" : "common",
             player: p
+          });
+        });
+      } else if (cat === "season_perk") {
+        const club = this.getUserClub();
+        const offer = createReDraftOffer(rw.round, club.perks.map((p) => p.id), this.getMetaLevels(), tier);
+        offer.perkChoices.forEach((pk, idx) => {
+          const catLabel = pk.category === "attack" ? "\u8FDB\u653B\u7CFB" : pk.category === "defense" ? "\u9632\u5B88\u7CFB" : "\u63A7\u5236\u7CFB";
+          options.push({
+            id: `pm_sp_${idx}_${pk.id}`,
+            category: "season_perk",
+            title: `\u8D5B\u5B63\u8BCD\u6761\uFF1A${pk.name}`,
+            subtitle: `[${catLabel}] ${pk.description}`,
+            rarity: pk.rarity,
+            perk: pk
           });
         });
       } else if (cat === "stat_boost") {
@@ -10876,9 +11534,9 @@
             id: "pm_tp_alchemy",
             category: "tactical_pact",
             title: "\u5951\u7EA6\xB7\u9ED1\u5E02\u70BC\u91D1\uFF1AMeta\u4E0E\u5907\u6218\u70B9\u53CC\u6536",
-            subtitle: "\u4EE3\u4EF7\uFF1A\u6D88\u8017\u6700\u591A 2 \u5143\u7D20 | \u6536\u76CA\uFF1AMeta +50pt\u3001\u4E0B\u8F6E\u5907\u6218\u70B9 +1\u3001\u5168\u961F\u51B7\u9759 +1",
+            subtitle: "\u4EE3\u4EF7\uFF1A\u6D88\u8017\u6700\u591A 2 \u5143\u7D20 | \u6536\u76CA\uFF1AMeta +25pt\u3001\u4E0B\u8F6E\u5907\u6218\u70B9 +1\u3001\u5168\u961F\u51B7\u9759 +1",
             rarity: "epic",
-            pactReward: { kind: "black_market_alchemy", description: "\u6D88\u8017\u6700\u591A2\u5143\u7D20\u6362\u53D6 Meta +50pt\u3001\u5907\u6218\u70B9 +1 \u53CA\u51B7\u9759+1" }
+            pactReward: { kind: "black_market_alchemy", description: "\u6D88\u8017\u6700\u591A2\u5143\u7D20\u6362\u53D6 Meta +25pt\u3001\u5907\u6218\u70B9 +1 \u53CA\u51B7\u9759+1" }
           },
           {
             id: "pm_tp_stamina",
@@ -10934,16 +11592,29 @@
           [chemPool[i], chemPool[j]] = [chemPool[j], chemPool[i]];
         }
         options.push(...chemPool.slice(0, 3));
+      } else if (cat === "gamble") {
+        const gambleOpts = rollTieredGambleOptions({
+          tier,
+          round: rw.round,
+          won: rw.won,
+          winlessStreak: this.state.winlessStreak ?? 0,
+          club: this.getUserClub(),
+          metaLevels: this.getMetaLevels(),
+          recentEventIds: this.state.recentGambleEventIds ?? []
+        }, 3);
+        options.push(...gambleOpts);
+        const usedIds = gambleOpts.map((o) => o.gamble?.eventId).filter((x) => !!x);
+        this.state.recentGambleEventIds = [...this.state.recentGambleEventIds ?? [], ...usedIds].slice(-9);
       } else {
         const chrons = ensureChronicles(this.state);
         const evPool = [];
         evPool.push({
           id: "pm_ev_meta",
           category: "event",
-          title: "\u7406\u4E8B\u4F1A\u5609\u5956\uFF1AMeta \u5929\u8D4B +35pt",
-          subtitle: "\u76F4\u63A5\u5165\u8D26\u6559\u7EC3\u5929\u8D4B\u6811\u4E0E SkillWeb \u6280\u80FD\u7F51\u70B9\u6570 +35pt",
-          rarity: "epic",
-          eventReward: { kind: "meta_grant", amount: 35, description: "\u76F4\u63A5\u83B7\u5F97 Meta \u5929\u8D4B\u70B9\u6570 +35pt" }
+          title: "\u7406\u4E8B\u4F1A\u5609\u5956\uFF1AMeta \u5929\u8D4B +15pt",
+          subtitle: "\u76F4\u63A5\u5165\u8D26\u6559\u7EC3\u5929\u8D4B\u6811\u4E0E SkillWeb \u6280\u80FD\u7F51\u70B9\u6570 +15pt",
+          rarity: "rare",
+          eventReward: { kind: "meta_grant", amount: 15, description: "\u76F4\u63A5\u83B7\u5F97 Meta \u5929\u8D4B\u70B9\u6570 +15pt" }
         });
         evPool.push({
           id: "pm_ev_prep",
@@ -11052,6 +11723,15 @@
         }
         rw.completed = true;
         rw.summaryText = `\u65B0\u63F4\u5165\u961F\uFF1A${p.name} (${p.role} \xB7 CA ${p.ca})`;
+        return { ok: true, summary: rw.summaryText };
+      }
+      if (opt.category === "season_perk" && opt.perk) {
+        club.perks.push(opt.perk);
+        if (computePerkSynergies(club.perks).synergies.length > 0) {
+          tryUnlockAchievement(this.state, "ach_synergy");
+        }
+        rw.completed = true;
+        rw.summaryText = `\u6FC0\u6D3B\u8D5B\u5B63\u6218\u672F\u8BCD\u6761\u3010${opt.perk.name}\u3011\uFF1A${opt.perk.description}`;
         return { ok: true, summary: rw.summaryText };
       }
       if (opt.category === "stat_boost" && opt.statBoost) {
@@ -11244,7 +11924,7 @@
               spent++;
             }
           }
-          this.state.metaPointsTotal += 50;
+          this.state.metaPointsTotal += 25;
           if (this.state.interMatchPrep) {
             this.state.interMatchPrep.actionsLeft += 1;
           }
@@ -11252,7 +11932,7 @@
             p.attributes.composure = clampAttr2(p.attributes.composure + 1);
             p.ca = computeWeightedCA(p.role, p.attributes);
           }
-          rw.summaryText = `\u9ED1\u5E02\u70BC\u91D1\u5B8C\u6210\uFF1A\u6D88\u8017 ${spent} \u5143\u7D20\uFF0C\u5165\u8D26 Meta +50pt\u3001\u4E0B\u8F6E\u5907\u6218\u70B9 +1\u3001\u5168\u961F\u51B7\u9759 +1`;
+          rw.summaryText = `\u9ED1\u5E02\u70BC\u91D1\u5B8C\u6210\uFF1A\u6D88\u8017 ${spent} \u5143\u7D20\uFF0C\u5165\u8D26 Meta +25pt\u3001\u4E0B\u8F6E\u5907\u6218\u70B9 +1\u3001\u5168\u961F\u51B7\u9759 +1`;
         } else if (pr.kind === "stamina_limit_break") {
           for (const p of club.squad) {
             p.attributes.stamina = clampAttr2(p.attributes.stamina + 4);
@@ -11422,6 +12102,125 @@
         }
         rw.completed = true;
         return { ok: true, summary: rw.summaryText };
+      }
+      if (opt.category === "gamble" && opt.gamble) {
+        const rolledTier = rollTriStateGamble(opt.gamble);
+        const outcome = opt.gamble[rolledTier];
+        opt.gamble.rolledTier = rolledTier;
+        opt.gamble.rolledText = outcome.summary;
+        const ef = outcome.effect;
+        const target = ef.targetPlayerId ? club.squad.find((p) => p.id === ef.targetPlayerId) : void 0;
+        if (ef.fitnessDelta !== void 0) {
+          const list = target ? [target] : club.squad;
+          for (const p of list) {
+            p.fitness = Math.max(20, Math.min(100, (p.fitness ?? 100) + ef.fitnessDelta));
+            if (p.fitness >= 70) p.strainWarning = false;
+          }
+        }
+        if (ef.moraleShift && target) {
+          target.morale = ef.moraleShift;
+        }
+        if (ef.injureStarterRounds && ef.injureStarterRounds > 0) {
+          const starterSet = new Set(club.starterIds);
+          const pool = club.squad.filter((p) => starterSet.has(p.id) && (p.injuredRounds ?? 0) === 0);
+          const victim = pool[Math.floor(Math.random() * pool.length)];
+          if (victim) {
+            victim.injuredRounds = (victim.injuredRounds ?? 0) + ef.injureStarterRounds;
+            this.replaceUnavailableStarters(club);
+          }
+        }
+        if (ef.metaDelta !== void 0) {
+          this.state.metaPointsTotal = Math.max(0, this.state.metaPointsTotal + ef.metaDelta);
+        }
+        if (ef.prepActionsDelta !== void 0 && this.state.interMatchPrep) {
+          this.state.interMatchPrep.actionsLeft = Math.max(0, this.state.interMatchPrep.actionsLeft + ef.prepActionsDelta);
+        }
+        if (ef.scoutIntelDelta !== void 0 && this.state.interMatchPrep?.matchupIntel) {
+          const prep = this.state.interMatchPrep;
+          const intel = prep.matchupIntel;
+          if (intel) {
+            const rec = getOpponentIntelRecord(this.state, intel.oppClubId);
+            rec.familiarity = Math.max(0, Math.min(100, rec.familiarity + ef.scoutIntelDelta));
+            const refreshed = buildOpponentMatchupIntel(this.state, club);
+            if (refreshed) {
+              refreshed.chosenCounterId = intel.chosenCounterId;
+              refreshed.spotCorrect = intel.spotCorrect;
+              refreshed.scoutedThisRound = intel.scoutedThisRound;
+              prep.matchupIntel = refreshed;
+            }
+          }
+        }
+        if (ef.elementsGain && ef.elementsGain > 0) {
+          const inv = this.getElementInventory();
+          for (let i = 0; i < ef.elementsGain; i++) {
+            const el = TACTICAL_ELEMENTS[Math.floor(Math.random() * TACTICAL_ELEMENTS.length)];
+            inv[el.id] = (inv[el.id] ?? 0) + 1;
+          }
+        }
+        if (ef.grantCardLevel && ef.grantCardLevel >= 1) {
+          const e1 = TACTICAL_ELEMENTS[Math.floor(Math.random() * TACTICAL_ELEMENTS.length)];
+          const e2 = TACTICAL_ELEMENTS[Math.floor(Math.random() * TACTICAL_ELEMENTS.length)];
+          const synth = synthesizeChemistry([e1.id, e2.id], "balanced", true);
+          for (let lv = 1; lv < Math.min(4, ef.grantCardLevel); lv++) {
+            upgradeCommandCard(synth.card);
+          }
+          const deck = this.getCoachDeck();
+          if (deck.length < 12) {
+            deck.push(synth.card);
+            const loadout = this.getLoadoutIds();
+            if (loadout.length < 4) loadout.push(synth.card.id);
+          } else {
+            this.state.metaPointsTotal += 15;
+          }
+        }
+        if (ef.tempTrait && target) {
+          target.tempTraits = target.tempTraits ? [...target.tempTraits] : [];
+          const existing = target.tempTraits.find((t) => t.trait === ef.tempTrait.trait);
+          if (existing) {
+            if (ef.tempTrait.tier === "gold") existing.tier = "gold";
+            existing.remainingMatches = Math.max(existing.remainingMatches, ef.tempTrait.rounds);
+          } else {
+            target.tempTraits.push({
+              trait: ef.tempTrait.trait,
+              tier: ef.tempTrait.tier,
+              remainingMatches: ef.tempTrait.rounds
+            });
+          }
+        }
+        if (ef.teamFamiliarityDelta !== void 0) {
+          for (const p of club.squad) {
+            const cur = this.getPlayerFamiliarity(p, club.formation);
+            p.formationFamiliarity = p.formationFamiliarity ?? {};
+            p.formationFamiliarity[club.formation] = Math.max(0, Math.min(100, cur + ef.teamFamiliarityDelta));
+          }
+        }
+        if (ef.pairChemistryDelta !== void 0) {
+          const links = this.getChemistryLinks();
+          const squadMap = new Map(club.squad.map((p) => [p.id, p]));
+          const specs = getFormationLinks(club, squadMap);
+          if (specs.length > 0) {
+            const picked = specs[Math.floor(Math.random() * specs.length)];
+            const lk = getOrCreateChemistryLink(links, picked.playerA, picked.playerB);
+            lk.score = Math.max(0, Math.min(100, lk.score + ef.pairChemistryDelta));
+            if (lk.score >= 85) lk.title = "\u9EC4\u91D1\u8FDE\u7EBF";
+          }
+        }
+        if (ef.nextMatchBuff && this.state.interMatchPrep) {
+          const prev = this.state.interMatchPrep.nextMatchBuff ?? {};
+          this.state.interMatchPrep.nextMatchBuff = {
+            ...prev,
+            passingBonus: (prev.passingBonus ?? 0) + (ef.nextMatchBuff.passingBonus ?? 0),
+            shootingBonus: (prev.shootingBonus ?? 0) + (ef.nextMatchBuff.shootingBonus ?? 0),
+            defendingBonus: (prev.defendingBonus ?? 0) + (ef.nextMatchBuff.defendingBonus ?? 0),
+            paceBonus: (prev.paceBonus ?? 0) + (ef.nextMatchBuff.paceBonus ?? 0),
+            composureBonus: (prev.composureBonus ?? 0) + (ef.nextMatchBuff.composureBonus ?? 0),
+            note: ef.nextMatchBuff.note
+          };
+        }
+        const tierTag = rolledTier === "jackpot" ? "\u8D85\u989D\u66B4\u51FB" : rolledTier === "negative" ? "\u89E6\u53D1\u4EE3\u4EF7" : "\u5E38\u89C4\u6536\u76CA";
+        rw.completed = true;
+        rw.summaryText = `[${tierTag}] ${outcome.label}\uFF1A${outcome.summary}`;
+        return { ok: true, summary: rw.summaryText, gambleTier: rolledTier };
       }
       return { ok: false, reason: "\u672A\u77E5\u5956\u52B1\u7C7B\u578B" };
     }
@@ -11849,15 +12648,6 @@
           }
           aiClub.starterIds = autoSelectStarters(aiClub.squad, aiClub.formation);
         }
-        const club = this.getUserClub();
-        this.state.reDraft = createReDraftOffer(
-          r,
-          club.perks.map((p) => p.id),
-          this.getMetaLevels(),
-          tier
-        );
-        this.state.phase = "RE_DRAFT";
-        return;
       }
       if (this.state.phase === "REGULAR_SEASON" && r >= TOTAL_REGULAR_ROUNDS) {
         const standings = this.getStandings();
@@ -11866,6 +12656,10 @@
         return;
       }
       this.state.currentRound = r + 1;
+      if ((this.state.currentRound === 9 || this.state.currentRound === 17) && this.state.storyline) {
+        const mappedRound = this.state.currentRound === 9 ? 3 : 5;
+        this.state.pendingStoryEvent = createMidSeasonChoice(this.state.storyline, mappedRound);
+      }
     }
     // ==================== 4. Re-Draft 补强 ====================
     swapPlayerInReDraft(dropPlayerId, pickCandidateId) {
@@ -13125,11 +13919,49 @@
       if (hairImg) ctx2.drawImage(hairImg, dx, dy, sq, sq);
       if (accImg) ctx2.drawImage(accImg, dx, dy, sq, sq);
     } else {
-      const roleAssetId = player.role === "GK" ? "role_gk" : ["CB", "LB", "RB", "LWB", "RWB"].includes(player.role) ? "role_def" : ["CDM", "CM", "CAM", "LM", "RM"].includes(player.role) ? "role_mid" : "role_att";
-      const roleImg = AssetLoader.get(roleAssetId);
-      if (roleImg && typeof ctx2.drawImage === "function") {
-        ctx2.drawImage(roleImg, x, y, w, h);
+      const skins = ["#F8D5B8", "#EAC096", "#D49E6A", "#AE7349", "#7B4B2A", "#FDE2C8"];
+      const hairs = ["#1E293B", "#3E2723", "#78350F", "#D97706", "#0F172A", "#94A3B8"];
+      const skin = skins[faceIdx % skins.length];
+      const hair = hairs[(hairIdx + (player.age >= 31 ? 5 : 0)) % hairs.length];
+      const cx = x + w * 0.5;
+      const headY = y + h * 0.42;
+      const headR = Math.min(w, h) * 0.27;
+      ctx2.fillStyle = primary;
+      ctx2.beginPath();
+      ctx2.moveTo(x + w * 0.12, y + h);
+      ctx2.quadraticCurveTo(cx, y + h * 0.64, x + w * 0.88, y + h);
+      ctx2.closePath();
+      ctx2.fill();
+      ctx2.strokeStyle = secondary;
+      ctx2.lineWidth = 1.6;
+      ctx2.beginPath();
+      ctx2.arc(cx, y + h * 0.72, headR * 0.55, 0.15 * Math.PI, 0.85 * Math.PI);
+      ctx2.stroke();
+      ctx2.fillStyle = skin;
+      ctx2.fillRect(cx - headR * 0.28, headY + headR * 0.55, headR * 0.56, headR * 0.55);
+      ctx2.beginPath();
+      ctx2.ellipse(cx, headY, headR * 0.88, headR, 0, 0, Math.PI * 2);
+      ctx2.fill();
+      ctx2.fillStyle = hair;
+      ctx2.beginPath();
+      if (hairIdx % 3 === 0) {
+        ctx2.arc(cx, headY - headR * 0.24, headR * 0.92, Math.PI, Math.PI * 2);
+      } else if (hairIdx % 3 === 1) {
+        ctx2.ellipse(cx, headY - headR * 0.55, headR * 0.96, headR * 0.52, -0.1, 0, Math.PI * 2);
+      } else {
+        ctx2.arc(cx, headY - headR * 0.16, headR * 0.94, Math.PI * 0.92, Math.PI * 2.08);
       }
+      ctx2.fill();
+      ctx2.fillStyle = "#0F172A";
+      ctx2.beginPath();
+      ctx2.arc(cx - headR * 0.34, headY - headR * 0.04, Math.max(1.2, headR * 0.1), 0, Math.PI * 2);
+      ctx2.arc(cx + headR * 0.34, headY - headR * 0.04, Math.max(1.2, headR * 0.1), 0, Math.PI * 2);
+      ctx2.fill();
+      ctx2.strokeStyle = "rgba(15, 23, 42, 0.55)";
+      ctx2.lineWidth = 1.2;
+      ctx2.beginPath();
+      ctx2.arc(cx, headY + headR * 0.36, headR * 0.26, 0.15 * Math.PI, 0.85 * Math.PI);
+      ctx2.stroke();
     }
     ctx2.restore();
     if (opts?.showFrame !== false) {
@@ -13200,7 +14032,7 @@
       drawRoundRect(ctx2, mx, my, mw, mh, 12, THEME.BG_PANEL, THEME.BORDER_GOLD, 1.5);
       hits.add(mx, my, mw, mh, () => {
       });
-      drawPlayerAvatar(ctx2, mx + 24, my + 20, 54, 68, p, void 0, { radius: 6 });
+      drawPlayerAvatar(ctx2, mx + 22, my + 16, 62, 74, p, void 0, { radius: 8 });
       const revealedSet = this.scoutFog ? this.getRevealedKeys(p, this.revealCount) : null;
       drawBadge(ctx2, mx + 92, my + 24, 30, 22, this.scoutFog ? "?" : p.tier, this.scoutFog ? "#334155" : tierColor(p.tier), this.scoutFog ? THEME.GOLD_LIGHT : void 0);
       drawBadge(ctx2, mx + 130, my + 24, 44, 22, p.role, "#1E293B", THEME.TX1);
@@ -13547,13 +14379,25 @@
       this.fuseSlots = [null, null];
       this.focus = "balanced";
       this.bagFilter = "all";
-      this.midTab = "detail";
       this.bagPage = 0;
       this.selected = null;
-      this.notice = "\u70B9\u51FB\u5DE6\u4FA7\u5361\u724C\u67E5\u770B\u8BE6\u60C5\uFF0C\u70B9\u300C\u653E\u5165\u624B\u724C\u300D\u6216\u300C+ \u5165\u7089\u300D";
+      this.detailModalOpen = false;
+      this.recipesModalOpen = false;
+      this.notice = "\u70B9\u51FB\u5361\u9762\u67E5\u770B\u8BE6\u60C5\uFF0C\u6216\u76F4\u63A5\u70B9\u300C\u653E\u5165\u624B\u724C / + \u5165\u7089\u300D\u5FEB\u901F\u6784\u7B51";
       this.fusionFlash = 0;
       this.animTime = 0;
       this.slotPopTimers = [0, 0, 0, 0];
+    }
+    handleEscape() {
+      if (this.detailModalOpen) {
+        this.detailModalOpen = false;
+        return true;
+      }
+      if (this.recipesModalOpen) {
+        this.recipesModalOpen = false;
+        return true;
+      }
+      return false;
     }
     update(dtSec) {
       this.animTime += dtSec;
@@ -13566,9 +14410,6 @@
         }
       }
     }
-    /**
-     * 根据卡牌等级 (Lv.1~4) 与负面反噬状态绘制动态等级粒子与黑色煞气粒子
-     */
     drawCardAuraParticles(ctx2, x, y, w, h, lv, isCorrupted, seed, compact = false) {
       const t = this.animTime;
       const count = lv >= 4 ? compact ? 7 : 14 : lv === 3 ? compact ? 5 : 10 : lv === 2 ? compact ? 3 : 6 : compact ? 2 : 3;
@@ -13696,8 +14537,12 @@
       const club = league.getUserClub();
       const totalElements = TACTICAL_ELEMENTS.reduce((s, e) => s + (inv[e.id] ?? 0), 0);
       const cardBackImg = AssetLoader.get("command_card_back");
-      if (this.selected?.kind === "card" && !deck.some((c) => c.id === this.selected.cardId)) {
-        this.selected = deck[0] ? { kind: "card", cardId: deck[0].id } : { kind: "base", elemId: "press" };
+      if (this.selected && this.selected.kind === "card") {
+        const selCardId = this.selected.cardId;
+        if (!deck.some((c) => c.id === selCardId)) {
+          this.selected = deck[0] ? { kind: "card", cardId: deck[0].id } : { kind: "base", elemId: "press" };
+          this.detailModalOpen = false;
+        }
       }
       if (!this.selected) {
         this.selected = deck[0] ? { kind: "card", cardId: deck[0].id } : { kind: "base", elemId: "press" };
@@ -13712,17 +14557,21 @@
         rightAction: { label: "\u8FD4\u56DE\u95E8\u6237", variant: "ghost", onClick: () => actions.onNavigate("portal") }
       });
       drawNavRail(ctx2, hits, "cards", actions.onNavigate);
-      drawChamferPanel(ctx2, 96, 80, 480, 624, 10, "rgba(14, 22, 40, 0.94)", THEME.BORDER);
-      drawText(ctx2, `\u51FA\u6218\u624B\u724C (${loadoutIds.length}/4 \xB7 \u6BD4\u8D5B\u65E5\u643A\u5E26)`, 112, 98, {
-        size: 13,
+      drawChamferPanel(ctx2, 96, 80, 660, 624, 10, "rgba(14, 22, 40, 0.94)", THEME.BORDER);
+      drawText(ctx2, `\u51FA\u6218\u624B\u724C (${loadoutIds.length}/4 \xB7 \u6BD4\u8D5B\u65E5\u643A\u5E26)`, 114, 100, {
+        size: 14,
         bold: true,
         color: THEME.GOLD_LIGHT
       });
+      drawButton(ctx2, hits, 640, 88, 100, 26, "\u914D\u65B9\u56FE\u9274 \u{1F4D6}", () => {
+        this.recipesModalOpen = true;
+      }, { variant: "primary", fontSize: 11 });
+      const selCardForQuickEquip = this.selected && this.selected.kind === "card" ? deck.find((c) => c.id === this.selected.cardId) : null;
       for (let i = 0; i < 4; i++) {
-        const sx = 110 + i * 114;
-        const sy = 114;
-        const sw = 108;
-        const sh = 78;
+        const sx = 114 + i * 158;
+        const sy = 118;
+        const sw = 150;
+        const sh = 82;
         const cid = loadoutIds[i];
         const card = cid ? deck.find((c) => c.id === cid) : void 0;
         if (card) {
@@ -13730,31 +14579,31 @@
           const lvCol = this.lvColor(lv);
           const isSel = this.selected?.kind === "card" && this.selected.cardId === card.id;
           const artImg = AssetLoader.get(this.cardArtId(card));
-          drawChamferPanel(ctx2, sx, sy, sw, sh, 7, "rgba(20, 34, 58, 0.96)", isSel ? THEME.GOLD_LIGHT : lvCol, isSel ? 1.8 : 1.2);
+          drawChamferPanel(ctx2, sx, sy, sw, sh, 8, "rgba(20, 34, 58, 0.96)", isSel ? THEME.GOLD_LIGHT : lvCol, isSel ? 1.8 : 1.2);
           if (artImg && typeof ctx2.drawImage === "function") {
             ctx2.save();
             ctx2.beginPath();
             ctx2.rect(sx + 2, sy + 2, sw - 4, sh - 4);
             ctx2.clip();
             ctx2.globalAlpha = 0.22;
-            ctx2.drawImage(artImg, sx + 34, sy, sw - 34, sh);
+            ctx2.drawImage(artImg, sx + 48, sy, sw - 48, sh);
             ctx2.restore();
           }
           this.drawCardAuraParticles(ctx2, sx + 2, sy + 2, sw - 4, sh - 4, lv, !!card.isCorrupted, i + card.name.length, true);
-          drawBadge(ctx2, sx + 6, sy + 6, 24, 15, `E${card.cost}`, "#1E3A5F", THEME.GOLD_LIGHT);
-          drawBadge(ctx2, sx + 33, sy + 6, 28, 15, `Lv.${lv}`, "#0F172A", lvCol);
-          drawText(ctx2, card.name.slice(0, 7), sx + 6, sy + 36, { size: 11, bold: true, color: THEME.TX1 });
+          drawBadge(ctx2, sx + 8, sy + 7, 26, 16, `E${card.cost}`, "#1E3A5F", THEME.GOLD_LIGHT);
+          drawBadge(ctx2, sx + 38, sy + 7, 32, 16, `Lv.${lv}`, "#0F172A", lvCol);
+          drawText(ctx2, card.name.slice(0, 8), sx + 8, sy + 39, { size: 12.5, bold: true, color: THEME.TX1 });
           const mech = card.mechanic ? MECHANIC_LABELS[card.mechanic] : this.statSnippet(card);
-          drawText(ctx2, mech.slice(0, 9), sx + 6, sy + 56, { size: 9, color: "#7DD3FC" });
+          drawText(ctx2, mech.slice(0, 11), sx + 8, sy + 61, { size: 10.5, color: "#7DD3FC" });
           hits.add(sx, sy, sw, sh, () => {
             SoundEngine.playClick();
             this.selected = { kind: "card", cardId: card.id };
-            this.midTab = "detail";
+            this.detailModalOpen = true;
           });
-          const xHover = hits.isHovered(sx + sw - 22, sy + 3, 18, 18);
-          drawRoundRect(ctx2, sx + sw - 22, sy + 4, 17, 17, 4, xHover ? "#991B1B" : "rgba(15, 23, 42, 0.85)", xHover ? THEME.RED_LIGHT : THEME.BORDER);
-          drawText(ctx2, "\xD7", sx + sw - 13.5, sy + 12.5, { size: 12, bold: true, color: xHover ? "#FFFFFF" : "#FCA5A5", align: "center" });
-          hits.add(sx + sw - 24, sy + 2, 22, 22, () => {
+          const xHover = hits.isHovered(sx + sw - 24, sy + 4, 20, 20);
+          drawRoundRect(ctx2, sx + sw - 24, sy + 5, 19, 19, 4, xHover ? "#991B1B" : "rgba(15, 23, 42, 0.85)", xHover ? THEME.RED_LIGHT : THEME.BORDER);
+          drawText(ctx2, "\xD7", sx + sw - 14.5, sy + 14.5, { size: 13, bold: true, color: xHover ? "#FFFFFF" : "#FCA5A5", align: "center" });
+          hits.add(sx + sw - 26, sy + 2, 24, 24, () => {
             const res = league.toggleLoadoutCard(card.id);
             if (!res.ok) this.notice = res.reason || "\u5378\u4E0B\u5931\u8D25";
             else {
@@ -13764,27 +14613,26 @@
             }
           });
         } else {
-          const selCard = this.selected?.kind === "card" ? deck.find((c) => c.id === this.selected.cardId) : null;
-          const canQuickEquip = !!(selCard && !loadoutSet.has(selCard.id));
+          const canQuickEquip = !!(selCardForQuickEquip && !loadoutSet.has(selCardForQuickEquip.id));
           drawRoundRect(
             ctx2,
             sx,
             sy,
             sw,
             sh,
-            7,
+            8,
             "rgba(11, 17, 30, 0.6)",
             canQuickEquip ? "rgba(34, 197, 94, 0.45)" : "rgba(148, 163, 184, 0.22)"
           );
-          drawText(ctx2, `\u624B\u724C\u69FD ${i + 1}`, sx + sw / 2, sy + 28, { size: 10, color: THEME.TX3, align: "center" });
-          drawText(ctx2, canQuickEquip ? "\u70B9\u6B64\u653E\u5165" : "\u7A7A\u7F6E", sx + sw / 2, sy + 48, {
-            size: 9.5,
+          drawText(ctx2, `\u624B\u724C\u69FD ${i + 1}`, sx + sw / 2, sy + 30, { size: 11.5, color: THEME.TX3, align: "center" });
+          drawText(ctx2, canQuickEquip ? "\u70B9\u6B64\u653E\u5165" : "\u7A7A\u7F6E", sx + sw / 2, sy + 54, {
+            size: 11,
             color: canQuickEquip ? THEME.GREEN : THEME.TX3,
             align: "center"
           });
-          if (canQuickEquip && selCard) {
+          if (canQuickEquip && selCardForQuickEquip) {
             hits.add(sx, sy, sw, sh, () => {
-              const res = league.toggleLoadoutCard(selCard.id);
+              const res = league.toggleLoadoutCard(selCardForQuickEquip.id);
               if (res.ok) {
                 SoundEngine.playClick();
                 actions.onSave();
@@ -13793,7 +14641,7 @@
           }
         }
       }
-      drawText(ctx2, "\u5361\u724C\u80CC\u5305", 112, 210, { size: 13, bold: true, color: THEME.TX1 });
+      drawText(ctx2, "\u5361\u724C\u80CC\u5305\uFF08\u70B9\u5361\u9762\u770B\u8BE6\u60C5\u4E0E\u5347\u9636\uFF09", 114, 222, { size: 13.5, bold: true, color: THEME.TX1 });
       const filters = [
         ["all", "\u5168\u90E8"],
         ["base", "\u57FA\u7840\u5361"],
@@ -13801,10 +14649,10 @@
         ["equipped", "\u51FA\u6218\u4E2D"]
       ];
       filters.forEach(([fk, fl], fi) => {
-        drawButton(ctx2, hits, 326 + fi * 60, 198, 56, 24, fl, () => {
+        drawButton(ctx2, hits, 456 + fi * 72, 209, 66, 26, fl, () => {
           this.bagFilter = fk;
           this.bagPage = 0;
-        }, { active: this.bagFilter === fk, fontSize: 10 });
+        }, { active: this.bagFilter === fk, fontSize: 11 });
       });
       const bagItems = [];
       if (this.bagFilter === "all" || this.bagFilter === "base") {
@@ -13818,17 +14666,17 @@
           bagItems.push({ kind: "card", card: c });
         }
       }
-      const pageSize = 6;
+      const pageSize = 8;
       const totalPages = Math.max(1, Math.ceil(bagItems.length / pageSize));
       if (this.bagPage >= totalPages) this.bagPage = totalPages - 1;
       const visibleBag = bagItems.slice(this.bagPage * pageSize, (this.bagPage + 1) * pageSize);
       visibleBag.forEach((item, idx) => {
-        const col = idx % 2;
-        const row = Math.floor(idx / 2);
-        const bx = 110 + col * 230;
-        const by = 232 + row * 142;
-        const bw = 222;
-        const bh = 134;
+        const col = idx % 4;
+        const row = Math.floor(idx / 4);
+        const bx = 114 + col * 158;
+        const by = 242 + row * 204;
+        const bw = 150;
+        const bh = 194;
         if (item.kind === "base") {
           const el = item.elem;
           const count = item.count;
@@ -13845,33 +14693,38 @@
             isSel ? THEME.GOLD_LIGHT : usedInFlask > 0 ? el.color : THEME.BORDER,
             isSel || usedInFlask > 0 ? 1.6 : 1
           );
-          const elemImg = AssetLoader.get(`elem_${el.id}`);
-          if (elemImg && typeof ctx2.drawImage === "function") {
-            ctx2.drawImage(elemImg, bx + 10, by + 10, 34, 34);
-          } else {
-            drawIcon(ctx2, ELEM_ICON[el.id], bx + 27, by + 27, 18, el.color);
-          }
-          drawBadge(ctx2, bx + 50, by + 10, 44, 16, "\u57FA\u7840\u5361", "#1E293B", el.color);
-          drawText(ctx2, `\xD7${count}`, bx + bw - 10, by + 18, {
-            size: 14,
+          drawBadge(ctx2, bx + 8, by + 8, 44, 16, "\u57FA\u7840\u5361", "#1E293B", el.color);
+          drawText(ctx2, `\xD7${count}`, bx + bw - 10, by + 16, {
+            size: 13,
             bold: true,
             color: count > 0 ? THEME.GOLD_LIGHT : THEME.TX3,
             align: "right",
             mono: true
           });
-          drawText(ctx2, `${el.name} [${el.symbol}]`, bx + 50, by + 36, { size: 13, bold: true, color: el.color });
-          drawWrappedText(ctx2, el.desc, bx + 10, by + 56, bw - 20, 14, { size: 9.5, color: THEME.TX2, maxLines: 2 });
-          hits.add(bx, by, bw, 94, () => {
+          drawRoundRect(ctx2, bx + 10, by + 30, bw - 20, 62, 6, "rgba(8, 12, 20, 0.72)", el.color, 0.9);
+          const elemImg = AssetLoader.get(`elem_${el.id}`);
+          if (elemImg && typeof ctx2.drawImage === "function") {
+            ctx2.drawImage(elemImg, bx + bw / 2 - 22, by + 39, 44, 44);
+          } else {
+            drawIcon(ctx2, ELEM_ICON[el.id], bx + bw / 2, by + 61, 26, el.color);
+          }
+          drawText(ctx2, `${el.name} [${el.symbol}]`, bx + bw / 2, by + 108, {
+            size: 13,
+            bold: true,
+            color: el.color,
+            align: "center"
+          });
+          drawWrappedText(ctx2, el.desc, bx + 10, by + 122, bw - 20, 14, { size: 9.5, color: THEME.TX2, maxLines: 2 });
+          hits.add(bx, by, bw, 152, () => {
             SoundEngine.playClick();
             this.selected = { kind: "base", elemId: el.id };
-            this.midTab = "detail";
+            this.detailModalOpen = true;
           });
           const canDirectHand = count > 0 && deck.length < 12 && loadoutIds.length < 4;
-          drawButton(ctx2, hits, bx + 10, by + 98, 98, 26, "\u653E\u5165\u624B\u724C \u25B6", () => {
+          drawButton(ctx2, hits, bx + 8, by + 158, 64, 26, "\u624B\u724C \u25B6", () => {
             const res = league.craftChemistryCard([el.id], "balanced", true);
             if (res.ok && res.card) {
               this.selected = { kind: "card", cardId: res.card.id };
-              this.midTab = "detail";
               this.notice = `\u5DF2\u63D0\u70BC Lv.1\u3010${res.card.name}\u3011\u5E76\u653E\u5165\u624B\u724C\uFF01`;
               SoundEngine.playRewardChime();
               actions.onSave();
@@ -13879,7 +14732,7 @@
               this.notice = res.reason || "\u624B\u724C\u6216\u5361\u5E93\u5DF2\u6EE1";
             }
           }, { variant: canDirectHand ? "green" : "ghost", disabled: !canDirectHand, fontSize: 10 });
-          drawButton(ctx2, hits, bx + 114, by + 98, 98, 26, usedInFlask > 0 ? `\u5DF2\u5165\u7089 \xD7${usedInFlask}` : "+ \u5165\u7089\u5408\u6210", () => {
+          drawButton(ctx2, hits, bx + 76, by + 158, 66, 26, usedInFlask > 0 ? `\u7089\xD7${usedInFlask}` : "+ \u5165\u7089", () => {
             this.addBaseToForge(el.id);
           }, { variant: usedInFlask > 0 ? "gold" : "primary", disabled: count <= 0, fontSize: 10 });
         } else {
@@ -13902,49 +14755,50 @@
             isSel ? THEME.GOLD_LIGHT : inFuse ? "#C084FC" : equipped ? THEME.GREEN : lv >= 3 ? lvCol : THEME.BORDER,
             isSel || equipped || inFuse ? 1.6 : 1
           );
+          drawBadge(ctx2, bx + 8, by + 8, 24, 16, `E${card.cost}`, "#1E3A5F", THEME.GOLD_LIGHT);
+          drawBadge(ctx2, bx + 35, by + 8, 30, 16, `Lv.${lv}`, "#0F172A", lvCol);
+          if (equipped) {
+            drawBadge(ctx2, bx + bw - 48, by + 8, 40, 16, "\u51FA\u6218", "#14532D", THEME.GREEN);
+          } else if (elemImg && typeof ctx2.drawImage === "function") {
+            ctx2.drawImage(elemImg, bx + bw - 26, by + 6, 18, 18);
+          }
+          drawRoundRect(ctx2, bx + 8, by + 29, bw - 16, 66, 6, "#0B1220", lvCol, 0.9);
           if (artImg && typeof ctx2.drawImage === "function") {
             ctx2.save();
             ctx2.beginPath();
-            ctx2.rect(bx + 2, by + 2, bw - 4, 52);
+            ctx2.rect(bx + 9, by + 30, bw - 18, 64);
             ctx2.clip();
-            ctx2.globalAlpha = 0.28;
-            ctx2.drawImage(artImg, bx + 80, by - 4, bw - 80, 64);
+            ctx2.drawImage(artImg, bx + 9, by + 26, bw - 18, 72);
             ctx2.restore();
           } else if (cardBackImg && typeof ctx2.drawImage === "function") {
             ctx2.save();
             ctx2.beginPath();
-            ctx2.rect(bx + 2, by + 2, bw - 4, bh - 4);
+            ctx2.rect(bx + 9, by + 30, bw - 18, 64);
             ctx2.clip();
-            ctx2.globalAlpha = 0.14;
-            ctx2.drawImage(cardBackImg, bx, by, bw, bh);
+            ctx2.globalAlpha = 0.25;
+            ctx2.drawImage(cardBackImg, bx + 9, by + 30, bw - 18, 64);
             ctx2.restore();
           }
-          this.drawCardAuraParticles(ctx2, bx + 2, by + 2, bw - 4, 54, lv, !!card.isCorrupted, idx + card.name.length, true);
-          drawBadge(ctx2, bx + 8, by + 8, 24, 16, `E${card.cost}`, "#1E3A5F", THEME.GOLD_LIGHT);
-          drawBadge(ctx2, bx + 35, by + 8, 30, 16, `Lv.${lv}`, "#0F172A", lvCol);
-          if (elemImg && typeof ctx2.drawImage === "function") {
-            ctx2.drawImage(elemImg, bx + 68, by + 7, 18, 18);
-          }
-          if (equipped) {
-            drawBadge(ctx2, bx + bw - 54, by + 8, 46, 16, "\u51FA\u6218\u4E2D", "#14532D", THEME.GREEN);
-          }
-          drawText(ctx2, card.name.slice(0, 9), bx + 8, by + 38, {
+          this.drawCardAuraParticles(ctx2, bx + 9, by + 30, bw - 18, 64, lv, !!card.isCorrupted, idx + card.name.length, true);
+          drawText(ctx2, card.name.slice(0, 8), bx + bw / 2, by + 110, {
             size: 13,
             bold: true,
-            color: card.isCorrupted ? "#FCA5A5" : THEME.TX1
+            color: card.isCorrupted ? "#FCA5A5" : THEME.TX1,
+            align: "center"
           });
-          const mechTxt = card.mechanic ? `\u26A1 ${MECHANIC_LABELS[card.mechanic]}` : this.statSnippet(card);
-          drawText(ctx2, mechTxt.slice(0, 16), bx + 8, by + 58, { size: 10, bold: true, color: "#7DD3FC" });
-          drawText(ctx2, `${LINE_LABELS[card.targetLine ?? "ALL"]} \xB7 ${card.durationMinutes}\u5206`, bx + 8, by + 76, {
+          const mechTxt = card.mechanic ? `\u26A1${MECHANIC_LABELS[card.mechanic]}` : this.statSnippet(card);
+          drawText(ctx2, mechTxt.slice(0, 12), bx + bw / 2, by + 128, { size: 10, bold: true, color: "#7DD3FC", align: "center" });
+          drawText(ctx2, `${LINE_LABELS[card.targetLine ?? "ALL"]} \xB7 ${card.durationMinutes}\u5206`, bx + bw / 2, by + 144, {
             size: 9.5,
-            color: THEME.TX2
+            color: THEME.TX2,
+            align: "center"
           });
-          hits.add(bx, by, bw, 94, () => {
+          hits.add(bx, by, bw, 152, () => {
             SoundEngine.playClick();
             this.selected = { kind: "card", cardId: card.id };
-            this.midTab = "detail";
+            this.detailModalOpen = true;
           });
-          drawButton(ctx2, hits, bx + 8, by + 98, 98, 26, equipped ? "\u79FB\u51FA\u624B\u724C" : "\u653E\u5165\u624B\u724C \u25B6", () => {
+          drawButton(ctx2, hits, bx + 8, by + 158, 64, 26, equipped ? "\u79FB\u51FA" : "\u51FA\u6218", () => {
             const res = league.toggleLoadoutCard(card.id);
             if (!res.ok) this.notice = res.reason || "\u64CD\u4F5C\u5931\u8D25";
             else {
@@ -13952,222 +14806,83 @@
               actions.onSave();
             }
           }, { variant: equipped ? "green" : "primary", fontSize: 10 });
-          drawButton(ctx2, hits, bx + 114, by + 98, 100, 26, inFuse ? "\u5DF2\u5165\u878D\u5408" : "+ \u878D\u5408\u5347\u9636", () => {
+          drawButton(ctx2, hits, bx + 76, by + 158, 66, 26, inFuse ? "\u5DF2\u5165\u7089" : "+ \u878D\u5408", () => {
             this.addCardToForge(card.id);
           }, { variant: inFuse ? "gold" : "ghost", fontSize: 10 });
         }
       });
       if (totalPages > 1) {
-        drawButton(ctx2, hits, 110, 666, 92, 26, "\u4E0A\u4E00\u9875", () => {
+        drawButton(ctx2, hits, 114, 666, 108, 28, "\u4E0A\u4E00\u9875", () => {
           this.bagPage = Math.max(0, this.bagPage - 1);
-        }, { disabled: this.bagPage === 0, fontSize: 10 });
-        drawText(ctx2, `\u7B2C ${this.bagPage + 1} / ${totalPages} \u9875`, 336, 679, {
-          size: 11,
+        }, { disabled: this.bagPage === 0, fontSize: 11 });
+        drawText(ctx2, `\u7B2C ${this.bagPage + 1} / ${totalPages} \u9875`, 426, 680, {
+          size: 12,
           color: THEME.TX2,
           align: "center"
         });
-        drawButton(ctx2, hits, 470, 666, 92, 26, "\u4E0B\u4E00\u9875", () => {
+        drawButton(ctx2, hits, 632, 666, 108, 28, "\u4E0B\u4E00\u9875", () => {
           this.bagPage = Math.min(totalPages - 1, this.bagPage + 1);
-        }, { disabled: this.bagPage >= totalPages - 1, fontSize: 10 });
+        }, { disabled: this.bagPage >= totalPages - 1, fontSize: 11 });
       }
-      drawButton(ctx2, hits, 594, 84, 124, 28, "\u5361\u724C\u8BE6\u60C5", () => {
-        this.midTab = "detail";
-      }, { active: this.midTab === "detail", fontSize: 11 });
-      drawButton(ctx2, hits, 724, 84, 124, 28, "\u914D\u65B9\u56FE\u9274", () => {
-        this.midTab = "recipes";
-      }, { active: this.midTab === "recipes", fontSize: 11 });
-      if (this.midTab === "detail") {
-        if (this.selected?.kind === "base") {
-          const el = TACTICAL_ELEMENTS.find((e) => e.id === this.selected.elemId) ?? TACTICAL_ELEMENTS[0];
-          const count = inv[el.id] ?? 0;
-          const elemImg = AssetLoader.get(`elem_${el.id}`);
-          drawChamferPanel(ctx2, 594, 148, 254, 524, 12, "rgba(17, 27, 49, 0.96)", el.color, 1.6, el.color);
-          drawRoundRect(ctx2, 606, 160, 230, 176, 8, "rgba(8, 12, 20, 0.85)", el.color);
-          if (elemImg && typeof ctx2.drawImage === "function") {
-            ctx2.drawImage(elemImg, 661, 188, 120, 120);
-          } else {
-            drawIcon(ctx2, ELEM_ICON[el.id], 721, 248, 52, el.color);
-          }
-          drawBadge(ctx2, 614, 168, 52, 18, "\u57FA\u7840\u5361", "#1E293B", el.color);
-          drawBadge(ctx2, 774, 168, 54, 18, `\xD7${count}`, "#0F172A", THEME.GOLD_LIGHT);
-          drawText(ctx2, `${el.name} [${el.symbol}]`, 721, 358, { size: 18, bold: true, color: el.color, align: "center" });
-          drawWrappedText(ctx2, el.desc, 612, 384, 218, 18, { size: 11.5, color: THEME.TX1, maxLines: 4 });
-          drawRoundRect(ctx2, 612, 470, 218, 118, 6, "rgba(11, 17, 30, 0.78)");
-          drawWrappedText(ctx2, "\u2022 \u300C\u653E\u5165\u624B\u724C\u300D\uFF1A\u63D0\u70BC Lv.1 \u4F4D\u7F6E\u5361\u7ACB\u5373\u51FA\u6218", 622, 482, 198, 18, { size: 10.5, color: "#7DD3FC", maxLines: 2 });
-          drawWrappedText(ctx2, "\u2022 \u300C\u6295\u5165\u5408\u6210\u5668\u300D\uFF1A1~4 \u5F20\u6DF7\u642D\u5408\u6210\u9AD8\u9636\u5361\u4E0E\u8FDE\u9501\u6548\u679C", 622, 526, 198, 18, { size: 10.5, color: "#7DD3FC", maxLines: 3 });
-          drawButton(ctx2, hits, 612, 606, 218, 46, `+ \u6295\u5165\u5408\u6210\u5668 (${el.name})`, () => {
-            this.addBaseToForge(el.id);
-          }, { variant: "primary", disabled: count <= 0, fontSize: 12, icon: "craft" });
-        } else if (this.selected?.kind === "card") {
-          const card = deck.find((c) => c.id === this.selected.cardId);
-          if (card) {
-            const lv = card.level ?? 1;
-            const lvCol = this.lvColor(lv);
-            const equipped = loadoutSet.has(card.id);
-            const artImg = AssetLoader.get(this.cardArtId(card));
-            const elemImg = AssetLoader.get(`elem_${this.cardElemId(card)}`);
-            const frameImg = lv >= 4 ? AssetLoader.get("card_frame_s") : lv === 3 ? AssetLoader.get("card_frame_a") : null;
-            drawChamferPanel(ctx2, 594, 148, 254, 524, 12, "rgba(17, 27, 49, 0.96)", lvCol, 1.8, lvCol);
-            drawRoundRect(ctx2, 606, 160, 230, 182, 8, "#0B1220", lvCol);
-            if (artImg && typeof ctx2.drawImage === "function") {
-              ctx2.save();
-              ctx2.beginPath();
-              ctx2.rect(608, 162, 226, 178);
-              ctx2.clip();
-              ctx2.drawImage(artImg, 608, 158, 226, 188);
-              ctx2.restore();
-            }
-            this.drawCardAuraParticles(ctx2, 608, 162, 226, 178, lv, !!card.isCorrupted, card.name.length + lv * 7, false);
-            if (frameImg && typeof ctx2.drawImage === "function") {
-              ctx2.save();
-              ctx2.globalAlpha = 0.72;
-              ctx2.drawImage(frameImg, 604, 158, 234, 186);
-              ctx2.restore();
-            }
-            drawBadge(ctx2, 614, 168, 28, 18, `E${card.cost}`, "#1E3A5F", THEME.GOLD_LIGHT);
-            drawBadge(ctx2, 646, 168, 36, 18, `Lv.${lv}`, "#0F172A", lvCol);
-            drawBadge(ctx2, 766, 168, 62, 18, LINE_LABELS[card.targetLine ?? "ALL"], "#0F172A", THEME.TX1);
-            if (elemImg && typeof ctx2.drawImage === "function") {
-              ctx2.drawImage(elemImg, 796, 302, 34, 34);
-            }
-            drawText(ctx2, card.name, 612, 362, { size: 16, bold: true, color: card.isCorrupted ? "#FCA5A5" : THEME.GOLD_LIGHT });
-            drawText(ctx2, `\u6301\u7EED ${card.durationMinutes} \u5206\u949F`, 830, 362, { size: 10, color: THEME.TX2, align: "right" });
-            let infoY = 382;
-            if (card.mechanic) {
-              drawRoundRect(ctx2, 610, infoY, 222, 24, 5, "rgba(56, 189, 248, 0.16)", "rgba(56, 189, 248, 0.45)");
-              drawText(ctx2, `\u26A1 ${MECHANIC_LABELS[card.mechanic]}`, 618, infoY + 12, { size: 10.5, bold: true, color: "#7DD3FC" });
-              infoY += 30;
-            }
-            if (card.chainEffect) {
-              drawRoundRect(ctx2, 610, infoY, 222, 24, 5, "rgba(192, 132, 252, 0.16)", "rgba(192, 132, 252, 0.45)");
-              drawText(ctx2, `\u{1F517} ${card.chainEffect.label.slice(0, 15)}`, 618, infoY + 12, { size: 10, bold: true, color: "#E9D5FF" });
-              infoY += 30;
-            }
-            drawWrappedText(ctx2, card.summary, 612, infoY + 4, 218, 17, { size: 11, color: THEME.TX1, maxLines: 5 });
-            drawButton(ctx2, hits, 610, 576, 222, 38, equipped ? "\u79FB\u51FA\u51FA\u6218\u624B\u724C" : "\u653E\u5165\u51FA\u6218\u624B\u724C \u25B6", () => {
-              const res = league.toggleLoadoutCard(card.id);
-              if (!res.ok) this.notice = res.reason || "\u64CD\u4F5C\u5931\u8D25";
-              else {
-                SoundEngine.playClick();
-                actions.onSave();
-              }
-            }, { variant: equipped ? "green" : "primary", fontSize: 12 });
-            const canUp = lv < 4 && totalElements > 0;
-            drawButton(ctx2, hits, 610, 622, 108, 32, lv >= 4 ? "\u5DF2\u6EE1\u9636" : "\u5347\u9636(1\u6750)", () => {
-              const res = league.upgradeCoachCard(card.id);
-              if (res.ok) {
-                this.fusionFlash = 0.5;
-                this.notice = `\u3010${card.name}\u3011\u5347\u9636\u81F3 Lv.${card.level}\uFF01`;
-                SoundEngine.playRewardChime();
-                actions.onBurst?.(721, 280, THEME.GOLD_LIGHT);
-                actions.onSave();
-              } else {
-                this.notice = res.reason || "\u5347\u9636\u5931\u8D25";
-              }
-            }, { variant: canUp ? "primary" : "ghost", disabled: !canUp, fontSize: 10 });
-            if (deck.length > 2) {
-              drawButton(ctx2, hits, 724, 622, 108, 32, card.isCorrupted ? "\u62C6\u89E3(+2)" : "\u62C6\u89E3\u8FD4\u6750", () => {
-                const res = league.dismantleCoachCard(card.id);
-                if (res.ok) {
-                  const rName = TACTICAL_ELEMENTS.find((e) => e.id === res.refunded)?.name || "\u57FA\u7840\u5361";
-                  this.notice = `\u5DF2\u62C6\u89E3\u3010${card.name}\u3011\uFF0C\u8FD4\u8FD8 ${res.count ?? 1} \u5F20\u3010${rName}\u3011`;
-                  actions.onSave();
-                }
-              }, { variant: "danger", fontSize: 10 });
-            }
-          }
-        }
-      } else {
-        drawText(ctx2, "\u70B9\u51FB\u4EFB\u610F\u6D41\u6D3E\u4E00\u952E\u586B\u5165\u53F3\u4FA7\u5408\u6210\u5668", 596, 130, { size: 11, color: "#7DD3FC" });
-        const recipes = [
-          { name: "\u9AD8\u538B\u62A2\u65AD\u6D41", elems: ["press", "blitz", "iron"], desc: "\u5B9A\u4F4D\u7403\u6838\u6B66 + \u9AD8\u4F4D\u538B\u8FEB", col: "#EF4444" },
-          { name: "\u4F20\u63A7\u8FDE\u9501\u6D41", elems: ["pass", "pass", "wing"], desc: "\u4E24\u7FFC\u8D85\u8F7D + \u5168\u7EBF\u4F20\u5BFC", col: "#38BDF8" },
-          { name: "\u94C1\u8840\u9632\u53CD\u6D41", elems: ["iron", "blitz", "pass"], desc: "\u4F53\u80FD\u8679\u5438 + \u7A33\u56FA\u9632\u5B88", col: "#22C55E" },
-          { name: "\u8FDC\u5C04\u91CD\u70AE\u6D41", elems: ["pass", "pass", "blitz"], desc: "30%\u8FDC\u5C04xG + \u8FDE\u643A\u5171\u9E23", col: "#C084FC" },
-          { name: "\u95E8\u7EBF\u94C1\u58C1\u6D41", elems: ["iron", "iron"], desc: "\u7981\u533A\u5C01\u5835+18% + \u95E8\u5C06\u5F3A\u5316", col: "#10B981" },
-          { name: "\u66B4\u8D70\u55DC\u8840\u6D41", elems: ["blitz", "blitz", "wing"], desc: "\u843D\u540E+8\u5C04/\u901F + \u9AD8\u901F\u7A81\u51FB", col: "#F59E0B" }
-        ];
-        recipes.forEach((rc, ri) => {
-          const ry = 150 + ri * 86;
-          const hovered = hits.isHovered(594, ry, 254, 76);
-          drawChamferPanel(ctx2, 594, ry, 254, 76, 8, hovered ? THEME.BG_CARD_HOVER : "rgba(17, 27, 49, 0.92)", hovered ? rc.col : THEME.BORDER);
-          rc.elems.forEach((eid, ei) => {
-            const eImg = AssetLoader.get(`elem_${eid}`);
-            if (eImg && typeof ctx2.drawImage === "function") {
-              ctx2.drawImage(eImg, 764 + ei * 26, ry + 12, 22, 22);
-            }
-          });
-          drawText(ctx2, rc.name, 608, ry + 22, { size: 13, bold: true, color: rc.col });
-          drawText(ctx2, rc.desc, 608, ry + 42, { size: 10.5, color: THEME.TX2 });
-          const formulaTxt = rc.elems.map((e) => TACTICAL_ELEMENTS.find((t) => t.id === e)?.name).join(" + ");
-          drawText(ctx2, `\u914D\u65B9: ${formulaTxt}`, 608, ry + 60, { size: 9.5, color: THEME.GOLD_LIGHT });
-          hits.add(594, ry, 254, 76, () => {
-            SoundEngine.playClick();
-            this.fuseSlots = [null, null];
-            this.flask = [...rc.elems];
-            this.notice = `\u5DF2\u88C5\u586B\u3010${rc.name}\u3011\uFF0C\u70B9\u53F3\u4FA7\u6309\u94AE\u5373\u53EF\u5408\u6210\uFF01`;
-          });
-        });
-      }
-      drawChamferPanel(ctx2, 866, 80, 398, 624, 10, "rgba(14, 22, 40, 0.96)", THEME.BORDER_GOLD, 1.5, THEME.GOLD_LIGHT);
-      drawIcon(ctx2, "craft", 886, 102, 16, THEME.GOLD_LIGHT);
-      drawText(ctx2, isFuseMode ? "\u5408\u6210\u5668 \xB7 \u53CC\u5361\u878D\u5408\u5347\u9636" : "\u5408\u6210\u5668 \xB7 \u53CD\u5E94\u91DC", 906, 102, {
-        size: 15,
+      drawChamferPanel(ctx2, 772, 80, 492, 624, 10, "rgba(14, 22, 40, 0.96)", THEME.BORDER_GOLD, 1.5, THEME.GOLD_LIGHT);
+      drawIcon(ctx2, "craft", 794, 104, 18, THEME.GOLD_LIGHT);
+      drawText(ctx2, isFuseMode ? "\u5408\u6210\u5668 \xB7 \u53CC\u5361\u878D\u5408\u5347\u9636" : "\u5408\u6210\u5668 \xB7 \u53CD\u5E94\u91DC", 816, 104, {
+        size: 16.5,
         bold: true,
         color: isFuseMode ? "#E9D5FF" : THEME.GOLD_LIGHT
       });
-      drawButton(ctx2, hits, 1180, 89, 70, 24, "\u6E05\u7A7A\u7089", () => {
+      drawButton(ctx2, hits, 1170, 90, 76, 26, "\u6E05\u7A7A\u7089", () => {
         this.flask = [];
         this.fuseSlots = [null, null];
-      }, { variant: "ghost", fontSize: 10, disabled: !isFuseMode && this.flask.length === 0 });
-      drawWrappedText(ctx2, this.notice, 882, 120, 366, 14, { size: 10.5, color: "#7DD3FC", maxLines: 2 });
+      }, { variant: "ghost", fontSize: 11, disabled: !isFuseMode && this.flask.length === 0 });
+      drawWrappedText(ctx2, this.notice, 790, 124, 456, 16, { size: 11.5, color: "#7DD3FC", maxLines: 2 });
       if (!isFuseMode) {
         for (let i = 0; i < 4; i++) {
           const col = i % 2;
           const row = Math.floor(i / 2);
-          const sx = 882 + col * 186;
-          const sy = 156 + row * 72;
+          const sx = 790 + col * 232;
+          const sy = 160 + row * 74;
           const eid = this.flask[i];
           const edef = eid ? TACTICAL_ELEMENTS.find((e) => e.id === eid) : null;
           const popT = this.slotPopTimers[i] ?? 0;
           const popScale = popT > 0 ? 1 + 0.12 * Math.sin(popT / 0.26 * Math.PI) : 1;
           ctx2.save();
           if (popScale !== 1) {
-            ctx2.translate(sx + 90, sy + 32);
+            ctx2.translate(sx + 112, sy + 33);
             ctx2.scale(popScale, popScale);
-            ctx2.translate(-(sx + 90), -(sy + 32));
+            ctx2.translate(-(sx + 112), -(sy + 33));
           }
-          drawChamferPanel(ctx2, sx, sy, 180, 64, 8, "rgba(19, 30, 54, 0.9)", edef ? edef.color : THEME.BORDER, edef ? 1.5 : 1);
+          drawChamferPanel(ctx2, sx, sy, 224, 66, 8, "rgba(19, 30, 54, 0.9)", edef ? edef.color : THEME.BORDER, edef ? 1.5 : 1);
           if (edef) {
             const img = AssetLoader.get(`elem_${edef.id}`);
-            if (img && typeof ctx2.drawImage === "function") ctx2.drawImage(img, sx + 14, sy + 15, 34, 34);
-            drawText(ctx2, edef.name, sx + 56, sy + 24, { size: 13, bold: true, color: edef.color });
-            drawText(ctx2, `\u69FD${i + 1} \xB7 \u70B9\u79FB\u9664`, sx + 56, sy + 44, { size: 9.5, color: THEME.TX3 });
-            hits.add(sx, sy, 180, 64, () => {
+            if (img && typeof ctx2.drawImage === "function") ctx2.drawImage(img, sx + 14, sy + 15, 36, 36);
+            drawText(ctx2, edef.name, sx + 60, sy + 24, { size: 14, bold: true, color: edef.color });
+            drawText(ctx2, `\u69FD${i + 1} \xB7 \u70B9\u51FB\u79FB\u9664`, sx + 60, sy + 46, { size: 10.5, color: THEME.TX3 });
+            hits.add(sx, sy, 224, 66, () => {
               SoundEngine.playClick();
               this.flask.splice(i, 1);
             });
           } else {
-            drawText(ctx2, `+ \u69FD\u4F4D ${i + 1}`, sx + 90, sy + 32, { size: 12, color: THEME.TX3, align: "center" });
+            drawText(ctx2, `+ \u53CD\u5E94\u69FD\u4F4D ${i + 1}`, sx + 112, sy + 33, { size: 12.5, color: THEME.TX3, align: "center" });
           }
           ctx2.restore();
         }
         if (this.fusionFlash > 0) {
-          const r = 24 + (1 - this.fusionFlash / 0.6) * 115;
+          const r = 24 + (1 - this.fusionFlash / 0.6) * 125;
           ctx2.save();
           ctx2.globalAlpha = Math.min(1, this.fusionFlash * 2);
           ctx2.strokeStyle = THEME.GOLD_LIGHT;
           ctx2.lineWidth = 3.5;
           ctx2.beginPath();
-          ctx2.arc(1065, 224, r, 0, Math.PI * 2);
+          ctx2.arc(1018, 228, r, 0, Math.PI * 2);
           ctx2.stroke();
           ctx2.restore();
         }
-        drawText(ctx2, "\u50AC\u5316\u503E\u5411:", 882, 314, { size: 11, bold: true, color: THEME.TX2 });
+        drawText(ctx2, "\u50AC\u5316\u503E\u5411:", 790, 322, { size: 12, bold: true, color: THEME.TX2 });
         FOCUS_OPTIONS.forEach((opt, fi) => {
-          drawButton(ctx2, hits, 946 + fi * 102, 302, 96, 24, opt.label, () => {
+          drawButton(ctx2, hits, 864 + fi * 128, 309, 120, 26, opt.label, () => {
             this.focus = opt.id;
-          }, { active: this.focus === opt.id, fontSize: 10 });
+          }, { active: this.focus === opt.id, fontSize: 11 });
         });
         if (this.flask.length > 0) {
           const sim = synthesizeChemistry(this.flask, this.focus, false);
@@ -14179,10 +14894,10 @@
           const pArtImg = AssetLoader.get(this.cardArtId(pc));
           drawChamferPanel(
             ctx2,
-            882,
-            340,
-            366,
-            272,
+            790,
+            348,
+            456,
+            266,
             10,
             pc.isCorrupted ? "rgba(127, 29, 29, 0.28)" : "rgba(20, 34, 58, 0.94)",
             sim.stabilityColor,
@@ -14192,38 +14907,38 @@
           if (pArtImg && typeof ctx2.drawImage === "function") {
             ctx2.save();
             ctx2.beginPath();
-            ctx2.rect(884, 342, 362, 86);
+            ctx2.rect(792, 350, 452, 92);
             ctx2.clip();
             ctx2.globalAlpha = 0.24;
-            ctx2.drawImage(pArtImg, 1020, 336, 228, 100);
+            ctx2.drawImage(pArtImg, 960, 344, 286, 108);
             ctx2.restore();
           }
-          this.drawCardAuraParticles(ctx2, 884, 342, 362, 86, pc.level, !!pc.isCorrupted, pc.name.length + this.flask.length * 13, false);
-          drawText(ctx2, "\u4EA7\u7269\u9884\u89C8 \xB7 PREVIEW", 896, 358, { size: 10, bold: true, color: THEME.TX3, mono: true });
-          drawBadge(ctx2, 1170, 349, 64, 18, sim.stability, "#111827", sim.stabilityColor);
-          drawBadge(ctx2, 896, 376, 30, 18, `E${pc.cost}`, "#1E3A5F", THEME.GOLD_LIGHT);
-          drawBadge(ctx2, 930, 376, 38, 18, `Lv.${pc.level}`, "#0F172A", this.lvColor(pc.level));
-          drawBadge(ctx2, 972, 376, 66, 18, LINE_LABELS[pc.targetLine ?? "ALL"], "#1E293B", "#7DD3FC");
-          drawText(ctx2, pc.name, 896, 414, {
-            size: 17,
+          this.drawCardAuraParticles(ctx2, 792, 350, 452, 92, pc.level, !!pc.isCorrupted, pc.name.length + this.flask.length * 13, false);
+          drawText(ctx2, "\u4EA7\u7269\u9884\u89C8 \xB7 PREVIEW", 806, 368, { size: 11, bold: true, color: THEME.TX3, mono: true });
+          drawBadge(ctx2, 1158, 357, 74, 20, sim.stability, "#111827", sim.stabilityColor);
+          drawBadge(ctx2, 806, 386, 32, 19, `E${pc.cost}`, "#1E3A5F", THEME.GOLD_LIGHT);
+          drawBadge(ctx2, 842, 386, 40, 19, `Lv.${pc.level}`, "#0F172A", this.lvColor(pc.level));
+          drawBadge(ctx2, 886, 386, 72, 19, LINE_LABELS[pc.targetLine ?? "ALL"], "#1E293B", "#7DD3FC");
+          drawText(ctx2, pc.name, 806, 424, {
+            size: 18,
             bold: true,
             color: pc.isCorrupted ? "#FCA5A5" : THEME.GOLD_LIGHT
           });
           if (pc.mechanic) {
-            drawRoundRect(ctx2, 896, 434, 338, 24, 5, "rgba(56, 189, 248, 0.16)", "rgba(56, 189, 248, 0.45)");
-            drawText(ctx2, `\u26A1 \u673A\u5236\uFF1A${MECHANIC_LABELS[pc.mechanic]}`, 906, 446, { size: 11, bold: true, color: "#7DD3FC" });
+            drawRoundRect(ctx2, 806, 444, 424, 26, 6, "rgba(56, 189, 248, 0.16)", "rgba(56, 189, 248, 0.45)");
+            drawText(ctx2, `\u26A1 \u673A\u5236\uFF1A${MECHANIC_LABELS[pc.mechanic]}`, 816, 457, { size: 12, bold: true, color: "#7DD3FC" });
           }
           if (pc.chainEffect) {
-            drawRoundRect(ctx2, 896, 464, 338, 22, 5, "rgba(192, 132, 252, 0.16)", "rgba(192, 132, 252, 0.45)");
-            drawText(ctx2, `\u{1F517} ${pc.chainEffect.label}`, 906, 475, { size: 10, bold: true, color: "#E9D5FF" });
+            drawRoundRect(ctx2, 806, 476, 424, 24, 6, "rgba(192, 132, 252, 0.16)", "rgba(192, 132, 252, 0.45)");
+            drawText(ctx2, `\u{1F517} ${pc.chainEffect.label}`, 816, 488, { size: 11, bold: true, color: "#E9D5FF" });
           }
-          drawWrappedText(ctx2, pc.summary, 896, 496, 338, 17, { size: 11, color: THEME.TX1, maxLines: 5 });
+          drawWrappedText(ctx2, pc.summary, 806, 510, 424, 19, { size: 12, color: THEME.TX1, maxLines: 5 });
           drawButton(
             ctx2,
             hits,
-            882,
+            790,
             628,
-            366,
+            456,
             56,
             canCraft ? `\u26A1 \u7ACB\u5373\u5408\u6210 Lv.${pc.level} \u6218\u672F\u5361\uFF01` : deck.length >= 12 ? "\u80CC\u5305\u5361\u5E93\u5DF2\u6EE1 (12/12)" : "\u57FA\u7840\u5361\u5E93\u5B58\u4E0D\u8DB3",
             () => {
@@ -14231,69 +14946,65 @@
               if (res.ok && res.card) {
                 this.fusionFlash = 0.6;
                 this.selected = { kind: "card", cardId: res.card.id };
-                this.midTab = "detail";
                 this.notice = `\u26A1 \u5408\u6210\u6210\u529F\uFF01\u3010${res.card.name}\u3011\u5DF2\u6536\u5165\u5DE6\u4FA7\u80CC\u5305\uFF01`;
                 SoundEngine.playRewardChime();
-                actions.onBurst?.(1065, 224, sim.stabilityColor);
-                actions.onBurst?.(721, 240, THEME.GOLD_LIGHT);
+                actions.onBurst?.(1018, 228, sim.stabilityColor);
                 actions.onSave();
               } else {
                 this.notice = res.reason || "\u5408\u6210\u5931\u8D25";
               }
             },
-            { variant: canCraft ? "gold" : "ghost", disabled: !canCraft, fontSize: 14, icon: canCraft ? "sparkle" : void 0 }
+            { variant: canCraft ? "gold" : "ghost", disabled: !canCraft, fontSize: 15, icon: canCraft ? "sparkle" : void 0 }
           );
         } else {
-          drawChamferPanel(ctx2, 882, 340, 366, 272, 10, "rgba(19, 30, 54, 0.65)", THEME.BORDER);
-          drawText(ctx2, "\u4ECE\u5DE6\u4FA7\u80CC\u5305\u6295\u5165 1~4 \u5F20\u57FA\u7840\u5361", 1065, 464, {
-            size: 12,
+          drawChamferPanel(ctx2, 790, 348, 456, 266, 10, "rgba(19, 30, 54, 0.65)", THEME.BORDER);
+          drawText(ctx2, "\u4ECE\u5DE6\u4FA7\u80CC\u5305\u6295\u5165 1~4 \u5F20\u57FA\u7840\u5361", 1018, 452, {
+            size: 13.5,
             color: THEME.TX3,
             align: "center"
           });
-          drawText(ctx2, "\u6216\u4ECE\u4E2D\u95F4\u300C\u914D\u65B9\u56FE\u9274\u300D\u70B9\u9009\u6D41\u6D3E", 1065, 488, {
-            size: 12,
-            color: THEME.TX3,
-            align: "center"
-          });
+          drawButton(ctx2, hits, 918, 486, 200, 38, "\u6253\u5F00\u914D\u65B9\u56FE\u9274\u4E00\u952E\u586B\u7089 \u{1F4D6}", () => {
+            this.recipesModalOpen = true;
+          }, { variant: "primary", fontSize: 12 });
         }
       } else {
         const cA = this.fuseSlots[0] ? deck.find((c) => c.id === this.fuseSlots[0]) : null;
         const cB = this.fuseSlots[1] ? deck.find((c) => c.id === this.fuseSlots[1]) : null;
         [cA, cB].forEach((card, si) => {
-          const sy = 158 + si * 124;
-          drawChamferPanel(ctx2, 882, sy, 366, 112, 9, "rgba(20, 34, 58, 0.92)", card ? "#C084FC" : THEME.BORDER, card ? 1.5 : 1);
+          const sy = 160 + si * 124;
+          drawChamferPanel(ctx2, 790, sy, 456, 112, 9, "rgba(20, 34, 58, 0.92)", card ? "#C084FC" : THEME.BORDER, card ? 1.5 : 1);
           if (card) {
-            drawBadge(ctx2, 896, sy + 12, 36, 18, `Lv.${card.level ?? 1}`, "#581C87", THEME.GOLD_LIGHT);
-            drawBadge(ctx2, 936, sy + 12, 26, 18, `E${card.cost}`, "#1E3A5F", "#7DD3FC");
-            drawText(ctx2, card.name, 970, sy + 21, { size: 13, bold: true, color: THEME.TX1 });
-            drawWrappedText(ctx2, card.summary, 896, sy + 40, 338, 15, { size: 10, color: "#E9D5FF", maxLines: 3 });
-            drawText(ctx2, "\u70B9\u51FB\u79FB\u9664", 1236, sy + 96, { size: 9.5, color: THEME.TX3, align: "right" });
-            hits.add(882, sy, 366, 112, () => {
+            drawBadge(ctx2, 804, sy + 12, 38, 19, `Lv.${card.level ?? 1}`, "#581C87", THEME.GOLD_LIGHT);
+            drawBadge(ctx2, 846, sy + 12, 28, 19, `E${card.cost}`, "#1E3A5F", "#7DD3FC");
+            drawText(ctx2, card.name, 882, sy + 21, { size: 14, bold: true, color: THEME.TX1 });
+            drawWrappedText(ctx2, card.summary, 804, sy + 42, 428, 17, { size: 11, color: "#E9D5FF", maxLines: 3 });
+            drawText(ctx2, "\u70B9\u51FB\u79FB\u9664", 1232, sy + 96, { size: 10.5, color: THEME.TX3, align: "right" });
+            hits.add(790, sy, 456, 112, () => {
               SoundEngine.playClick();
               this.fuseSlots[si] = null;
             });
           } else {
-            drawText(ctx2, `\u878D\u5408\u69FD\u4F4D ${si + 1}\uFF08\u4ECE\u5DE6\u4FA7\u5361\u5E93\u70B9\u9009\uFF09`, 1065, sy + 56, { size: 12, color: THEME.TX3, align: "center" });
+            drawText(ctx2, `\u878D\u5408\u69FD\u4F4D ${si + 1}\uFF08\u4ECE\u5DE6\u4FA7\u5361\u5E93\u70B9\u9009\uFF09`, 1018, sy + 56, { size: 13, color: THEME.TX3, align: "center" });
           }
         });
-        drawChamferPanel(ctx2, 882, 412, 366, 198, 9, "rgba(168, 85, 247, 0.10)", "#A855F7");
-        drawText(ctx2, "\u53CC\u5361\u4E8C\u5408\u4E00\u5347\u9636\u8BF4\u660E", 898, 434, { size: 13, bold: true, color: "#E9D5FF" });
+        drawChamferPanel(ctx2, 790, 412, 456, 198, 9, "rgba(168, 85, 247, 0.10)", "#A855F7");
+        drawText(ctx2, "\u53CC\u5361\u4E8C\u5408\u4E00\u5347\u9636\u8BF4\u660E", 808, 436, { size: 14, bold: true, color: "#E9D5FF" });
         drawWrappedText(
           ctx2,
           "\u5C06\u80CC\u5305\u4E2D\u4E24\u5F20\u6218\u672F\u5361\u6295\u5165\u4E0A\u65B9\u878D\u5408\u69FD\uFF0C\u4E8C\u5408\u4E00\u751F\u6210\u66F4\u9AD8\u9636\u7684\u65B0\u5361\uFF08\u6700\u9AD8 Lv.4 \u5168\u961F\u751F\u6548\uFF09\uFF0C\u8FBE\u5230 Lv.3 \u4EE5\u4E0A\u81EA\u52A8\u89C9\u9192\u8FDE\u9501\u6548\u679C\uFF01",
-          898,
-          460,
-          334,
-          18,
-          { size: 11, color: THEME.TX2, maxLines: 5 }
+          808,
+          464,
+          420,
+          20,
+          { size: 12, color: THEME.TX2, maxLines: 5 }
         );
         const canFuse = !!(cA && cB && cA.id !== cB.id);
         drawButton(
           ctx2,
           hits,
-          882,
+          790,
           628,
-          366,
+          456,
           56,
           canFuse ? "\u2728 \u7ACB\u5373\u4E8C\u5408\u4E00\u878D\u5408\uFF01" : "\u8BF7\u4ECE\u5DE6\u4FA7\u518D\u9009 1 \u5F20\u5361\u6295\u5165\u878D\u5408",
           () => {
@@ -14303,18 +15014,199 @@
             if (res.ok && res.card) {
               this.fusionFlash = 0.6;
               this.selected = { kind: "card", cardId: res.card.id };
-              this.midTab = "detail";
               this.notice = `\u2728 \u878D\u5408\u6210\u529F\uFF01\u8BDE\u751F Lv.${res.card.level}\u3010${res.card.name}\u3011`;
               SoundEngine.playRewardChime();
-              actions.onBurst?.(1065, 280, "#C084FC");
+              actions.onBurst?.(1018, 280, "#C084FC");
               actions.onSave();
             } else {
               this.notice = res.reason || "\u878D\u5408\u5931\u8D25";
             }
           },
-          { variant: canFuse ? "gold" : "ghost", disabled: !canFuse, fontSize: 14, icon: canFuse ? "sparkle" : void 0 }
+          { variant: canFuse ? "gold" : "ghost", disabled: !canFuse, fontSize: 15, icon: canFuse ? "sparkle" : void 0 }
         );
       }
+      if (this.detailModalOpen) {
+        this.renderDetailModal(ctx2, hits, league, actions);
+      } else if (this.recipesModalOpen) {
+        this.renderRecipesModal(ctx2, hits);
+      }
+    }
+    renderDetailModal(ctx2, hits, league, actions) {
+      const sel = this.selected;
+      if (!sel) return;
+      const inv = league.getElementInventory();
+      const deck = league.getCoachDeck();
+      const loadoutSet = new Set(league.getLoadoutIds());
+      const totalElements = TACTICAL_ELEMENTS.reduce((s, e) => s + (inv[e.id] ?? 0), 0);
+      ctx2.fillStyle = "rgba(4, 7, 14, 0.84)";
+      ctx2.fillRect(0, 0, THEME.W, THEME.H);
+      hits.clear();
+      const mx = 435;
+      const my = 60;
+      const mw = 410;
+      const mh = 600;
+      if (sel.kind === "base") {
+        const el = TACTICAL_ELEMENTS.find((e) => e.id === sel.elemId) ?? TACTICAL_ELEMENTS[0];
+        const count = inv[el.id] ?? 0;
+        const elemImg2 = AssetLoader.get(`elem_${el.id}`);
+        drawChamferPanel(ctx2, mx, my, mw, mh, 14, "rgba(17, 27, 49, 0.98)", el.color, 1.8, el.color);
+        drawBadge(ctx2, mx + 22, my + 18, 58, 22, "\u57FA\u7840\u5361", "#1E293B", el.color);
+        drawBadge(ctx2, mx + 86, my + 18, 68, 22, `\u5E93\u5B58 \xD7${count}`, "#0F172A", THEME.GOLD_LIGHT);
+        drawButton(ctx2, hits, mx + mw - 92, my + 14, 72, 30, "\u5173\u95ED", () => {
+          this.detailModalOpen = false;
+        }, { variant: "ghost", fontSize: 11.5, icon: "close" });
+        drawRoundRect(ctx2, mx + 24, my + 54, mw - 48, 220, 10, "rgba(8, 12, 20, 0.88)", el.color);
+        if (elemImg2 && typeof ctx2.drawImage === "function") {
+          ctx2.drawImage(elemImg2, mx + mw / 2 - 72, my + 92, 144, 144);
+        } else {
+          drawIcon(ctx2, ELEM_ICON[el.id], mx + mw / 2, my + 164, 68, el.color);
+        }
+        drawText(ctx2, `${el.name} [${el.symbol}]`, mx + mw / 2, my + 306, { size: 22, bold: true, color: el.color, align: "center" });
+        drawWrappedText(ctx2, el.desc, mx + 28, my + 338, mw - 56, 22, { size: 13, color: THEME.TX1, maxLines: 3 });
+        drawRoundRect(ctx2, mx + 24, my + 416, mw - 48, 96, 8, "rgba(11, 17, 30, 0.8)");
+        drawWrappedText(ctx2, "\u2022 \u300C\u653E\u5165\u624B\u724C\u300D\uFF1A\u63D0\u70BC Lv.1 \u4F4D\u7F6E\u5361\u7ACB\u5373\u51FA\u6218", mx + 38, my + 432, mw - 76, 22, { size: 12, color: "#7DD3FC", maxLines: 2 });
+        drawWrappedText(ctx2, "\u2022 \u300C\u6295\u5165\u5408\u6210\u5668\u300D\uFF1A1~4 \u5F20\u6DF7\u642D\u5408\u6210\u9AD8\u9636\u5361\u4E0E\u8FDE\u9501\u6548\u679C", mx + 38, my + 466, mw - 76, 22, { size: 12, color: "#7DD3FC", maxLines: 2 });
+        drawButton(ctx2, hits, mx + 24, my + 530, mw - 48, 46, `+ \u6295\u5165\u5408\u6210\u5668 (${el.name})`, () => {
+          this.addBaseToForge(el.id);
+          this.detailModalOpen = false;
+        }, { variant: "primary", disabled: count <= 0, fontSize: 13.5, icon: "craft" });
+        return;
+      }
+      const card = deck.find((c) => c.id === sel.cardId);
+      if (!card) {
+        this.detailModalOpen = false;
+        return;
+      }
+      const lv = card.level ?? 1;
+      const lvCol = this.lvColor(lv);
+      const equipped = loadoutSet.has(card.id);
+      const artImg = AssetLoader.get(this.cardArtId(card));
+      const elemImg = AssetLoader.get(`elem_${this.cardElemId(card)}`);
+      const frameImg = lv >= 4 ? AssetLoader.get("card_frame_s") : lv === 3 ? AssetLoader.get("card_frame_a") : null;
+      drawChamferPanel(ctx2, mx, my, mw, mh, 14, "rgba(17, 27, 49, 0.98)", lvCol, 1.8, lvCol);
+      drawBadge(ctx2, mx + 22, my + 18, 34, 22, `E${card.cost}`, "#1E3A5F", THEME.GOLD_LIGHT);
+      drawBadge(ctx2, mx + 62, my + 18, 44, 22, `Lv.${lv}`, "#0F172A", lvCol);
+      drawBadge(ctx2, mx + 112, my + 18, 76, 22, LINE_LABELS[card.targetLine ?? "ALL"], "#0F172A", THEME.TX1);
+      drawButton(ctx2, hits, mx + mw - 92, my + 14, 72, 30, "\u5173\u95ED", () => {
+        this.detailModalOpen = false;
+      }, { variant: "ghost", fontSize: 11.5, icon: "close" });
+      drawRoundRect(ctx2, mx + 24, my + 54, mw - 48, 220, 10, "#0B1220", lvCol);
+      if (artImg && typeof ctx2.drawImage === "function") {
+        ctx2.save();
+        ctx2.beginPath();
+        ctx2.rect(mx + 26, my + 56, mw - 52, 216);
+        ctx2.clip();
+        ctx2.drawImage(artImg, mx + 26, my + 52, mw - 52, 224);
+        ctx2.restore();
+      }
+      this.drawCardAuraParticles(ctx2, mx + 26, my + 56, mw - 52, 216, lv, !!card.isCorrupted, card.name.length + lv * 7, false);
+      if (frameImg && typeof ctx2.drawImage === "function") {
+        ctx2.save();
+        ctx2.globalAlpha = 0.72;
+        ctx2.drawImage(frameImg, mx + 22, my + 52, mw - 44, 224);
+        ctx2.restore();
+      }
+      if (elemImg && typeof ctx2.drawImage === "function") {
+        ctx2.drawImage(elemImg, mx + mw - 72, my + 224, 38, 38);
+      }
+      drawText(ctx2, card.name, mx + 24, my + 298, { size: 20, bold: true, color: card.isCorrupted ? "#FCA5A5" : THEME.GOLD_LIGHT });
+      drawText(ctx2, `\u6301\u7EED ${card.durationMinutes} \u5206\u949F`, mx + mw - 24, my + 298, { size: 12, color: THEME.TX2, align: "right" });
+      let infoY = my + 324;
+      if (card.mechanic) {
+        drawRoundRect(ctx2, mx + 24, infoY, mw - 48, 28, 6, "rgba(56, 189, 248, 0.16)", "rgba(56, 189, 248, 0.45)");
+        drawText(ctx2, `\u26A1 \u673A\u5236\uFF1A${MECHANIC_LABELS[card.mechanic]}`, mx + 36, infoY + 14, { size: 12, bold: true, color: "#7DD3FC" });
+        infoY += 35;
+      }
+      if (card.chainEffect) {
+        drawRoundRect(ctx2, mx + 24, infoY, mw - 48, 28, 6, "rgba(192, 132, 252, 0.16)", "rgba(192, 132, 252, 0.45)");
+        drawText(ctx2, `\u{1F517} \u8FDE\u9501\uFF1A${card.chainEffect.label}`, mx + 36, infoY + 14, { size: 11.5, bold: true, color: "#E9D5FF" });
+        infoY += 35;
+      }
+      drawWrappedText(ctx2, card.summary, mx + 24, infoY + 4, mw - 48, 20, { size: 12.5, color: THEME.TX1, maxLines: 4 });
+      drawButton(ctx2, hits, mx + 24, my + 486, mw - 48, 42, equipped ? "\u79FB\u51FA\u51FA\u6218\u624B\u724C" : "\u653E\u5165\u51FA\u6218\u624B\u724C \u25B6", () => {
+        const res = league.toggleLoadoutCard(card.id);
+        if (!res.ok) this.notice = res.reason || "\u64CD\u4F5C\u5931\u8D25";
+        else {
+          SoundEngine.playClick();
+          actions.onSave();
+        }
+      }, { variant: equipped ? "green" : "primary", fontSize: 13 });
+      const canUp = lv < 4 && totalElements > 0;
+      const upBtnW = deck.length > 2 ? (mw - 58) / 2 : mw - 48;
+      drawButton(ctx2, hits, mx + 24, my + 538, upBtnW, 40, lv >= 4 ? "\u5DF2\u8FBE\u6EE1\u9636" : "\u5347\u9636 (+1\u6750)", () => {
+        const res = league.upgradeCoachCard(card.id);
+        if (res.ok) {
+          this.fusionFlash = 0.5;
+          this.notice = `\u3010${card.name}\u3011\u5347\u9636\u81F3 Lv.${card.level}\uFF01`;
+          SoundEngine.playRewardChime();
+          actions.onBurst?.(mx + mw / 2, my + 160, THEME.GOLD_LIGHT);
+          actions.onSave();
+        } else {
+          this.notice = res.reason || "\u5347\u9636\u5931\u8D25";
+        }
+      }, { variant: canUp ? "primary" : "ghost", disabled: !canUp, fontSize: 12 });
+      if (deck.length > 2) {
+        drawButton(ctx2, hits, mx + 34 + upBtnW, my + 538, upBtnW, 40, card.isCorrupted ? "\u62C6\u89E3 (+2\u6750)" : "\u62C6\u89E3 (+1\u6750)", () => {
+          const res = league.dismantleCoachCard(card.id);
+          if (res.ok) {
+            const rName = TACTICAL_ELEMENTS.find((e) => e.id === res.refunded)?.name || "\u57FA\u7840\u5361";
+            this.notice = `\u5DF2\u62C6\u89E3\u3010${card.name}\u3011\uFF0C\u8FD4\u8FD8 ${res.count ?? 1} \u5F20\u3010${rName}\u3011`;
+            this.detailModalOpen = false;
+            actions.onSave();
+          }
+        }, { variant: "danger", fontSize: 12 });
+      }
+    }
+    renderRecipesModal(ctx2, hits) {
+      ctx2.fillStyle = "rgba(4, 7, 14, 0.84)";
+      ctx2.fillRect(0, 0, THEME.W, THEME.H);
+      hits.clear();
+      const mx = 140;
+      const my = 72;
+      const mw = 1e3;
+      const mh = 576;
+      drawChamferPanel(ctx2, mx, my, mw, mh, 14, "rgba(14, 22, 40, 0.98)", THEME.BORDER_GOLD, 1.6, THEME.GOLD_LIGHT);
+      drawText(ctx2, "\u5E38\u7528\u6D41\u6D3E\u5408\u6210\u914D\u65B9\u56FE\u9274", mx + 28, my + 34, { size: 20, bold: true, color: THEME.GOLD_LIGHT });
+      drawText(ctx2, "\u70B9\u51FB\u4EFB\u610F\u6D41\u6D3E\u5361\u7247\uFF0C\u81EA\u52A8\u586B\u5165\u53F3\u4FA7\u5408\u6210\u5668\u5E76\u5173\u95ED\u672C\u9875", mx + 28, my + 58, { size: 12.5, color: "#7DD3FC" });
+      drawButton(ctx2, hits, mx + mw - 104, my + 20, 80, 34, "\u5173\u95ED", () => {
+        this.recipesModalOpen = false;
+      }, { variant: "ghost", fontSize: 12, icon: "close" });
+      const recipes = [
+        { name: "\u9AD8\u538B\u62A2\u65AD\u6D41", elems: ["press", "blitz", "iron"], desc: "\u5B9A\u4F4D\u7403\u6838\u6B66 + \u9AD8\u4F4D\u538B\u8FEB", col: "#EF4444" },
+        { name: "\u4F20\u63A7\u8FDE\u9501\u6D41", elems: ["pass", "pass", "wing"], desc: "\u4E24\u7FFC\u8D85\u8F7D + \u5168\u7EBF\u4F20\u5BFC", col: "#38BDF8" },
+        { name: "\u94C1\u8840\u9632\u53CD\u6D41", elems: ["iron", "blitz", "pass"], desc: "\u4F53\u80FD\u8679\u5438 + \u7A33\u56FA\u9632\u5B88", col: "#22C55E" },
+        { name: "\u8FDC\u5C04\u91CD\u70AE\u6D41", elems: ["pass", "pass", "blitz"], desc: "30%\u8FDC\u5C04xG + \u8FDE\u643A\u5171\u9E23", col: "#C084FC" },
+        { name: "\u95E8\u7EBF\u94C1\u58C1\u6D41", elems: ["iron", "iron"], desc: "\u7981\u533A\u5C01\u5835+18% + \u95E8\u5C06\u5F3A\u5316", col: "#10B981" },
+        { name: "\u66B4\u8D70\u55DC\u8840\u6D41", elems: ["blitz", "blitz", "wing"], desc: "\u843D\u540E+8\u5C04/\u901F + \u9AD8\u901F\u7A81\u51FB", col: "#F59E0B" }
+      ];
+      recipes.forEach((rc, ri) => {
+        const col = ri % 2;
+        const row = Math.floor(ri / 2);
+        const rx = mx + 28 + col * 480;
+        const ry = my + 90 + row * 154;
+        const rw = 464;
+        const rh = 136;
+        const hovered = hits.isHovered(rx, ry, rw, rh);
+        drawChamferPanel(ctx2, rx, ry, rw, rh, 10, hovered ? THEME.BG_CARD_HOVER : THEME.BG_CARD, hovered ? rc.col : THEME.BORDER, hovered ? 1.6 : 1);
+        rc.elems.forEach((eid, ei) => {
+          const eImg = AssetLoader.get(`elem_${eid}`);
+          if (eImg && typeof ctx2.drawImage === "function") {
+            ctx2.drawImage(eImg, rx + rw - 116 + ei * 34, ry + 18, 28, 28);
+          }
+        });
+        drawText(ctx2, rc.name, rx + 20, ry + 32, { size: 17, bold: true, color: rc.col });
+        drawText(ctx2, rc.desc, rx + 20, ry + 64, { size: 13, color: THEME.TX1 });
+        const formulaTxt = rc.elems.map((e) => TACTICAL_ELEMENTS.find((t) => t.id === e)?.name).join(" + ");
+        drawText(ctx2, `\u914D\u65B9\uFF1A${formulaTxt}`, rx + 20, ry + 96, { size: 12, bold: true, color: THEME.GOLD_LIGHT });
+        drawText(ctx2, "\u70B9\u51FB\u4E00\u952E\u586B\u7089 \u25B6", rx + rw - 20, ry + 108, { size: 11.5, color: "#7DD3FC", align: "right" });
+        hits.add(rx, ry, rw, rh, () => {
+          SoundEngine.playClick();
+          this.fuseSlots = [null, null];
+          this.flask = [...rc.elems];
+          this.recipesModalOpen = false;
+          this.notice = `\u5DF2\u88C5\u586B\u3010${rc.name}\u3011\uFF0C\u70B9\u4E0B\u65B9\u6309\u94AE\u5373\u53EF\u5408\u6210\uFF01`;
+        });
+      });
     }
   };
 
@@ -15411,6 +16303,336 @@
           }
         });
       }
+    }
+  };
+
+  // packages/game-ui/src/screens/LeagueScreen.ts
+  var LeagueScreen = class {
+    constructor() {
+      this.standingsScroll = 0;
+      this.rightTab = "standings";
+      this.toastMsg = "";
+    }
+    onWheel(deltaY) {
+      if (this.rightTab !== "standings") return false;
+      const maxScroll = 8;
+      const step = deltaY > 0 ? 1 : -1;
+      const next = Math.max(0, Math.min(maxScroll, this.standingsScroll + step));
+      if (next !== this.standingsScroll) {
+        this.standingsScroll = next;
+        return true;
+      }
+      return false;
+    }
+    render(ctx2, hits, league, actions) {
+      const st = league.getState();
+      const club = league.getUserClub();
+      const standings = league.getStandings();
+      const tierInfo = league.getCurrentTierInfo();
+      const diffStars = "\u2605".repeat(8 - tierInfo.tier) + "\u2606".repeat(tierInfo.tier - 1);
+      const nextFx = league.getUserCurrentFixture();
+      drawBroadcastHeader(ctx2, hits, {
+        kicker: `LEAGUE & FIXTURES \xB7 SEASON ${st.seasonNumber} (${diffStars})`,
+        title: `${tierInfo.name} \xB7 \u8D5B\u7A0B\u4E0E\u79EF\u5206\u699C`,
+        club,
+        badge: `\u7B2C ${st.currentRound}/34 \u8F6E`,
+        metaPoints: st.metaPointsTotal,
+        showSoundToggle: true,
+        rightAction: nextFx ? { label: "\u8FDB\u5165\u6BD4\u8D5B\u65E5", icon: "play", variant: "gold", onClick: actions.onStartMatch } : { label: "\u8FD4\u56DE\u95E8\u6237", variant: "ghost", onClick: () => actions.onNavigate("portal") }
+      });
+      drawNavRail(ctx2, hits, "league", actions.onNavigate);
+      drawChamferPanel(ctx2, 96, 80, 460, 624, 12, "rgba(14, 22, 40, 0.92)", THEME.BORDER_GOLD, 1.2, THEME.GOLD_LIGHT);
+      const userRankIdx = standings.findIndex((r) => r.isUser);
+      const userRow = standings[userRankIdx];
+      drawText(ctx2, "\u672C\u961F\u8D5B\u5B63\u8D5B\u7A0B\u4E0E\u6218\u7EE9", 116, 104, { size: 15, bold: true, color: THEME.GOLD_LIGHT });
+      drawButton(ctx2, hits, 454, 90, 86, 28, "? \u91CD\u7F6E\u5F15\u5BFC", () => {
+        league.resetTutorial();
+        this.toastMsg = "\u5DF2\u91CD\u7F6E\u65B0\u624B\u5F15\u5BFC\uFF0C\u8FD4\u56DE\u5BF9\u5E94\u9875\u9762\u5C06\u91CD\u65B0\u5F39\u51FA\u63D0\u793A";
+        actions.onSave?.();
+      }, { variant: "ghost", fontSize: 11 });
+      drawRoundRect(ctx2, 114, 128, 424, 54, 8, THEME.BG_CARD, THEME.BORDER);
+      drawText(ctx2, `\u5F53\u524D\u6392\u540D \u7B2C ${userRankIdx + 1} \u540D`, 128, 147, { size: 14, bold: true, color: THEME.GOLD_LIGHT });
+      drawText(
+        ctx2,
+        userRow ? `${userRow.points} \u79EF\u5206 \xB7 ${userRow.won}\u80DC ${userRow.drawn}\u5E73 ${userRow.lost}\u8D1F \xB7 \u51C0\u80DC ${userRow.gd >= 0 ? "+" : ""}${userRow.gd}` : "\u5C1A\u672A\u5F00\u8D5B",
+        128,
+        168,
+        { size: 11.5, color: THEME.TX2 }
+      );
+      const zoneTag = tierInfo.tier === 1 ? "\u7B2C1\u7EA7\xB7\u4E89\u51A0/\u540E3\u964D" : tierInfo.tier === 7 ? "\u7B2C7\u7EA7\xB7\u524D3\u5347" : `\u524D${tierInfo.promoteCount}\u5347\xB7\u540E${tierInfo.relegateCount}\u964D`;
+      drawBadge(ctx2, 412, 143, 114, 24, zoneTag, "#1E3A5F", "#7DD3FC");
+      const userFixtures = st.fixtures.filter((f) => f.homeClubId === club.id || f.awayClubId === club.id).sort((a, b) => a.round - b.round);
+      const upcoming = userFixtures.filter((f) => !f.played).slice(0, 5);
+      const recent = userFixtures.filter((f) => f.played).slice(-4).reverse();
+      drawText(ctx2, "\u5373\u5C06\u8FCE\u6218\uFF08\u672A\u6765\u8D5B\u7A0B\uFF09", 116, 204, { size: 13.5, bold: true, color: "#38BDF8" });
+      if (upcoming.length === 0) {
+        drawRoundRect(ctx2, 114, 222, 424, 180, 8, THEME.BG_CARD, THEME.BORDER);
+        drawText(ctx2, "\u672C\u8D5B\u5B63\u5E38\u89C4\u8D5B\u7A0B\u5DF2\u5168\u90E8\u7ED3\u675F", 326, 312, { size: 13, color: THEME.TX3, align: "center" });
+      } else {
+        upcoming.forEach((fx, idx) => {
+          const ry = 222 + idx * 46;
+          const isHome = fx.homeClubId === club.id;
+          const oppId = isHome ? fx.awayClubId : fx.homeClubId;
+          const opp = st.clubs.find((c) => c.id === oppId);
+          const oppRank = standings.findIndex((r) => r.clubId === oppId) + 1;
+          const isNext = fx.round === st.currentRound;
+          drawRoundRect(
+            ctx2,
+            114,
+            ry,
+            424,
+            40,
+            7,
+            isNext ? "rgba(212, 168, 67, 0.16)" : THEME.BG_CARD,
+            isNext ? THEME.GOLD_LIGHT : THEME.BORDER,
+            isNext ? 1.5 : 1
+          );
+          drawBadge(
+            ctx2,
+            122,
+            ry + 9,
+            56,
+            22,
+            isNext ? `\u7B2C${fx.round}\u8F6E\xB7\u4E0B\u573A` : `\u7B2C${fx.round}\u8F6E`,
+            isNext ? "#78350F" : "#1E293B",
+            isNext ? THEME.GOLD_LIGHT : THEME.TX2
+          );
+          drawBadge(
+            ctx2,
+            184,
+            ry + 9,
+            32,
+            22,
+            isHome ? "\u4E3B" : "\u5BA2",
+            isHome ? "#14532D" : "#1E3A5F",
+            isHome ? THEME.GREEN : "#7DD3FC"
+          );
+          if (opp) drawClubCrest(ctx2, 232, ry + 20, 10, opp);
+          drawText(ctx2, opp ? opp.name : oppId, 250, ry + 20, {
+            size: 13,
+            bold: isNext,
+            color: isNext ? THEME.GOLD_LIGHT : THEME.TX1
+          });
+          drawText(ctx2, `\u7B2C${oppRank}\u540D \xB7 ${opp?.formation ?? ""}`, 526, ry + 20, {
+            size: 11.5,
+            color: THEME.TX2,
+            align: "right"
+          });
+        });
+      }
+      drawText(ctx2, "\u8FD1\u671F\u5DF2\u8D5B\u6218\u679C", 116, 468, { size: 13.5, bold: true, color: THEME.TX1 });
+      if (recent.length === 0) {
+        drawRoundRect(ctx2, 114, 486, 424, 174, 8, THEME.BG_CARD, THEME.BORDER);
+        drawText(ctx2, "\u5B8C\u6210\u9996\u8F6E\u6BD4\u8D5B\u540E\uFF0C\u6218\u679C\u4E0E xG \u8BB0\u5F55\u5C06\u5C55\u793A\u4E8E\u6B64", 326, 573, { size: 12.5, color: THEME.TX3, align: "center" });
+      } else {
+        recent.forEach((fx, idx) => {
+          const ry = 486 + idx * 46;
+          const isHome = fx.homeClubId === club.id;
+          const oppId = isHome ? fx.awayClubId : fx.homeClubId;
+          const opp = st.clubs.find((c) => c.id === oppId);
+          const myG = isHome ? fx.homeGoals : fx.awayGoals;
+          const oppG = isHome ? fx.awayGoals : fx.homeGoals;
+          const resTag = myG > oppG ? "\u80DC" : myG === oppG ? "\u5E73" : "\u8D1F";
+          const resCol = myG > oppG ? THEME.GREEN : myG === oppG ? THEME.GOLD_LIGHT : THEME.RED_LIGHT;
+          const resBg = myG > oppG ? "#14532D" : myG === oppG ? "#78350F" : "#7F1D1D";
+          drawRoundRect(ctx2, 114, ry, 424, 40, 7, THEME.BG_CARD, THEME.BORDER);
+          drawText(ctx2, `R${fx.round}`, 124, ry + 20, { size: 11.5, color: THEME.TX3, mono: true });
+          drawBadge(ctx2, 158, ry + 10, 28, 20, resTag, resBg, resCol);
+          if (opp) drawClubCrest(ctx2, 202, ry + 20, 9, opp);
+          drawText(ctx2, `${isHome ? "vs" : "@"} ${opp?.name ?? oppId}`, 218, ry + 20, {
+            size: 12.5,
+            color: THEME.TX1
+          });
+          drawText(ctx2, `${myG} : ${oppG}`, 454, ry + 20, {
+            size: 14,
+            bold: true,
+            color: resCol,
+            align: "right",
+            mono: true
+          });
+          const myXg = isHome ? fx.homeXG : fx.awayXG;
+          const oppXg = isHome ? fx.awayXG : fx.homeXG;
+          drawText(ctx2, `xG ${myXg.toFixed(1)}:${oppXg.toFixed(1)}`, 528, ry + 20, {
+            size: 10.5,
+            color: THEME.TX3,
+            align: "right",
+            mono: true
+          });
+        });
+      }
+      if (this.toastMsg) {
+        drawText(ctx2, this.toastMsg, 116, 684, { size: 11.5, color: THEME.GREEN });
+      } else {
+        drawText(ctx2, "\u63D0\u793A\uFF1A\u8FD4\u56DE\u300C\u95E8\u6237\u300D\u53EF\u76F4\u63A5\u8FDB\u884C\u8D5B\u524D\u6574\u5907\u4E0E\u5F00\u8D5B", 116, 684, { size: 11.5, color: THEME.TX3 });
+      }
+      drawChamferPanel(ctx2, 572, 80, 692, 624, 12, "rgba(14, 22, 40, 0.92)", THEME.BORDER);
+      drawButton(ctx2, hits, 590, 94, 136, 32, "\u8054\u8D5B\u79EF\u5206\u699C", () => {
+        this.rightTab = "standings";
+      }, { active: this.rightTab === "standings", fontSize: 12.5, icon: "trophy" });
+      drawButton(ctx2, hits, 734, 94, 146, 32, "\u8D5B\u5B63\u6570\u636E\u7EDF\u8BA1", () => {
+        this.rightTab = "stats";
+      }, { active: this.rightTab === "stats", fontSize: 12.5, icon: "chart" });
+      if (this.rightTab === "stats") {
+        this.renderSeasonStatsPanel(ctx2, league);
+        return;
+      }
+      drawButton(ctx2, hits, 1044, 94, 84, 32, "\u5B9A\u4F4D\u6211\u961F", () => {
+        this.standingsScroll = Math.max(0, Math.min(8, userRankIdx - 4));
+      }, { variant: "ghost", fontSize: 11.5 });
+      drawButton(ctx2, hits, 1136, 94, 52, 32, "\u25B2", () => {
+        this.standingsScroll = Math.max(0, this.standingsScroll - 4);
+      }, { variant: "ghost", fontSize: 12 });
+      drawButton(ctx2, hits, 1196, 94, 52, 32, "\u25BC", () => {
+        this.standingsScroll = Math.min(Math.max(0, standings.length - 10), this.standingsScroll + 4);
+      }, { variant: "ghost", fontSize: 12 });
+      const hy = 148;
+      drawRoundRect(ctx2, 588, hy - 14, 660, 28, 5, "#111A2E");
+      drawText(ctx2, "\u6392\u540D", 612, hy, { size: 11.5, color: THEME.TX3, align: "center" });
+      drawText(ctx2, "\u7403\u961F", 654, hy, { size: 11.5, color: THEME.TX3 });
+      drawText(ctx2, "\u8D5B", 838, hy, { size: 11.5, color: THEME.TX3, align: "center" });
+      drawText(ctx2, "\u80DC", 880, hy, { size: 11.5, color: THEME.TX3, align: "center" });
+      drawText(ctx2, "\u5E73", 922, hy, { size: 11.5, color: THEME.TX3, align: "center" });
+      drawText(ctx2, "\u8D1F", 964, hy, { size: 11.5, color: THEME.TX3, align: "center" });
+      drawText(ctx2, "\u8FDB/\u5931", 1020, hy, { size: 11.5, color: THEME.TX3, align: "center" });
+      drawText(ctx2, "\u51C0\u80DC", 1078, hy, { size: 11.5, color: THEME.TX3, align: "center" });
+      drawText(ctx2, "\u79EF\u5206", 1132, hy, { size: 11.5, color: THEME.TX3, align: "center" });
+      drawText(ctx2, "\u8FD1\u671F", 1202, hy, { size: 11.5, color: THEME.TX3, align: "center" });
+      const visibleRows = 10;
+      const maxStart = Math.max(0, standings.length - visibleRows);
+      const startIdx = Math.max(0, Math.min(maxStart, this.standingsScroll));
+      const slice = standings.slice(startIdx, startIdx + visibleRows);
+      slice.forEach((row, visIdx) => {
+        const idx = startIdx + visIdx;
+        const ry = 190 + visIdx * 48;
+        const isPromote = tierInfo.promoteCount > 0 && idx < tierInfo.promoteCount;
+        const isChampionSpot = tierInfo.tier === 1 && idx === 0;
+        const isRelegate = tierInfo.relegateCount > 0 && idx >= standings.length - tierInfo.relegateCount;
+        const barCol = isChampionSpot ? THEME.GOLD_LIGHT : isPromote ? THEME.GREEN : isRelegate ? THEME.RED_LIGHT : "#334155";
+        drawRoundRect(
+          ctx2,
+          588,
+          ry - 18,
+          660,
+          41,
+          7,
+          row.isUser ? "rgba(212,168,67,0.18)" : THEME.BG_CARD,
+          row.isUser ? THEME.GOLD : THEME.BORDER,
+          row.isUser ? 1.6 : 1
+        );
+        drawRoundRect(ctx2, 588, ry - 18, 5, 41, 2, barCol);
+        drawText(ctx2, String(idx + 1), 612, ry + 2, {
+          size: 13,
+          bold: true,
+          color: isChampionSpot ? THEME.GOLD_LIGHT : isPromote ? THEME.GREEN : isRelegate ? THEME.RED_LIGHT : THEME.TX2,
+          align: "center",
+          mono: true
+        });
+        const rowClub = st.clubs.find((c) => c.id === row.clubId);
+        if (rowClub) drawClubCrest(ctx2, 642, ry + 2, 10, rowClub);
+        drawText(ctx2, row.isUser ? `${row.clubName} (\u6211)` : row.clubName, 662, ry + 2, {
+          size: 13,
+          bold: row.isUser,
+          color: row.isUser ? THEME.GOLD_LIGHT : THEME.TX1
+        });
+        drawText(ctx2, String(row.played), 838, ry + 2, { size: 12.5, align: "center", mono: true });
+        drawText(ctx2, String(row.won), 880, ry + 2, { size: 12.5, align: "center", mono: true });
+        drawText(ctx2, String(row.drawn), 922, ry + 2, { size: 12.5, align: "center", mono: true });
+        drawText(ctx2, String(row.lost), 964, ry + 2, { size: 12.5, align: "center", mono: true });
+        drawText(ctx2, `${row.gf}/${row.ga}`, 1020, ry + 2, { size: 11.5, align: "center", mono: true, color: THEME.TX2 });
+        drawText(ctx2, row.gd >= 0 ? `+${row.gd}` : `${row.gd}`, 1078, ry + 2, {
+          size: 12.5,
+          align: "center",
+          mono: true,
+          color: row.gd > 0 ? THEME.GREEN : row.gd < 0 ? THEME.RED_LIGHT : THEME.TX2
+        });
+        drawText(ctx2, String(row.points), 1132, ry + 2, {
+          size: 14,
+          bold: true,
+          align: "center",
+          mono: true,
+          color: THEME.GOLD_LIGHT
+        });
+        row.form.slice(-4).forEach((f, fi) => {
+          const fx = 1170 + fi * 18;
+          const col = f === "W" ? THEME.GREEN : f === "D" ? THEME.GOLD : THEME.RED_LIGHT;
+          drawBadge(ctx2, fx, ry - 7, 15, 17, f, col, "#080C14");
+        });
+      });
+      drawText(ctx2, `\u663E\u793A\u7B2C ${startIdx + 1}-${startIdx + slice.length} / ${standings.length} \u540D\uFF08\u652F\u6301\u6EDA\u8F6E\u7FFB\u9875\uFF09`, 918, 684, {
+        size: 11.5,
+        color: THEME.TX3,
+        align: "center"
+      });
+    }
+    renderSeasonStatsPanel(ctx2, league) {
+      const ts = league.getUserTeamSeasonStats();
+      const scorers = league.getTopScorers(5);
+      const assisters = league.getTopAssisters(5);
+      const winRate = ts.played > 0 ? Math.round(ts.won / ts.played * 100) : 0;
+      drawText(ctx2, "\u672C\u8D5B\u5B63\u7403\u961F\u7EFC\u5408\u6218\u7EE9\u4E0E\u9884\u671F\u8868\u73B0", 590, 148, { size: 13, bold: true, color: THEME.GOLD_LIGHT });
+      const kpis = [
+        { label: "\u6218\u7EE9\u4E0E\u80DC\u7387", val: `${ts.won}\u80DC ${ts.drawn}\u5E73 ${ts.lost}\u8D1F`, sub: `\u80DC\u7387 ${winRate}% \xB7 \u5DF2\u8D5B ${ts.played} \u8F6E`, col: THEME.GOLD_LIGHT },
+        { label: "\u653B\u9632\u51C0\u80DC\u7403", val: `${ts.gf} \u8FDB / ${ts.ga} \u5931`, sub: `\u51C0\u80DC ${ts.gf - ts.ga >= 0 ? "+" : ""}${ts.gf - ts.ga}`, col: ts.gf >= ts.ga ? THEME.GREEN : THEME.RED_LIGHT },
+        { label: "\u9884\u671F\u8FDB\u7403 xG", val: `${ts.xgFor.toFixed(1)} : ${ts.xgAgainst.toFixed(1)}`, sub: `\u573A\u5747 ${(ts.xgFor / Math.max(1, ts.played)).toFixed(2)} xG`, col: "#38BDF8" },
+        { label: "\u96F6\u5C01\u4E0E\u7EAA\u5F8B", val: `${ts.cleanSheets} \u6B21\u96F6\u5C01`, sub: `\u9EC4\u724C ${ts.yellows} \xB7 \u7EA2\u724C ${ts.reds}`, col: "#C084FC" }
+      ];
+      kpis.forEach((k, i) => {
+        const kx = 590 + i * 166;
+        drawRoundRect(ctx2, kx, 164, 158, 76, 8, THEME.BG_CARD, THEME.BORDER);
+        drawText(ctx2, k.label, kx + 12, 182, { size: 11, color: THEME.TX2 });
+        drawText(ctx2, k.val, kx + 12, 204, { size: 13.5, bold: true, color: k.col, mono: true });
+        drawText(ctx2, k.sub, kx + 12, 226, { size: 10.5, color: THEME.TX3 });
+      });
+      drawRoundRect(ctx2, 590, 256, 322, 240, 10, THEME.BG_CARD, THEME.BORDER);
+      drawIcon(ctx2, "ball", 610, 278, 14, THEME.GOLD_LIGHT);
+      drawText(ctx2, "\u8054\u8D5B\u5C04\u624B\u699C TOP 5", 628, 278, { size: 13, bold: true, color: THEME.GOLD_LIGHT });
+      if (scorers.length === 0) {
+        drawText(ctx2, "\u9996\u8F6E\u5F00\u8D5B\u540E\u5B9E\u65F6\u7EDF\u8BA1", 751, 380, { size: 12, color: THEME.TX3, align: "center" });
+      } else {
+        scorers.forEach((sc, i) => {
+          const sy = 314 + i * 36;
+          drawRoundRect(ctx2, 604, sy - 13, 294, 29, 6, "rgba(15, 23, 42, 0.85)");
+          drawText(ctx2, `${i + 1}. ${sc.playerName}`, 614, sy + 1, { size: 12, bold: i === 0, color: i === 0 ? THEME.GOLD_LIGHT : THEME.TX1 });
+          drawText(ctx2, sc.clubName.slice(0, 6), 748, sy + 1, { size: 10.5, color: THEME.TX2 });
+          drawText(ctx2, `${sc.goals} \u7403`, 886, sy + 1, { size: 12.5, bold: true, color: THEME.GREEN, align: "right", mono: true });
+        });
+      }
+      drawRoundRect(ctx2, 926, 256, 322, 240, 10, THEME.BG_CARD, THEME.BORDER);
+      drawIcon(ctx2, "sparkle", 946, 278, 14, "#38BDF8");
+      drawText(ctx2, "\u8054\u8D5B\u52A9\u653B\u699C TOP 5", 964, 278, { size: 13, bold: true, color: "#38BDF8" });
+      if (assisters.length === 0) {
+        drawText(ctx2, "\u9996\u8F6E\u5F00\u8D5B\u540E\u5B9E\u65F6\u7EDF\u8BA1", 1087, 380, { size: 12, color: THEME.TX3, align: "center" });
+      } else {
+        assisters.forEach((as, i) => {
+          const sy = 314 + i * 36;
+          drawRoundRect(ctx2, 940, sy - 13, 294, 29, 6, "rgba(15, 23, 42, 0.85)");
+          drawText(ctx2, `${i + 1}. ${as.playerName}`, 950, sy + 1, { size: 12, bold: i === 0, color: i === 0 ? "#7DD3FC" : THEME.TX1 });
+          drawText(ctx2, as.clubName.slice(0, 6), 1084, sy + 1, { size: 10.5, color: THEME.TX2 });
+          drawText(ctx2, `${as.assists} \u52A9`, 1222, sy + 1, { size: 12.5, bold: true, color: "#38BDF8", align: "right", mono: true });
+        });
+      }
+      drawRoundRect(ctx2, 590, 512, 658, 174, 10, THEME.BG_CARD, THEME.BORDER_GOLD);
+      drawText(ctx2, "\u6211\u961F\u961F\u5185\u6838\u5FC3\u6570\u636E\u738B", 610, 534, { size: 13, bold: true, color: THEME.GOLD_LIGHT });
+      const leaders = [
+        { tag: "\u961F\u5185\u5C04\u624B\u738B", p: ts.topScorer, stat: ts.topScorer ? `${ts.topScorer.seasonStats.goals}\u7403 \xB7 ${ts.topScorer.seasonStats.assists}\u52A9` : "-", col: THEME.GOLD_LIGHT },
+        { tag: "\u961F\u5185\u52A9\u653B\u738B", p: ts.topAssister, stat: ts.topAssister ? `${ts.topAssister.seasonStats.assists}\u52A9 \xB7 ${ts.topAssister.seasonStats.passesSuccess ?? 0}\u4F20` : "-", col: "#38BDF8" },
+        { tag: "\u95E8\u7EBF\u5B88\u62A4\u795E", p: ts.topKeeper, stat: ts.topKeeper ? `${ts.topKeeper.seasonStats.cleanSheets}\u96F6\u5C01 \xB7 ${ts.topKeeper.seasonStats.saves ?? 0}\u6251` : "-", col: THEME.GREEN },
+        { tag: "\u5168\u52E4\u94C1\u4EBA", p: ts.ironMan, stat: ts.ironMan ? `\u51FA\u573A${ts.ironMan.seasonStats.appearances} \xB7 ${Math.round((ts.ironMan.seasonStats.distanceM ?? 0) / 1e3)}km` : "-", col: "#C084FC" }
+      ];
+      leaders.forEach((ld, i) => {
+        const col = i % 2;
+        const row = Math.floor(i / 2);
+        const lx = 606 + col * 318;
+        const ly = 556 + row * 58;
+        drawRoundRect(ctx2, lx, ly, 306, 48, 7, "rgba(11, 17, 30, 0.9)", THEME.BORDER);
+        drawBadge(ctx2, lx + 10, ly + 13, 74, 22, ld.tag, "#1E293B", ld.col);
+        drawText(ctx2, ld.p ? `${ld.p.name.slice(0, 5)} CA${ld.p.ca}` : "-", lx + 92, ly + 24, {
+          size: 12.5,
+          bold: true,
+          color: THEME.TX1
+        });
+        drawText(ctx2, ld.stat, lx + 296, ly + 24, { size: 11.5, color: ld.col, align: "right", mono: true });
+      });
     }
   };
 
@@ -16947,6 +18169,8 @@
     constructor() {
       this.tab = "web";
       this.selectedNodeId = "core_master";
+      this.nodeDrawerOpen = false;
+      this.summaryModalOpen = false;
       this.webFilter = "ALL";
       this.zoom = 1.85;
       this.panX = 0;
@@ -16955,17 +18179,35 @@
       this.dragging = false;
       this.dragLastX = 0;
       this.dragLastY = 0;
-      this.lastMapRect = { x: 96, y: 154, w: 776, h: 550 };
-      this.notice = "\u6EDA\u8F6E\u7F29\u653E \xB7 \u62D6\u62FD\u5E73\u79FB\u661F\u56FE \xB7 \u5339\u914D\u5F53\u524D\u9635\u578B\u4E0E\u6218\u672F\u7684\u8282\u70B9\u89E6\u53D1\u300C\u4F53\u7CFB\u5171\u9E23 \xD72\u300D";
+      this.lastMapRect = { x: 96, y: 156, w: 1168, h: 548 };
+      this.lastDrawerRect = { x: 872, y: 168, w: 380, h: 524 };
+      this.notice = "\u62D6\u62FD\u5E73\u79FB \xB7 \u6EDA\u8F6E\u7F29\u653E \xB7 \u70B9\u51FB\u4EFB\u610F\u661F\u56FE\u8282\u70B9\u5F39\u51FA\u8BE6\u60C5\u4E0E\u52A0\u70B9\u6D6E\u5C42";
+    }
+    handleEscape() {
+      if (this.summaryModalOpen) {
+        this.summaryModalOpen = false;
+        return true;
+      }
+      if (this.nodeDrawerOpen) {
+        this.nodeDrawerOpen = false;
+        return true;
+      }
+      return false;
     }
     inMap(x, y) {
       const r = this.lastMapRect;
       return x >= r.x && x <= r.x + r.w && y >= r.y && y <= r.y + r.h;
     }
+    inDrawer(x, y) {
+      if (!this.nodeDrawerOpen) return false;
+      const d = this.lastDrawerRect;
+      return x >= d.x && x <= d.x + d.w && y >= d.y && y <= d.y + d.h;
+    }
     update(dtSec) {
       this.animTime += dtSec;
     }
     onPointerDown(x, y) {
+      if (this.summaryModalOpen || this.inDrawer(x, y)) return;
       if (this.tab === "web" && this.inMap(x, y)) {
         this.dragging = true;
         this.dragLastX = x;
@@ -16985,7 +18227,7 @@
       this.dragging = false;
     }
     onWheel(deltaY, x, y) {
-      if (this.tab !== "web" || !this.inMap(x, y)) return false;
+      if (this.tab !== "web" || this.summaryModalOpen || this.inDrawer(x, y) || !this.inMap(x, y)) return false;
       const oldZoom = this.zoom;
       const factor = deltaY < 0 ? 1.15 : 0.87;
       const nextZoom = Math.max(0.72, Math.min(2.8, Math.round(oldZoom * factor * 100) / 100));
@@ -17027,13 +18269,24 @@
       const baseX = hasRail ? 96 : 24;
       const totalW = hasRail ? 1168 : 1232;
       const webStats = getSkillWebSummaryStats();
-      drawButton(ctx2, hits, baseX, 76, 232, 30, `\u6218\u672F\u661F\u56FE (${webStats.activeCount}\u4E3B\u52A8+${webStats.modifierCount}\u6539\u9020)`, () => {
+      drawButton(ctx2, hits, baseX, 76, 240, 32, `\u6218\u672F\u661F\u56FE (${webStats.activeCount}\u4E3B\u52A8+${webStats.modifierCount}\u6539\u9020)`, () => {
         this.tab = "web";
-      }, { active: this.tab === "web", fontSize: 11.5, icon: "tactics" });
-      drawButton(ctx2, hits, baseX + 234, 76, 176, 30, "\u4FF1\u4E50\u90E8\u57FA\u5EFA (5\u5206\u652F)", () => {
+      }, { active: this.tab === "web", fontSize: 12, icon: "tactics" });
+      drawButton(ctx2, hits, baseX + 248, 76, 180, 32, "\u4FF1\u4E50\u90E8\u57FA\u5EFA (5\u5206\u652F)", () => {
         this.tab = "talents";
+        this.nodeDrawerOpen = false;
       }, { active: this.tab === "talents", fontSize: 12, icon: "talent" });
-      drawText(ctx2, this.notice, baseX + 426, 91, { size: 11.5, color: "#7DD3FC" });
+      if (this.tab === "web") {
+        drawText(ctx2, this.notice, baseX + 444, 92, { size: 11.5, color: "#7DD3FC" });
+        drawButton(ctx2, hits, baseX + totalW - 310, 76, 160, 32, "\u5F15\u64CE\u4FEE\u6B63\u4E0E\u719F\u7EC3\u5EA6", () => {
+          this.summaryModalOpen = true;
+        }, { variant: "primary", fontSize: 11.5, icon: "chart" });
+        drawButton(ctx2, hits, baseX + totalW - 142, 76, 142, 32, this.nodeDrawerOpen ? "\u6536\u8D77\u8282\u70B9\u8BE6\u60C5" : "\u5F53\u524D\u8282\u70B9\u8BE6\u60C5", () => {
+          this.nodeDrawerOpen = !this.nodeDrawerOpen;
+        }, { active: this.nodeDrawerOpen, fontSize: 11.5 });
+      } else {
+        drawText(ctx2, this.notice, baseX + 444, 92, { size: 11.5, color: "#7DD3FC" });
+      }
       if (this.tab === "talents") {
         const cardGap = 14;
         const topW = (totalW - cardGap * 2) / 3;
@@ -17130,21 +18383,22 @@
       const club = league.getUserClub();
       const unlocked = league.getSkillWebUnlocked();
       const unlockedSet = new Set(unlocked);
-      const mapW = totalW - 392;
-      const mapH = 550;
+      const mapW = totalW;
+      const mapH = 548;
       const mapX = baseX;
-      const mapY = 154;
-      const chipW = Math.floor((mapW - (WEB_FILTERS.length - 1) * 4) / WEB_FILTERS.length);
+      const mapY = 156;
+      const chipGap = 6;
+      const chipW = Math.floor((mapW - (WEB_FILTERS.length - 1) * chipGap) / WEB_FILTERS.length);
       WEB_FILTERS.forEach(([fk, fl], fi) => {
-        drawButton(ctx2, hits, mapX + fi * (chipW + 4), 116, chipW, 28, fl, () => {
+        drawButton(ctx2, hits, mapX + fi * (chipW + chipGap), 116, chipW, 30, fl, () => {
           this.webFilter = fk;
-        }, { active: this.webFilter === fk, fontSize: 9.5 });
+        }, { active: this.webFilter === fk, fontSize: 11.5 });
       });
       this.lastMapRect = { x: mapX, y: mapY, w: mapW, h: mapH };
       drawChamferPanel(ctx2, mapX, mapY, mapW, mapH, 12, "rgba(9, 14, 26, 0.96)", THEME.BORDER_GOLD);
       const cx = mapX + mapW / 2 + this.panX;
       const cy = mapY + mapH / 2 + this.panY;
-      const scaleBase = Math.min(mapW, mapH) * 1.02 * this.zoom;
+      const scaleBase = Math.min(mapW, mapH) * 1.05 * this.zoom;
       const toPt = (nx, ny) => ({
         x: cx + (nx - 0.5) * scaleBase,
         y: cy + (ny - 0.5) * scaleBase
@@ -17153,7 +18407,7 @@
       ctx2.beginPath();
       ctx2.rect(mapX + 4, mapY + 4, mapW - 8, mapH - 8);
       ctx2.clip();
-      for (let si = 0; si < 30; si++) {
+      for (let si = 0; si < 36; si++) {
         const sx = mapX + ((si * 97 + Math.sin(this.animTime * 0.2 + si) * 14) % mapW + mapW) % mapW;
         const sy = mapY + ((si * 61 + Math.cos(this.animTime * 0.16 + si) * 10) % mapH + mapH) % mapH;
         const sa = 0.14 + 0.18 * Math.sin(this.animTime * 1.6 + si * 1.7);
@@ -17190,8 +18444,8 @@
         }
         ctx2.restore();
       });
-      const showMidLabels = this.zoom >= 1.15;
-      const showAllLabels = this.zoom >= 1.65;
+      const showMidLabels = this.zoom >= 1.12;
+      const showAllLabels = this.zoom >= 1.6;
       const equippedSet = new Set(league.getSkillLoadoutIds());
       SKILL_WEB_NODES.forEach((node, nIdx) => {
         const pt = toPt(node.nx, node.ny);
@@ -17204,7 +18458,7 @@
         const isEquipped = isActiveSkill && equippedSet.has(node.id);
         const filterMatch = this.matchWebFilter(node);
         const baseR = node.kind === "keystone" ? 12 : node.kind === "origin" ? 11 : node.kind === "fusion" ? 9.5 : node.kind === "formation" ? 8.5 : 5.5;
-        const r = Math.max(4, (isActiveSkill ? Math.max(baseR, 8.5) * 1.18 : baseR) * Math.min(1.4, Math.max(0.78, this.zoom * 0.72)));
+        const r = Math.max(4, (isActiveSkill ? Math.max(baseR, 8.5) * 1.18 : baseR) * Math.min(1.45, Math.max(0.78, this.zoom * 0.72)));
         const pulse = 0.5 + 0.5 * Math.sin(this.animTime * 3 + nIdx * 0.4);
         ctx2.save();
         ctx2.globalAlpha = filterMatch ? 1 : 0.16;
@@ -17290,84 +18544,105 @@
         if (filterMatch && showLabel) {
           const rawLabel = node.kind === "formation" ? node.formationTag : node.name;
           const label = isActiveSkill ? `\u26A1${rawLabel}` : rawLabel;
-          drawText(ctx2, label, pt.x, pt.y + (isActiveSkill ? r * 1.28 : r) + 10, {
-            size: isActiveSkill ? 10 : node.kind === "path" ? 9.5 : 10.5,
+          drawText(ctx2, label, pt.x, pt.y + (isActiveSkill ? r * 1.28 : r) + 11, {
+            size: isActiveSkill ? 10.5 : node.kind === "path" ? 10 : 11,
             bold: isActiveSkill || isUnlocked || isSelected || node.kind === "origin" || node.kind === "keystone",
             color: isEquipped ? "#4ADE80" : isActiveSkill ? "#7DD3FC" : isResonating ? "#FEF08A" : isUnlocked ? THEME.GOLD_LIGHT : isReachable ? THEME.TX1 : THEME.TX3,
             align: "center"
           });
         }
-        if (pt.x >= mapX + 6 && pt.x <= mapX + mapW - 6 && pt.y >= mapY + 6 && pt.y <= mapY + mapH - 6) {
-          hits.add(pt.x - r - 6, pt.y - r - 6, (r + 6) * 2, (r + 6) * 2 + 8, () => {
+        if (!this.summaryModalOpen && !this.inDrawer(pt.x, pt.y) && pt.x >= mapX + 6 && pt.x <= mapX + mapW - 6 && pt.y >= mapY + 6 && pt.y <= mapY + mapH - 6) {
+          hits.add(pt.x - r - 8, pt.y - r - 8, (r + 8) * 2, (r + 8) * 2 + 8, () => {
             SoundEngine.playClick();
             this.selectedNodeId = node.id;
+            this.nodeDrawerOpen = true;
           });
         }
       });
       ctx2.restore();
-      drawBadge(ctx2, mapX + 12, mapY + 12, 168, 22, `\u7F29\u653E ${Math.round(this.zoom * 100)}% \xB7 \u6EDA\u8F6E/\u62D6\u62FD`, "rgba(14,22,40,0.88)", "#7DD3FC");
-      drawBadge(ctx2, mapX + mapW - 228, mapY + 12, 216, 22, "\u25C6\u26A1 \u4E3B\u52A8\u89E6\u53D1\u6280(34)   \u25CF \u88AB\u52A8\u6539\u9020(90)", "rgba(14,22,40,0.90)", "#38BDF8");
-      drawButton(ctx2, hits, mapX + 12, mapY + mapH - 36, 56, 26, "\u5168\u666F", () => {
+      drawBadge(ctx2, mapX + 14, mapY + 14, 184, 24, `\u7F29\u653E ${Math.round(this.zoom * 100)}% \xB7 \u62D6\u62FD\u5E73\u79FB`, "rgba(14,22,40,0.88)", "#7DD3FC");
+      drawBadge(ctx2, mapX + mapW - 246, mapY + 14, 232, 24, "\u25C6\u26A1 \u4E3B\u52A8\u89E6\u53D1\u6280(34)   \u25CF \u88AB\u52A8\u6539\u9020(90)", "rgba(14,22,40,0.90)", "#38BDF8");
+      drawButton(ctx2, hits, mapX + 14, mapY + mapH - 40, 62, 28, "\u5168\u666F", () => {
         this.zoom = 0.88;
         this.panX = 0;
         this.panY = 0;
-      }, { active: this.zoom <= 0.95, fontSize: 10 });
-      drawButton(ctx2, hits, mapX + 74, mapY + mapH - 36, 44, 26, "\uFF0D", () => {
+      }, { active: this.zoom <= 0.95, fontSize: 11 });
+      drawButton(ctx2, hits, mapX + 82, mapY + mapH - 40, 48, 28, "\uFF0D", () => {
         this.zoom = Math.max(0.72, Math.round((this.zoom - 0.25) * 100) / 100);
-      }, { fontSize: 12 });
-      drawButton(ctx2, hits, mapX + 122, mapY + mapH - 36, 44, 26, "\uFF0B", () => {
+      }, { fontSize: 13 });
+      drawButton(ctx2, hits, mapX + 136, mapY + mapH - 40, 48, 28, "\uFF0B", () => {
         this.zoom = Math.min(2.8, Math.round((this.zoom + 0.25) * 100) / 100);
-      }, { fontSize: 12 });
-      drawButton(ctx2, hits, mapX + 170, mapY + mapH - 36, 62, 26, "\u7279\u5199", () => {
+      }, { fontSize: 13 });
+      drawButton(ctx2, hits, mapX + 190, mapY + mapH - 40, 68, 28, "\u7279\u5199", () => {
         this.zoom = 1.85;
         this.panX = 0;
         this.panY = 0;
-      }, { active: this.zoom >= 1.65, fontSize: 10 });
-      drawButton(ctx2, hits, mapX + mapW - 140, mapY + mapH - 36, 30, 26, "\u2190", () => {
-        this.panX += 60;
-      }, { variant: "ghost", fontSize: 11 });
-      drawButton(ctx2, hits, mapX + mapW - 106, mapY + mapH - 36, 30, 26, "\u2191", () => {
-        this.panY += 60;
-      }, { variant: "ghost", fontSize: 11 });
-      drawButton(ctx2, hits, mapX + mapW - 72, mapY + mapH - 36, 30, 26, "\u2193", () => {
-        this.panY -= 60;
-      }, { variant: "ghost", fontSize: 11 });
-      drawButton(ctx2, hits, mapX + mapW - 38, mapY + mapH - 36, 30, 26, "\u2192", () => {
-        this.panX -= 60;
-      }, { variant: "ghost", fontSize: 11 });
-      const rx = mapX + mapW + 14;
-      const rw = 378;
-      const rightY = 116;
-      const rightH = 588;
-      drawChamferPanel(ctx2, rx, rightY, rw, rightH, 12, "rgba(14, 22, 40, 0.94)", THEME.BORDER);
+      }, { active: this.zoom >= 1.65, fontSize: 11 });
+      if (!this.nodeDrawerOpen) {
+        drawButton(ctx2, hits, mapX + mapW - 156, mapY + mapH - 40, 34, 28, "\u2190", () => {
+          this.panX += 60;
+        }, { variant: "ghost", fontSize: 12 });
+        drawButton(ctx2, hits, mapX + mapW - 118, mapY + mapH - 40, 34, 28, "\u2191", () => {
+          this.panY += 60;
+        }, { variant: "ghost", fontSize: 12 });
+        drawButton(ctx2, hits, mapX + mapW - 80, mapY + mapH - 40, 34, 28, "\u2193", () => {
+          this.panY -= 60;
+        }, { variant: "ghost", fontSize: 12 });
+        drawButton(ctx2, hits, mapX + mapW - 42, mapY + mapH - 40, 34, 28, "\u2192", () => {
+          this.panX -= 60;
+        }, { variant: "ghost", fontSize: 12 });
+      }
+      if (this.nodeDrawerOpen) {
+        this.renderNodeDrawer(ctx2, hits, league, mapX, mapY, mapW, mapH, actions);
+      }
+      if (this.summaryModalOpen) {
+        this.renderSummaryModal(ctx2, hits, league, actions);
+      }
+    }
+    renderNodeDrawer(ctx2, hits, league, mapX, mapY, mapW, mapH, actions) {
+      const st = league.getState();
+      const club = league.getUserClub();
+      const unlocked = league.getSkillWebUnlocked();
+      const unlockedSet = new Set(unlocked);
+      const dw = 392;
+      const dh = mapH - 24;
+      const dx = mapX + mapW - dw - 12;
+      const dy = mapY + 12;
+      this.lastDrawerRect = { x: dx, y: dy, w: dw, h: dh };
+      drawChamferPanel(ctx2, dx, dy, dw, dh, 12, "rgba(11, 17, 32, 0.96)", THEME.BORDER_GOLD, 1.6, THEME.GOLD_LIGHT);
       const sel = SKILL_WEB_NODES.find((n) => n.id === this.selectedNodeId) ?? SKILL_WEB_NODES[0];
       const selUnlocked = unlockedSet.has(sel.id);
       const selReachable = canUnlockNode(sel.id, unlocked);
       const selResonating = selUnlocked && isNodeResonating(sel, club.formation, club.style);
       const canBuy = selReachable && st.metaPointsTotal >= sel.cost;
       const kindLabel = sel.activeSkill ? "\u26A1 \u4E3B\u52A8\u89E6\u53D1\u6280 \xB7 \u5B50\u5F39\u65F6\u95F4" : sel.kind === "origin" ? "\u4F53\u7CFB/\u6218\u672F\u539F\u70B9" : sel.kind === "formation" ? "\u9635\u578B\u4E13\u7CBE\u8282\u70B9" : sel.kind === "fusion" ? "\u4F53\u7CFB\xD7\u6218\u672F\u878D\u5408\u5947\u70B9" : sel.kind === "keystone" ? "\u8DE8\u754C\u7EC8\u6781\u5947\u70B9" : "\u6218\u672F\u8DEF\u5F84\u8282\u70B9";
-      drawBadge(ctx2, rx + 18, rightY + 18, sel.activeSkill ? 156 : 128, 22, kindLabel, sel.activeSkill ? "#0C4A6E" : "#1E293B", sel.activeSkill ? "#38BDF8" : sel.color);
+      drawBadge(ctx2, dx + 18, dy + 16, sel.activeSkill ? 164 : 136, 22, kindLabel, sel.activeSkill ? "#0C4A6E" : "#1E293B", sel.activeSkill ? "#38BDF8" : sel.color);
       drawBadge(
         ctx2,
-        rx + rw - 108,
-        rightY + 18,
+        dx + dw - 168,
+        dy + 16,
         90,
         22,
         selResonating ? "\u5171\u9E23 \xD72 \u2713" : selUnlocked ? "\u5DF2\u70B9\u4EAE \u2713" : selReachable ? "\u53EF\u70B9\u4EAE" : "\u672A\u8FDE\u901A",
         selResonating ? "#78350F" : selUnlocked ? "#14532D" : selReachable ? "#1E3A5F" : "#111827",
         selResonating ? THEME.GOLD_LIGHT : selUnlocked ? THEME.GREEN : selReachable ? "#7DD3FC" : THEME.TX3
       );
-      drawText(ctx2, sel.name, rx + 18, rightY + 60, { size: 21, bold: true, color: sel.color });
-      drawWrappedText(ctx2, sel.desc, rx + 18, rightY + 88, rw - 36, 18, {
-        size: 12,
+      drawButton(ctx2, hits, dx + dw - 68, dy + 14, 52, 26, "\u5173\u95ED", () => {
+        this.nodeDrawerOpen = false;
+      }, { variant: "ghost", fontSize: 11 });
+      drawText(ctx2, sel.name, dx + 18, dy + 62, { size: 22, bold: true, color: sel.color });
+      drawWrappedText(ctx2, sel.desc, dx + 18, dy + 90, dw - 36, 20, {
+        size: 13,
         color: THEME.TX1,
-        maxLines: 2
+        maxLines: 3
       });
       if (sel.activeSkill) {
         const sk = sel.activeSkill;
-        drawText(ctx2, `\u26A1 \u4E3B\u52A8\u6280\uFF1A${sk.name} (${sk.situationLabel})`, rx + 18, rightY + 126, { size: 11, bold: true, color: "#38BDF8" });
-        drawText(ctx2, `\u95E8\u69DB:\u719F\u5EA6\u2265${sk.minFamiliarity}/\u9ED8\u5951\u2265${sk.minChemistry} \xB7 ${sk.powerLabel.slice(0, 18)}`, rx + 18, rightY + 142, { size: 10, color: THEME.GOLD_LIGHT });
+        drawRoundRect(ctx2, dx + 18, dy + 154, dw - 36, 54, 8, "rgba(12, 74, 110, 0.35)", "rgba(56, 189, 248, 0.45)");
+        drawText(ctx2, `\u26A1 \u4E3B\u52A8\u6280\uFF1A${sk.name} (${sk.situationLabel})`, dx + 30, dy + 172, { size: 12.5, bold: true, color: "#38BDF8" });
+        drawText(ctx2, `\u95E8\u69DB: \u719F\u5EA6\u2265${sk.minFamiliarity} / \u9ED8\u5951\u2265${sk.minChemistry} \xB7 ${sk.powerLabel.slice(0, 18)}`, dx + 30, dy + 194, { size: 11, color: THEME.GOLD_LIGHT });
       }
+      const actionY = sel.activeSkill ? dy + 220 : dy + 166;
       if (selUnlocked) {
         if (sel.activeSkill) {
           const loadoutIds = league.getSkillLoadoutIds();
@@ -17375,10 +18650,10 @@
           drawButton(
             ctx2,
             hits,
-            rx + 18,
-            rightY + 156,
-            rw - 36,
-            36,
+            dx + 18,
+            actionY,
+            dw - 36,
+            42,
             isEquipped ? `\u26A1 \u5DF2\u88C5\u5907\u5230\u6BD4\u8D5B\u69FD\u4F4D (${loadoutIds.length}/4) \xB7 \u70B9\u51FB\u5378\u4E0B` : `\u26A1 \u88C5\u5907\u5230\u6BD4\u8D5B\u4E3B\u52A8\u6280\u69FD\u4F4D (${loadoutIds.length}/4)`,
             () => {
               const res = league.toggleSkillLoadout(sel.id);
@@ -17390,15 +18665,15 @@
                 this.notice = res.reason || "\u64CD\u4F5C\u5931\u8D25";
               }
             },
-            { variant: isEquipped ? "green" : "primary", fontSize: 11.5 }
+            { variant: isEquipped ? "green" : "primary", fontSize: 12 }
           );
         } else {
           drawBadge(
             ctx2,
-            rx + 18,
-            rightY + 156,
-            rw - 36,
-            34,
+            dx + 18,
+            actionY,
+            dw - 36,
+            38,
             selResonating ? "\u5F53\u524D\u9635\u578B\u6218\u672F\u89E6\u53D1\u53CC\u500D\u5171\u9E23\u751F\u6548\u4E2D \u2713" : "\u8BE5\u6218\u672F\u8282\u70B9\u5DF2\u6C38\u4E45\u751F\u6548 \u2713",
             selResonating ? "#78350F" : "#14532D",
             selResonating ? THEME.GOLD_LIGHT : THEME.GREEN
@@ -17408,10 +18683,10 @@
         drawButton(
           ctx2,
           hits,
-          rx + 18,
-          rightY + 154,
-          rw - 36,
-          38,
+          dx + 18,
+          actionY,
+          dw - 36,
+          42,
           !selReachable ? "\u9700\u5148\u70B9\u4EAE\u76F8\u90BB\u8282\u70B9" : canBuy ? `\u70B9\u4EAE\u6B64\u8282\u70B9 (\u6D88\u8017 ${sel.cost}pt)` : `Meta \u70B9\u6570\u4E0D\u8DB3 (\u9700\u8981 ${sel.cost}pt)`,
           () => {
             const res = league.unlockSkillWebNode(sel.id);
@@ -17423,10 +18698,36 @@
               this.notice = res.reason || "\u65E0\u6CD5\u70B9\u4EAE";
             }
           },
-          { variant: canBuy ? "gold" : "ghost", disabled: !canBuy, fontSize: 13 }
+          { variant: canBuy ? "gold" : "ghost", disabled: !canBuy, fontSize: 13.5 }
         );
       }
+      drawChamferPanel(ctx2, dx + 18, dy + dh - 146, dw - 36, 76, 8, THEME.BG_CARD, THEME.BORDER);
+      drawText(ctx2, `\u661F\u56FE\u8FDB\u5EA6\uFF1A${unlocked.length} / ${SKILL_WEB_NODES.length} \u8282\u70B9`, dx + 32, dy + dh - 124, { size: 12.5, bold: true, color: THEME.GOLD_LIGHT });
+      drawText(ctx2, `\u5F53\u524D\u6FC0\u6D3B\uFF1A${club.formation} \xB7 ${TACTICAL_PRESETS[club.style].name}`, dx + 32, dy + dh - 96, { size: 11.5, color: THEME.TX2 });
+      drawButton(ctx2, hits, dx + 18, dy + dh - 56, dw - 36, 38, "\u67E5\u770B\u5F15\u64CE\u4FEE\u6B63 / \u91CD\u7F6E\u661F\u56FE", () => {
+        this.summaryModalOpen = true;
+      }, { variant: "ghost", fontSize: 12, icon: "chart" });
+    }
+    renderSummaryModal(ctx2, hits, league, actions) {
+      const club = league.getUserClub();
+      const unlocked = league.getSkillWebUnlocked();
       const activeMods = computeSkillWebMods(unlocked, club.formation, club.style);
+      ctx2.fillStyle = "rgba(4, 7, 14, 0.84)";
+      ctx2.fillRect(0, 0, THEME.W, THEME.H);
+      hits.clear();
+      const mx = 220;
+      const my = 96;
+      const mw = 840;
+      const mh = 528;
+      drawChamferPanel(ctx2, mx, my, mw, mh, 14, "rgba(14, 22, 40, 0.98)", THEME.BORDER_GOLD, 1.6, THEME.GOLD_LIGHT);
+      drawText(ctx2, `\u5F15\u64CE\u884C\u4E3A\u4FEE\u6B63\u4E0E\u5B9E\u6218\u719F\u7EC3\u5EA6\u603B\u89C8 (${club.formation} \xB7 ${TACTICAL_PRESETS[club.style].name})`, mx + 28, my + 34, {
+        size: 18,
+        bold: true,
+        color: THEME.GOLD_LIGHT
+      });
+      drawButton(ctx2, hits, mx + mw - 104, my + 18, 80, 34, "\u5173\u95ED", () => {
+        this.summaryModalOpen = false;
+      }, { variant: "ghost", fontSize: 12, icon: "close" });
       const modTags = [];
       if ((activeMods.overlapDepthBonus ?? 0) > 0) modTags.push(`\u8FB9\u536B\u5957\u4E0A +${activeMods.overlapDepthBonus}m`);
       if (activeMods.dualOverlap) modTags.push("\u53CC\u4FA7\u7FFC\u536B\u540C\u63D2");
@@ -17441,58 +18742,53 @@
       if ((activeMods.shortPassBias ?? 0) > 0) modTags.push(`\u77ED\u4F20 +${Math.round(activeMods.shortPassBias * 100)}%`);
       if (activeMods.gkQuickLaunch) modTags.push("\u95E8\u5C06\u5FEB\u53D1\u53CD\u51FB");
       if ((activeMods.staminaDrainMul ?? 1) < 1) modTags.push(`\u4F53\u80FD\u6D88\u8017 -${Math.round((1 - activeMods.staminaDrainMul) * 100)}%`);
-      drawChamferPanel(ctx2, rx + 18, rightY + 206, rw - 36, 128, 8, THEME.BG_CARD, THEME.BORDER);
-      drawText(ctx2, `\u5F15\u64CE\u884C\u4E3A\u4FEE\u6B63 (${club.formation} \xB7 ${TACTICAL_PRESETS[club.style].name})`, rx + 30, rightY + 224, {
-        size: 12,
-        bold: true,
-        color: "#38BDF8"
-      });
+      drawChamferPanel(ctx2, mx + 28, my + 74, mw - 56, 172, 10, THEME.BG_CARD, THEME.BORDER);
+      drawText(ctx2, "\u5F53\u524D 2D \u6BD4\u8D5B\u5F15\u64CE\u5B9E\u65F6\u884C\u4E3A\u4FEE\u6B63", mx + 46, my + 100, { size: 14, bold: true, color: "#38BDF8" });
       drawWrappedText(
         ctx2,
-        modTags.length > 0 ? modTags.join(" \xB7 ") : "\u5C1A\u672A\u6FC0\u6D3B\u5F15\u64CE\u884C\u4E3A\u4FEE\u6B63\uFF0C\u70B9\u4EAE\u8DEF\u5F84\u6216\u878D\u5408\u5947\u70B9\u540E\u5728 2D \u6BD4\u8D5B\u4E2D\u5B9E\u65F6\u751F\u6548",
-        rx + 30,
-        rightY + 248,
-        rw - 60,
-        17,
-        { size: 11, color: THEME.TX1, maxLines: 4 }
+        modTags.length > 0 ? modTags.join("  \xB7  ") : "\u5C1A\u672A\u6FC0\u6D3B\u5F15\u64CE\u884C\u4E3A\u4FEE\u6B63\uFF0C\u70B9\u4EAE\u8DEF\u5F84\u6216\u878D\u5408\u5947\u70B9\u540E\u5728 2D \u6BD4\u8D5B\u4E2D\u5B9E\u65F6\u751F\u6548",
+        mx + 46,
+        my + 128,
+        mw - 92,
+        24,
+        { size: 13, color: THEME.TX1, maxLines: 4 }
       );
       const mastery = league.getTacticalMastery();
       const formInfo = getFormationMasteryInfo(club.formation, mastery.formations[club.formation] ?? 0);
       const styleInfo = getStyleMasteryInfo(club.style, mastery.styles[club.style] ?? 0);
-      drawChamferPanel(ctx2, rx + 18, rightY + 346, rw - 36, 118, 8, THEME.BG_CARD, THEME.BORDER);
-      drawText(ctx2, `\u5B9E\u6218\u719F\u7EC3\u5EA6 (${unlocked.length}/${SKILL_WEB_NODES.length} \u8282\u70B9\u5DF2\u70B9\u4EAE)`, rx + 30, rightY + 364, {
-        size: 12,
+      drawChamferPanel(ctx2, mx + 28, my + 262, mw - 56, 176, 10, THEME.BG_CARD, THEME.BORDER);
+      drawText(ctx2, `\u5B9E\u6218\u719F\u7EC3\u5EA6 (${unlocked.length}/${SKILL_WEB_NODES.length} \u8282\u70B9\u5DF2\u70B9\u4EAE)`, mx + 46, my + 288, {
+        size: 14,
         bold: true,
         color: THEME.GOLD_LIGHT
       });
-      drawText(ctx2, `${club.formation}\uFF1ALv.${formInfo.level} ${formInfo.title} (${formInfo.xp}/15)`, rx + 30, rightY + 390, {
-        size: 11.5,
+      drawText(ctx2, `${club.formation}\uFF1ALv.${formInfo.level} ${formInfo.title} (${formInfo.xp}/15)`, mx + 46, my + 322, {
+        size: 13,
         color: THEME.TX1
       });
-      drawText(ctx2, formInfo.bonusDesc, rx + 30, rightY + 408, { size: 10.5, color: THEME.GREEN });
-      drawText(ctx2, `${TACTICAL_PRESETS[club.style].name}\uFF1ALv.${styleInfo.level} ${styleInfo.title} (${styleInfo.xp}/15)`, rx + 30, rightY + 432, {
-        size: 11.5,
+      drawText(ctx2, formInfo.bonusDesc, mx + 46, my + 344, { size: 12, color: THEME.GREEN });
+      drawText(ctx2, `${TACTICAL_PRESETS[club.style].name}\uFF1ALv.${styleInfo.level} ${styleInfo.title} (${styleInfo.xp}/15)`, mx + 46, my + 380, {
+        size: 13,
         color: THEME.TX1
       });
-      drawText(ctx2, styleInfo.bonusDesc, rx + 30, rightY + 450, { size: 10.5, color: "#38BDF8" });
-      drawButton(ctx2, hits, rx + 18, rightY + rightH - 50, rw - 36, 36, "\u91CD\u7F6E\u661F\u56FE\uFF08\u5168\u989D\u9000\u8FD8 Meta \u70B9\u6570\uFF09", () => {
+      drawText(ctx2, styleInfo.bonusDesc, mx + 46, my + 402, { size: 12, color: "#38BDF8" });
+      drawButton(ctx2, hits, mx + 28, my + mh - 66, mw - 56, 44, "\u91CD\u7F6E\u661F\u56FE\uFF08\u5168\u989D\u9000\u8FD8 Meta \u70B9\u6570\uFF09", () => {
         const res = league.resetSkillWeb();
         if (res.ok) {
           SoundEngine.playClick();
+          this.summaryModalOpen = false;
           this.notice = `\u661F\u56FE\u5DF2\u91CD\u7F6E\uFF0C\u5168\u989D\u9000\u8FD8 ${res.refunded} Meta \u70B9\u6570\uFF01`;
           actions.onSave();
         } else {
           this.notice = res.reason || "\u65E0\u6CD5\u91CD\u7F6E";
         }
-      }, { variant: "ghost", fontSize: 12, icon: "refresh" });
+      }, { variant: "ghost", fontSize: 13, icon: "refresh" });
     }
   };
 
   // packages/game-ui/src/screens/PortalScreen.ts
   var PortalScreen = class {
     constructor() {
-      this.standingsScroll = 0;
-      this.rightTab = "standings";
       this.prepToast = "";
       this.scoutModalOpen = false;
       this.scoutNotice = "";
@@ -17504,17 +18800,6 @@
       }
       return false;
     }
-    onWheel(deltaY) {
-      if (this.scoutModalOpen || this.rightTab !== "standings") return false;
-      const maxScroll = 10;
-      const step = deltaY > 0 ? 1 : -1;
-      const next = Math.max(0, Math.min(maxScroll, this.standingsScroll + step));
-      if (next !== this.standingsScroll) {
-        this.standingsScroll = next;
-        return true;
-      }
-      return false;
-    }
     render(ctx2, hits, league, actions) {
       const st = league.getState();
       const club = league.getUserClub();
@@ -17522,6 +18807,8 @@
       const nextFx = league.getUserCurrentFixture();
       const tierInfo = league.getCurrentTierInfo();
       const diffStars = "\u2605".repeat(8 - tierInfo.tier) + "\u2606".repeat(tierInfo.tier - 1);
+      const userRankIdx = standings.findIndex((r) => r.isUser);
+      const userRow = standings[userRankIdx];
       const stageLabel = `${tierInfo.shortLabel} \xB7 \u7B2C ${st.currentRound}/34 \u8F6E`;
       drawBroadcastHeader(ctx2, hits, {
         kicker: `SEASON ${st.seasonNumber} \xB7 ${tierInfo.name} (${diffStars})`,
@@ -17533,9 +18820,19 @@
         rightAction: nextFx ? { label: "\u8FDB\u5165\u6BD4\u8D5B\u65E5", icon: "play", variant: "gold", onClick: actions.onStartMatch } : void 0
       });
       drawNavRail(ctx2, hits, "portal", actions.onNavigate);
-      drawChamferPanel(ctx2, 96, 80, 504, 214, 12, "rgba(14, 22, 40, 0.92)", THEME.BORDER_GOLD, 1.4, THEME.GOLD_LIGHT);
-      drawText(ctx2, `NEXT FIXTURE \xB7 \u7B2C ${st.currentRound}/34 \u8F6E`, 116, 98, { size: 11, bold: true, color: THEME.GOLD, mono: true });
-      drawText(ctx2, `${tierInfo.name}`, 582, 98, { size: 11, color: "#38BDF8", align: "right" });
+      drawChamferPanel(ctx2, 96, 80, 590, 280, 12, "rgba(14, 22, 40, 0.92)", THEME.BORDER_GOLD, 1.4, THEME.GOLD_LIGHT);
+      drawText(ctx2, `NEXT FIXTURE \xB7 \u7B2C ${st.currentRound}/34 \u8F6E`, 118, 102, {
+        size: 12,
+        bold: true,
+        color: THEME.GOLD,
+        mono: true
+      });
+      drawText(ctx2, `${tierInfo.name} \xB7 \u6211\u961F\u6682\u5217\u7B2C ${userRankIdx + 1} \u540D`, 666, 102, {
+        size: 11.5,
+        color: "#38BDF8",
+        align: "right"
+      });
+      const prep = league.getInterMatchPrep();
       if (nextFx) {
         const home = st.clubs.find((c) => c.id === nextFx.homeClubId);
         const away = st.clubs.find((c) => c.id === nextFx.awayClubId);
@@ -17543,155 +18840,78 @@
         const awayRankIdx = standings.findIndex((r) => r.clubId === away.id);
         const homeRow = standings[homeRankIdx];
         const awayRow = standings[awayRankIdx];
-        drawChamferPanel(ctx2, 114, 112, 468, 80, 8, THEME.BG_CARD, THEME.BORDER);
-        drawClubCrest(ctx2, 214, 136, 15, home);
-        drawText(ctx2, home.name, 214, 163, {
-          size: 13.5,
+        drawChamferPanel(ctx2, 114, 120, 554, 104, 10, THEME.BG_CARD, THEME.BORDER);
+        drawClubCrest(ctx2, 226, 150, 19, home);
+        drawText(ctx2, home.name, 226, 184, {
+          size: 15,
           bold: true,
           align: "center",
           color: home.isUser ? THEME.GOLD_LIGHT : THEME.TX1
         });
-        drawText(ctx2, `\u7B2C${homeRankIdx + 1}\u540D \xB7 ${homeRow?.points ?? 0}\u5206 \xB7 ${home.formation}`, 214, 180, {
-          size: 10,
+        drawText(ctx2, `\u7B2C${homeRankIdx + 1}\u540D \xB7 ${homeRow?.points ?? 0}\u5206 \xB7 ${home.formation}`, 226, 206, {
+          size: 11,
           align: "center",
           color: THEME.TX2
         });
-        drawText(ctx2, "VS", 348, 152, { size: 20, bold: true, italic: true, align: "center", color: THEME.GOLD_LIGHT });
-        drawClubCrest(ctx2, 482, 136, 15, away);
-        drawText(ctx2, away.name, 482, 163, {
-          size: 13.5,
+        drawText(ctx2, "VS", 391, 172, { size: 24, bold: true, italic: true, align: "center", color: THEME.GOLD_LIGHT });
+        drawClubCrest(ctx2, 556, 150, 19, away);
+        drawText(ctx2, away.name, 556, 184, {
+          size: 15,
           bold: true,
           align: "center",
           color: away.isUser ? THEME.GOLD_LIGHT : THEME.TX1
         });
-        drawText(ctx2, `\u7B2C${awayRankIdx + 1}\u540D \xB7 ${awayRow?.points ?? 0}\u5206 \xB7 ${away.formation}`, 482, 180, {
-          size: 10,
+        drawText(ctx2, `\u7B2C${awayRankIdx + 1}\u540D \xB7 ${awayRow?.points ?? 0}\u5206 \xB7 ${away.formation}`, 556, 206, {
+          size: 11,
           align: "center",
           color: THEME.TX2
         });
         const oppClub = home.isUser ? away : home;
         const brief = league.getOpponentBriefing(oppClub.id);
-        const prepForCard = league.getInterMatchPrep();
-        const intel = prepForCard?.matchupIntel;
-        drawRoundRect(ctx2, 114, 198, 468, 42, 6, "rgba(15, 23, 42, 0.92)", "rgba(56, 189, 248, 0.35)");
+        const intel = prep?.matchupIntel;
+        drawRoundRect(ctx2, 114, 234, 554, 56, 8, "rgba(15, 23, 42, 0.92)", "rgba(56, 189, 248, 0.35)");
         const famText = intel ? `\u4E86\u89E3 ${intel.familiarity}%` : "\u7403\u63A2\u60C5\u62A5";
         const famColor = intel && intel.familiarity >= 70 ? THEME.GREEN : "#38BDF8";
-        drawBadge(ctx2, 120, 204, 68, 15, famText, "#1E3A5F", famColor);
-        drawText(ctx2, `${brief.styleName} \xB7 ${brief.weakLineLabel}`, 194, 211, {
-          size: 10,
+        drawBadge(ctx2, 124, 243, 76, 18, famText, "#1E3A5F", famColor);
+        drawText(ctx2, `${brief.styleName} \xB7 ${brief.weakLineLabel}`, 208, 252, {
+          size: 12,
           bold: true,
           color: THEME.TX1
         });
         const subTip = intel?.chosenCounterId ? intel.spotCorrect ? "\u5F02\u8BAE\u6210\u7ACB\uFF1A\u5DF2\u9501\u5B9A\u9488\u5BF9\u6027\u8D5B\u524D\u6218\u672F\u7EA2\u5229" : "\u5DF2\u5B8C\u6210\u6307\u8BC1\uFF08\u8BEF\u5224\u5E72\u6270\u7EBF\u7D22\uFF0C\u6B63\u5E38\u5E94\u6218\uFF09" : brief.counterTip;
-        drawText(ctx2, subTip, 120, 228, {
-          size: 10,
+        drawText(ctx2, subTip, 124, 273, {
+          size: 11.5,
           color: intel?.spotCorrect ? THEME.GREEN : THEME.GOLD_LIGHT
         });
         if (intel) {
-          drawButton(ctx2, hits, 476, 204, 100, 30, intel.chosenCounterId ? "\u60C5\u62A5\u8BE6\u60C5" : "\u4FA6\u5BDF\u6293\u7834\u7EFD", () => {
+          drawButton(ctx2, hits, 534, 244, 122, 36, intel.chosenCounterId ? "\u60C5\u62A5\u8BE6\u60C5" : "\u4FA6\u5BDF\u6293\u7834\u7EFD", () => {
             this.scoutNotice = "";
             this.scoutModalOpen = true;
-          }, { variant: intel.chosenCounterId ? "ghost" : "primary", fontSize: 10 });
+          }, { variant: intel.chosenCounterId ? "ghost" : "primary", fontSize: 11.5 });
         }
-        drawButton(ctx2, hits, 114, 248, 132, 36, "\u9996\u53D1\u4E0E\u9635\u578B", () => actions.onNavigate("tactics"), {
+        drawButton(ctx2, hits, 114, 302, 156, 44, "\u9996\u53D1\u4E0E\u9635\u578B", () => actions.onNavigate("tactics"), {
           variant: "ghost",
-          fontSize: 12,
+          fontSize: 13,
           icon: "tactics"
         });
-        drawButton(ctx2, hits, 254, 248, 84, 36, "\u8DF3\u8FC7\u672C\u8F6E", () => {
+        drawButton(ctx2, hits, 280, 302, 108, 44, "\u8DF3\u8FC7\u672C\u8F6E", () => {
           actions.onQuickSim?.();
         }, {
           variant: "ghost",
-          fontSize: 11
+          fontSize: 12.5
         });
-        drawButton(ctx2, hits, 346, 248, 236, 36, "\u25B6 \u4EB2\u81EA\u6307\u6325\u672C\u573A\u5BF9\u51B3", actions.onStartMatch, {
+        drawButton(ctx2, hits, 398, 302, 270, 44, "\u25B6 \u4EB2\u81EA\u6307\u6325\u672C\u573A\u5BF9\u51B3", actions.onStartMatch, {
           variant: "gold",
-          fontSize: 13
+          fontSize: 14
         });
       }
-      drawChamferPanel(ctx2, 96, 304, 504, 190, 12, "rgba(14, 22, 40, 0.94)", THEME.BORDER_GOLD, 1.2);
-      drawText(ctx2, "\u5F53\u524D\u51FA\u6218\u914D\u7F6E\u603B\u89C8", 112, 322, { size: 12, bold: true, color: THEME.GOLD_LIGHT });
-      drawText(ctx2, `\u6FC0\u6D3B\uFF1A${club.formation} \xB7 ${TACTICAL_PRESETS[club.style].name}`, 584, 322, {
-        size: 10.5,
-        bold: true,
-        color: "#38BDF8",
-        align: "right"
-      });
-      const eqSkills = league.getEquippedActiveSkills();
-      drawRoundRect(ctx2, 110, 338, 154, 144, 8, THEME.BG_CARD, "rgba(56, 189, 248, 0.45)");
-      drawText(ctx2, `\u26A1\u4E3B\u52A8\u6280(${eqSkills.length}/4)`, 117, 353, { size: 10.5, bold: true, color: "#38BDF8" });
-      drawButton(ctx2, hits, 208, 343, 50, 20, "\u6539\u6280\u80FD", () => actions.onNavigate("meta"), { variant: "primary", fontSize: 9.5 });
-      for (let si = 0; si < 4; si++) {
-        const sk = eqSkills[si];
-        const sy = 370 + si * 26;
-        drawRoundRect(ctx2, 116, sy, 142, 21, 4, "rgba(11, 17, 30, 0.85)", sk ? "rgba(56,189,248,0.35)" : "#1E293B");
-        drawText(ctx2, sk ? `${si + 1}.${sk.name.slice(0, 7)}` : `${si + 1}.\u7A7A\u69FD\u4F4D`, 122, sy + 10.5, {
-          size: 9.8,
-          color: sk ? THEME.TX1 : THEME.TX3
-        });
-      }
-      const loadoutCards = league.getMatchLoadout();
-      drawRoundRect(ctx2, 271, 338, 154, 144, 8, THEME.BG_CARD, "rgba(192, 132, 252, 0.45)");
-      drawText(ctx2, `\u6307\u6325\u724C(${loadoutCards.length}/4)`, 278, 353, { size: 10.5, bold: true, color: "#C084FC" });
-      drawButton(ctx2, hits, 369, 343, 50, 20, "\u6539\u5361\u724C", () => actions.onNavigate("cards"), { variant: "primary", fontSize: 9.5 });
-      for (let ci = 0; ci < 4; ci++) {
-        const card = loadoutCards[ci];
-        const cy = 370 + ci * 26;
-        drawRoundRect(ctx2, 277, cy, 142, 21, 4, "rgba(11, 17, 30, 0.85)", card ? "rgba(192,132,252,0.35)" : "#1E293B");
-        drawText(
-          ctx2,
-          card ? `E${card.cost} ${card.name.slice(0, 5)} L${card.level ?? 1}` : `${ci + 1}.\u672A\u914D\u7F6E`,
-          283,
-          cy + 10.5,
-          { size: 9.8, color: card ? THEME.TX1 : THEME.TX3 }
-        );
-      }
-      const presets = league.getTacticalPresets();
-      drawRoundRect(ctx2, 432, 338, 154, 144, 8, THEME.BG_CARD, THEME.BORDER_GOLD);
-      drawText(ctx2, "4\u5957\u6218\u672F", 439, 353, { size: 10.5, bold: true, color: THEME.GOLD_LIGHT });
-      drawButton(ctx2, hits, 530, 343, 50, 20, "\u6539\u6218\u672F", () => actions.onNavigate("tactics"), { variant: "gold", fontSize: 9.5 });
-      for (let pi = 0; pi < 4; pi++) {
-        const pr = presets[pi];
-        const py = 370 + pi * 26;
-        const isCur = pr && club.formation === pr.formation && club.style === pr.style;
-        drawRoundRect(
-          ctx2,
-          438,
-          py,
-          142,
-          21,
-          4,
-          isCur ? "rgba(34, 197, 94, 0.16)" : "rgba(11, 17, 30, 0.85)",
-          isCur ? THEME.GREEN : "#1E293B"
-        );
-        if (pr) {
-          const stShort = TACTICAL_PRESETS[pr.style].name.slice(0, 2);
-          drawText(ctx2, `${pi + 1}.${pr.formation}\xB7${stShort}`, 444, py + 10.5, {
-            size: 9.8,
-            bold: isCur,
-            color: isCur ? THEME.GREEN : THEME.TX1
-          });
-          if (isCur) {
-            drawText(ctx2, "\u5F53\u524D", 574, py + 10.5, { size: 8.8, bold: true, color: THEME.GREEN, align: "right" });
-          }
-          hits.add(438, py, 142, 21, () => {
-            const res = league.applyTacticalPreset(pi);
-            if (res.ok && res.preset) {
-              SoundEngine.playClick();
-              this.prepToast = `\u5DF2\u5207\u6362\u81F3\u9884\u6848${pi + 1}\uFF1A${res.preset.formation} \xB7 ${TACTICAL_PRESETS[res.preset.style].name}`;
-              actions.onSave?.();
-            }
-          });
-        }
-      }
-      const prep = league.getInterMatchPrep();
-      drawChamferPanel(ctx2, 96, 504, 504, 200, 10, "rgba(14, 22, 40, 0.92)", "rgba(56, 189, 248, 0.45)");
+      drawChamferPanel(ctx2, 96, 374, 590, 330, 12, "rgba(14, 22, 40, 0.92)", "rgba(56, 189, 248, 0.45)");
       if (prep) {
         const wInfo = WEATHER_INFO[prep.weather];
-        drawBadge(ctx2, 112, 516, 74, 18, wInfo.label, "#0F172A", wInfo.color);
-        drawText(ctx2, wInfo.tip, 192, 525, { size: 10.5, color: THEME.TX2 });
-        drawText(ctx2, `\u6574\u5907 ${prep.actionsLeft}/1`, 584, 525, {
-          size: 10.5,
+        drawBadge(ctx2, 114, 390, 84, 22, wInfo.label, "#0F172A", wInfo.color);
+        drawText(ctx2, wInfo.tip, 208, 401, { size: 12, color: THEME.TX2 });
+        drawText(ctx2, `\u8D5B\u524D\u6574\u5907\u6B21\u6570 ${prep.actionsLeft}/1`, 666, 401, {
+          size: 12,
           bold: true,
           align: "right",
           color: prep.actionsLeft > 0 ? THEME.GREEN : THEME.TX3,
@@ -17704,9 +18924,9 @@
           { kind: "sharp", label: "\u5C04\u95E8\u52A0\u7EC3+2" }
         ];
         trainBtns.forEach((tb, bi) => {
-          const bx = 112 + bi * 119;
+          const bx = 114 + bi * 140;
           const done = prep.doneTraining === tb.kind;
-          drawButton(ctx2, hits, bx, 544, 113, 30, tb.label, () => {
+          drawButton(ctx2, hits, bx, 424, 132, 38, tb.label, () => {
             const res = league.applyPrepTraining(tb.kind);
             if (res.msg) this.prepToast = res.msg;
             if (res.ok) SoundEngine.playCraftSuccess();
@@ -17715,268 +18935,170 @@
           }, {
             variant: done ? "green" : "ghost",
             disabled: prep.actionsLeft <= 0 && !done,
-            fontSize: 10
+            fontSize: 11.5
           });
         });
         const talk = prep.playerTalk;
         if (talk) {
-          drawRoundRect(ctx2, 112, 584, 472, 104, 8, THEME.BG_CARD, talk.resolved ? THEME.GREEN : THEME.BORDER_GOLD);
-          drawBadge(ctx2, 122, 594, 40, 16, talk.role, "#1E3A5F", THEME.TX1);
-          drawText(ctx2, `${talk.playerName} \u8D5B\u524D\u6C9F\u901A`, 168, 602, { size: 11.5, bold: true, color: THEME.GOLD_LIGHT });
+          drawRoundRect(ctx2, 114, 476, 554, 210, 10, THEME.BG_CARD, talk.resolved ? THEME.GREEN : THEME.BORDER_GOLD);
+          drawBadge(ctx2, 128, 492, 46, 20, talk.role, "#1E3A5F", THEME.TX1);
+          drawText(ctx2, `${talk.playerName} \xB7 \u8D5B\u524D\u4E00\u5BF9\u4E00\u6C9F\u901A`, 184, 502, { size: 13.5, bold: true, color: THEME.GOLD_LIGHT });
           if (talk.resolved) {
-            drawText(ctx2, `\u5DF2\u56DE\u5E94\uFF1A${talk.chosenLabel}`, 122, 632, { size: 11.5, color: THEME.GREEN });
-            drawText(ctx2, this.prepToast || "\u7403\u5458\u58EB\u6C14\u5DF2\u7A33\u4F4F\uFF0C\u4E13\u6CE8\u8FCE\u63A5\u672C\u8F6E\u8F83\u91CF", 122, 658, { size: 10.5, color: THEME.TX2 });
+            drawText(ctx2, `\u5DF2\u56DE\u5E94\uFF1A${talk.chosenLabel}`, 128, 552, { size: 13, bold: true, color: THEME.GREEN });
+            drawWrappedText(
+              ctx2,
+              this.prepToast || "\u7403\u5458\u58EB\u6C14\u5DF2\u7A33\u4F4F\uFF0C\u4E13\u6CE8\u8FCE\u63A5\u672C\u8F6E\u8F83\u91CF",
+              128,
+              586,
+              524,
+              20,
+              { size: 12, color: THEME.TX2, maxLines: 3 }
+            );
           } else {
-            drawText(ctx2, talk.prompt.slice(0, 36), 122, 626, { size: 10.5, color: THEME.TX1 });
-            drawButton(ctx2, hits, 122, 650, 224, 26, talk.optA.label, () => {
+            drawWrappedText(ctx2, talk.prompt, 128, 532, 524, 21, { size: 12.5, color: THEME.TX1, maxLines: 3 });
+            drawButton(ctx2, hits, 128, 622, 256, 44, talk.optA.label, () => {
               const res = league.resolvePlayerTalk("A");
               if (res.msg) this.prepToast = res.msg;
               if (res.ok) SoundEngine.playRewardChime();
               actions.onSave?.();
-            }, { variant: "gold", fontSize: 10 });
-            drawButton(ctx2, hits, 354, 650, 224, 26, talk.optB.label, () => {
+            }, { variant: "gold", fontSize: 12 });
+            drawButton(ctx2, hits, 396, 622, 256, 44, talk.optB.label, () => {
               const res = league.resolvePlayerTalk("B");
               if (res.msg) this.prepToast = res.msg;
               if (res.ok) SoundEngine.playRewardChime();
               actions.onSave?.();
-            }, { variant: "primary", fontSize: 10 });
+            }, { variant: "primary", fontSize: 12 });
           }
         } else {
-          drawRoundRect(ctx2, 112, 584, 472, 104, 8, THEME.BG_CARD, THEME.BORDER);
-          drawText(ctx2, "\u66F4\u8863\u5BA4\u6C1B\u56F4\u5E73\u7A33 \xB7 \u5168\u961F\u4E13\u6CE8\u5907\u6218\u4E0B\u8F6E\u5BF9\u624B", 126, 616, { size: 12, bold: true, color: THEME.TX1 });
+          drawRoundRect(ctx2, 114, 476, 554, 210, 10, THEME.BG_CARD, THEME.BORDER);
+          drawText(ctx2, "\u66F4\u8863\u5BA4\u6C1B\u56F4\u5E73\u7A33 \xB7 \u5168\u961F\u4E13\u6CE8\u5907\u6218\u4E0B\u8F6E\u5BF9\u624B", 132, 536, { size: 14, bold: true, color: THEME.TX1 });
           const subMsg = this.prepToast || prep.nextMatchBuff?.note || st.lastMatchReview || "\u53EF\u4ECE\u4E0A\u65B9\u9009\u62E9 1 \u9879\u8D5B\u524D\u8F7B\u8BAD\u7EC3\u8C03\u6574\u72B6\u6001";
-          drawText(ctx2, subMsg.slice(0, 42), 126, 648, {
-            size: 11,
-            color: this.prepToast || prep.nextMatchBuff?.note ? THEME.GREEN : st.lastMatchReview ? "#7DD3FC" : THEME.TX2
+          drawWrappedText(ctx2, subMsg, 132, 574, 518, 22, {
+            size: 12.5,
+            color: this.prepToast || prep.nextMatchBuff?.note ? THEME.GREEN : st.lastMatchReview ? "#7DD3FC" : THEME.TX2,
+            maxLines: 3
           });
         }
       }
-      drawChamferPanel(ctx2, 614, 80, 650, 180, 12, "rgba(14, 22, 40, 0.92)", THEME.BORDER);
+      drawChamferPanel(ctx2, 702, 80, 562, 196, 12, "rgba(14, 22, 40, 0.94)", THEME.BORDER_GOLD, 1.2);
+      drawText(ctx2, "\u5F53\u524D\u51FA\u6218\u914D\u7F6E\u6458\u8981", 722, 102, { size: 13.5, bold: true, color: THEME.GOLD_LIGHT });
+      drawText(ctx2, `\u6FC0\u6D3B\uFF1A${club.formation} \xB7 ${TACTICAL_PRESETS[club.style].name}`, 1244, 102, {
+        size: 12,
+        bold: true,
+        color: "#38BDF8",
+        align: "right"
+      });
+      const eqSkills = league.getEquippedActiveSkills();
+      const loadoutCards = league.getMatchLoadout();
+      const presets = league.getTacticalPresets();
+      const curPresetIdx = presets.findIndex((pr) => pr && club.formation === pr.formation && club.style === pr.style);
+      drawRoundRect(ctx2, 720, 122, 168, 138, 8, THEME.BG_CARD, "rgba(56, 189, 248, 0.45)");
+      drawText(ctx2, `\u26A1 \u4E3B\u52A8\u6280 ${eqSkills.length}/4`, 732, 142, { size: 12.5, bold: true, color: "#38BDF8" });
+      drawWrappedText(
+        ctx2,
+        eqSkills.length > 0 ? eqSkills.slice(0, 3).map((s) => s.name).join(" \xB7 ") : "\u5C1A\u672A\u88C5\u5907\u4E3B\u52A8\u6280\uFF0C\u524D\u5F80\u661F\u56FE\u70B9\u4EAE\u5E76\u88C5\u914D",
+        732,
+        164,
+        144,
+        18,
+        { size: 11, color: eqSkills.length > 0 ? THEME.TX1 : THEME.TX3, maxLines: 2 }
+      );
+      drawButton(ctx2, hits, 732, 214, 144, 34, "\u8C03\u6574\u6280\u80FD", () => actions.onNavigate("meta"), { variant: "primary", fontSize: 11.5 });
+      drawRoundRect(ctx2, 898, 122, 168, 138, 8, THEME.BG_CARD, "rgba(192, 132, 252, 0.45)");
+      drawText(ctx2, `\u6307\u6325\u724C ${loadoutCards.length}/4`, 910, 142, { size: 12.5, bold: true, color: "#C084FC" });
+      drawWrappedText(
+        ctx2,
+        loadoutCards.length > 0 ? loadoutCards.slice(0, 3).map((c) => c.name).join(" \xB7 ") : "\u5C1A\u672A\u914D\u7F6E\u624B\u724C\uFF0C\u524D\u5F80\u5DE5\u574A\u5408\u6210\u6216\u88C5\u914D",
+        910,
+        164,
+        144,
+        18,
+        { size: 11, color: loadoutCards.length > 0 ? THEME.TX1 : THEME.TX3, maxLines: 2 }
+      );
+      drawButton(ctx2, hits, 910, 214, 144, 34, "\u914D\u724C\u4E0E\u5408\u6210", () => actions.onNavigate("cards"), { variant: "primary", fontSize: 11.5 });
+      drawRoundRect(ctx2, 1076, 122, 170, 138, 8, THEME.BG_CARD, THEME.BORDER_GOLD);
+      drawText(ctx2, curPresetIdx >= 0 ? `\u9884\u6848 ${curPresetIdx + 1}/4` : "4\u5957\u6218\u672F\u9884\u6848", 1088, 142, { size: 12.5, bold: true, color: THEME.GOLD_LIGHT });
+      drawText(ctx2, `${club.formation}`, 1088, 170, { size: 14, bold: true, color: THEME.GREEN });
+      drawText(ctx2, `${TACTICAL_PRESETS[club.style].name}`, 1088, 192, { size: 11.5, color: THEME.TX2 });
+      drawButton(ctx2, hits, 1088, 214, 72, 34, "\u5207\u9884\u6848", () => {
+        if (presets.length === 0) return;
+        const nextIdx = (curPresetIdx + 1) % presets.length;
+        const res = league.applyTacticalPreset(nextIdx);
+        if (res.ok && res.preset) {
+          SoundEngine.playClick();
+          this.prepToast = `\u5DF2\u5207\u6362\u81F3\u9884\u6848${nextIdx + 1}\uFF1A${res.preset.formation} \xB7 ${TACTICAL_PRESETS[res.preset.style].name}`;
+          actions.onSave?.();
+        }
+      }, { variant: "gold", fontSize: 11 });
+      drawButton(ctx2, hits, 1166, 214, 68, 34, "\u6539\u6218\u672F", () => actions.onNavigate("tactics"), { variant: "ghost", fontSize: 11 });
+      drawChamferPanel(ctx2, 702, 290, 562, 222, 12, "rgba(14, 22, 40, 0.92)", THEME.BORDER);
       const story = st.storyline;
-      drawIcon(ctx2, "sparkle", 636, 100, 13, THEME.GOLD_LIGHT);
-      drawText(ctx2, `\u4FF1\u4E50\u90E8\u8D5B\u5B63\u8109\u7EDC\u4E0E\u8BCD\u6761 (${club.perks.length})`, 652, 100, { size: 12.5, bold: true, color: THEME.TX1 });
+      drawIcon(ctx2, "sparkle", 724, 314, 15, THEME.GOLD_LIGHT);
+      drawText(ctx2, `\u4FF1\u4E50\u90E8\u8D5B\u5B63\u8109\u7EDC\u4E0E\u8BCD\u6761 (${club.perks.length})`, 742, 314, { size: 13.5, bold: true, color: THEME.TX1 });
       if (story) {
-        drawBadge(ctx2, 846, 90, 82, 20, story.title, "#312E81", "#A5B4FC");
+        drawBadge(ctx2, 974, 303, 92, 22, story.title, "#312E81", "#A5B4FC");
       }
       const syn = computePerkSynergies(club.perks);
-      const synLine = syn.synergies[0] ? `\u8BCD\u6761\u5171\u632F\uFF1A${syn.synergies[0]}` : "\u540C\u7CFB\u8BCD\u6761\u53E0\u52A0 2 \u5F20\u53EF\u6FC0\u6D3B\u5171\u632F";
-      drawText(ctx2, synLine, 1248, 100, { size: 10, color: syn.synergies[0] ? THEME.GREEN : THEME.TX3, align: "right" });
+      const synLine = syn.synergies[0] ? `\u5171\u632F\uFF1A${syn.synergies[0]}` : "\u540C\u7CFB\u53E0\u52A02\u5F20\u6FC0\u6D3B\u5171\u632F";
+      drawText(ctx2, synLine, 1244, 314, { size: 11, color: syn.synergies[0] ? THEME.GREEN : THEME.TX3, align: "right" });
       if (club.perks.length === 0) {
-        drawRoundRect(ctx2, 628, 118, 344, 128, 8, THEME.BG_CARD, THEME.BORDER);
-        drawText(ctx2, "\u6682\u672A\u6FC0\u6D3B Rogue \u6218\u672F\u8BCD\u6761", 642, 146, { size: 12, bold: true, color: THEME.TX2 });
-        drawWrappedText(ctx2, "\u5B8C\u6210\u7B2C 8 / 17 / 26 \u8F6E\u6BD4\u8D5B\u540E\u5C06\u89E6\u53D1 Re-Draft \u8BCD\u6761\u4E09\u9009\u4E00\u5F3A\u5316", 642, 174, 316, 18, {
-          size: 11,
-          color: THEME.TX3,
-          maxLines: 2
-        });
+        drawRoundRect(ctx2, 720, 338, 526, 156, 8, THEME.BG_CARD, THEME.BORDER);
+        drawText(ctx2, "\u6682\u672A\u6FC0\u6D3B Rogue \u6218\u672F\u8BCD\u6761", 740, 376, { size: 14, bold: true, color: THEME.TX2 });
+        drawWrappedText(
+          ctx2,
+          "\u7B2C 8 / 16 / 24 \u8F6E\u8D5B\u540E 3 \u9009 1 \u5C06\u5FC5\u5B9A\u51FA\u73B0\u300C\u8D5B\u5B63\u6218\u672F\u8BCD\u6761\u300D\u76F2\u76D2\uFF0C\u4E5F\u53EF\u5728\u5176\u4ED6\u8F6E\u6B21\u7684\u8089\u9E3D\u4E8B\u4EF6\u4E2D\u83B7\u53D6\u5F3A\u529B\u8BCD\u6761\u4E0E\u89C9\u9192\u6548\u679C\u3002",
+          740,
+          408,
+          486,
+          22,
+          { size: 12, color: THEME.TX3, maxLines: 3 }
+        );
       } else {
         club.perks.slice(0, 3).forEach((pk, i) => {
-          const px = 628 + i * 116;
-          drawChamferPanel(ctx2, px, 118, 110, 128, 7, THEME.BG_CARD, THEME.BORDER_GOLD, 1, THEME.GOLD);
-          drawText(ctx2, pk.name, px + 8, 138, { size: 11, bold: true, color: THEME.GOLD_LIGHT });
-          drawWrappedText(ctx2, pk.description, px + 8, 158, 94, 16, { size: 9.5, color: THEME.TX2, maxLines: 4 });
+          const px = 720 + i * 178;
+          drawChamferPanel(ctx2, px, 338, 170, 156, 8, THEME.BG_CARD, THEME.BORDER_GOLD, 1, THEME.GOLD);
+          drawText(ctx2, pk.name, px + 12, 362, { size: 13, bold: true, color: THEME.GOLD_LIGHT });
+          drawWrappedText(ctx2, pk.description, px + 12, 386, 146, 19, { size: 11, color: THEME.TX2, maxLines: 5 });
         });
       }
+      drawChamferPanel(ctx2, 702, 526, 562, 178, 12, "rgba(14, 22, 40, 0.92)", THEME.BORDER);
       const strainList = club.squad.filter((p) => p.strainWarning || (p.injuredRounds ?? 0) > 0 || (p.suspendedRounds ?? 0) > 0);
-      drawRoundRect(ctx2, 982, 118, 268, 128, 8, "rgba(15, 23, 42, 0.85)", THEME.BORDER);
-      drawText(ctx2, "\u4E0A\u8F6E\u6218\u51B5\u4E0E\u961F\u5185\u72B6\u6001", 996, 138, { size: 11, bold: true, color: "#38BDF8" });
+      drawText(ctx2, "\u4E0A\u8F6E\u6218\u51B5\u590D\u76D8\u4E0E\u961F\u5185\u72B6\u6001", 722, 550, { size: 13, bold: true, color: "#38BDF8" });
       drawWrappedText(
         ctx2,
         st.lastMatchReview || "\u9996\u8F6E\u5F00\u8D5B\u540E\u5C06\u5728\u6B64\u751F\u6210\u4E0A\u8F6E\u6218\u672F\u590D\u76D8\u4E0E xG \u8BCA\u65AD",
-        996,
-        156,
-        240,
-        16,
-        { size: 10, color: THEME.TX1, maxLines: 3 }
+        722,
+        572,
+        340,
+        19,
+        { size: 11.5, color: THEME.TX1, maxLines: 3 }
       );
       drawWrappedText(
         ctx2,
         strainList.length > 0 ? `\u961F\u533B\u63D0\u9192\uFF1A${strainList.slice(0, 2).map((p) => `${p.name}(${(p.injuredRounds ?? 0) > 0 ? "\u4F24\u505C" : (p.suspendedRounds ?? 0) > 0 ? "\u505C\u8D5B" : "\u75B2\u60EB"})`).join("\u3001")} \xB7 \u5EFA\u8BAE\u8F6E\u6362` : "\u5168\u961F\u5065\u5EB7\u5EA6\u826F\u597D\uFF0C\u65E0\u4F24\u505C\u6216\u4F53\u80FD\u75B2\u60EB\u9884\u8B66",
-        996,
-        210,
-        240,
-        15,
-        { size: 9.8, color: strainList.length > 0 ? "#FBBF24" : THEME.GREEN, maxLines: 2 }
+        722,
+        640,
+        340,
+        18,
+        { size: 11.5, color: strainList.length > 0 ? "#FBBF24" : THEME.GREEN, maxLines: 2 }
       );
-      drawChamferPanel(ctx2, 614, 270, 650, 434, 12, "rgba(14, 22, 40, 0.92)", THEME.BORDER);
-      drawButton(ctx2, hits, 630, 280, 112, 26, "\u8054\u8D5B\u79EF\u5206\u699C", () => {
-        this.rightTab = "standings";
-      }, { active: this.rightTab === "standings", fontSize: 11, icon: "trophy" });
-      drawButton(ctx2, hits, 748, 280, 124, 26, "\u8D5B\u5B63\u6570\u636E\u7EDF\u8BA1", () => {
-        this.rightTab = "stats";
-      }, { active: this.rightTab === "stats", fontSize: 11, icon: "chart" });
-      drawButton(ctx2, hits, 998, 280, 68, 24, "? \u5F15\u5BFC", () => {
-        league.resetTutorial();
-        this.prepToast = "\u5DF2\u91CD\u7F6E\u65B0\u624B\u5F15\u5BFC\uFF0C\u5F53\u524D\u573A\u666F\u5C06\u91CD\u65B0\u5F39\u51FA\u8F7B\u5F15\u5BFC\u63D0\u793A";
-        actions.onSave?.();
-      }, { variant: "ghost", fontSize: 10 });
-      if (this.rightTab === "stats") {
-        this.renderSeasonStatsPanel(ctx2, hits, league);
-      } else {
-        const userRankIdx = standings.findIndex((r) => r.isUser);
-        drawButton(ctx2, hits, 1074, 280, 68, 24, "\u5B9A\u4F4D\u6211\u961F", () => {
-          this.standingsScroll = Math.max(0, Math.min(10, userRankIdx - 3));
-        }, { variant: "ghost", fontSize: 10 });
-        drawButton(ctx2, hits, 1148, 280, 44, 24, "\u25B2", () => {
-          this.standingsScroll = Math.max(0, this.standingsScroll - 3);
-        }, { variant: "ghost", fontSize: 10 });
-        drawButton(ctx2, hits, 1198, 280, 44, 24, "\u25BC", () => {
-          this.standingsScroll = Math.min(Math.max(0, standings.length - 8), this.standingsScroll + 3);
-        }, { variant: "ghost", fontSize: 10 });
-        const zoneHint = tierInfo.tier === 1 ? "\u7B2C1\u7EA7\xB7\u4E89\u51A0|\u540E3\u964D" : tierInfo.tier === 7 ? "\u7B2C7\u7EA7\xB7\u524D3\u5347|\u65E0\u964D" : `\u524D${tierInfo.promoteCount}\u5347\u7EA7\xB7\u540E${tierInfo.relegateCount}\u964D\u7EA7`;
-        drawText(ctx2, zoneHint, 935, 293, { size: 9.8, color: THEME.TX2, align: "center" });
-        const hy = 322;
-        drawRoundRect(ctx2, 628, hy - 12, 622, 24, 4, "#111A2E");
-        drawText(ctx2, "\u6392\u540D", 648, hy, { size: 10.5, color: THEME.TX3, align: "center" });
-        drawText(ctx2, "\u7403\u961F", 686, hy, { size: 10.5, color: THEME.TX3 });
-        drawText(ctx2, "\u8D5B", 854, hy, { size: 10.5, color: THEME.TX3, align: "center" });
-        drawText(ctx2, "\u80DC", 896, hy, { size: 10.5, color: THEME.TX3, align: "center" });
-        drawText(ctx2, "\u5E73", 938, hy, { size: 10.5, color: THEME.TX3, align: "center" });
-        drawText(ctx2, "\u8D1F", 980, hy, { size: 10.5, color: THEME.TX3, align: "center" });
-        drawText(ctx2, "\u8FDB/\u5931", 1034, hy, { size: 10.5, color: THEME.TX3, align: "center" });
-        drawText(ctx2, "\u51C0\u80DC", 1088, hy, { size: 10.5, color: THEME.TX3, align: "center" });
-        drawText(ctx2, "\u79EF\u5206", 1138, hy, { size: 10.5, color: THEME.TX3, align: "center" });
-        drawText(ctx2, "\u8FD1\u671F", 1206, hy, { size: 10.5, color: THEME.TX3, align: "center" });
-        const visibleRows = 8;
-        const maxStart = Math.max(0, standings.length - visibleRows);
-        const startIdx = Math.max(0, Math.min(maxStart, this.standingsScroll));
-        const slice = standings.slice(startIdx, startIdx + visibleRows);
-        slice.forEach((row, visIdx) => {
-          const idx = startIdx + visIdx;
-          const ry = 356 + visIdx * 40;
-          const isPromote = tierInfo.promoteCount > 0 && idx < tierInfo.promoteCount;
-          const isChampionSpot = tierInfo.tier === 1 && idx === 0;
-          const isRelegate = tierInfo.relegateCount > 0 && idx >= standings.length - tierInfo.relegateCount;
-          const barCol = isChampionSpot ? THEME.GOLD_LIGHT : isPromote ? THEME.GREEN : isRelegate ? THEME.RED_LIGHT : "#334155";
-          drawRoundRect(
-            ctx2,
-            628,
-            ry - 16,
-            622,
-            35,
-            6,
-            row.isUser ? "rgba(212,168,67,0.18)" : THEME.BG_CARD,
-            row.isUser ? THEME.GOLD : THEME.BORDER,
-            row.isUser ? 1.5 : 1
-          );
-          drawRoundRect(ctx2, 628, ry - 16, 4, 35, 2, barCol);
-          drawText(ctx2, String(idx + 1), 648, ry + 1, {
-            size: 12,
-            bold: true,
-            color: isChampionSpot ? THEME.GOLD_LIGHT : isPromote ? THEME.GREEN : isRelegate ? THEME.RED_LIGHT : THEME.TX2,
-            align: "center",
-            mono: true
-          });
-          const rowClub = st.clubs.find((c) => c.id === row.clubId);
-          if (rowClub) drawClubCrest(ctx2, 676, ry + 1, 8, rowClub);
-          drawText(ctx2, row.isUser ? `${row.clubName} (\u6211)` : row.clubName, 692, ry + 1, {
-            size: 11.5,
-            bold: row.isUser,
-            color: row.isUser ? THEME.GOLD_LIGHT : THEME.TX1
-          });
-          drawText(ctx2, String(row.played), 854, ry + 1, { size: 11.5, align: "center", mono: true });
-          drawText(ctx2, String(row.won), 896, ry + 1, { size: 11.5, align: "center", mono: true });
-          drawText(ctx2, String(row.drawn), 938, ry + 1, { size: 11.5, align: "center", mono: true });
-          drawText(ctx2, String(row.lost), 980, ry + 1, { size: 11.5, align: "center", mono: true });
-          drawText(ctx2, `${row.gf}/${row.ga}`, 1034, ry + 1, { size: 10.5, align: "center", mono: true, color: THEME.TX2 });
-          drawText(ctx2, row.gd >= 0 ? `+${row.gd}` : `${row.gd}`, 1088, ry + 1, {
-            size: 11.5,
-            align: "center",
-            mono: true,
-            color: row.gd > 0 ? THEME.GREEN : row.gd < 0 ? THEME.RED_LIGHT : THEME.TX2
-          });
-          drawText(ctx2, String(row.points), 1138, ry + 1, {
-            size: 13,
-            bold: true,
-            align: "center",
-            mono: true,
-            color: THEME.GOLD_LIGHT
-          });
-          row.form.slice(-4).forEach((f, fi) => {
-            const fx = 1176 + fi * 16;
-            const col = f === "W" ? THEME.GREEN : f === "D" ? THEME.GOLD : THEME.RED_LIGHT;
-            drawBadge(ctx2, fx, ry - 7, 13, 14, f, col, "#080C14");
-          });
-        });
-        drawText(ctx2, `\u663E\u793A\u7B2C ${startIdx + 1}-${startIdx + slice.length} / ${standings.length} \u540D (\u652F\u6301\u6EDA\u8F6E\u7FFB\u9875)`, 939, 688, {
-          size: 10,
-          color: THEME.TX3,
-          align: "center"
-        });
-      }
+      drawRoundRect(ctx2, 1076, 542, 170, 144, 8, THEME.BG_CARD, THEME.BORDER);
+      drawText(ctx2, "\u8054\u8D5B\u5B9E\u65F6\u6392\u540D", 1161, 562, { size: 11.5, color: THEME.TX2, align: "center" });
+      drawText(ctx2, `\u7B2C ${userRankIdx + 1} \u540D`, 1161, 590, { size: 20, bold: true, color: THEME.GOLD_LIGHT, align: "center" });
+      drawText(
+        ctx2,
+        userRow ? `${userRow.points}\u5206 \xB7 ${userRow.won}\u80DC${userRow.drawn}\u5E73${userRow.lost}\u8D1F` : "0\u5206 \xB7 \u672A\u5F00\u8D5B",
+        1161,
+        614,
+        { size: 10.5, color: THEME.TX3, align: "center" }
+      );
+      drawButton(ctx2, hits, 1088, 634, 146, 40, "\u8D5B\u7A0B\u4E0E\u79EF\u5206\u699C \u25B6", () => actions.onNavigate("league"), {
+        variant: "primary",
+        fontSize: 11.5
+      });
       if (this.scoutModalOpen && prep?.matchupIntel) {
         this.renderScoutModal(ctx2, hits, league, prep.matchupIntel, prep.actionsLeft, actions);
       }
-    }
-    renderSeasonStatsPanel(ctx2, _hits, league) {
-      const ts = league.getUserTeamSeasonStats();
-      const scorers = league.getTopScorers(4);
-      const assisters = league.getTopAssisters(4);
-      const winRate = ts.played > 0 ? Math.round(ts.won / ts.played * 100) : 0;
-      drawText(ctx2, "\u672C\u8D5B\u5B63\u7403\u961F\u7EFC\u5408\u6218\u7EE9\u4E0E\u9884\u671F\u8868\u73B0", 630, 318, { size: 11.5, bold: true, color: THEME.GOLD_LIGHT });
-      const kpis = [
-        { label: "\u6218\u7EE9\u4E0E\u80DC\u7387", val: `${ts.won}\u80DC ${ts.drawn}\u5E73 ${ts.lost}\u8D1F`, sub: `\u80DC\u7387 ${winRate}% \xB7 ${ts.played}\u8F6E`, col: THEME.GOLD_LIGHT },
-        { label: "\u653B\u9632\u51C0\u80DC\u7403", val: `${ts.gf} \u8FDB / ${ts.ga} \u5931`, sub: `\u51C0\u80DC ${ts.gf - ts.ga >= 0 ? "+" : ""}${ts.gf - ts.ga}`, col: ts.gf >= ts.ga ? THEME.GREEN : THEME.RED_LIGHT },
-        { label: "\u9884\u671F\u8FDB\u7403 xG", val: `${ts.xgFor.toFixed(1)} : ${ts.xgAgainst.toFixed(1)}`, sub: `\u573A\u5747 ${(ts.xgFor / Math.max(1, ts.played)).toFixed(2)} xG`, col: "#38BDF8" },
-        { label: "\u96F6\u5C01\u4E0E\u7EAA\u5F8B", val: `${ts.cleanSheets} \u6B21\u96F6\u5C01`, sub: `\u9EC4${ts.yellows} \xB7 \u7EA2${ts.reds}`, col: "#C084FC" }
-      ];
-      kpis.forEach((k, i) => {
-        const kx = 630 + i * 156;
-        drawRoundRect(ctx2, kx, 330, 148, 62, 8, THEME.BG_CARD, THEME.BORDER);
-        drawText(ctx2, k.label, kx + 10, 344, { size: 9.5, color: THEME.TX2 });
-        drawText(ctx2, k.val, kx + 10, 363, { size: 12.5, bold: true, color: k.col, mono: true });
-        drawText(ctx2, k.sub, kx + 10, 381, { size: 9, color: THEME.TX3 });
-      });
-      drawRoundRect(ctx2, 630, 402, 304, 168, 10, THEME.BG_CARD, THEME.BORDER);
-      drawIcon(ctx2, "ball", 648, 419, 12, THEME.GOLD_LIGHT);
-      drawText(ctx2, "\u8054\u8D5B\u5C04\u624B\u699C TOP 4", 664, 419, { size: 12, bold: true, color: THEME.GOLD_LIGHT });
-      if (scorers.length === 0) {
-        drawText(ctx2, "\u9996\u8F6E\u5F00\u8D5B\u540E\u5B9E\u65F6\u7EDF\u8BA1", 782, 490, { size: 11, color: THEME.TX3, align: "center" });
-      } else {
-        scorers.forEach((sc, i) => {
-          const sy = 446 + i * 31;
-          drawRoundRect(ctx2, 642, sy - 11, 280, 24, 5, "rgba(15, 23, 42, 0.85)");
-          drawText(ctx2, `${i + 1}. ${sc.playerName}`, 652, sy + 1, { size: 11, bold: i === 0, color: i === 0 ? THEME.GOLD_LIGHT : THEME.TX1 });
-          drawText(ctx2, sc.clubName.slice(0, 6), 772, sy + 1, { size: 9.5, color: THEME.TX2 });
-          drawText(ctx2, `${sc.goals} \u7403`, 912, sy + 1, { size: 11.5, bold: true, color: THEME.GREEN, align: "right", mono: true });
-        });
-      }
-      drawRoundRect(ctx2, 946, 402, 304, 168, 10, THEME.BG_CARD, THEME.BORDER);
-      drawIcon(ctx2, "sparkle", 964, 419, 12, "#38BDF8");
-      drawText(ctx2, "\u8054\u8D5B\u52A9\u653B\u699C TOP 4", 980, 419, { size: 12, bold: true, color: "#38BDF8" });
-      if (assisters.length === 0) {
-        drawText(ctx2, "\u9996\u8F6E\u5F00\u8D5B\u540E\u5B9E\u65F6\u7EDF\u8BA1", 1098, 490, { size: 11, color: THEME.TX3, align: "center" });
-      } else {
-        assisters.forEach((as, i) => {
-          const sy = 446 + i * 31;
-          drawRoundRect(ctx2, 958, sy - 11, 280, 24, 5, "rgba(15, 23, 42, 0.85)");
-          drawText(ctx2, `${i + 1}. ${as.playerName}`, 968, sy + 1, { size: 11, bold: i === 0, color: i === 0 ? "#7DD3FC" : THEME.TX1 });
-          drawText(ctx2, as.clubName.slice(0, 6), 1088, sy + 1, { size: 9.5, color: THEME.TX2 });
-          drawText(ctx2, `${as.assists} \u52A9`, 1228, sy + 1, { size: 11.5, bold: true, color: "#38BDF8", align: "right", mono: true });
-        });
-      }
-      drawRoundRect(ctx2, 630, 578, 620, 116, 10, THEME.BG_CARD, THEME.BORDER_GOLD);
-      drawText(ctx2, "\u6211\u961F\u961F\u5185\u6838\u5FC3\u6570\u636E\u738B", 648, 595, { size: 11.5, bold: true, color: THEME.GOLD_LIGHT });
-      const leaders = [
-        { tag: "\u961F\u5185\u5C04\u624B\u738B", p: ts.topScorer, stat: ts.topScorer ? `${ts.topScorer.seasonStats.goals}\u7403 \xB7 ${ts.topScorer.seasonStats.assists}\u52A9` : "-", col: THEME.GOLD_LIGHT },
-        { tag: "\u961F\u5185\u52A9\u653B\u738B", p: ts.topAssister, stat: ts.topAssister ? `${ts.topAssister.seasonStats.assists}\u52A9 \xB7 ${ts.topAssister.seasonStats.passesSuccess ?? 0}\u4F20` : "-", col: "#38BDF8" },
-        { tag: "\u95E8\u7EBF\u5B88\u62A4\u795E", p: ts.topKeeper, stat: ts.topKeeper ? `${ts.topKeeper.seasonStats.cleanSheets}\u96F6\u5C01 \xB7 ${ts.topKeeper.seasonStats.saves ?? 0}\u6251` : "-", col: THEME.GREEN },
-        { tag: "\u5168\u52E4\u94C1\u4EBA", p: ts.ironMan, stat: ts.ironMan ? `\u51FA\u573A${ts.ironMan.seasonStats.appearances} \xB7 ${Math.round((ts.ironMan.seasonStats.distanceM ?? 0) / 1e3)}km` : "-", col: "#C084FC" }
-      ];
-      leaders.forEach((ld, i) => {
-        const col = i % 2;
-        const row = Math.floor(i / 2);
-        const lx = 644 + col * 298;
-        const ly = 610 + row * 40;
-        drawRoundRect(ctx2, lx, ly, 290, 34, 6, "rgba(11, 17, 30, 0.9)", THEME.BORDER);
-        drawBadge(ctx2, lx + 8, ly + 8, 66, 18, ld.tag, "#1E293B", ld.col);
-        drawText(ctx2, ld.p ? `${ld.p.name.slice(0, 4)} CA${ld.p.ca}` : "-", lx + 80, ly + 17, {
-          size: 10.5,
-          bold: true,
-          color: THEME.TX1
-        });
-        drawText(ctx2, ld.stat, lx + 282, ly + 17, { size: 9.5, color: ld.col, align: "right", mono: true });
-      });
     }
     renderScoutModal(ctx2, hits, league, intel, actionsLeft, actions) {
       ctx2.fillStyle = "rgba(4, 7, 14, 0.84)";
@@ -18097,9 +19219,9 @@
       this.catEnterTimer = 0;
       this.packAnim = null;
       this.dealTimer = 0;
-      this.flipped = [false, false, false];
-      this.flipTimers = [0, 0, 0];
-      this.flipSoundPlayed = [false, false, false];
+      this.flipped = [false, false, false, false];
+      this.flipTimers = [0, 0, 0, 0];
+      this.flipSoundPlayed = [false, false, false, false];
       this.fx = {};
     }
     setLastMatch(match) {
@@ -18119,9 +19241,9 @@
     }
     resetCardRevealAnim() {
       this.dealTimer = 0;
-      this.flipped = [false, false, false];
-      this.flipTimers = [0, 0, 0];
-      this.flipSoundPlayed = [false, false, false];
+      this.flipped = [false, false, false, false];
+      this.flipTimers = [0, 0, 0, 0];
+      this.flipSoundPlayed = [false, false, false, false];
     }
     update(dtSec) {
       this.animClock += dtSec;
@@ -18143,8 +19265,8 @@
         return;
       }
       this.dealTimer += dtSec;
-      const autoThresholds = [0.46, 0.82, 1.18];
-      for (let i = 0; i < 3; i++) {
+      const autoThresholds = [0.46, 0.82, 1.18, 1.54];
+      for (let i = 0; i < this.flipped.length; i++) {
         if (!this.flipped[i] && this.dealTimer >= autoThresholds[i]) {
           this.flipped[i] = true;
         }
@@ -18565,6 +19687,34 @@
         step2Done ? "#14532D" : step1Done ? "#1E3A5F" : "#111827",
         step2Done ? THEME.GREEN : step1Done ? THEME.GOLD_LIGHT : THEME.TX3
       );
+      const cadence = rw.cadence ?? "normal";
+      const cadBadgeText = cadence === "crisis" ? "\u8FDE\u8D25\u6551\u706B\u8F6E" : cadence === "focus" ? "\u7126\u70B9\u5F3A\u5F3A\u8F6E" : "\u5E38\u89C4\u8D5B\u540E\u8F6E";
+      const cadBadgeBg = cadence === "crisis" ? "#7F1D1D" : cadence === "focus" ? "#78350F" : "#1E293B";
+      const cadBadgeCol = cadence === "crisis" ? THEME.RED_LIGHT : cadence === "focus" ? THEME.GOLD_LIGHT : "#94A3B8";
+      drawBadge(ctx2, 608, 29, 108, 26, cadBadgeText, cadBadgeBg, cadBadgeCol);
+      if ((rw.rerollsLeft ?? 0) > 0 && !rw.completed && !rw.pendingStatOptionId) {
+        const prepLeft = st.interMatchPrep?.actionsLeft ?? 0;
+        const canReroll = prepLeft > 0 || st.metaPointsTotal >= 8;
+        const rerollLabel = prepLeft > 0 ? "\u91CD\u62BD (1\u5907\u6218\u70B9)" : "\u91CD\u62BD (8 Meta)";
+        drawButton(
+          ctx2,
+          hits,
+          1076,
+          24,
+          174,
+          36,
+          rerollLabel,
+          () => {
+            const rRes = league.rerollPostMatchReward();
+            if (rRes.ok) {
+              if (rw.chosenCategory) this.resetCardRevealAnim();
+              SoundEngine.playClick();
+              onSave();
+            }
+          },
+          { variant: "primary", disabled: !canReroll, fontSize: 12 }
+        );
+      }
       if (rw.completed) {
         drawButton(
           ctx2,
@@ -18641,6 +19791,20 @@
           desc: "\u76F4\u63A5\u94F8\u9020\u9996\u53D1\u9EC4\u91D1\u8FDE\u7EBF\u3001\u9635\u578B\u5B97\u5E08\u704C\u9876(+Meta)\u6216\u4E3A\u9AD8\u8D39\u6307\u6325\u5361\u964D\u8D39\u8D85\u9891",
           color: "#2DD4BF",
           elemKey: "elem_pass"
+        },
+        gamble: {
+          title: "\u98CE\u9669\u535A\u5F08 \xB7 \u4E09\u6001\u5BF9\u8D4C",
+          badge: "\u7EFF\u6B63 / \u7EA2\u8D1F / \u91D1\u66B4\u51FB",
+          desc: "\u6309\u5F53\u524D\u8054\u8D5B\u7B49\u7EA7\u5B9A\u5236\u7684\u98CE\u9669\u4E8B\u4EF6\uFF1Ax%\u5E38\u89C4\u6B63\u6536\u76CA\u3001y%\u8D1F\u9762\u4EE3\u4EF7\u3001z%\u8D85\u989D\u66B4\u51FB",
+          color: "#FACC15",
+          elemKey: "elem_blitz"
+        },
+        season_perk: {
+          title: "\u8D5B\u5B63\u6218\u672F\u8BCD\u6761 \xB7 \u6C38\u4E45\u5F3A\u5316",
+          badge: "\u91CC\u7A0B\u7891\u5FC5\u51FA \xB7 3/4\u90091",
+          desc: "\u4ECE 3~4 \u5F20\u8D5B\u5B63\u7EA7\u6218\u672F\u8BCD\u6761\u4E2D\u4EFB\u9009 1 \u5F20\u6C38\u4E45\u6FC0\u6D3B\uFF0C\u540C\u7CFB\u53E0\u52A0 2 \u5F20\u89E6\u53D1\u5171\u632F",
+          color: "#F59E0B",
+          elemKey: "elem_blitz"
         }
       };
       const cardBackArt = AssetLoader.get("command_card_back");
@@ -18709,9 +19873,9 @@
           const floatY = Math.sin(this.animClock * 2.2 + idx * 1.4) * 4;
           const cx = 86 + idx * 384;
           const cy = 170 + (1 - enterP) * 60 + floatY;
-          const cw = 340;
-          const ch = 376;
-          const hovered = hits.isHovered(cx, cy, cw, ch);
+          const cw2 = 340;
+          const ch2 = 376;
+          const hovered = hits.isHovered(cx, cy, cw2, ch2);
           ctx2.save();
           ctx2.globalAlpha = Math.max(0.05, enterP);
           if (hovered) {
@@ -18722,8 +19886,8 @@
             ctx2,
             cx,
             cy,
-            cw,
-            ch,
+            cw2,
+            ch2,
             14,
             hovered ? "#1B2B4B" : THEME.BG_PANEL,
             hovered ? meta.color : THEME.BORDER_GOLD,
@@ -18733,21 +19897,21 @@
           if (cardBackArt && typeof ctx2.drawImage === "function") {
             ctx2.save();
             ctx2.beginPath();
-            ctx2.rect(cx + 4, cy + 4, cw - 8, ch - 8);
+            ctx2.rect(cx + 4, cy + 4, cw2 - 8, ch2 - 8);
             ctx2.clip();
             ctx2.globalAlpha = hovered ? 0.24 : 0.14;
-            ctx2.drawImage(cardBackArt, cx + 4, cy + 4, cw - 8, ch - 8);
+            ctx2.drawImage(cardBackArt, cx + 4, cy + 4, cw2 - 8, ch2 - 8);
             ctx2.restore();
           }
-          drawFoilShimmer(ctx2, cx, cy, cw, ch, this.animClock * 0.9 + idx * 0.4, meta.color + "2A");
+          drawFoilShimmer(ctx2, cx, cy, cw2, ch2, this.animClock * 0.9 + idx * 0.4, meta.color + "2A");
           const elemImg = AssetLoader.get(meta.elemKey);
           if (elemImg && typeof ctx2.drawImage === "function") {
-            drawRoundRect(ctx2, cx + cw / 2 - 34, cy + 56, 68, 68, 16, "rgba(10,16,30,0.85)", meta.color, 1.5);
-            ctx2.drawImage(elemImg, cx + cw / 2 - 24, cy + 66, 48, 48);
+            drawRoundRect(ctx2, cx + cw2 / 2 - 34, cy + 56, 68, 68, 16, "rgba(10,16,30,0.85)", meta.color, 1.5);
+            ctx2.drawImage(elemImg, cx + cw2 / 2 - 24, cy + 66, 48, 48);
           }
           drawBadge(ctx2, cx + 24, cy + 20, 144, 24, meta.badge, "#1E293B", meta.color);
-          drawText(ctx2, meta.title, cx + cw / 2, cy + 154, { size: 19, bold: true, color: THEME.TX1, align: "center" });
-          drawWrappedText(ctx2, meta.desc, cx + 26, cy + 188, cw - 52, 22, { size: 13, color: THEME.TX2, maxLines: 4 });
+          drawText(ctx2, meta.title, cx + cw2 / 2, cy + 154, { size: 19, bold: true, color: THEME.TX1, align: "center" });
+          drawWrappedText(ctx2, meta.desc, cx + 26, cy + 188, cw2 - 52, 22, { size: 13, color: THEME.TX2, maxLines: 4 });
           ctx2.restore();
           const pickPack = () => {
             SoundEngine.playPackRip();
@@ -18757,15 +19921,15 @@
               cat,
               color: meta.color,
               title: meta.title,
-              startX: cx + cw / 2,
+              startX: cx + cw2 / 2,
               timer: 0,
               bursted: false
             };
             league.pickPostMatchRewardCategory(cat);
             onSave();
           };
-          drawButton(ctx2, hits, cx + 24, cy + ch - 68, cw - 48, 44, "\u6495\u5F00\u6B64\u76F2\u76D2 \u2728", pickPack, { variant: "gold", fontSize: 14 });
-          hits.add(cx, cy, cw, ch, pickPack);
+          drawButton(ctx2, hits, cx + 24, cy + ch2 - 68, cw2 - 48, 44, "\u6495\u5F00\u6B64\u76F2\u76D2 \u2728", pickPack, { variant: "gold", fontSize: 14 });
+          hits.add(cx, cy, cw2, ch2, pickPack);
         });
         return;
       }
@@ -18809,14 +19973,19 @@
         return;
       }
       if (rw.completed) {
-        drawChamferPanel(ctx2, 260, 200, 760, 280, 14, THEME.BG_PANEL, THEME.GREEN, 2, THEME.GREEN);
-        drawFoilShimmer(ctx2, 260, 200, 760, 280, this.animClock * 1.1, "rgba(74, 222, 128, 0.20)");
-        drawBadge(ctx2, 560, 232, 160, 28, "\u8D5B\u540E\u5956\u52B1\u5DF2\u9886\u53D6", "#14532D", THEME.GREEN);
-        drawText(ctx2, rw.summaryText || "\u5956\u52B1\u5DF2\u751F\u6548", 640, 316, {
-          size: 22,
+        const rolledOpt = rw.options.find((o) => o.gamble?.rolledTier);
+        const rolledTier = rolledOpt?.gamble?.rolledTier;
+        const resCol = rolledTier === "jackpot" ? THEME.GOLD_LIGHT : rolledTier === "negative" ? THEME.RED_LIGHT : THEME.GREEN;
+        const resBadgeBg = rolledTier === "jackpot" ? "#78350F" : rolledTier === "negative" ? "#7F1D1D" : "#14532D";
+        const resBadgeTxt = rolledTier === "jackpot" ? "\u8D85\u989D\u66B4\u51FB\uFF01" : rolledTier === "negative" ? "\u89E6\u53D1\u4EE3\u4EF7" : rolledTier === "positive" ? "\u7A33\u5065\u6536\u76CA" : "\u8D5B\u540E\u5956\u52B1\u5DF2\u9886\u53D6";
+        drawChamferPanel(ctx2, 240, 196, 800, 290, 14, THEME.BG_PANEL, resCol, 2, resCol);
+        drawFoilShimmer(ctx2, 240, 196, 800, 290, this.animClock * 1.1, resCol + "33");
+        drawBadge(ctx2, 560, 224, 160, 28, resBadgeTxt, resBadgeBg, resCol);
+        drawWrappedText(ctx2, rw.summaryText || "\u5956\u52B1\u5DF2\u751F\u6548", 290, 286, 700, 28, {
+          size: 19,
           bold: true,
-          color: THEME.GOLD_LIGHT,
-          align: "center"
+          color: rolledTier === "negative" ? "#FCA5A5" : THEME.GOLD_LIGHT,
+          maxLines: 3
         });
         drawButton(
           ctx2,
@@ -18845,18 +20014,21 @@
         color: catInfo.color,
         align: "center"
       });
-      const allRevealed = this.flipped.every(Boolean) && this.flipTimers.every((t) => t >= 0.35);
+      const optCount = rw.options.length;
+      const allRevealed = rw.options.every((_, idx) => this.flipped[idx] && this.flipTimers[idx] >= 0.35);
       if (!allRevealed) {
         drawButton(ctx2, hits, 1072, 102, 160, 32, "\u4E00\u952E\u5168\u7FFB \u2728", () => {
-          this.flipped = [true, true, true];
-          this.flipTimers = [0.22, 0.22, 0.22];
+          this.flipped = [true, true, true, true];
+          this.flipTimers = [0.22, 0.22, 0.22, 0.22];
         }, { variant: "primary", fontSize: 12 });
       }
+      const cw = optCount >= 4 ? 276 : 340;
+      const ch = 376;
+      const gap = optCount >= 4 ? 24 : 44;
+      const startX = (THEME.W - (optCount * cw + (optCount - 1) * gap)) / 2;
       rw.options.forEach((opt, idx) => {
-        const targetX = 86 + idx * 384;
+        const targetX = startX + idx * (cw + gap);
         const targetY = 174;
-        const cw = 340;
-        const ch = 376;
         const dealP = easeOutBack(Math.max(0, Math.min(1, (this.dealTimer - idx * 0.05) / 0.34)));
         const cx = 640 - cw / 2 + (targetX - (640 - cw / 2)) * dealP;
         const cy = 340 - ch / 2 + (targetY - (340 - ch / 2)) * dealP;
@@ -18945,15 +20117,48 @@
             cy + 288,
             { size: 12, color: THEME.GOLD_LIGHT, align: "center", mono: true }
           );
+        } else if (opt.gamble) {
+          const g = opt.gamble;
+          const barX = cx + 24;
+          const barY = cy + 186;
+          const barW = cw - 48;
+          const barH = 14;
+          const wPos = Math.round(barW * g.positive.prob / 100);
+          const wNeg = Math.round(barW * g.negative.prob / 100);
+          const wJack = Math.max(4, barW - wPos - wNeg);
+          drawRoundRect(ctx2, barX - 1, barY - 1, barW + 2, barH + 2, 5, "#090D16", THEME.BORDER);
+          ctx2.fillStyle = "#22C55E";
+          ctx2.fillRect(barX, barY, wPos, barH);
+          ctx2.fillStyle = "#EF4444";
+          ctx2.fillRect(barX + wPos, barY, wNeg, barH);
+          ctx2.fillStyle = "#FACC15";
+          ctx2.fillRect(barX + wPos + wNeg, barY, wJack, barH);
+          drawText(ctx2, `${g.positive.prob}% \u6B63 \xB7 ${g.positive.label}`, barX, cy + 216, { size: 11.5, bold: true, color: "#4ADE80" });
+          drawText(ctx2, `${g.negative.prob}% \u8D1F \xB7 ${g.negative.label}`, barX, cy + 236, { size: 11.5, bold: true, color: "#F87171" });
+          drawText(ctx2, `${g.jackpot.prob}% \u66B4 \xB7 ${g.jackpot.label}`, barX, cy + 256, { size: 11.5, bold: true, color: "#FACC15" });
+          if (g.modifierHint) {
+            drawWrappedText(ctx2, `\u6821\u51C6\uFF1A${g.modifierHint}`, barX, cy + 278, barW, 15, { size: 10.5, color: THEME.TX3, maxLines: 2 });
+          }
         }
         ctx2.restore();
         if (fp >= 0.8) {
           const needsPlayerTarget = opt.category === "stat_boost" || opt.category === "trait_forge";
-          drawButton(ctx2, hits, cx + 24, cy + ch - 62, cw - 48, 42, needsPlayerTarget ? "\u9009\u62E9\u5E76\u6307\u5B9A\u7403\u5458 \u25B6" : "\u786E\u8BA4\u9886\u53D6 \u25B6", () => {
+          const btnTxt = opt.category === "gamble" ? "\u5F00\u5956\u535A\u5F08 \u{1F3B2}" : needsPlayerTarget ? "\u9009\u62E9\u5E76\u6307\u5B9A\u7403\u5458 \u25B6" : "\u786E\u8BA4\u9886\u53D6 \u25B6";
+          drawButton(ctx2, hits, cx + 24, cy + ch - 62, cw - 48, 42, btnTxt, () => {
             const res = league.applyPostMatchRewardOption(opt.id);
             if (!res.needsTarget) {
-              SoundEngine.playRewardChime();
-              this.fx.onBurst?.(targetX + cw / 2, targetY + ch / 2, THEME.GREEN);
+              if (res.gambleTier === "jackpot") {
+                SoundEngine.playBreakthrough();
+                this.fx.onBurst?.(targetX + cw / 2, targetY + ch / 2, THEME.GOLD_LIGHT);
+                this.fx.onShake?.(6, 0.2);
+              } else if (res.gambleTier === "negative") {
+                SoundEngine.playClick();
+                this.fx.onBurst?.(targetX + cw / 2, targetY + ch / 2, THEME.RED_LIGHT);
+                this.fx.onShake?.(4, 0.14);
+              } else {
+                SoundEngine.playRewardChime();
+                this.fx.onBurst?.(targetX + cw / 2, targetY + ch / 2, THEME.GREEN);
+              }
             } else {
               SoundEngine.playClick();
             }
@@ -19721,13 +20926,18 @@
     constructor() {
       this.selectedStarterIdx = null;
       this.selectedBenchPlayerId = null;
-      this.squadPage = 0;
+      this.benchPage = 0;
       this.activeSysTab = null;
       this.gridMode = false;
+      this.styleModalOpen = false;
       this.presetModalOpen = false;
       this.presetNotice = "\u6BCF\u573A\u6BD4\u8D5B\u6700\u591A\u643A\u5E26 4 \u5957\u9884\u7F6E\u6218\u672F\uFF08\u9635\u578B+\u7403\u5458+\u98CE\u683C\uFF09\u4E0E 4 \u5F20\u624B\u724C\u5B9E\u65F6\u63A7\u573A";
     }
     handleEscape() {
+      if (this.styleModalOpen) {
+        this.styleModalOpen = false;
+        return true;
+      }
       if (this.presetModalOpen) {
         this.presetModalOpen = false;
         return true;
@@ -19740,11 +20950,11 @@
       return false;
     }
     onWheel(deltaY) {
-      if (this.presetModalOpen) return false;
+      if (this.presetModalOpen || this.styleModalOpen) return false;
       const step = deltaY > 0 ? 1 : -1;
-      const next = Math.max(0, Math.min(2, this.squadPage + step));
-      if (next !== this.squadPage) {
-        this.squadPage = next;
+      const next = Math.max(0, Math.min(2, this.benchPage + step));
+      if (next !== this.benchPage) {
+        this.benchPage = next;
         return true;
       }
       return false;
@@ -19767,6 +20977,92 @@
       this.selectedBenchPlayerId = null;
       onSave();
     }
+    getLineRatings(league) {
+      const club = league.getUserClub();
+      const squadMap = new Map(club.squad.map((p) => [p.id, p]));
+      const slotsForRating = FORMATIONS[club.formation];
+      const lineSums = { def: [], mid: [], att: [] };
+      slotsForRating.forEach((sl, idx) => {
+        const pl = squadMap.get(club.starterIds[idx]);
+        if (!pl) return;
+        if (sl.role === "GK" || ["CB", "LB", "RB", "LWB", "RWB"].includes(sl.role)) lineSums.def.push(pl.ca);
+        else if (["CDM", "CM", "CAM", "LM", "RM"].includes(sl.role)) lineSums.mid.push(pl.ca);
+        else lineSums.att.push(pl.ca);
+      });
+      const avg = (arr) => arr.length ? Math.round(arr.reduce((a, b) => a + b, 0) / arr.length) : 0;
+      return { att: avg(lineSums.att), mid: avg(lineSums.mid), def: avg(lineSums.def) };
+    }
+    /**
+     * 统一球员卡片绘制（球场首发与右侧替补席完全一致，零文本重叠）
+     */
+    drawPlayerCard(ctx2, club, player, opts) {
+      const { x, y, w, h, detailed } = opts;
+      drawRoundRect(ctx2, x, y, w, h, 8, opts.bgColor, opts.borderColor, opts.borderWidth ?? 1.2);
+      const roleW = Math.min(54, Math.max(36, opts.roleLabel.length * 9 + 12));
+      drawBadge(ctx2, x + 6, y + 5, roleW, 16, opts.roleLabel, opts.roleBg, opts.roleFg);
+      if (opts.statusBadge) {
+        drawBadge(ctx2, x + w - 36, y + 5, 30, 16, opts.statusBadge.text, opts.statusBadge.bg, opts.statusBadge.fg);
+      } else if (opts.isCaptain) {
+        drawBadge(ctx2, x + w - 23, y + 5, 17, 16, "C", "#FACC15", "#080C14");
+      }
+      const caRight = opts.statusBadge ? x + w - 40 : opts.isCaptain ? x + w - 27 : x + w - 7;
+      drawText(ctx2, `${player.ca}`, caRight, y + 13, {
+        size: 12.5,
+        bold: true,
+        color: THEME.GOLD_LIGHT,
+        align: "right",
+        mono: true
+      });
+      const a = player.attributes;
+      const hasGold = (player.goldTraits?.length ?? 0) > 0;
+      const nameStr = `${hasGold ? "\u2605" : ""}${player.name.slice(0, detailed ? 5 : 4)}`;
+      const jerseySize = detailed ? 24 : 21;
+      const jerseyX = x + 18;
+      const midY = detailed ? y + 36 : y + 35;
+      drawJerseyIcon(ctx2, jerseyX, midY, jerseySize, club, player.shirtNumber);
+      drawText(ctx2, nameStr, x + 34, midY - (detailed ? 5 : 4), {
+        size: detailed ? 12 : 11,
+        bold: true,
+        color: hasGold || player.isNewSigning ? THEME.GOLD_LIGHT : THEME.TX1
+      });
+      if (detailed) {
+        const secTxt = player.secondaryRoles && player.secondaryRoles.length > 0 ? `\xB7\u517C${player.secondaryRoles[0]}` : "";
+        drawText(ctx2, `${player.age}\u5C81${secTxt}`, x + 34, midY + 9, {
+          size: 9,
+          color: THEME.TX2
+        });
+        const attrLine = player.role === "GK" ? `\u6251${a.goalkeeping} \u7AD9${a.positioning} \u51B7${a.composure}` : `\u901F${a.pace} \u5C04${a.shooting} \u4F20${a.passing} \u9632${a.defending}`;
+        drawText(ctx2, attrLine, x + 7, y + 58, {
+          size: 9.5,
+          color: "#93C5FD",
+          mono: true
+        });
+      } else {
+        const shortAttr = player.role === "GK" ? `\u6251${a.goalkeeping} \u7AD9${a.positioning}` : ["CB", "LB", "RB", "LWB", "RWB"].includes(player.role) ? `\u9632${a.defending} \u901F${a.pace}` : ["CDM", "CM", "CAM", "LM", "RM"].includes(player.role) ? `\u4F20${a.passing} \u9632${a.defending}` : `\u5C04${a.shooting} \u901F${a.pace}`;
+        drawText(ctx2, shortAttr, x + 34, midY + 9, {
+          size: 8.8,
+          color: "#93C5FD",
+          mono: true
+        });
+      }
+      const fit = Math.round(player.fitness ?? 100);
+      const famCol = opts.fam >= 85 ? THEME.GOLD_LIGHT : opts.fam >= 65 ? THEME.GREEN : opts.fam >= 35 ? "#38BDF8" : "#FCA5A5";
+      const botY = y + h - 10;
+      const g = player.seasonStats.goals;
+      const ast = player.seasonStats.assists;
+      const leftTxt = detailed && (g > 0 || ast > 0) ? `\u719F${opts.fam}% \xB7 ${g}\u7403${ast}\u52A9` : `\u719F${opts.fam}%`;
+      drawText(ctx2, leftTxt, x + 7, botY, {
+        size: 9.2,
+        color: famCol,
+        mono: true
+      });
+      drawText(ctx2, `\u4F53${fit}%`, x + w - 7, botY, {
+        size: 9.2,
+        color: fit < 60 ? "#FBBF24" : THEME.TX2,
+        align: "right",
+        mono: true
+      });
+    }
     render(ctx2, hits, league, actions) {
       const club = league.getUserClub();
       const squadMap = new Map(club.squad.map((p) => [p.id, p]));
@@ -19779,140 +21075,65 @@
         rightAction: { label: "\u8FDB\u5165\u6BD4\u8D5B\u65E5", icon: "play", variant: "gold", onClick: actions.onStartMatch }
       });
       drawNavRail(ctx2, hits, "tactics", actions.onNavigate);
-      drawChamferPanel(ctx2, 96, 80, 276, 624, 10, "rgba(14, 22, 40, 0.92)", THEME.BORDER);
-      drawText(ctx2, "\u9635\u578B\u4F53\u7CFB (4/3/5\u540E\u536B)", 114, 100, { size: 13, bold: true, color: THEME.GOLD_LIGHT });
-      drawButton(ctx2, hits, 274, 88, 80, 22, "\u6700\u4F73\u9996\u53D1", () => {
-        league.updateUserTactics(club.formation, club.style);
-        this.selectedStarterIdx = null;
-        this.selectedBenchPlayerId = null;
-        actions.onSave();
-      }, { variant: "primary", fontSize: 10, icon: "sparkle" });
-      const curSys = this.activeSysTab ?? getDefenseSystem(club.formation);
-      SYS_LIST.forEach((sys, si) => {
-        const label = sys === "4-back" ? "4\u540E\u536B(8)" : sys === "3-back" ? "3\u540E\u536B(4)" : "5\u540E\u536B(4)";
-        drawButton(ctx2, hits, 114 + si * 82, 116, 78, 24, label, () => {
-          this.activeSysTab = sys;
-        }, { active: curSys === sys, fontSize: 10 });
-      });
-      const sysForms = FORMATION_SYSTEMS[curSys].formations;
-      sysForms.forEach((f, idx) => {
-        const col = idx % 2;
-        const row = Math.floor(idx / 2);
-        drawButton(
-          ctx2,
-          hits,
-          114 + col * 124,
-          146 + row * 27,
-          116,
-          23,
-          f,
-          () => {
-            league.updateUserTactics(f, club.style);
-            this.activeSysTab = getDefenseSystem(f);
-            this.selectedStarterIdx = null;
-            this.selectedBenchPlayerId = null;
-            actions.onSave();
-          },
-          { active: club.formation === f, fontSize: 11 }
-        );
-      });
-      drawText(ctx2, "\u6218\u672F\u98CE\u683C (2\xD73)", 114, 256, { size: 13, bold: true, color: THEME.GOLD_LIGHT });
-      STYLE_LIST.forEach((s, idx) => {
-        const preset = TACTICAL_PRESETS[s];
-        const col = idx % 2;
-        const row = Math.floor(idx / 2);
-        drawButton(
-          ctx2,
-          hits,
-          114 + col * 124,
-          274 + row * 38,
-          116,
-          32,
-          preset.name,
-          () => {
-            league.updateUserTactics(club.formation, s, club.starterIds);
-            actions.onSave();
-          },
-          { active: club.style === s, fontSize: 11 }
-        );
-      });
       const activePreset = TACTICAL_PRESETS[club.style];
       const mastery = league.getTacticalMastery();
       const formLv = Math.min(3, (mastery.formations[club.formation] ?? 0) >= 15 ? 3 : (mastery.formations[club.formation] ?? 0) >= 6 ? 2 : 1);
       const styleLv = Math.min(3, (mastery.styles[club.style] ?? 0) >= 15 ? 3 : (mastery.styles[club.style] ?? 0) >= 6 ? 2 : 1);
-      drawChamferPanel(ctx2, 114, 396, 240, 148, 8, THEME.BG_CARD, THEME.BORDER_GOLD);
-      drawText(ctx2, `${activePreset.name} \xB7 \u719F\u7EC3 Lv.${styleLv}`, 128, 414, { size: 12, bold: true, color: THEME.GOLD_LIGHT });
-      drawBadge(ctx2, 276, 405, 68, 18, `\u9635\u578B Lv.${formLv}`, formLv >= 2 ? "#14532D" : "#1E293B", formLv >= 2 ? THEME.GREEN : THEME.TX2);
-      const styleBars = [
-        ["\u9632\u7EBF\u9AD8\u5EA6", (activePreset.lineHeight + 8) / 16, `${activePreset.lineHeight >= 0 ? "+" : ""}${activePreset.lineHeight}m`, "#38BDF8"],
-        ["\u903C\u62A2\u5F3A\u5EA6", (activePreset.pressIntensity - 0.5) / 1, `${Math.round(activePreset.pressIntensity * 100)}%`, THEME.RED_LIGHT],
-        ["\u6BD4\u8D5B\u8282\u594F", (activePreset.tempo - 0.7) / 0.6, `${activePreset.tempo.toFixed(2)}x`, THEME.GOLD_LIGHT],
-        ["\u76F4\u4F20\u503E\u89D2", activePreset.directness, `${Math.round(activePreset.directness * 100)}%`, THEME.GREEN]
-      ];
-      styleBars.forEach(([lbl, ratio, txt, col], si) => {
-        const sy = 440 + si * 25;
-        const pct = Math.max(0.08, Math.min(1, ratio));
-        drawText(ctx2, lbl, 128, sy, { size: 11, color: THEME.TX2 });
-        drawRoundRect(ctx2, 188, sy - 4, 112, 8, 4, "#1E293B");
-        drawRoundRect(ctx2, 188, sy - 4, Math.round(pct * 112), 8, 4, col);
-        drawText(ctx2, txt, 342, sy, { size: 11, bold: true, color: col, align: "right", mono: true });
-      });
-      const slotsForRating = FORMATIONS[club.formation];
-      const lineSums = { def: [], mid: [], att: [] };
-      slotsForRating.forEach((sl, idx) => {
-        const pl = squadMap.get(club.starterIds[idx]);
-        if (!pl) return;
-        if (sl.role === "GK" || ["CB", "LB", "RB", "LWB", "RWB"].includes(sl.role)) lineSums.def.push(pl.ca);
-        else if (["CDM", "CM", "CAM", "LM", "RM"].includes(sl.role)) lineSums.mid.push(pl.ca);
-        else lineSums.att.push(pl.ca);
-      });
-      const avg = (arr) => arr.length ? Math.round(arr.reduce((a, b) => a + b, 0) / arr.length) : 0;
-      drawChamferPanel(ctx2, 114, 558, 240, 128, 8, THEME.BG_CARD, THEME.BORDER);
-      drawText(ctx2, "\u9996\u53D1\u4E09\u7EBF\u5B9E\u65F6\u6218\u529B", 128, 578, { size: 12, bold: true, color: THEME.GOLD_LIGHT });
-      const lines = [
-        ["\u950B\u7EBF\u8FDB\u653B", avg(lineSums.att), THEME.RED_LIGHT, "sword"],
-        ["\u4E2D\u573A\u8C03\u5EA6", avg(lineSums.mid), "#38BDF8", "ball"],
-        ["\u9632\u7EBF\u7A33\u56FA", avg(lineSums.def), THEME.GREEN, "shield"]
-      ];
-      lines.forEach(([lbl, val, col, ic], li) => {
-        const ly = 604 + li * 26;
-        drawIcon(ctx2, ic, 134, ly, 12, col);
-        drawText(ctx2, lbl, 146, ly, { size: 11, color: THEME.TX2 });
-        drawRoundRect(ctx2, 206, ly - 5, 108, 10, 4, "#1E293B");
-        drawRoundRect(ctx2, 206, ly - 5, Math.round(Math.min(99, val) / 99 * 108), 10, 4, col);
-        drawText(ctx2, `${val}`, 342, ly, { size: 12, bold: true, color: col, align: "right", mono: true });
-      });
-      const px = 384, py = 80, pw = 428, ph = 624;
+      const lineRatings = this.getLineRatings(league);
+      drawChamferPanel(ctx2, 96, 80, 1168, 48, 8, "rgba(14, 22, 40, 0.94)", THEME.BORDER_GOLD, 1.2);
+      drawBadge(ctx2, 110, 92, 68, 24, club.formation, "#1E3A5F", THEME.GOLD_LIGHT);
+      drawText(ctx2, `${activePreset.name}`, 188, 104, { size: 14, bold: true, color: THEME.TX1 });
+      drawBadge(ctx2, 276, 93, 76, 22, `\u9635\u578B Lv.${formLv}`, formLv >= 2 ? "#14532D" : "#1E293B", formLv >= 2 ? THEME.GREEN : THEME.TX2);
+      drawBadge(ctx2, 358, 93, 76, 22, `\u98CE\u683C Lv.${styleLv}`, styleLv >= 2 ? "#1E3A5F" : "#1E293B", styleLv >= 2 ? "#38BDF8" : THEME.TX2);
+      drawText(
+        ctx2,
+        `\u653B ${lineRatings.att}  \xB7  \u4E2D ${lineRatings.mid}  \xB7  \u9632 ${lineRatings.def}`,
+        454,
+        104,
+        { size: 12.5, bold: true, color: THEME.GOLD_LIGHT, mono: true }
+      );
+      drawButton(ctx2, hits, 668, 88, 152, 32, "\u5207\u6362\u9635\u578B\u4E0E\u98CE\u683C \u25BE", () => {
+        this.activeSysTab = getDefenseSystem(club.formation);
+        this.styleModalOpen = true;
+      }, { variant: "primary", fontSize: 11.5, icon: "tactics" });
+      drawButton(ctx2, hits, 828, 88, 102, 32, "\u6700\u4F73\u9996\u53D1", () => {
+        league.updateUserTactics(club.formation, club.style);
+        this.selectedStarterIdx = null;
+        this.selectedBenchPlayerId = null;
+        actions.onSave();
+      }, { variant: "ghost", fontSize: 11.5, icon: "sparkle" });
+      drawButton(ctx2, hits, 938, 88, 132, 32, "\u6218\u672F\u9884\u6848 (4\u5957)", () => {
+        this.presetModalOpen = true;
+      }, { variant: "gold", fontSize: 11.5 });
+      if (actions.onOpenRoster) {
+        drawButton(ctx2, hits, 1078, 88, 172, 32, "\u7403\u961F\u699C\u5355 / \u5927\u540D\u5355", actions.onOpenRoster, {
+          variant: "ghost",
+          fontSize: 11.5
+        });
+      }
+      const px = 96, py = 138, pw = 630, ph = 566;
       drawChamferPanel(ctx2, px, py, pw, ph, 10, "#0B1810", THEME.BORDER);
       const selectedStarter = this.selectedStarterIdx !== null ? squadMap.get(club.starterIds[this.selectedStarterIdx]) : null;
       const selectedBench = this.selectedBenchPlayerId ? squadMap.get(this.selectedBenchPlayerId) : null;
-      drawRoundRect(ctx2, px + 10, py + 10, pw - 20, 34, 6, "rgba(14,22,40,0.92)", selectedStarter || selectedBench ? THEME.GREEN : THEME.BORDER);
-      drawIcon(ctx2, selectedStarter || selectedBench ? "refresh" : "tactics", px + 24, py + 27, 13, selectedStarter || selectedBench ? THEME.GREEN : THEME.GOLD_LIGHT);
-      const hintText = selectedStarter ? this.gridMode && this.selectedStarterIdx > 0 ? `\u3010${selectedStarter.name}\u3011\u70B9\u7EFF\u8335\u683C\u5B50\u5FAE\u8C03\u7AD9\u4F4D` : `\u5DF2\u9009\u3010${selectedStarter.name}\u3011\uFF1A\u70B9\u53F3\u4FA7\u6362\u4E0A\u6216\u4E92\u6362` : selectedBench ? `\u5DF2\u9009\u66FF\u8865\u3010${selectedBench.name}\u3011\uFF1A\u70B9\u7403\u573A\u4F4D\u7F6E\u6362\u4E0A` : "\u70B9\u7403\u573A\u9996\u53D1\u8C03\u804C\u8D23/\u6362\u4EBA \xB7 \u60AC\u505C\u8FDE\u7EBF\u770B\u9ED8\u5951";
-      drawText(ctx2, hintText, px + 38, py + 27, {
-        size: 10.5,
+      drawRoundRect(ctx2, px + 12, py + 10, pw - 24, 36, 6, "rgba(14,22,40,0.92)", selectedStarter || selectedBench ? THEME.GREEN : THEME.BORDER);
+      drawIcon(ctx2, selectedStarter || selectedBench ? "refresh" : "tactics", px + 28, py + 28, 14, selectedStarter || selectedBench ? THEME.GREEN : THEME.GOLD_LIGHT);
+      const hintText = selectedStarter ? this.gridMode && this.selectedStarterIdx > 0 ? `\u5DF2\u9009\u3010${selectedStarter.name}\u3011\uFF1A\u70B9\u51FB\u7EFF\u8335\u683C\u5B50\u8C03\u6574\u7AD9\u4F4D\uFF0C\u6216\u70B9\u961F\u53CB/\u66FF\u8865\u66FF\u6362` : `\u5DF2\u9009\u9996\u53D1\u3010${selectedStarter.name}\u3011\uFF1A\u70B9\u51FB\u4EFB\u610F\u961F\u53CB\u4E92\u6362\uFF0C\u6216\u70B9\u53F3\u4FA7\u66FF\u8865\u66FF\u6362` : selectedBench ? `\u5DF2\u9009\u66FF\u8865\u3010${selectedBench.name}\u3011\uFF1A\u70B9\u51FB\u4E0B\u65B9\u7403\u573A\u4EFB\u610F\u9996\u53D1\u4F4D\u7F6E\u6362\u4E0A` : "\u70B9\u9009\u9996\u53D1\u6216\u66FF\u8865\u5361\u7247\u5373\u53EF\u6362\u4EBA \xB7 \u4E0B\u65B9\u64CD\u4F5C\u680F\u8C03\u6574\u804C\u8D23/\u8BBE\u961F\u957F/\u8BE6\u60C5";
+      drawText(ctx2, hintText, px + 44, py + 28, {
+        size: 11.5,
         bold: !!(selectedStarter || selectedBench),
         color: selectedStarter || selectedBench ? THEME.GREEN : THEME.GOLD_LIGHT
       });
-      drawButton(ctx2, hits, px + pw - 138, py + 14, 68, 26, "5\xD76\u683C\u5B50", () => {
+      drawButton(ctx2, hits, px + pw - 148, py + 14, 74, 28, "5\xD76\u683C\u5B50", () => {
         this.gridMode = !this.gridMode;
-      }, { active: this.gridMode, fontSize: 10 });
-      if (selectedStarter || selectedBench) {
-        drawButton(ctx2, hits, px + pw - 64, py + 14, 48, 26, "\u53D6\u6D88", () => {
-          this.selectedStarterIdx = null;
-          this.selectedBenchPlayerId = null;
-        }, { variant: "ghost", fontSize: 10 });
-      } else if (club.gridSlots || club.slotDuties) {
-        drawButton(ctx2, hits, px + pw - 64, py + 14, 48, 26, "\u91CD\u7F6E", () => {
+      }, { active: this.gridMode, fontSize: 11 });
+      if (club.gridSlots || club.slotDuties) {
+        drawButton(ctx2, hits, px + pw - 68, py + 14, 52, 28, "\u91CD\u7F6E", () => {
           league.resetClubGridAndDuties();
           actions.onSave();
-        }, { variant: "ghost", fontSize: 10 });
+        }, { variant: "ghost", fontSize: 11 });
       }
       const slots = FORMATIONS[club.formation];
-      const selectedSlotRole = this.selectedStarterIdx !== null ? slots[this.selectedStarterIdx]?.role : void 0;
-      const dutyOptions = selectedSlotRole ? ROLE_DUTY_OPTIONS[selectedSlotRole] : void 0;
-      const hasDutyBar = !!(dutyOptions && dutyOptions.length > 0);
-      const pitchX = px + 20, pitchY = py + 54, pitchW = pw - 40, pitchH = hasDutyBar ? ph - 116 : ph - 74;
+      const pitchX = px + 24, pitchY = py + 54, pitchW = pw - 48, pitchH = ph - 118;
       const stripeH = pitchH / 8;
       for (let si = 0; si < 8; si++) {
         ctx2.fillStyle = si % 2 === 0 ? THEME.BG_PITCH : THEME.BG_PITCH_ALT;
@@ -19970,7 +21191,7 @@
       let hoveredLink = null;
       let hoveredMidX = 0;
       let hoveredMidY = 0;
-      let minHoverDist = 11;
+      let minHoverDist = 12;
       ctx2.save();
       for (const sp of chemSummary.specs) {
         const a = slotCoords[sp.slotA];
@@ -20003,8 +21224,8 @@
         const mx = (a.x + b.x) / 2;
         const my = (a.y + b.y) / 2;
         ctx2.shadowBlur = 0;
-        drawRoundRect(ctx2, mx - 13, my - 8, 26, 16, 4, "rgba(8, 12, 20, 0.85)", color, 1);
-        drawText(ctx2, `${Math.round(score)}`, mx, my, { size: 9, bold: true, color, align: "center", mono: true });
+        drawRoundRect(ctx2, mx - 14, my - 9, 28, 18, 4, "rgba(8, 12, 20, 0.85)", color, 1);
+        drawText(ctx2, `${Math.round(score)}`, mx, my, { size: 10, bold: true, color, align: "center", mono: true });
       }
       ctx2.restore();
       const spine = chemSummary.spineInfo;
@@ -20012,15 +21233,16 @@
         const spineCol = spine.bonus >= 4 ? THEME.GOLD_LIGHT : spine.bonus >= 2 ? THEME.GREEN : "#94A3B8";
         drawBadge(
           ctx2,
-          pitchX + 6,
-          pitchY + 6,
-          158,
-          20,
+          pitchX + 8,
+          pitchY + 8,
+          172,
+          22,
           `\u4E2D\u8F74\u810A\u67F1 ${spine.avg}${spine.bonus > 0 ? ` \xB7 \u5171\u632F+${spine.bonus}` : ""}`,
           "rgba(8, 12, 20, 0.86)",
           spineCol
         );
       }
+      const captainId = league.getCaptainId(club);
       slots.forEach((slot, i) => {
         const pid = club.starterIds[i];
         const player = squadMap.get(pid);
@@ -20038,47 +21260,29 @@
         const isBlocked = isInjured || isSuspended;
         const fitBorder = isBlocked ? THEME.RED_LIGHT : isSelected ? THEME.GOLD_LIGHT : canDropBench ? THEME.GREEN : !lineFit ? THEME.RED_LIGHT : secondaryFit ? "#38BDF8" : !exactFit ? "#FBBF24" : THEME.GOLD;
         const fam = league.getPlayerFamiliarity(player, club.formation);
-        const famCol = fam >= 85 ? THEME.GOLD_LIGHT : fam >= 65 ? THEME.GREEN : fam >= 35 ? "#38BDF8" : "#FCA5A5";
-        drawRoundRect(
-          ctx2,
-          sx - 35,
-          sy - 28,
-          70,
-          56,
-          7,
-          isBlocked ? "rgba(127,29,29,0.85)" : isSelected ? "#2C220B" : canDropBench ? "#102A1B" : !lineFit ? "rgba(127,29,29,0.75)" : "rgba(14,22,40,0.9)",
-          fitBorder,
-          isBlocked || isSelected || canDropBench || !lineFit ? 2 : 1
-        );
-        drawJerseyIcon(ctx2, sx, sy - 8, 22, club, player.shirtNumber);
-        if (isBlocked) {
-          drawBadge(ctx2, sx - 33, sy - 26, 28, 13, isSuspended ? "\u505C\u8D5B" : "\u4F24\u505C", "#991B1B", "#FEE2E2");
-        }
-        if (player.id === league.getCaptainId(club)) {
-          drawBadge(ctx2, sx + 18, sy - 26, 15, 13, "C", "#FACC15", "#080C14");
-        }
         const slotDuty = club.slotDuties?.[i] ?? "default";
         const dutyOpt = slotDuty !== "default" ? ROLE_DUTY_OPTIONS[slot.role]?.find((d) => d.duty === slotDuty) : void 0;
         const roleLabel = dutyOpt ? `${slot.role}\xB7${dutyOpt.label.slice(0, 2)}` : `${slot.role}${secondaryFit ? "\xB7\u517C" : ""}`;
-        drawText(ctx2, `${roleLabel} ${player.ca}`, sx, sy + 9, {
-          size: 9,
-          bold: true,
-          color: !lineFit ? THEME.RED_LIGHT : secondaryFit ? "#38BDF8" : !exactFit ? "#FBBF24" : THEME.GOLD_LIGHT,
-          align: "center"
+        const cw = 108;
+        const ch = 76;
+        this.drawPlayerCard(ctx2, club, player, {
+          x: sx - cw / 2,
+          y: sy - ch / 2,
+          w: cw,
+          h: ch,
+          roleLabel,
+          roleBg: !lineFit ? "#7F1D1D" : secondaryFit ? "#0C4A6E" : "#1E293B",
+          roleFg: !lineFit ? "#FCA5A5" : secondaryFit ? "#7DD3FC" : !exactFit ? "#FBBF24" : THEME.GOLD_LIGHT,
+          borderColor: fitBorder,
+          bgColor: isBlocked ? "rgba(127,29,29,0.88)" : isSelected ? "#2C220B" : canDropBench ? "#102A1B" : !lineFit ? "rgba(127,29,29,0.78)" : "rgba(14,22,40,0.94)",
+          borderWidth: isBlocked || isSelected || canDropBench || !lineFit ? 2 : 1.2,
+          fam,
+          isCaptain: player.id === captainId,
+          statusBadge: isBlocked ? { text: isSuspended ? "\u505C\u8D5B" : "\u4F24\u505C", bg: "#991B1B", fg: "#FEE2E2" } : !lineFit ? { text: "\u9519\u4F4D", bg: "#7F1D1D", fg: "#FCA5A5" } : void 0,
+          detailed: false
         });
-        drawText(ctx2, !lineFit ? `${player.name.slice(0, 3)}\xB7\u9519\u4F4D` : player.name.slice(0, 5), sx, sy + 19, {
-          size: 9.5,
-          bold: true,
-          color: !lineFit ? "#FCA5A5" : THEME.TX1,
-          align: "center"
-        });
-        drawText(ctx2, `\u719F${fam}%`, sx, sy + 28, {
-          size: 8.5,
-          color: famCol,
-          align: "center",
-          mono: true
-        });
-        hits.add(sx - 35, sy - 28, 70, 56, () => {
+        hits.add(sx - cw / 2, sy - ch / 2, cw, ch, () => {
+          SoundEngine.playClick();
           if (this.selectedBenchPlayerId) {
             this.swapStarterWithPlayer(league, i, this.selectedBenchPlayerId, actions.onSave);
           } else if (this.selectedStarterIdx === null) {
@@ -20090,162 +21294,262 @@
           }
         });
       });
-      if (hasDutyBar && this.selectedStarterIdx !== null && dutyOptions) {
+      const barY = pitchY + pitchH + 10;
+      drawRoundRect(ctx2, pitchX, barY, pitchW, 46, 7, "rgba(14, 22, 40, 0.94)", selectedStarter || selectedBench ? THEME.BORDER_GOLD : THEME.BORDER, 1.2);
+      if (selectedStarter && this.selectedStarterIdx !== null) {
         const sIdx = this.selectedStarterIdx;
-        const barY = pitchY + pitchH + 8;
+        const slotRole = slots[sIdx]?.role;
+        const dutyOptions = slotRole ? ROLE_DUTY_OPTIONS[slotRole] : void 0;
         const curDuty = club.slotDuties?.[sIdx] ?? "default";
-        drawRoundRect(ctx2, pitchX, barY, pitchW, 44, 6, "rgba(14, 22, 40, 0.94)", THEME.BORDER_GOLD, 1);
-        drawText(ctx2, `${selectedSlotRole} \u804C\u8D23:`, pitchX + 10, barY + 22, { size: 10.5, bold: true, color: THEME.GOLD_LIGHT });
-        const btnW = Math.min(84, Math.floor((pitchW - 88) / dutyOptions.length) - 4);
-        dutyOptions.forEach((opt, di) => {
-          drawButton(ctx2, hits, pitchX + 76 + di * (btnW + 4), barY + 9, btnW, 26, opt.label.slice(0, 5), () => {
-            league.setClubSlotDuty(sIdx, opt.duty);
+        drawText(ctx2, `${slotRole}\xB7${selectedStarter.name.slice(0, 4)}`, pitchX + 12, barY + 23, { size: 12, bold: true, color: THEME.GOLD_LIGHT });
+        let bx = pitchX + 96;
+        if (dutyOptions && dutyOptions.length > 0) {
+          const btnW = Math.min(72, Math.floor((pitchW - 260) / dutyOptions.length) - 4);
+          dutyOptions.forEach((opt) => {
+            drawButton(ctx2, hits, bx, barY + 9, btnW, 28, opt.label.slice(0, 4), () => {
+              league.setClubSlotDuty(sIdx, opt.duty);
+              actions.onSave();
+            }, { active: curDuty === opt.duty, fontSize: 10.5 });
+            bx += btnW + 4;
+          });
+        } else {
+          drawText(ctx2, "\u8BE5\u4F4D\u7F6E\u65E0\u7EC6\u5206\u804C\u8D23", bx, barY + 23, { size: 11, color: THEME.TX3 });
+        }
+        const isCap = selectedStarter.id === captainId;
+        drawButton(ctx2, hits, pitchX + pitchW - 186, barY + 9, 64, 28, isCap ? "\u73B0\u961F\u957F" : "\u8BBE\u961F\u957F", () => {
+          if (!isCap) {
+            SoundEngine.playRewardChime();
+            league.setCaptain(selectedStarter.id);
             actions.onSave();
-          }, { active: curDuty === opt.duty, fontSize: 10 });
+          }
+        }, { variant: isCap ? "gold" : "ghost", disabled: isCap, fontSize: 10.5 });
+        drawButton(ctx2, hits, pitchX + pitchW - 116, barY + 9, 54, 28, "\u8BE6\u60C5", () => {
+          actions.onInspectPlayer(selectedStarter);
+        }, { variant: "primary", fontSize: 10.5 });
+        drawButton(ctx2, hits, pitchX + pitchW - 56, barY + 9, 46, 28, "\u53D6\u6D88", () => {
+          this.selectedStarterIdx = null;
+        }, { variant: "ghost", fontSize: 10.5 });
+      } else if (selectedBench) {
+        drawText(ctx2, `\u5DF2\u9009\u66FF\u8865\u3010${selectedBench.role}\xB7${selectedBench.name}\u3011\xB7 \u70B9\u7403\u573A\u4EFB\u610F\u4F4D\u7F6E\u6362\u4E0A`, pitchX + 14, barY + 23, {
+          size: 12,
+          bold: true,
+          color: THEME.GREEN
+        });
+        drawButton(ctx2, hits, pitchX + pitchW - 122, barY + 9, 58, 28, "\u8BE6\u60C5", () => {
+          actions.onInspectPlayer(selectedBench);
+        }, { variant: "primary", fontSize: 11 });
+        drawButton(ctx2, hits, pitchX + pitchW - 58, barY + 9, 48, 28, "\u53D6\u6D88", () => {
+          this.selectedBenchPlayerId = null;
+        }, { variant: "ghost", fontSize: 11 });
+      } else {
+        drawText(ctx2, "\u70B9\u51FB\u7403\u573A\u6216\u66FF\u8865\u5361\u7247\u8FDB\u884C\u6362\u4EBA \xB7 \u9009\u4E2D\u9996\u53D1\u540E\u53EF\u5728\u6B64\u8BBE\u7F6E\u804C\u8D23\u3001\u961F\u957F\u4E0E\u67E5\u770B\u8BE6\u60C5", pitchX + pitchW / 2, barY + 23, {
+          size: 11.5,
+          color: THEME.TX3,
+          align: "center"
         });
       }
       if (hoveredLink) {
-        const tx = Math.max(pitchX + 4, Math.min(pitchX + pitchW - 196, hoveredMidX - 96));
+        const tx = Math.max(pitchX + 4, Math.min(pitchX + pitchW - 216, hoveredMidX - 106));
         const ty = Math.max(pitchY + 6, hoveredMidY - 64);
         const lk = hoveredLink.link;
-        drawRoundRect(ctx2, tx, ty, 192, 54, 8, "rgba(8, 12, 22, 0.96)", THEME.GOLD_LIGHT, 1.3);
+        drawRoundRect(ctx2, tx, ty, 212, 56, 8, "rgba(8, 12, 22, 0.96)", THEME.GOLD_LIGHT, 1.3);
         const titleTxt = lk.title ? `${hoveredLink.defaultLabel} \xB7 ${lk.title}` : hoveredLink.defaultLabel;
-        drawText(ctx2, `${hoveredLink.playerA.name.slice(0, 4)} \xD7 ${hoveredLink.playerB.name.slice(0, 4)}`, tx + 10, ty + 14, { size: 11, bold: true, color: THEME.TX1 });
-        drawText(ctx2, titleTxt, tx + 182, ty + 14, { size: 9.5, bold: true, color: THEME.GOLD_LIGHT, align: "right" });
-        drawText(ctx2, `\u9ED8\u5951 ${Math.round(lk.score)}  \xB7  \u540C\u573A ${lk.matches}  \xB7  \u4F20\u7403 ${lk.passes}  \xB7  \u52A9\u653B ${lk.assists}`, tx + 10, ty + 35, {
-          size: 10,
+        drawText(ctx2, `${hoveredLink.playerA.name.slice(0, 4)} \xD7 ${hoveredLink.playerB.name.slice(0, 4)}`, tx + 10, ty + 16, { size: 11.5, bold: true, color: THEME.TX1 });
+        drawText(ctx2, titleTxt, tx + 202, ty + 16, { size: 10, bold: true, color: THEME.GOLD_LIGHT, align: "right" });
+        drawText(ctx2, `\u9ED8\u5951 ${Math.round(lk.score)} \xB7 \u540C\u573A ${lk.matches} \xB7 \u4F20\u7403 ${lk.passes} \xB7 \u52A9\u653B ${lk.assists}`, tx + 10, ty + 38, {
+          size: 10.5,
           color: "#93C5FD",
           mono: true
         });
       }
-      drawChamferPanel(ctx2, 824, 80, 440, 624, 10, "rgba(14, 22, 40, 0.92)", THEME.BORDER);
-      drawText(ctx2, `\u66FF\u8865\u8F6E\u6362 (${club.squad.length}\u4EBA)`, 842, 104, { size: 14, bold: true });
-      drawButton(ctx2, hits, 1018, 92, 116, 24, "\u6218\u672F\u4FDD\u5B58/\u9884\u6848(4)", () => {
-        this.presetModalOpen = true;
-      }, { variant: "gold", fontSize: 10 });
-      if (actions.onOpenRoster) {
-        drawButton(ctx2, hits, 1140, 92, 110, 24, "\u7403\u961F\u699C\u5355/\u5927\u540D\u5355", actions.onOpenRoster, { variant: "ghost", fontSize: 10 });
-      }
       const starterSet = new Set(club.starterIds);
-      const sortedSquad = [...club.squad].sort((a, b) => {
-        const sa = starterSet.has(a.id) ? 0 : 1;
-        const sb = starterSet.has(b.id) ? 0 : 1;
-        return sa !== sb ? sa - sb : b.ca - a.ca;
-      });
-      const captainId = league.getCaptainId(club);
-      const pageSize = 11;
-      const totalPages = Math.max(1, Math.ceil(sortedSquad.length / pageSize));
-      if (this.squadPage >= totalPages) this.squadPage = totalPages - 1;
-      const visibleSquad = sortedSquad.slice(this.squadPage * pageSize, (this.squadPage + 1) * pageSize);
-      visibleSquad.forEach((p, idx) => {
-        const ry = 128 + idx * 48;
-        const isStarter = starterSet.has(p.id);
+      const benchSquad = club.squad.filter((p) => !starterSet.has(p.id)).sort((a, b) => b.ca - a.ca);
+      drawChamferPanel(ctx2, 740, 138, 524, 566, 10, "rgba(14, 22, 40, 0.92)", THEME.BORDER);
+      drawText(ctx2, `\u66FF\u8865\u5E2D (${benchSquad.length}\u4EBA)`, 758, 164, { size: 15, bold: true, color: THEME.GOLD_LIGHT });
+      drawText(
+        ctx2,
+        this.selectedStarterIdx !== null ? "\u70B9\u51FB\u4EFB\u610F\u66FF\u8865\u5361\u76F4\u63A5\u6362\u5165\u9996\u53D1" : "\u70B9\u51FB\u66FF\u8865\u5361\u9009\u4E2D\uFF0C\u518D\u70B9\u5DE6\u4FA7\u7403\u573A\u66FF\u6362",
+        1246,
+        164,
+        { size: 11, color: this.selectedStarterIdx !== null ? THEME.GREEN : THEME.TX3, align: "right" }
+      );
+      const pageSize = 15;
+      const totalPages = Math.max(1, Math.ceil(benchSquad.length / pageSize));
+      if (this.benchPage >= totalPages) this.benchPage = totalPages - 1;
+      const visibleBench = benchSquad.slice(this.benchPage * pageSize, (this.benchPage + 1) * pageSize);
+      visibleBench.forEach((p, idx) => {
+        const col = idx % 3;
+        const row = Math.floor(idx / 3);
+        const cw = 156;
+        const ch = 88;
+        const cx = 758 + col * 166;
+        const cy = 186 + row * 94;
         const isBenchSelected = this.selectedBenchPlayerId === p.id;
-        const isStarterSelected = this.selectedStarterIdx !== null && club.starterIds[this.selectedStarterIdx] === p.id;
         const isSuspended = (p.suspendedRounds ?? 0) > 0;
         const isInjured = (p.injuredRounds ?? 0) > 0;
         const isBlocked = isSuspended || isInjured;
-        const isCaptain = p.id === captainId;
-        const storyTag = league.getPlayerStoryTag(p);
-        drawRoundRect(
-          ctx2,
-          838,
-          ry,
-          412,
-          44,
-          6,
-          isBenchSelected || isStarterSelected ? "#1B3A2A" : THEME.BG_CARD,
-          isBenchSelected || isStarterSelected ? THEME.GREEN : isCaptain ? THEME.GOLD_LIGHT : isStarter ? "rgba(34,197,94,0.35)" : THEME.BORDER,
-          isBenchSelected || isStarterSelected || isCaptain ? 1.5 : 1
-        );
-        drawBadge(
-          ctx2,
-          844,
-          ry + 4,
-          34,
-          17,
-          isSuspended ? "\u505C\u8D5B" : isInjured ? "\u4F24\u505C" : isStarter ? "\u9996\u53D1" : "\u66FF\u8865",
-          isBlocked ? "#991B1B" : isStarter ? "#15803D" : "#334155"
-        );
-        drawBadge(ctx2, 882, ry + 4, 32, 17, p.role, tierColor(p.tier));
-        drawText(ctx2, p.name.slice(0, 5), 918, ry + 13, { size: 11.5, bold: true, color: p.isNewSigning ? THEME.GOLD_LIGHT : THEME.TX1 });
-        if (storyTag) {
-          drawBadge(ctx2, 988, ry + 4, 52, 17, storyTag, "#312E81", "#C4B5FD");
-        }
-        if (p.strainWarning && !isBlocked) {
-          drawBadge(ctx2, 1044, ry + 4, 32, 17, "\u75B2\u60EB", "#78350F", "#FBBF24");
-        } else if (p.morale === "high") {
-          drawBadge(ctx2, 1044, ry + 4, 32, 17, "\u9AD8\u6602", "#14532D", "#4ADE80");
-        } else if (p.morale === "low") {
-          drawBadge(ctx2, 1044, ry + 4, 32, 17, "\u4F4E\u8FF7", "#7F1D1D", "#FCA5A5");
-        } else if (p.isNewSigning) {
-          drawBadge(ctx2, 1044, ry + 4, 24, 17, "\u65B0", "#1E3A5F", "#38BDF8");
-        }
-        drawText(ctx2, `${p.ca}`, 1104, ry + 13, {
-          size: 12,
-          bold: true,
-          color: THEME.GOLD_LIGHT,
-          align: "right",
-          mono: true
+        const canQuickSwap = this.selectedStarterIdx !== null && !isBlocked;
+        const fam = league.getPlayerFamiliarity(p, club.formation);
+        const statusBadge = isBlocked ? { text: isSuspended ? "\u505C\u8D5B" : "\u4F24\u505C", bg: "#991B1B", fg: "#FEE2E2" } : p.strainWarning ? { text: "\u75B2\u60EB", bg: "#78350F", fg: "#FBBF24" } : p.morale === "high" ? { text: "\u9AD8\u6602", bg: "#14532D", fg: "#4ADE80" } : p.morale === "low" ? { text: "\u4F4E\u8FF7", bg: "#7F1D1D", fg: "#FCA5A5" } : p.isNewSigning ? { text: "\u65B0\u63F4", bg: "#1E3A5F", fg: "#38BDF8" } : void 0;
+        this.drawPlayerCard(ctx2, club, p, {
+          x: cx,
+          y: cy,
+          w: cw,
+          h: ch,
+          roleLabel: p.role,
+          roleBg: tierColor(p.tier),
+          roleFg: "#FFFFFF",
+          borderColor: isBlocked ? THEME.RED_LIGHT : isBenchSelected ? THEME.GREEN : canQuickSwap ? "rgba(34,197,94,0.65)" : THEME.BORDER,
+          bgColor: isBlocked ? "rgba(127,29,29,0.45)" : isBenchSelected ? "#1B3A2A" : THEME.BG_CARD,
+          borderWidth: isBenchSelected || canQuickSwap ? 1.8 : 1,
+          fam,
+          statusBadge,
+          detailed: true
         });
-        if (isStarter && !isBlocked) {
-          if (isCaptain) {
-            drawBadge(ctx2, 1110, ry + 4, 30, 17, "\u961F\u957F", "#FACC15", "#080C14");
-          } else {
-            drawButton(ctx2, hits, 1110, ry + 3, 30, 19, "\u8BBEC", () => {
-              SoundEngine.playRewardChime();
-              league.setCaptain(p.id);
-              actions.onSave();
-            }, { variant: "ghost", fontSize: 9.5 });
+        hits.add(cx, cy, cw, ch, () => {
+          if (isBlocked) {
+            SoundEngine.playWarning();
+            return;
           }
-        }
-        const actionLabel = isSuspended ? "\u505C\u8D5B" : isInjured ? "\u4F24\u505C" : isStarterSelected || isBenchSelected ? "\u5DF2\u9009" : this.selectedStarterIdx !== null ? "\u6362\u5165" : isStarter ? "\u9009\u4E0B" : "\u6362\u4E0A";
-        drawButton(ctx2, hits, 1146, ry + 3, 62, 22, actionLabel, () => {
-          if (isBlocked) return;
+          SoundEngine.playClick();
           if (this.selectedStarterIdx !== null) {
             this.swapStarterWithPlayer(league, this.selectedStarterIdx, p.id, actions.onSave);
-          } else if (isStarter) {
-            const sIdx = club.starterIds.indexOf(p.id);
-            this.selectedStarterIdx = sIdx >= 0 ? sIdx : null;
-            this.selectedBenchPlayerId = null;
           } else {
             this.selectedBenchPlayerId = isBenchSelected ? null : p.id;
-            this.selectedStarterIdx = null;
           }
-        }, {
-          variant: isBlocked ? "danger" : isStarterSelected || isBenchSelected || this.selectedStarterIdx !== null ? "green" : "primary",
-          disabled: isBlocked,
-          fontSize: 10
-        });
-        drawButton(ctx2, hits, 1212, ry + 3, 34, 22, "\u8BE6", () => {
-          actions.onInspectPlayer(p);
-        }, { fontSize: 10 });
-        const a = p.attributes;
-        const attrSummary = p.role === "GK" ? `\u6251${a.goalkeeping} \u7AD9${a.positioning} \u51B7${a.composure}` : `\u901F${a.pace} \u5C04${a.shooting} \u4F20${a.passing} \u9632${a.defending}`;
-        const fit = Math.round(p.fitness ?? 100);
-        const secTxt = p.secondaryRoles && p.secondaryRoles.length > 0 ? ` +${p.secondaryRoles[0]}` : "";
-        drawText(ctx2, `${attrSummary}  |  \u4F53${fit}%  |  ${p.age}\u5C81${secTxt}`, 846, ry + 33, {
-          size: 10,
-          color: fit < 60 ? "#FBBF24" : THEME.TX2,
-          mono: true
         });
       });
       if (totalPages > 1) {
-        drawButton(ctx2, hits, 842, 666, 96, 28, "\u4E0A\u4E00\u9875", () => {
-          this.squadPage = Math.max(0, this.squadPage - 1);
-        }, { disabled: this.squadPage === 0, fontSize: 11 });
-        drawText(ctx2, `\u7B2C ${this.squadPage + 1} / ${totalPages} \u9875 (\u9996\u53D111 + \u66FF\u8865${sortedSquad.length - 11})`, 1044, 680, {
-          size: 11,
+        drawButton(ctx2, hits, 758, 662, 108, 30, "\u4E0A\u4E00\u9875", () => {
+          this.benchPage = Math.max(0, this.benchPage - 1);
+        }, { disabled: this.benchPage === 0, fontSize: 11.5 });
+        drawText(ctx2, `\u7B2C ${this.benchPage + 1} / ${totalPages} \u9875\uFF08\u66FF\u8865 ${benchSquad.length} \u4EBA\uFF09`, 1002, 677, {
+          size: 11.5,
           color: THEME.TX2,
           align: "center"
         });
-        drawButton(ctx2, hits, 1150, 666, 96, 28, "\u4E0B\u4E00\u9875", () => {
-          this.squadPage = Math.min(totalPages - 1, this.squadPage + 1);
-        }, { disabled: this.squadPage >= totalPages - 1, fontSize: 11 });
+        drawButton(ctx2, hits, 1138, 662, 108, 30, "\u4E0B\u4E00\u9875", () => {
+          this.benchPage = Math.min(totalPages - 1, this.benchPage + 1);
+        }, { disabled: this.benchPage >= totalPages - 1, fontSize: 11.5 });
+      } else {
+        drawText(ctx2, `\u5171 ${benchSquad.length} \u540D\u66FF\u8865 \xB7 \u5168\u90E8\u5C55\u793A`, 1002, 677, {
+          size: 11.5,
+          color: THEME.TX3,
+          align: "center"
+        });
       }
-      if (this.presetModalOpen) {
+      if (this.styleModalOpen) {
+        this.renderStyleModal(ctx2, hits, league, actions);
+      } else if (this.presetModalOpen) {
         this.renderPresetModal(ctx2, hits, league, actions);
       }
+    }
+    /**
+     * 独立抽屉浮层：三大防线体系 × 16 阵型 + 六大战术风格 + 实时参数与三线战力
+     */
+    renderStyleModal(ctx2, hits, league, actions) {
+      ctx2.fillStyle = "rgba(4, 7, 14, 0.84)";
+      ctx2.fillRect(0, 0, THEME.W, THEME.H);
+      hits.clear();
+      const mx = 110;
+      const my = 56;
+      const mw = 1060;
+      const mh = 608;
+      drawChamferPanel(ctx2, mx, my, mw, mh, 14, "rgba(14, 22, 40, 0.98)", THEME.BORDER_GOLD, 1.6, THEME.GOLD_LIGHT);
+      const club = league.getUserClub();
+      drawText(ctx2, "\u9635\u578B\u4F53\u7CFB\u4E0E\u6218\u672F\u98CE\u683C\u914D\u7F6E", mx + 28, my + 34, { size: 20, bold: true, color: THEME.GOLD_LIGHT });
+      drawText(ctx2, "\u5207\u6362\u9635\u578B\u540E\u81EA\u52A8\u8C03\u6574\u9ED8\u8BA4\u7AD9\u4F4D\uFF0C\u8FD4\u56DE\u7403\u573A\u5373\u53EF\u7EE7\u7EED\u5FAE\u8C03\u9996\u53D1\u4EBA\u9009", mx + 28, my + 58, { size: 12, color: "#7DD3FC" });
+      drawButton(ctx2, hits, mx + mw - 118, my + 20, 94, 34, "\u5B8C\u6210\u5E76\u8FD4\u56DE", () => {
+        this.styleModalOpen = false;
+      }, { variant: "gold", fontSize: 12 });
+      drawChamferPanel(ctx2, mx + 28, my + 82, 540, 498, 10, THEME.BG_CARD, THEME.BORDER);
+      drawText(ctx2, "\u4E00\u3001\u9009\u62E9\u9632\u7EBF\u4F53\u7CFB\u4E0E\u9635\u578B", mx + 46, my + 106, { size: 14, bold: true, color: THEME.GOLD_LIGHT });
+      const curSys = this.activeSysTab ?? getDefenseSystem(club.formation);
+      SYS_LIST.forEach((sys, si) => {
+        const label = sys === "4-back" ? "4 \u540E\u536B\u4F53\u7CFB (8\u9635)" : sys === "3-back" ? "3 \u540E\u536B\u4F53\u7CFB (4\u9635)" : "5 \u540E\u536B\u4F53\u7CFB (4\u9635)";
+        drawButton(ctx2, hits, mx + 46 + si * 170, my + 124, 162, 32, label, () => {
+          this.activeSysTab = sys;
+        }, { active: curSys === sys, fontSize: 11.5 });
+      });
+      const sysForms = FORMATION_SYSTEMS[curSys].formations;
+      sysForms.forEach((f, idx) => {
+        const col = idx % 2;
+        const row = Math.floor(idx / 2);
+        drawButton(
+          ctx2,
+          hits,
+          mx + 46 + col * 256,
+          my + 168 + row * 38,
+          244,
+          32,
+          f,
+          () => {
+            league.updateUserTactics(f, club.style);
+            this.activeSysTab = getDefenseSystem(f);
+            this.selectedStarterIdx = null;
+            this.selectedBenchPlayerId = null;
+            actions.onSave();
+          },
+          { active: club.formation === f, fontSize: 12.5 }
+        );
+      });
+      drawText(ctx2, "\u4E8C\u3001\u9009\u62E9\u6218\u672F\u98CE\u683C (2\xD73)", mx + 46, my + 344, { size: 14, bold: true, color: THEME.GOLD_LIGHT });
+      STYLE_LIST.forEach((s, idx) => {
+        const preset = TACTICAL_PRESETS[s];
+        const col = idx % 2;
+        const row = Math.floor(idx / 2);
+        drawButton(
+          ctx2,
+          hits,
+          mx + 46 + col * 256,
+          my + 366 + row * 56,
+          244,
+          46,
+          preset.name,
+          () => {
+            league.updateUserTactics(club.formation, s, club.starterIds);
+            actions.onSave();
+          },
+          { active: club.style === s, fontSize: 13 }
+        );
+      });
+      const activePreset = TACTICAL_PRESETS[club.style];
+      const mastery = league.getTacticalMastery();
+      const formLv = Math.min(3, (mastery.formations[club.formation] ?? 0) >= 15 ? 3 : (mastery.formations[club.formation] ?? 0) >= 6 ? 2 : 1);
+      const styleLv = Math.min(3, (mastery.styles[club.style] ?? 0) >= 15 ? 3 : (mastery.styles[club.style] ?? 0) >= 6 ? 2 : 1);
+      drawChamferPanel(ctx2, mx + 586, my + 82, 446, 268, 10, THEME.BG_CARD, THEME.BORDER_GOLD);
+      drawText(ctx2, `${activePreset.name} \xB7 \u98CE\u683C\u719F\u7EC3 Lv.${styleLv}`, mx + 606, my + 110, { size: 15, bold: true, color: THEME.GOLD_LIGHT });
+      drawBadge(ctx2, mx + 914, my + 98, 98, 24, `\u9635\u578B Lv.${formLv}`, formLv >= 2 ? "#14532D" : "#1E293B", formLv >= 2 ? THEME.GREEN : THEME.TX2);
+      const styleBars = [
+        ["\u9632\u7EBF\u9AD8\u5EA6", (activePreset.lineHeight + 8) / 16, `${activePreset.lineHeight >= 0 ? "+" : ""}${activePreset.lineHeight}m`, "#38BDF8"],
+        ["\u903C\u62A2\u5F3A\u5EA6", (activePreset.pressIntensity - 0.5) / 1, `${Math.round(activePreset.pressIntensity * 100)}%`, THEME.RED_LIGHT],
+        ["\u6BD4\u8D5B\u8282\u594F", (activePreset.tempo - 0.7) / 0.6, `${activePreset.tempo.toFixed(2)}x`, THEME.GOLD_LIGHT],
+        ["\u76F4\u4F20\u503E\u89D2", activePreset.directness, `${Math.round(activePreset.directness * 100)}%`, THEME.GREEN]
+      ];
+      styleBars.forEach(([lbl, ratio, txt, col], si) => {
+        const sy = my + 154 + si * 46;
+        const pct = Math.max(0.08, Math.min(1, ratio));
+        drawText(ctx2, lbl, mx + 606, sy, { size: 13, color: THEME.TX2 });
+        drawRoundRect(ctx2, mx + 694, sy - 6, 240, 12, 5, "#1E293B");
+        drawRoundRect(ctx2, mx + 694, sy - 6, Math.round(pct * 240), 12, 5, col);
+        drawText(ctx2, txt, mx + 1012, sy, { size: 13, bold: true, color: col, align: "right", mono: true });
+      });
+      const lineRatings = this.getLineRatings(league);
+      drawChamferPanel(ctx2, mx + 586, my + 368, 446, 212, 10, THEME.BG_CARD, THEME.BORDER);
+      drawText(ctx2, "\u5F53\u524D\u9996\u53D1\u4E09\u7EBF\u5B9E\u65F6\u6218\u529B", mx + 606, my + 396, { size: 15, bold: true, color: THEME.GOLD_LIGHT });
+      const lines = [
+        ["\u950B\u7EBF\u8FDB\u653B", lineRatings.att, THEME.RED_LIGHT, "sword"],
+        ["\u4E2D\u573A\u8C03\u5EA6", lineRatings.mid, "#38BDF8", "ball"],
+        ["\u9632\u7EBF\u7A33\u56FA", lineRatings.def, THEME.GREEN, "shield"]
+      ];
+      lines.forEach(([lbl, val, col, ic], li) => {
+        const ly = my + 440 + li * 44;
+        drawIcon(ctx2, ic, mx + 614, ly, 15, col);
+        drawText(ctx2, lbl, mx + 634, ly, { size: 13, color: THEME.TX2 });
+        drawRoundRect(ctx2, mx + 720, ly - 6, 224, 12, 5, "#1E293B");
+        drawRoundRect(ctx2, mx + 720, ly - 6, Math.round(Math.min(99, val) / 99 * 224), 12, 5, col);
+        drawText(ctx2, `${val}`, mx + 1012, ly, { size: 14, bold: true, color: col, align: "right", mono: true });
+      });
     }
     renderPresetModal(ctx2, hits, league, actions) {
       ctx2.fillStyle = "rgba(4, 7, 14, 0.82)";
@@ -20731,6 +22035,7 @@
       this.cardCraftScreen = new CardCraftScreen();
       this.draftScreen = new DraftScreen();
       this.portalScreen = new PortalScreen();
+      this.leagueScreen = new LeagueScreen();
       this.tacticsScreen = new TacticsScreen();
       this.matchScreen = new MatchDayScreen();
       this.postMatchScreen = new PostMatchReDraftScreen();
@@ -20782,13 +22087,14 @@
       }
     }
     navigateFromRail(tab) {
+      const isSeasonTab = this.route === "portal" || this.route === "league" || this.route === "tactics" || this.route === "cards";
       if (tab === "title") {
         this.setRoute("title");
       } else if (tab === "meta") {
-        this.metaReturnRoute = this.route === "portal" || this.route === "tactics" || this.route === "cards" ? this.route : "portal";
+        this.metaReturnRoute = isSeasonTab ? this.route : "portal";
         this.setRoute("meta");
       } else if (tab === "hof") {
-        this.metaReturnRoute = this.route === "portal" || this.route === "tactics" || this.route === "cards" ? this.route : "portal";
+        this.metaReturnRoute = isSeasonTab ? this.route : "portal";
         this.setRoute("hof");
       } else {
         this.setRoute(tab);
@@ -20841,8 +22147,8 @@
       if (this.route === "meta") {
         return this.metaScreen.onWheel(deltaY, x, y);
       }
-      if (this.route === "portal") {
-        return this.portalScreen.onWheel(deltaY);
+      if (this.route === "league") {
+        return this.leagueScreen.onWheel(deltaY);
       }
       if (this.route === "tactics") {
         return this.tacticsScreen.onWheel(deltaY);
@@ -20869,6 +22175,12 @@
           return;
         }
         if (this.route === "tactics" && this.tacticsScreen.handleEscape()) {
+          return;
+        }
+        if (this.route === "cards" && this.cardCraftScreen.handleEscape()) {
+          return;
+        }
+        if (this.route === "meta" && this.metaScreen.handleEscape()) {
           return;
         }
       }
@@ -20915,8 +22227,8 @@
       if (shakeOff.x !== 0 || shakeOff.y !== 0) {
         ctx2.translate(shakeOff.x, shakeOff.y);
       }
-      const bgId = this.route === "title" || this.route === "portal" || this.route === "match" || this.route === "hof" || this.route === "season_end" ? "stadium_bg" : this.route === "draft" || this.route === "post_match" ? "bg_draft" : "bg_portal";
-      const brightenBg = this.route === "title" || this.route === "portal" || this.route === "hof" || this.route === "season_end";
+      const bgId = this.route === "title" || this.route === "portal" || this.route === "league" || this.route === "match" || this.route === "hof" || this.route === "season_end" ? "stadium_bg" : this.route === "draft" || this.route === "post_match" ? "bg_draft" : "bg_portal";
+      const brightenBg = this.route === "title" || this.route === "portal" || this.route === "league" || this.route === "hof" || this.route === "season_end";
       drawBackdrop(ctx2, bgId, this.elapsedTime, brightenBg);
       ctx2.save();
       if (reveal.offsetY !== 0) {
@@ -21073,6 +22385,22 @@
             this.tutorialOverlay.render(ctx2, this.hits, this.league, "portal_scout", () => this.save());
           }
         }
+      } else if (this.route === "league") {
+        this.leagueScreen.render(ctx2, this.hits, this.league, {
+          onNavigate: (tab) => this.navigateFromRail(tab),
+          onSave: () => this.save(),
+          onStartMatch: () => {
+            this.matchScreen.start(
+              this.league,
+              () => {
+                this.shake.trigger(7, 0.28);
+                this.particles.burst(640, 140, THEME.GOLD_LIGHT, 28);
+              },
+              (intensity, dur) => this.shake.trigger(intensity, dur)
+            );
+            this.setRoute("match", "MATCH DAY \xB7 KICKOFF");
+          }
+        });
       } else if (this.route === "tactics") {
         this.tacticsScreen.render(ctx2, this.hits, this.league, {
           onNavigate: (tab) => this.navigateFromRail(tab),
