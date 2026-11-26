@@ -8,7 +8,6 @@ export type ArtAssetId =
   | 'bg_title'
   | 'bg_draft'
   | 'bg_portal'
-  | 'bg_match'
   | 'bg_champion'
   | 'story_underdog'
   | 'story_revenge'
@@ -20,16 +19,9 @@ export type ArtAssetId =
   | 'story_tactician'
   | 'reward_win'
   | 'reward_draw'
-  | 'craft_fusion'
-  | 'draft_scout'
   | 'perk_event'
-  | 'champ_celebrate'
-  | 'trophy_champ'
   | 'trophy_tier1'
   | 'trophy_tier2_4'
-  | 'trophy_tier5_7'
-  | 'league_pyramid_emblem'
-  | 'pitch_stage_bg'
   | 'panel_carbon_bg'
   | 'card_frame_s'
   | 'card_frame_a'
@@ -49,60 +41,98 @@ export type ArtAssetId =
   | 'cmd_wing_play'
   | 'cmd_set_piece'
   | 'cmd_offside_trap'
+  | 'cmd_gk_launch'
+  | 'cmd_long_shot'
+  | 'cmd_blood_frenzy'
   | 'role_gk'
   | 'role_def'
   | 'role_mid'
   | 'role_att'
   | 'command_card_back'
-  | 'achievement_badge'
   | 'stadium_bg'
   | 'game_logo'
-  | 'avatar_face_0' | 'avatar_face_1' | 'avatar_face_2' | 'avatar_face_3' | 'avatar_face_4' | 'avatar_face_5'
-  | 'avatar_eyes_0' | 'avatar_eyes_1' | 'avatar_eyes_2' | 'avatar_eyes_3' | 'avatar_eyes_4' | 'avatar_eyes_5'
-  | 'avatar_hair_0' | 'avatar_hair_1' | 'avatar_hair_2' | 'avatar_hair_3' | 'avatar_hair_4'
-  | 'avatar_hair_5' | 'avatar_hair_6' | 'avatar_hair_7' | 'avatar_hair_8' | 'avatar_hair_9'
-  | 'avatar_beard_0' | 'avatar_beard_1' | 'avatar_beard_2' | 'avatar_beard_3' | 'avatar_beard_4' | 'avatar_beard_5'
-  | 'avatar_kit_0' | 'avatar_kit_1' | 'avatar_kit_2' | 'avatar_kit_3'
-  | 'avatar_acc_0' | 'avatar_acc_1' | 'avatar_acc_2' | 'avatar_acc_3';
+  | 'pitch_grass_top'
+  | 'fixture_vs_bg'
+  | 'goal_banner'
+  | 'bg_tactics'
+  | 'ach_blank'
+  | 'ach_first_draft'
+  | 'ach_first_win'
+  | 'ach_playoffs'
+  | 'ach_champion'
+  | 'ach_dynasty'
+  | 'ach_hattrick'
+  | 'ach_clean_sheet'
+  | 'ach_craft_card'
+  | 'ach_recipe_5'
+  | 'ach_hidden_trait'
+  | 'ach_synergy'
+  | 'ach_meta_lv3'
+  | 'prologue_01_tunnel'
+  | 'prologue_02_last_kick'
+  | 'prologue_03_farewell_phone'
+  | 'prologue_04_hometown_club'
+  | 'prologue_05_retired_ending'
+  | 'cmd_captain_roar'
+  | 'pack_recruit'
+  | 'pack_tactics'
+  | 'pack_perk'
+  | 'pack_burst_fx'
+  | 'bg_skill_constellation'
+  | 'bg_season_ceremony'
+  | 'trophy_grand_cup'
+  | 'card_frame_mythic'
+  | 'fx_skill_cutin_att'
+  | 'fx_skill_cutin_def'
+  | 'fx_skill_cutin_ult'
+  | 'icon_skill_master'
+  | 'icon_style_press'
+  | 'icon_style_tiki'
+  | 'icon_style_wing'
+  | 'icon_style_counter'
+  | 'icon_style_bus'
+  | 'icon_style_balanced'
+  | 'icon_sys_4back'
+  | 'icon_sys_3back'
+  | 'icon_sys_5back'
+  | 'icon_node_fusion'
+  | 'icon_node_keystone'
+  | 'bg_prologue_coronation'
+  | 'fx_prologue_last_dance'
+  | 'portrait_linfeng'
+  | 'portrait_xiaoyu'
+  | 'portrait_mentor';
 
 export const ART_MANIFEST: Record<ArtAssetId, string> = {
   stadium_bg: 'assets/art/stadium_bg.jpg',
-  bg_title: 'assets/art/bg_title.jpg',
-  bg_draft: 'assets/art/bg_draft.jpg',
-  bg_portal: 'assets/art/bg_portal.jpg',
-  bg_match: 'assets/art/bg_match.jpg',
+  bg_title: 'assets/art/bg_title.webp',
+  bg_draft: 'assets/art/bg_draft.webp',
+  bg_portal: 'assets/art/bg_portal.webp',
   bg_champion: 'assets/art/bg_champion.jpg',
-  story_underdog: 'assets/art/story_underdog.jpg',
-  story_revenge: 'assets/art/story_revenge.jpg',
-  story_veteran: 'assets/art/story_veteran.jpg',
-  story_wonderkid: 'assets/art/story_wonderkid.jpg',
+  story_underdog: 'assets/art/story_underdog.webp',
+  story_revenge: 'assets/art/story_revenge.webp',
+  story_veteran: 'assets/art/story_veteran.webp',
+  story_wonderkid: 'assets/art/story_wonderkid.webp',
   story_relegation: 'assets/art/story_relegation.webp',
   story_academy: 'assets/art/story_academy.webp',
   story_poach: 'assets/art/story_poach.webp',
   story_tactician: 'assets/art/story_tactician.webp',
-  reward_win: 'assets/art/reward_win.jpg',
-  reward_draw: 'assets/art/reward_draw.jpg',
-  craft_fusion: 'assets/art/craft_fusion.jpg',
-  draft_scout: 'assets/art/draft_scout.jpg',
-  perk_event: 'assets/art/perk_event.jpg',
-  champ_celebrate: 'assets/art/champ_celebrate.jpg',
-  trophy_champ: 'assets/art/trophy_champ.png',
+  reward_win: 'assets/art/reward_win.webp',
+  reward_draw: 'assets/art/reward_draw.webp',
+  perk_event: 'assets/art/perk_event.webp',
   trophy_tier1: 'assets/art/trophy_tier1.webp',
   trophy_tier2_4: 'assets/art/trophy_tier2_4.webp',
-  trophy_tier5_7: 'assets/art/trophy_tier5_7.webp',
-  league_pyramid_emblem: 'assets/art/league_pyramid_emblem.webp',
-  pitch_stage_bg: 'assets/art/pitch_stage_bg.webp',
   panel_carbon_bg: 'assets/art/panel_carbon_bg.webp',
-  card_frame_s: 'assets/art/card_frame_s.png',
-  card_frame_a: 'assets/art/card_frame_a.png',
+  card_frame_s: 'assets/art/card_frame_s.webp',
+  card_frame_a: 'assets/art/card_frame_a.webp',
   card_bg_gold: 'assets/art/card_bg_gold.webp',
   card_bg_purple: 'assets/art/card_bg_purple.webp',
   card_bg_blue: 'assets/art/card_bg_blue.webp',
-  elem_press: 'assets/art/elem_press.png',
-  elem_pass: 'assets/art/elem_pass.png',
-  elem_wing: 'assets/art/elem_wing.png',
-  elem_iron: 'assets/art/elem_iron.png',
-  elem_blitz: 'assets/art/elem_blitz.png',
+  elem_press: 'assets/art/elem_press.webp',
+  elem_pass: 'assets/art/elem_pass.webp',
+  elem_wing: 'assets/art/elem_wing.webp',
+  elem_iron: 'assets/art/elem_iron.webp',
+  elem_blitz: 'assets/art/elem_blitz.webp',
   cmd_tiki_taka: 'assets/art/cmd_tiki_taka.webp',
   cmd_gegenpress: 'assets/art/cmd_gegenpress.webp',
   cmd_iron_wall: 'assets/art/cmd_iron_wall.webp',
@@ -111,49 +141,66 @@ export const ART_MANIFEST: Record<ArtAssetId, string> = {
   cmd_wing_play: 'assets/art/cmd_wing_play.webp',
   cmd_set_piece: 'assets/art/cmd_set_piece.webp',
   cmd_offside_trap: 'assets/art/cmd_offside_trap.webp',
-  role_gk: 'assets/art/role_gk.jpg',
-  role_def: 'assets/art/role_def.jpg',
-  role_mid: 'assets/art/role_mid.jpg',
-  role_att: 'assets/art/role_att.jpg',
-  command_card_back: 'assets/art/command_card_back.jpg',
-  achievement_badge: 'assets/art/achievement_badge.png',
-  game_logo: 'assets/art/game_logo.png',
-  avatar_face_0: 'assets/art/avatar/face_0.png',
-  avatar_face_1: 'assets/art/avatar/face_1.png',
-  avatar_face_2: 'assets/art/avatar/face_2.png',
-  avatar_face_3: 'assets/art/avatar/face_3.png',
-  avatar_face_4: 'assets/art/avatar/face_4.png',
-  avatar_face_5: 'assets/art/avatar/face_5.png',
-  avatar_eyes_0: 'assets/art/avatar/eyes_0.png',
-  avatar_eyes_1: 'assets/art/avatar/eyes_1.png',
-  avatar_eyes_2: 'assets/art/avatar/eyes_2.png',
-  avatar_eyes_3: 'assets/art/avatar/eyes_3.png',
-  avatar_eyes_4: 'assets/art/avatar/eyes_4.png',
-  avatar_eyes_5: 'assets/art/avatar/eyes_5.png',
-  avatar_hair_0: 'assets/art/avatar/hair_0.png',
-  avatar_hair_1: 'assets/art/avatar/hair_1.png',
-  avatar_hair_2: 'assets/art/avatar/hair_2.png',
-  avatar_hair_3: 'assets/art/avatar/hair_3.png',
-  avatar_hair_4: 'assets/art/avatar/hair_4.png',
-  avatar_hair_5: 'assets/art/avatar/hair_5.png',
-  avatar_hair_6: 'assets/art/avatar/hair_6.png',
-  avatar_hair_7: 'assets/art/avatar/hair_7.png',
-  avatar_hair_8: 'assets/art/avatar/hair_8.png',
-  avatar_hair_9: 'assets/art/avatar/hair_9.png',
-  avatar_beard_0: 'assets/art/avatar/beard_0.png',
-  avatar_beard_1: 'assets/art/avatar/beard_1.png',
-  avatar_beard_2: 'assets/art/avatar/beard_2.png',
-  avatar_beard_3: 'assets/art/avatar/beard_3.png',
-  avatar_beard_4: 'assets/art/avatar/beard_4.png',
-  avatar_beard_5: 'assets/art/avatar/beard_5.png',
-  avatar_kit_0: 'assets/art/avatar/kit_0.png',
-  avatar_kit_1: 'assets/art/avatar/kit_1.png',
-  avatar_kit_2: 'assets/art/avatar/kit_2.png',
-  avatar_kit_3: 'assets/art/avatar/kit_3.png',
-  avatar_acc_0: 'assets/art/avatar/acc_0.png',
-  avatar_acc_1: 'assets/art/avatar/acc_1.png',
-  avatar_acc_2: 'assets/art/avatar/acc_2.png',
-  avatar_acc_3: 'assets/art/avatar/acc_3.png',
+  cmd_gk_launch: 'assets/art/cmd_gk_launch.webp',
+  cmd_long_shot: 'assets/art/cmd_long_shot.webp',
+  cmd_blood_frenzy: 'assets/art/cmd_blood_frenzy.webp',
+  role_gk: 'assets/art/role_gk.webp',
+  role_def: 'assets/art/role_def.webp',
+  role_mid: 'assets/art/role_mid.webp',
+  role_att: 'assets/art/role_att.webp',
+  command_card_back: 'assets/art/command_card_back.webp',
+  game_logo: 'assets/art/game_logo.webp',
+  pitch_grass_top: 'assets/art/pitch_grass_top.webp',
+  fixture_vs_bg: 'assets/art/fixture_vs_bg.webp',
+  goal_banner: 'assets/art/goal_banner.webp',
+  bg_tactics: 'assets/art/bg_tactics.webp',
+  ach_blank: 'assets/art/ach/ach_blank.webp',
+  ach_first_draft: 'assets/art/ach/ach_first_draft.webp',
+  ach_first_win: 'assets/art/ach/ach_first_win.webp',
+  ach_playoffs: 'assets/art/ach/ach_playoffs.webp',
+  ach_champion: 'assets/art/ach/ach_champion.webp',
+  ach_dynasty: 'assets/art/ach/ach_dynasty.webp',
+  ach_hattrick: 'assets/art/ach/ach_hattrick.webp',
+  ach_clean_sheet: 'assets/art/ach/ach_clean_sheet.webp',
+  ach_craft_card: 'assets/art/ach/ach_craft_card.webp',
+  ach_recipe_5: 'assets/art/ach/ach_recipe_5.webp',
+  ach_hidden_trait: 'assets/art/ach/ach_hidden_trait.webp',
+  ach_synergy: 'assets/art/ach/ach_synergy.webp',
+  ach_meta_lv3: 'assets/art/ach/ach_meta_lv3.webp',
+  prologue_01_tunnel: 'assets/art/prologue_01_tunnel.webp',
+  prologue_02_last_kick: 'assets/art/prologue_02_last_kick.webp',
+  prologue_03_farewell_phone: 'assets/art/prologue_03_farewell_phone.webp',
+  prologue_04_hometown_club: 'assets/art/prologue_04_hometown_club.webp',
+  prologue_05_retired_ending: 'assets/art/prologue_05_retired_ending.webp',
+  cmd_captain_roar: 'assets/art/cmd_captain_roar.webp',
+  pack_recruit: 'assets/art/pack_recruit.webp',
+  pack_tactics: 'assets/art/pack_tactics.webp',
+  pack_perk: 'assets/art/pack_perk.webp',
+  pack_burst_fx: 'assets/art/pack_burst_fx.webp',
+  bg_skill_constellation: 'assets/art/bg_skill_constellation.webp',
+  bg_season_ceremony: 'assets/art/bg_season_ceremony.webp',
+  trophy_grand_cup: 'assets/art/trophy_grand_cup.png',
+  card_frame_mythic: 'assets/art/card_frame_mythic.webp',
+  fx_skill_cutin_att: 'assets/art/fx_skill_cutin_att.webp',
+  fx_skill_cutin_def: 'assets/art/fx_skill_cutin_def.webp',
+  fx_skill_cutin_ult: 'assets/art/fx_skill_cutin_ult.webp',
+  icon_skill_master: 'assets/art/icon_skill_master.webp',
+  icon_style_press: 'assets/art/icon_style_press.webp',
+  icon_style_tiki: 'assets/art/icon_style_tiki.webp',
+  icon_style_wing: 'assets/art/icon_style_wing.webp',
+  icon_style_counter: 'assets/art/icon_style_counter.webp',
+  icon_style_bus: 'assets/art/icon_style_bus.webp',
+  icon_style_balanced: 'assets/art/icon_style_balanced.webp',
+  icon_sys_4back: 'assets/art/icon_sys_4back.webp',
+  icon_sys_3back: 'assets/art/icon_sys_3back.webp',
+  icon_sys_5back: 'assets/art/icon_sys_5back.webp',
+  icon_node_fusion: 'assets/art/icon_node_fusion.webp',
+  icon_node_keystone: 'assets/art/icon_node_keystone.webp',
+  bg_prologue_coronation: 'assets/art/bg_prologue_coronation.webp',
+  fx_prologue_last_dance: 'assets/art/fx_prologue_last_dance.webp',
+  portrait_linfeng: 'assets/art/portrait_linfeng.webp',
+  portrait_xiaoyu: 'assets/art/portrait_xiaoyu.webp',
+  portrait_mentor: 'assets/art/portrait_mentor.webp',
 };
 
 type ImageLike = HTMLImageElement & { complete?: boolean; naturalWidth?: number; width?: number };

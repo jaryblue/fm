@@ -15,6 +15,7 @@ import {
   drawRoundRect,
   drawText,
   drawWrappedText,
+  fitText,
   HitRegistry,
   NavRailTab,
 } from '../CanvasKit';
@@ -22,15 +23,47 @@ import { drawTrophyIcon } from '../ClubVisuals';
 import { THEME } from '../Theme';
 import { drawIcon, IconName } from '../VectorIcons';
 
-const ACH_VECTOR_ICONS: IconName[] = [
-  'sparkle', 'ball', 'shield', 'sword',
-  'star', 'craft', 'talent', 'trophy',
-  'chart', 'trophy', 'bolt', 'talent',
-];
+const ACH_VISUAL_MAP: Record<string, { art?: ArtAssetId; icon: IconName; tint: string }> = {
+  ach_first_draft: { art: 'ach_first_draft', icon: 'sparkle', tint: THEME.GOLD_LIGHT },
+  ach_first_win: { art: 'ach_first_win', icon: 'ball', tint: THEME.GOLD_LIGHT },
+  ach_playoffs: { art: 'ach_playoffs', icon: 'bolt', tint: THEME.GOLD_LIGHT },
+  ach_champion: { art: 'ach_champion', icon: 'trophy', tint: THEME.GOLD_LIGHT },
+  ach_dynasty: { art: 'ach_dynasty', icon: 'star', tint: THEME.GOLD_LIGHT },
+  ach_hattrick: { art: 'ach_hattrick', icon: 'ball', tint: '#FACC15' },
+  ach_clean_sheet: { art: 'ach_clean_sheet', icon: 'shield', tint: '#34D399' },
+  ach_craft_card: { art: 'ach_craft_card', icon: 'craft', tint: '#38BDF8' },
+  ach_recipe_5: { art: 'ach_recipe_5', icon: 'card', tint: '#C084FC' },
+  ach_hidden_trait: { art: 'ach_hidden_trait', icon: 'sparkle', tint: '#FEF08A' },
+  ach_synergy: { art: 'ach_synergy', icon: 'bolt', tint: '#22D3EE' },
+  ach_meta_lv3: { art: 'ach_meta_lv3', icon: 'talent', tint: '#F59E0B' },
+  ach_secret_retire: { icon: 'star', tint: THEME.GOLD_LIGHT },
+  ach_skill_rank3: { icon: 'bolt', tint: '#38BDF8' },
+  ach_skill_mutate: { icon: 'sparkle', tint: '#C084FC' },
+  ach_fusion_power: { icon: 'craft', tint: '#F59E0B' },
+  ach_lv4_card: { icon: 'card', tint: THEME.GOLD_LIGHT },
+  ach_corrupted_win: { icon: 'bolt', tint: '#FB7185' },
+  ach_win_streak_5: { icon: 'trophy', tint: '#34D399' },
+  ach_big_win: { icon: 'ball', tint: '#FACC15' },
+  ach_comeback_win: { icon: 'bolt', tint: '#22D3EE' },
+  ach_triple_synergy: { icon: 'link', tint: '#A78BFA' },
+  ach_scout_master: { icon: 'sparkle', tint: '#38BDF8' },
+  ach_top_tier: { icon: 'trophy', tint: THEME.GOLD_LIGHT },
+};
 
 export class HallOfFameScreen {
   private rightTab: 'achievements' | 'chronicles' = 'achievements';
+  private achPage = 0;
   private chronPage = 0;
+
+  public onWheel(deltaY: number): boolean {
+    if (this.rightTab === 'achievements') {
+      const totalPages = Math.max(1, Math.ceil(ACHIEVEMENTS.length / 12));
+      this.achPage = Math.max(0, Math.min(totalPages - 1, this.achPage + (deltaY > 0 ? 1 : -1)));
+      return true;
+    }
+    this.chronPage = Math.max(0, this.chronPage + (deltaY > 0 ? 1 : -1));
+    return true;
+  }
 
   public render(
     ctx: CanvasRenderingContext2D,
@@ -67,7 +100,7 @@ export class HallOfFameScreen {
     const lx = hasRail ? 96 : 16;
     const lw = hasRail ? 420 : 460;
     drawChamferPanel(ctx, lx, 80, lw, 624, 12, 'rgba(14, 22, 40, 0.92)', THEME.BORDER_GOLD, 1.2, THEME.GOLD_LIGHT);
-    const hofTrophy = AssetLoader.get(hof.championships > 0 ? 'trophy_tier1' : 'trophy_tier2_4');
+    const hofTrophy = AssetLoader.get(hof.championships > 0 ? 'trophy_grand_cup' : 'trophy_tier2_4');
     if (hofTrophy && typeof ctx.drawImage === 'function') {
       ctx.drawImage(hofTrophy, lx + 26, 94, 44, 44);
     } else {
@@ -162,9 +195,21 @@ export class HallOfFameScreen {
     }, { variant: this.rightTab === 'chronicles' ? 'gold' : 'ghost', fontSize: 12 });
 
     if (this.rightTab === 'achievements') {
+      const perPage = 12;
+      const totalPages = Math.max(1, Math.ceil(ACHIEVEMENTS.length / perPage));
+      this.achPage = Math.max(0, Math.min(totalPages - 1, this.achPage));
+      drawButton(ctx, hits, rx + rw - 130, 94, 42, 28, '◀', () => {
+        this.achPage = Math.max(0, this.achPage - 1);
+      }, { variant: 'ghost', fontSize: 11 });
+      drawText(ctx, `${this.achPage + 1}/${totalPages}`, rx + rw - 72, 108, { size: 11, color: THEME.TX2, align: 'center', mono: true });
+      drawButton(ctx, hits, rx + rw - 54, 94, 34, 28, '▶', () => {
+        this.achPage = Math.min(totalPages - 1, this.achPage + 1);
+      }, { variant: 'ghost', fontSize: 11 });
+
       const achW = Math.floor((rw - 52) / 2);
-      const badgeImg = AssetLoader.get('achievement_badge');
-      ACHIEVEMENTS.forEach((ach, idx) => {
+      const blankMedalImg = AssetLoader.get('ach_blank');
+      const achSlice = ACHIEVEMENTS.slice(this.achPage * perPage, this.achPage * perPage + perPage);
+      achSlice.forEach((ach, idx) => {
         const col = idx % 2;
         const row = Math.floor(idx / 2);
         const ax = rx + 20 + col * (achW + 12);
@@ -186,31 +231,29 @@ export class HallOfFameScreen {
         if (unlocked) {
           drawFoilShimmer(ctx, ax, ay, achW, 80, performance.now() / 1000 + idx * 0.23, 'rgba(34, 197, 94, 0.18)');
         }
-        if (badgeImg && typeof ctx.drawImage === 'function') {
+        const vis = ACH_VISUAL_MAP[ach.id] ?? { icon: 'trophy' as IconName, tint: THEME.GOLD_LIGHT };
+        const dedicatedImg = vis.art ? AssetLoader.get(vis.art) : null;
+        if (dedicatedImg && typeof ctx.drawImage === 'function') {
           ctx.save();
-          ctx.globalAlpha = unlocked ? 1 : 0.25;
-          ctx.drawImage(badgeImg, ax + 10, ay + 16, 44, 44);
+          ctx.globalAlpha = unlocked ? 1 : 0.28;
+          ctx.drawImage(dedicatedImg, ax + 8, ay + 16, 48, 48);
           ctx.restore();
-          if (unlocked) {
-            ctx.save();
-            ctx.strokeStyle = 'rgba(250, 204, 21, 0.55)';
-            ctx.lineWidth = 1.2;
-            ctx.beginPath();
-            ctx.arc(ax + 32, ay + 38, 22, 0, Math.PI * 2);
-            ctx.stroke();
-            ctx.restore();
-          }
-          drawIcon(ctx, ACH_VECTOR_ICONS[idx % ACH_VECTOR_ICONS.length], ax + 32, ay + 38, 15, unlocked ? THEME.GOLD_LIGHT : THEME.TX3);
+        } else if (blankMedalImg && typeof ctx.drawImage === 'function') {
+          ctx.save();
+          ctx.globalAlpha = unlocked ? 1 : 0.28;
+          ctx.drawImage(blankMedalImg, ax + 8, ay + 16, 48, 48);
+          ctx.restore();
+          drawIcon(ctx, vis.icon, ax + 32, ay + 40, 18, unlocked ? vis.tint : THEME.TX3);
         } else {
           drawRoundRect(ctx, ax + 12, ay + 20, 36, 36, 8, unlocked ? 'rgba(34,197,94,0.2)' : '#1E293B', unlocked ? THEME.GOLD : undefined, unlocked ? 1.2 : 0);
-          drawIcon(ctx, ACH_VECTOR_ICONS[idx % ACH_VECTOR_ICONS.length], ax + 30, ay + 38, 18, unlocked ? THEME.GREEN : THEME.TX3);
+          drawIcon(ctx, vis.icon, ax + 30, ay + 38, 18, unlocked ? THEME.GREEN : THEME.TX3);
         }
-        drawText(ctx, ach.title, ax + 62, ay + 26, {
+        drawText(ctx, ach.title, ax + 64, ay + 26, {
           size: 14,
           bold: true,
           color: unlocked ? THEME.GOLD_LIGHT : THEME.TX2,
         });
-        drawText(ctx, ach.desc, ax + 62, ay + 52, {
+        drawText(ctx, fitText(ctx, ach.desc, achW - 76, 11), ax + 64, ay + 52, {
           size: 11,
           color: unlocked ? THEME.TX1 : THEME.TX3,
         });

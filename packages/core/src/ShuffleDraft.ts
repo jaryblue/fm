@@ -28,11 +28,11 @@ export const DRAFT_PICKS_PER_SET = 4;
 export function createInitialDraftState(meta?: MetaLevels, tier = 7): DraftState {
   const financeLv = meta?.finance ?? 0;
   const scoutLv = meta?.scout ?? 0;
-  const fitnessLv = meta?.fitness ?? 0;
-  const budgetTotal = DRAFT_BUDGET_TOTAL + financeLv * 60;
+  const medicalLv = meta?.medical ?? 0;
+  const budgetTotal = DRAFT_BUDGET_TOTAL + Math.min(3, financeLv) * 150 + Math.max(0, financeLv - 3) * 60;
   const clampTier = Math.max(1, Math.min(7, tier));
   const tierBase = 38 + (7 - clampTier) * 6;
-  const minBand = tierBase + scoutLv + (fitnessLv >= 3 ? 2 : 0);
+  const minBand = tierBase + Math.min(5, scoutLv) + (medicalLv >= 3 ? 2 : 0);
   const maxBand = tierBase + 12 + (scoutLv >= 3 ? 2 : 0);
   return {
     targetSquadSize: DRAFT_SQUAD_SIZE,
@@ -40,7 +40,7 @@ export function createInitialDraftState(meta?: MetaLevels, tier = 7): DraftState
     budgetRemaining: budgetTotal,
     currentSetIndex: 0,
     picksInCurrentSet: 0,
-    refreshesRemaining: scoutLv,
+    refreshesRemaining: Math.min(3, scoutLv),
     currentPool: generateShuffleSet(20, minBand, maxBand),
   };
 }
@@ -135,14 +135,14 @@ export function createReDraftOffer(
   const maxCA = tierBase + 14 + progBonus;
   const candidates = generateShuffleSet(6, minCA, maxCA);
 
-  const coachingLv = meta?.coaching ?? 0;
+  const analyticsLv = meta?.analytics ?? 0;
   const financeLv = meta?.finance ?? 0;
-  const perkCount = coachingLv >= 3 ? 4 : 3;
+  const perkCount = analyticsLv >= 3 || financeLv >= 4 ? 4 : 3;
   const availablePerks = TACTICAL_PERKS.filter(p => !ownedPerkIds.includes(p.id));
   const pool = availablePerks.length >= perkCount ? availablePerks : TACTICAL_PERKS;
   const shuffled = [...pool].sort((a, b) => {
-    const wa = coachingLv >= 1 && a.rarity !== 'common' ? 0.2 : 0;
-    const wb = coachingLv >= 1 && b.rarity !== 'common' ? 0.2 : 0;
+    const wa = analyticsLv >= 1 && a.rarity !== 'common' ? 0.2 : 0;
+    const wb = analyticsLv >= 1 && b.rarity !== 'common' ? 0.2 : 0;
     return (Math.random() - wb) - (Math.random() - wa);
   });
   const perkChoices: TacticalPerk[] = shuffled.slice(0, perkCount);

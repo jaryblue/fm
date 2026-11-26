@@ -364,3 +364,101 @@ export function drawPlayerSilhouette(
   ctx.fill();
   ctx.restore();
 }
+
+function parseHexRgb(hex: string): [number, number, number] {
+  const clean = hex.replace('#', '').trim();
+  if (clean.length === 3) {
+    return [
+      parseInt(clean[0] + clean[0], 16),
+      parseInt(clean[1] + clean[1], 16),
+      parseInt(clean[2] + clean[2], 16),
+    ];
+  }
+  if (clean.length === 6) {
+    return [
+      parseInt(clean.slice(0, 2), 16),
+      parseInt(clean.slice(2, 4), 16),
+      parseInt(clean.slice(4, 6), 16),
+    ];
+  }
+  return [128, 128, 128];
+}
+
+export function isLightHex(hex: string): boolean {
+  const [r, g, b] = parseHexRgb(hex);
+  return 0.299 * r + 0.587 * g + 0.114 * b > 168;
+}
+
+export function colorDistance(hexA: string, hexB: string): number {
+  const [r1, g1, b1] = parseHexRgb(hexA);
+  const [r2, g2, b2] = parseHexRgb(hexB);
+  const rMean = (r1 + r2) / 2;
+  const dr = r1 - r2;
+  const dg = g1 - g2;
+  const db = b1 - b2;
+  return Math.sqrt((2 + rMean / 256) * dr * dr + 4 * dg * dg + (2 + (255 - rMean) / 256) * db * db);
+}
+
+/**
+ * 比赛日主客队球衣撞色自动避让（优先使用客队预设客场球衣，撞色或接近草坪绿时自动兜底切换）
+ */
+export function resolveMatchKits(
+  home: { primaryColor: string; secondaryColor: string },
+  away: { primaryColor: string; secondaryColor: string; awayPrimaryColor?: string; awaySecondaryColor?: string }
+): {
+  homeKit: { primary: string; secondary: string };
+  awayKit: { primary: string; secondary: string };
+  awaySwapped: boolean;
+} {
+  const homeKit = { primary: home.primaryColor, secondary: home.secondaryColor };
+  const PITCH_GREEN = '#1A5C2E';
+
+  const clashesWithHome = colorDistance(homeKit.primary, away.primaryColor) < 195;
+  const clashesWithPitch = colorDistance(away.primaryColor, PITCH_GREEN) < 115;
+  if (!clashesWithHome && !clashesWithPitch) {
+    return { homeKit, awayKit: { primary: away.primaryColor, secondary: away.secondaryColor }, awaySwapped: false };
+  }
+
+  if (
+    away.awayPrimaryColor &&
+    colorDistance(away.awayPrimaryColor, homeKit.primary) >= 175 &&
+    colorDistance(away.awayPrimaryColor, PITCH_GREEN) >= 115
+  ) {
+    return {
+      homeKit,
+      awayKit: {
+        primary: away.awayPrimaryColor,
+        secondary: away.awaySecondaryColor || away.primaryColor,
+      },
+      awaySwapped: true,
+    };
+  }
+
+  const candidates: Array<{ primary: string; secondary: string; minHomeDist: number }> = [
+    { primary: away.secondaryColor, secondary: away.primaryColor, minHomeDist: 195 },
+    { primary: '#F8FAFC', secondary: away.primaryColor, minHomeDist: 180 },
+    { primary: '#38BDF8', secondary: '#0F172A', minHomeDist: 195 },
+    { primary: '#FACC15', secondary: '#0F172A', minHomeDist: 195 },
+    { primary: '#1E293B', secondary: '#F8FAFC', minHomeDist: 195 },
+  ];
+
+  for (const cand of candidates) {
+    if (
+      colorDistance(cand.primary, homeKit.primary) >= cand.minHomeDist &&
+      colorDistance(cand.primary, PITCH_GREEN) >= 120
+    ) {
+      return { homeKit, awayKit: { primary: cand.primary, secondary: cand.secondary }, awaySwapped: true };
+    }
+  }
+
+  let best = candidates[1];
+  let bestDist = -1;
+  for (const cand of candidates) {
+    const d = colorDistance(cand.primary, homeKit.primary);
+    if (d > bestDist) {
+      bestDist = d;
+      best = cand;
+    }
+  }
+  return { homeKit, awayKit: { primary: best.primary, secondary: best.secondary }, awaySwapped: true };
+}

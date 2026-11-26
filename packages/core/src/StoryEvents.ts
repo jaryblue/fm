@@ -9,7 +9,7 @@ export function createOpeningBriefing(
   clubName: string
 ): PendingStoryEvent {
   const bodies: Record<SeasonStoryline['id'], string> = {
-    underdog: `新赛季战幕拉开，外界普遍将【${clubName}】视作联赛陪跑者。但你深知这支球队的韧性——每次迎战积分榜前四强队，全队速度与冷静都将获得激发，赛季末更可获得 +25% 额外 Meta 结算点数。`,
+    underdog: `新赛季战幕拉开，外界普遍将【${clubName}】视作联赛陪跑者。但你深知这支球队的韧性——每次迎战积分榜前四强队，全队速度与冷静都将获得激发，赛季末更可获得 +25% 额外声望点(Meta)结算奖励。`,
     revenge: `本赛季【${clubName}】的更衣室里挂着宿敌的名字。每次与宿敌交锋，全队射门与抢断都将提升 +5，用一场胜利回应所有的质疑！`,
     veteran: `这或许是队内多位 28 岁以上老将共同征战的最后一个赛季。老将们在场上将获得全属性 +4 加成，让我们为他们献上最体面的告别演出。`,
     wonderkid: `【${clubName}】本赛季启用了一批朝气蓬勃的年轻面孔。23 岁及以下球员每踢完一轮比赛都将稳定成长（传/射/速各 +1），用青春风暴席卷联赛吧！`,
@@ -19,7 +19,7 @@ export function createOpeningBriefing(
     id: `story_brief_${storyline.id}`,
     kind: 'briefing',
     round: 1,
-    badge: `📖 赛季剧本 · ${storyline.title}`,
+    badge: `赛季剧本 · ${storyline.title}`,
     title: `${clubName} · 赛季启程简报`,
     body: bodies[storyline.id],
     options: [
@@ -42,7 +42,7 @@ export function createMidSeasonChoice(
         id: 'story_r3_underdog',
         kind: 'choice',
         round: 3,
-        badge: '📖 逆袭故事 · 第 3 轮事件',
+        badge: '逆袭故事 · 第 3 轮事件',
         title: '赛前舆论持续看衰',
         body: '两轮战罢，媒体专栏依然把你们列为“降级热门”。更衣室里大家都在看你的态度，你决定如何回应？',
         options: [
@@ -55,7 +55,7 @@ export function createMidSeasonChoice(
           {
             id: 'r3_u_b',
             label: '发布会立下军令状',
-            effectDesc: '全队射门 +3，立即获得 +15 Meta 点数',
+            effectDesc: '全队射门 +3，立即获得 +15 声望点(Meta)',
             effect: { shootingBonus: 3 },
             metaPointsDelta: 15,
           },
@@ -67,7 +67,7 @@ export function createMidSeasonChoice(
         id: 'story_r3_revenge',
         kind: 'choice',
         round: 3,
-        badge: '📖 复仇故事 · 第 3 轮事件',
+        badge: '复仇故事 · 第 3 轮事件',
         title: '宿敌主帅赛前口水战',
         body: '宿敌主教练在采访中嘲讽你们的打法“毫无新意”。消息传回训练基地，球员们摩拳擦掌。',
         options: [
@@ -91,7 +91,7 @@ export function createMidSeasonChoice(
         id: 'story_r3_veteran',
         kind: 'choice',
         round: 3,
-        badge: '📖 告别故事 · 第 3 轮事件',
+        badge: '告别故事 · 第 3 轮事件',
         title: '老将体能出现波动',
         body: '高强度赛程下，几名 28 岁以上的核心老将出现了肌肉酸痛反应，队医希望你定夺本周训练重点。',
         options: [
@@ -114,7 +114,7 @@ export function createMidSeasonChoice(
       id: 'story_r3_wonderkid',
       kind: 'choice',
       round: 3,
-      badge: '📖 新星故事 · 第 3 轮事件',
+      badge: '新星故事 · 第 3 轮事件',
       title: '年轻球员渴望更多球权',
       body: '青训新星们在训练中状态火热，进攻组小将希望你在战术上给他们更多自由开火权。',
       options: [
@@ -140,9 +140,9 @@ export function createMidSeasonChoice(
       id: 'story_r5_underdog',
       kind: 'choice',
       round: 5,
-      badge: '📖 逆袭故事 · 第 5 轮关键抉择',
-      title: '季后赛卡位战冲刺',
-      body: '常规赛进入最后三轮，你们依然紧咬前四集团。球队气氛前所未有地高涨，冲刺阶段你选择哪种策略？',
+      badge: '逆袭故事 · 第 5 轮关键抉择',
+      title: '赛季中段抢分冲刺',
+      body: '赛季渐入中段，球队的韧性已让不少对手刮目相看。更衣室士气正盛，接下来几轮的抢分节奏至关重要，你选择哪种策略？',
       options: [
         {
           id: 'r5_u_a',
@@ -164,7 +164,7 @@ export function createMidSeasonChoice(
       id: 'story_r5_revenge',
       kind: 'choice',
       round: 5,
-      badge: '📖 复仇故事 · 第 5 轮关键抉择',
+      badge: '复仇故事 · 第 5 轮关键抉择',
       title: '死忠球迷看台助威',
       body: '俱乐部球迷协会在训练场外挂起了巨型助威横幅，期待球队在冲刺阶段压过宿敌。',
       options: [
@@ -188,7 +188,7 @@ export function createMidSeasonChoice(
       id: 'story_r5_veteran',
       kind: 'choice',
       round: 5,
-      badge: '📖 告别故事 · 第 5 轮关键抉择',
+      badge: '告别故事 · 第 5 轮关键抉择',
       title: '老将更衣室誓师演讲',
       body: '队内老将召集全队围成一圈，激励大家珍惜剩下的每一分钟。他们愿意把所有经验倾注在这几场比赛中。',
       options: [
@@ -211,7 +211,7 @@ export function createMidSeasonChoice(
     id: 'story_r5_wonderkid',
     kind: 'choice',
     round: 5,
-    badge: '📖 新星故事 · 第 5 轮关键抉择',
+    badge: '新星故事 · 第 5 轮关键抉择',
     title: '球探云集看台观战',
     body: '多支顶级联赛的球探今天坐在看台观察你们的年轻球员，这既是压力也是证明自己的舞台。',
     options: [

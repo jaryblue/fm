@@ -121,6 +121,11 @@ export class StoryModal {
           league.resolveStoryEvent(opt.id);
           onResolved();
         }, { variant: idx === 0 ? 'gold' : 'primary', fontSize: 13 });
+        // 整张选项卡片任意区域均可点击确认，防止只点文字无响应
+        hits.add(cx, cy, cw, 180, () => {
+          league.resolveStoryEvent(opt.id);
+          onResolved();
+        });
       });
     }
   }

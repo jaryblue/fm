@@ -6,21 +6,32 @@
 import { FORMATIONS, getDefenseSystem } from '../../engine/src/formations';
 import { MatchEngine } from '../../engine/src/MatchEngine';
 import {
+  ActiveLegendaryAspect,
   EquippedActiveSkill,
   FormationName,
   MatchState,
+  PerkSkillSynergyFlags,
   PlayerAttributes,
   PlayerDuty,
   PlayerInput,
+  SkillBranchChoice,
   TacticalStyle,
   TeamSetup,
 } from '../../engine/src/types';
 import {
+  calcTransferValue,
+  computeInitialPA,
   computePerkSynergies,
   computeWeightedCA,
+  createReturningCaptainLinFeng,
   FICTIONAL_CLUBS,
+  generateBlackMarketPlayer,
+  generateCorePackChoices,
+  generateInitialSkeleton8,
   generateShuffleSet,
   generateTierPyramid,
+  generateYouthProspect,
+  rollBrokerRecommendation,
   rollSeasonStoryline,
   rollSecondaryRoles,
   SECONDARY_ROLE_POOL,
@@ -30,15 +41,20 @@ import {
   createDefaultTacticalMastery,
   getFormationMasteryInfo,
   getMetaUpgradeCost,
+  getMetaUpgradeRequirement,
   getStyleMasteryInfo,
 } from './MetaTree';
 import {
   canUnlockNode,
+  computeSkillBonusRank,
   computeSkillWebMods,
+  getActiveLegendaryAspects,
   getOriginForFormation,
   getOriginForStyle,
+  getSkillTotalInvestedPoints,
   getUnlockedActiveSkillNodes,
   isNodeResonating,
+  SKILL_RANK_UPGRADE_COSTS,
   SKILL_WEB_NODES,
   toEquippedActiveSkill,
 } from './SkillWeb';
@@ -68,6 +84,7 @@ import {
 import {
   CommandCard,
   CraftFocus,
+  createCaptainRoarCard,
   createInitialElements,
   createStarterCoachDeck,
   ElementId,
@@ -85,12 +102,13 @@ import {
   DRAFT_SETS_TOTAL,
   generateAIDraftSquad,
 } from './ShuffleDraft';
-import { computeStandings, generateRoundRobinFixtures, getLeagueTierInfo, TOTAL_TIERS } from './LeagueScheduler';
+import { computeStandings, generateRoundRobinFixtures, getLeagueTierInfo, getTierRegularRounds, TOTAL_TIERS } from './LeagueScheduler';
 import { getRoundCadence, rollTieredGambleOptions, rollTriStateGamble } from './PostMatchEvents';
 import {
   ChemistryLink,
   ChronicleProgress,
   ClubDirectoryEntry,
+  CorePackDraftState,
   DraftPlayer,
   FixtureMatch,
   GambleOutcomeTier,
@@ -100,16 +118,23 @@ import {
   LeagueSaveState,
   MetaBranch,
   MetaLevels,
+  PendingBrokerResult,
   PostMatchRewardCategory,
   PostMatchRewardOption,
   PostMatchRewardState,
   PrepTrainingKind,
+  ScoutingZoneId,
+  ScoutRewardKind,
   SeasonBonusOption,
   SeasonMemory,
   SeasonSummary,
   StandingRow,
   TacticalPresetSlot,
+  TransferListing,
+  TransferMarketState,
+  TransferOffer,
   TutorialProgress,
+  YouthAcademyState,
 } from './types';
 
 export interface NewSeasonOptions {
@@ -117,6 +142,8 @@ export interface NewSeasonOptions {
   customName?: string;
   primaryColor?: string;
   secondaryColor?: string;
+  awayPrimaryColor?: string;
+  awaySecondaryColor?: string;
   formation?: FormationName;
   style?: TacticalStyle;
 }
@@ -131,6 +158,7 @@ export const SEASON_SQUAD_SIZE = 26;
 export interface PlayerMatchGrowth {
   famGain: number;
   chemGain: number;
+  caGain?: number;
   bestPartner?: string;
   unlockedTrait?: string;
   isCaptain?: boolean;
@@ -154,11 +182,33 @@ export class LeagueManager {
    */
   private migrateState(): void {
     if (this.state.currentTier === undefined) this.state.currentTier = 7;
+    if (this.state.bestTierReached === undefined) {
+      this.state.bestTierReached = this.state.currentTier ?? 7;
+    }
+    if (this.state.clubFunds === undefined) {
+      this.state.clubFunds = 500;
+    }
+    if (!this.state.seasonPrivateTrainedIds) this.state.seasonPrivateTrainedIds = [];
     if (!this.state.leaguePyramid) {
       this.state.leaguePyramid = generateTierPyramid(this.state.userClubId || 'club_star');
     }
-    if (!this.state.metaLevels) this.state.metaLevels = createDefaultMetaLevels();
-    if (this.state.metaLevels.academy === undefined) this.state.metaLevels.academy = 0;
+    if (!this.state.metaLevels) {
+      this.state.metaLevels = createDefaultMetaLevels();
+    } else {
+      const rawMeta = this.state.metaLevels as unknown as Record<string, number>;
+      const def = createDefaultMetaLevels();
+      if (rawMeta.medical === undefined && rawMeta.fitness !== undefined) {
+        rawMeta.medical = rawMeta.fitness;
+      }
+      if (rawMeta.training_ground === undefined && rawMeta.coaching !== undefined) {
+        rawMeta.training_ground = rawMeta.coaching;
+      }
+      for (const k of Object.keys(def) as MetaBranch[]) {
+        if (rawMeta[k] === undefined) rawMeta[k] = 0;
+      }
+      delete rawMeta.coaching;
+      delete rawMeta.fitness;
+    }
     if (!this.state.tacticalMastery) this.state.tacticalMastery = createDefaultTacticalMastery();
     const defMastery = createDefaultTacticalMastery();
     for (const fk of Object.keys(defMastery.formations) as FormationName[]) {
@@ -202,12 +252,20 @@ export class LeagueManager {
       return;
     }
     for (const c of this.state.clubs) {
+      if (!c.awayPrimaryColor) c.awayPrimaryColor = '#F8FAFC';
+      if (!c.awaySecondaryColor) c.awaySecondaryColor = c.primaryColor;
       for (const p of c.squad) {
         if (!p.secondaryRoles) p.secondaryRoles = rollSecondaryRoles(p.role, p.tier);
+        if (p.pa === undefined) p.pa = computeInitialPA(p.ca, p.age ?? 24, (p.age ?? 24) <= 19);
+        if (p.scoutFogLevel === undefined) p.scoutFogLevel = 2;
+        if (p.marketValue === undefined) p.marketValue = calcTransferValue(p);
       }
     }
     for (const p of this.state.clubRoster ?? []) {
       if (!p.secondaryRoles) p.secondaryRoles = rollSecondaryRoles(p.role, p.tier);
+      if (p.pa === undefined) p.pa = computeInitialPA(p.ca, p.age ?? 24, (p.age ?? 24) <= 19);
+      if (p.scoutFogLevel === undefined) p.scoutFogLevel = 2;
+      if (p.marketValue === undefined) p.marketValue = calcTransferValue(p);
     }
     if (!this.state.clubs.some(c => c.id === this.state.userClubId)) {
       const fallback = this.state.clubs.find(c => c.isUser) ?? this.state.clubs[0];
@@ -220,13 +278,16 @@ export class LeagueManager {
       this.state.draft.budgetRemaining += 800;
     }
     ensureChronicles(this.state);
+    if ((this.state.currentTier ?? 7) === 1) {
+      tryUnlockAchievement(this.state, 'ach_top_tier');
+    }
     if (this.state.stayedTierCount === undefined) this.state.stayedTierCount = 0;
     if (this.state.winlessStreak === undefined) this.state.winlessStreak = 0;
     if (!this.state.seasonMemories) this.state.seasonMemories = [];
     if (this.state.phase === 'RE_DRAFT') {
       this.state.reDraft = null;
       this.state.phase = 'REGULAR_SEASON';
-      this.state.currentRound = Math.min(TOTAL_REGULAR_ROUNDS, (this.state.currentRound ?? 1) + 1);
+      this.state.currentRound = Math.min(this.getTotalRegularRounds(), (this.state.currentRound ?? 1) + 1);
     }
     if (this.state.phase === 'REGULAR_SEASON' && !this.state.interMatchPrep) {
       this.state.interMatchPrep = createInterMatchPrep(this.state, this.getUserClub());
@@ -244,6 +305,26 @@ export class LeagueManager {
 
   public getCurrentTierInfo() {
     return getLeagueTierInfo(this.state.currentTier ?? 7);
+  }
+
+  public getTotalRegularRounds(): number {
+    const count = this.state?.clubs?.length ?? 0;
+    if (count >= 2) return (count - 1) * 2;
+    return getTierRegularRounds(this.state?.currentTier ?? 7);
+  }
+
+  public getMidSeasonRound(): number {
+    return Math.max(1, Math.floor(this.getTotalRegularRounds() / 2));
+  }
+
+  private getReDraftRounds(): Set<number> {
+    const total = this.getTotalRegularRounds();
+    if (total === 34) return RE_DRAFT_ROUNDS;
+    return new Set([
+      Math.max(4, Math.round(total * 0.25)),
+      this.getMidSeasonRound(),
+      Math.min(total - 2, Math.round(total * 0.72)),
+    ]);
   }
 
   public getUserClub(): LeagueClub {
@@ -285,6 +366,9 @@ export class LeagueManager {
     counterTip: string;
     weakLineLabel: string;
     keyThreat: string;
+    ecoTag?: string;
+    isRival?: boolean;
+    formerPlayerName?: string;
   } {
     const opp = this.state.clubs.find(c => c.id === oppClubId);
     if (!opp) {
@@ -327,11 +411,16 @@ export class LeagueManager {
       ? `${threat.name} (${threat.role} CA${threat.ca}${threat.seasonStats.goals > 0 ? ` · ${threat.seasonStats.goals}球` : ''})`
       : '无重点盯防目标';
 
+    const former = opp.squad.find(p => p.formerUserClub);
+    const isRival = !!opp.isRival || (this.state.rivalClubIds ?? []).includes(opp.id);
     return {
       styleName: styleNames[opp.style] || opp.style,
       counterTip: counterTips[opp.style] || '按常规阵型应战',
       weakLineLabel,
       keyThreat,
+      ecoTag: opp.ecoTag,
+      isRival,
+      formerPlayerName: former ? `${former.name}(${former.role}·CA${former.ca})` : undefined,
     };
   }
 
@@ -366,7 +455,7 @@ export class LeagueManager {
   }
 
   public markTutorialStep(
-    step: 'draft' | 'portal_prep' | 'portal_scout' | 'tactics' | 'cards' | 'match' | 'post_match' | 'skipAll'
+    step: 'draft' | 'portal_summer' | 'portal_prep' | 'portal_scout' | 'tactics' | 'cards' | 'match' | 'post_match' | 'skipAll'
   ): void {
     const tut = this.getTutorialProgress();
     if (step === 'skipAll') {
@@ -380,15 +469,99 @@ export class LeagueManager {
     this.state.tutorialDone = {};
   }
 
+  public isPrologueCompleted(): boolean {
+    return !!this.state.prologueCompleted;
+  }
+
+  public markPrologueCompleted(): void {
+    this.state.prologueCompleted = true;
+  }
+
+  public markSecretRetiredEnding(): void {
+    this.state.secretRetiredEnding = true;
+    tryUnlockAchievement(this.state, 'ach_secret_retire');
+  }
+
+  public grantCaptainRoarCard(): boolean {
+    this.state.coachDeck ??= createStarterCoachDeck();
+    const exists = this.state.coachDeck.some(c => c.id === 'card_captain_roar');
+    if (!exists) {
+      const card = createCaptainRoarCard();
+      if (this.state.coachDeck.length >= 12) {
+        this.state.coachDeck[0] = card;
+      } else {
+        this.state.coachDeck.unshift(card);
+      }
+    }
+    const loadout = (this.state.coachLoadoutIds ?? this.state.coachDeck.slice(0, 4).map(c => c.id))
+      .filter(id => id !== 'card_captain_roar');
+    this.state.coachLoadoutIds = ['card_captain_roar', ...loadout].slice(0, 4);
+    return true;
+  }
+
+  public grantReturningCaptainPlayer(): boolean {
+    const club = this.getUserClub();
+    const roster = this.getClubRoster();
+    if (club.squad.some(p => p.isPrologueCaptain || p.id === 'captain_lin_feng')) {
+      return true;
+    }
+    const linFeng = createReturningCaptainLinFeng();
+    const linCopy = JSON.parse(JSON.stringify(linFeng)) as DraftPlayer;
+    const replaceIdx = club.squad.findIndex(p => p.role === 'ST');
+    if (replaceIdx >= 0) {
+      const removedId = club.squad[replaceIdx].id;
+      club.squad[replaceIdx] = linFeng;
+      const rIdx = roster.findIndex(r => r.id === removedId);
+      if (rIdx >= 0) roster[rIdx] = linCopy;
+      else roster.unshift(linCopy);
+    } else {
+      club.squad.unshift(linFeng);
+      roster.unshift(linCopy);
+    }
+    club.captainId = linFeng.id;
+    return true;
+  }
+
+  public getClubFunds(): number {
+    if (this.state.clubFunds === undefined) this.state.clubFunds = 500;
+    return this.state.clubFunds;
+  }
+
+  public addClubFunds(amount: number): number {
+    this.state.clubFunds = Math.max(0, Math.round(this.getClubFunds() + amount));
+    return this.state.clubFunds;
+  }
+
+  public spendClubFunds(amount: number): boolean {
+    const cur = this.getClubFunds();
+    if (cur < amount) return false;
+    this.state.clubFunds = Math.round(cur - amount);
+    return true;
+  }
+
+  public getBestTierReached(): number {
+    if (this.state.bestTierReached === undefined) {
+      this.state.bestTierReached = this.state.currentTier ?? 7;
+    }
+    return this.state.bestTierReached;
+  }
+
   public upgradeMetaBranch(branch: MetaBranch): { ok: boolean; reason?: string } {
     if (!this.state.metaLevels) {
       this.state.metaLevels = createDefaultMetaLevels();
     }
     const curLv = this.state.metaLevels[branch] ?? 0;
-    const cost = getMetaUpgradeCost(branch, curLv);
-    if (cost === null) return { ok: false, reason: '该天赋已达满级' };
-    if (this.state.metaPointsTotal < cost) return { ok: false, reason: `Meta 点数不足 (需要 ${cost})` };
-    this.state.metaPointsTotal -= cost;
+    const req = getMetaUpgradeRequirement(branch, curLv);
+    if (!req) return { ok: false, reason: '该基建分支已达满级 (Lv.8)' };
+    const bestTier = this.getBestTierReached();
+    if (bestTier > req.minTier) {
+      return { ok: false, reason: `需曾晋级第 ${req.minTier} 级或更高联赛解锁 (当前最高第 ${bestTier} 级)` };
+    }
+    const funds = this.getClubFunds();
+    if (funds < req.cost) {
+      return { ok: false, reason: `俱乐部资金不足 (需要 ¥${req.cost}，当前 ¥${funds})` };
+    }
+    this.state.clubFunds = funds - req.cost;
     this.state.metaLevels[branch] = curLv + 1;
     if (this.state.metaLevels[branch] >= 3) {
       tryUnlockAchievement(this.state, 'ach_meta_lv3');
@@ -456,7 +629,7 @@ export class LeagueManager {
     const keepSet = new Set([freeStyleOrigin, freeFormOrigin]);
     const unlocked = this.getSkillWebUnlocked();
     const nodeMap = new Map(SKILL_WEB_NODES.map(n => [n.id, n]));
-    let refunded = 0;
+    let refunded = getSkillTotalInvestedPoints(unlocked, this.state.skillRanks);
     for (const id of unlocked) {
       if (keepSet.has(id)) continue;
       const n = nodeMap.get(id);
@@ -468,7 +641,131 @@ export class LeagueManager {
     this.state.metaPointsTotal += refunded;
     this.state.skillWebUnlocked = Array.from(keepSet);
     this.state.skillLoadoutIds = (this.state.skillLoadoutIds ?? []).filter(id => keepSet.has(id));
+    this.state.skillRanks = {};
+    this.state.skillMutations = {};
     return { ok: true, refunded };
+  }
+
+  public getUserPerkSynergyFlags(): PerkSkillSynergyFlags {
+    const uc = this.getUserClub();
+    const syn = computePerkSynergies(uc?.perks ?? []);
+    return {
+      attackTier: syn.counts.attack >= 2 ? 1 : 0,
+      defenseTier: syn.counts.defense >= 2 ? 1 : 0,
+      controlTier: syn.counts.control >= 2 ? 1 : 0,
+    };
+  }
+
+  public getSkillRank(nodeId: string): number {
+    if (!this.getSkillWebUnlocked().includes(nodeId)) return 0;
+    return Math.max(1, Math.min(3, this.state.skillRanks?.[nodeId] ?? 1));
+  }
+
+  public getSkillMutation(nodeId: string): SkillBranchChoice {
+    return this.state.skillMutations?.[nodeId] ?? 'A';
+  }
+
+  public getSkillProgressInfo(nodeId: string): {
+    unlocked: boolean;
+    baseRank: number;
+    bonusRank: number;
+    effectiveRank: number;
+    maxBaseRank: number;
+    nextUpgradeCost: number | null;
+    mutationChoice: SkillBranchChoice;
+    mutationUnlocked: boolean;
+  } {
+    const unlockedIds = this.getSkillWebUnlocked();
+    const unlocked = unlockedIds.includes(nodeId);
+    const node = SKILL_WEB_NODES.find(n => n.id === nodeId);
+    if (!unlocked || !node?.activeSkill) {
+      return {
+        unlocked,
+        baseRank: 0,
+        bonusRank: 0,
+        effectiveRank: 0,
+        maxBaseRank: 3,
+        nextUpgradeCost: null,
+        mutationChoice: 'A',
+        mutationUnlocked: false,
+      };
+    }
+    const baseRank = this.getSkillRank(nodeId);
+    const uc = this.getUserClub();
+    const formation = uc?.formation ?? '4-3-3';
+    const style = uc?.style ?? 'tiki_taka';
+    const mastery = this.getTacticalMastery();
+    const fmLv = getFormationMasteryInfo(formation, mastery.formations[formation] ?? 0).level;
+    const stLv = getStyleMasteryInfo(style, mastery.styles[style] ?? 0).level;
+    const bonusRank = computeSkillBonusRank(node, {
+      formation,
+      style,
+      unlockedIds,
+      formationMasteryLv: fmLv,
+      styleMasteryLv: stLv,
+      perkSynergies: this.getUserPerkSynergyFlags(),
+    });
+    const effectiveRank = Math.min(5, baseRank + bonusRank);
+    const nextUpgradeCost = baseRank < 3 ? SKILL_RANK_UPGRADE_COSTS[(baseRank + 1) as 2 | 3] : null;
+    return {
+      unlocked: true,
+      baseRank,
+      bonusRank,
+      effectiveRank,
+      maxBaseRank: 3,
+      nextUpgradeCost,
+      mutationChoice: this.getSkillMutation(nodeId),
+      mutationUnlocked: effectiveRank >= 2,
+    };
+  }
+
+  public upgradeSkillRank(nodeId: string): { ok: boolean; newRank?: number; cost?: number; reason?: string } {
+    if (!this.getSkillWebUnlocked().includes(nodeId)) {
+      return { ok: false, reason: '请先点亮该技能节点' };
+    }
+    const node = SKILL_WEB_NODES.find(n => n.id === nodeId);
+    if (!node?.activeSkill) return { ok: false, reason: '仅主动技能节点可提升等级' };
+    const curRank = this.getSkillRank(nodeId);
+    if (curRank >= 3) {
+      return { ok: false, reason: '已达 Meta 等级上限 (Lv.3)，可通过流派熟练度与词条共鸣额外 +2 级' };
+    }
+    const nextRank = (curRank + 1) as 2 | 3;
+    const cost = SKILL_RANK_UPGRADE_COSTS[nextRank];
+    if (this.state.metaPointsTotal < cost) {
+      return { ok: false, reason: `Meta 点数不足 (升至 Lv.${nextRank} 需要 ${cost} pt)` };
+    }
+    this.state.metaPointsTotal -= cost;
+    this.state.skillRanks ??= {};
+    this.state.skillRanks[nodeId] = nextRank;
+    if (nextRank >= 3) {
+      tryUnlockAchievement(this.state, 'ach_skill_rank3');
+    }
+    if (nextRank >= 2) {
+      this.state.skillMutations ??= {};
+      if (!this.state.skillMutations[nodeId]) this.state.skillMutations[nodeId] = 'A';
+    }
+    return { ok: true, newRank: nextRank, cost };
+  }
+
+  public setSkillMutation(nodeId: string, choice: SkillBranchChoice): { ok: boolean; reason?: string } {
+    const info = this.getSkillProgressInfo(nodeId);
+    if (!info.unlocked) return { ok: false, reason: '请先点亮该技能节点' };
+    const node = SKILL_WEB_NODES.find(n => n.id === nodeId);
+    if (!node?.activeSkill?.mutations) return { ok: false, reason: '该节点不含质变分支' };
+    if (!info.mutationUnlocked) return { ok: false, reason: '技能有效等级达到 Lv.2 后即可自由切换 A/B 质变' };
+    this.state.skillMutations ??= {};
+    this.state.skillMutations[nodeId] = choice;
+    tryUnlockAchievement(this.state, 'ach_skill_mutate');
+    return { ok: true };
+  }
+
+  public getActiveLegendaryAspects(): ActiveLegendaryAspect[] {
+    const uc = this.getUserClub();
+    return getActiveLegendaryAspects(
+      this.getSkillWebUnlocked(),
+      uc?.formation ?? '4-3-3',
+      uc?.style ?? 'tiki_taka'
+    );
   }
 
   public getSkillLoadoutIds(): string[] {
@@ -507,7 +804,13 @@ export class LeagueManager {
     const res: EquippedActiveSkill[] = [];
     for (const id of ids) {
       const node = map.get(id);
-      const eq = node ? toEquippedActiveSkill(node) : null;
+      if (!node) continue;
+      const info = this.getSkillProgressInfo(id);
+      const eq = toEquippedActiveSkill(node, {
+        rank: info.baseRank,
+        bonusRank: info.bonusRank,
+        mutationChoice: info.mutationChoice,
+      });
       if (eq) res.push(eq);
     }
     return res;
@@ -553,14 +856,20 @@ export class LeagueManager {
           customName: carryOverSquad && baseClub ? baseClub.name : undefined,
           primaryColor: carryOverSquad && baseClub ? baseClub.primaryColor : undefined,
           secondaryColor: carryOverSquad && baseClub ? baseClub.secondaryColor : undefined,
+          awayPrimaryColor: carryOverSquad && baseClub ? baseClub.awayPrimaryColor : undefined,
+          awaySecondaryColor: carryOverSquad && baseClub ? baseClub.awaySecondaryColor : undefined,
           formation: carryOverSquad && baseClub ? baseClub.formation : formation,
           style: carryOverSquad && baseClub ? baseClub.style : style,
         }
       : clubOrOpts;
     const prevMeta = this.state?.metaPointsTotal ?? 0;
+    const prevFunds = this.state?.clubFunds ?? 500;
+    const prevBestTier = this.state?.bestTierReached ?? 7;
     const prevLevels = this.state?.metaLevels ? { ...this.state.metaLevels } : createDefaultMetaLevels();
     const prevHof = this.state?.hallOfFame ? JSON.parse(JSON.stringify(this.state.hallOfFame)) : createDefaultHallOfFame();
     const prevTut = this.state?.tutorialDone ? { ...this.state.tutorialDone } : {};
+    const prevPrologue = this.state?.prologueCompleted;
+    const prevSecretEnded = this.state?.secretRetiredEnding;
     const prevSeason = this.state?.seasonNumber ?? 0;
     const prevPersistent = carryOverSquad ? this.state?.persistentSquad : undefined;
     const prevElements = this.state?.elementInventory ? { ...this.state.elementInventory } : undefined;
@@ -571,12 +880,17 @@ export class LeagueManager {
     const prevRosterSel = this.state?.rosterSelectedIds ? [...this.state.rosterSelectedIds] : undefined;
     const prevRosterRefreshes = this.state?.rosterRefreshesRemaining;
     const prevSkillWeb = this.state?.skillWebUnlocked ? [...this.state.skillWebUnlocked] : undefined;
+    const prevSkillLoadout = this.state?.skillLoadoutIds ? [...this.state.skillLoadoutIds] : undefined;
+    const prevSkillRanks = this.state?.skillRanks ? { ...this.state.skillRanks } : undefined;
+    const prevSkillMutations = this.state?.skillMutations ? { ...this.state.skillMutations } : undefined;
     const prevTier = carryOverSquad ? (this.state?.currentTier ?? 7) : 7;
     const prevPyramid = carryOverSquad && this.state?.leaguePyramid ? JSON.parse(JSON.stringify(this.state.leaguePyramid)) : undefined;
     const prevChronicles = carryOverSquad && this.state?.chronicles ? JSON.parse(JSON.stringify(this.state.chronicles)) : undefined;
     const prevIntel = carryOverSquad && this.state?.opponentIntel ? JSON.parse(JSON.stringify(this.state.opponentIntel)) : undefined;
     const prevChemLinks = carryOverSquad && this.state?.chemistryLinks ? JSON.parse(JSON.stringify(this.state.chemistryLinks)) : undefined;
     const prevStayedTier = carryOverSquad ? (this.state?.stayedTierCount ?? 0) : 0;
+    const prevExPool = carryOverSquad && this.state?.exUserPlayersPool ? JSON.parse(JSON.stringify(this.state.exUserPlayersPool)) : undefined;
+    const prevRivals = carryOverSquad && this.state?.rivalClubIds ? [...this.state.rivalClubIds] : undefined;
 
     this.state = this.createNewSeasonState(
       opts,
@@ -587,22 +901,31 @@ export class LeagueManager {
       prevTut,
       prevPersistent,
       prevTier,
-      prevPyramid
+      prevPyramid,
+      carryOverSquad ? prevFunds : 900 + (prevLevels.finance ?? 0) * 150,
+      Math.min(prevBestTier, prevTier)
     );
     if (prevElements) this.state.elementInventory = prevElements;
     if (prevDeck) this.state.coachDeck = prevDeck;
     if (prevLoadout) this.state.coachLoadoutIds = prevLoadout;
     if (prevRecipes) this.state.discoveredRecipes = prevRecipes;
-    if (prevRoster) this.state.clubRoster = prevRoster;
-    if (prevRosterSel) this.state.rosterSelectedIds = prevRosterSel;
+    if (carryOverSquad && prevRoster) this.state.clubRoster = prevRoster;
+    if (carryOverSquad && prevRosterSel) this.state.rosterSelectedIds = prevRosterSel;
     if (prevRosterRefreshes !== undefined) this.state.rosterRefreshesRemaining = prevRosterRefreshes;
     if (prevChronicles) this.state.chronicles = prevChronicles;
     if (prevIntel) this.state.opponentIntel = prevIntel;
+    if (prevExPool) this.state.exUserPlayersPool = prevExPool;
+    if (prevRivals) this.state.rivalClubIds = prevRivals;
     if (prevChemLinks) this.state.chemistryLinks = prevChemLinks;
+    if (prevPrologue) this.state.prologueCompleted = true;
+    if (prevSecretEnded) this.state.secretRetiredEnding = true;
     this.state.stayedTierCount = prevStayedTier;
     this.state.chronicleSeasonAdvancedIds = [];
     this.state.chronicleExtraUnlockedThisSeason = false;
     ensureChronicles(this.state);
+    if ((this.state.currentTier ?? 7) === 1) {
+      tryUnlockAchievement(this.state, 'ach_top_tier');
+    }
     if (this.state.phase === 'REGULAR_SEASON') {
       const ucNow = this.getUserClub();
       this.state.interMatchPrep = createInterMatchPrep(this.state, ucNow);
@@ -613,6 +936,12 @@ export class LeagueManager {
       const seasonStyleOrigin = getOriginForStyle(opts.style ?? 'tiki_taka');
       const seasonFormOrigin = getOriginForFormation(opts.formation ?? '4-3-3');
       this.state.skillWebUnlocked = Array.from(new Set([...prevSkillWeb, seasonStyleOrigin, seasonFormOrigin]));
+      if (prevSkillLoadout) {
+        const unlockedSet = new Set(this.state.skillWebUnlocked);
+        this.state.skillLoadoutIds = prevSkillLoadout.filter(id => unlockedSet.has(id)).slice(0, 4);
+      }
+      if (prevSkillRanks) this.state.skillRanks = prevSkillRanks;
+      if (prevSkillMutations) this.state.skillMutations = prevSkillMutations;
     }
     return this.state;
   }
@@ -626,7 +955,9 @@ export class LeagueManager {
     tutorialDone: TutorialProgress = {},
     carryOverPersistent?: DraftPlayer[],
     currentTier = 7,
-    existingPyramid?: Record<number, ClubDirectoryEntry[]>
+    existingPyramid?: Record<number, ClubDirectoryEntry[]>,
+    clubFunds = 900 + (metaLevels.finance ?? 0) * 150,
+    bestTierReached = currentTier
   ): LeagueSaveState {
     const userClubTemplateId = opts.clubId ?? 'club_star';
     const formation = opts.formation ?? '4-3-3';
@@ -638,12 +969,14 @@ export class LeagueManager {
           fitness: 100,
           suspendedRounds: 0,
           seasonYellowsSinceBan: 0,
+          seasonGrowthXp: 0,
+          seasonAttrGained: 0,
           seasonStats: {
             appearances: 0, goals: 0, assists: 0, cleanSheets: 0, yellowCards: 0, redCards: 0,
             tackles: 0, interceptions: 0, passes: 0, passesSuccess: 0, distanceM: 0, saves: 0,
           },
         }))
-      : [];
+      : generateInitialSkeleton8(currentTier);
 
     const baseTpl = FICTIONAL_CLUBS.find(c => c.id === userClubTemplateId) ?? FICTIONAL_CLUBS[0];
     const userTpl = {
@@ -652,15 +985,24 @@ export class LeagueManager {
       shortName: opts.customName ? opts.customName.slice(0, 2) : baseTpl.shortName,
       primaryColor: opts.primaryColor || baseTpl.primaryColor,
       secondaryColor: opts.secondaryColor || baseTpl.secondaryColor,
+      awayPrimaryColor: opts.awayPrimaryColor || baseTpl.awayPrimaryColor || '#F8FAFC',
+      awaySecondaryColor: opts.awaySecondaryColor || baseTpl.awaySecondaryColor || (opts.primaryColor || baseTpl.primaryColor),
     };
     const pyramid = existingPyramid ?? generateTierPyramid(userClubTemplateId, userTpl);
     const tierEntries = pyramid[currentTier] ?? pyramid[7];
 
     const clubs: LeagueClub[] = tierEntries.map((entry, idx) => {
       const isUser = entry.id === userClubTemplateId;
-      const aiForm = AI_FORMATIONS[idx % AI_FORMATIONS.length];
-      const aiStyle = AI_STYLES[idx % AI_STYLES.length];
+      const aiForm = AI_FORMATIONS[(idx + seasonNumber) % AI_FORMATIONS.length];
+      const aiStyle = AI_STYLES[(idx + seasonNumber) % AI_STYLES.length];
       const aiSquad = isUser ? carriedSquad : generateAIDraftSquad(Math.max(32, Math.min(86, entry.baseStrength)));
+      const avgAge = aiSquad.length > 0 ? aiSquad.reduce((s, p) => s + p.age, 0) / aiSquad.length : 25;
+      const ecoTag = isUser ? undefined :
+        avgAge <= 23.2 ? '青春风暴' :
+        avgAge >= 27.0 ? '铁血老兵' :
+        aiStyle === 'gegenpress' ? '高位绞肉机' :
+        aiStyle === 'tiki_taka' ? '传控大师' :
+        aiStyle === 'counter' || aiStyle === 'park_bus' ? '防反黑马' : '均衡劲旅';
       const name = isUser && opts.customName ? opts.customName : entry.name;
       return {
         id: entry.id,
@@ -668,9 +1010,12 @@ export class LeagueManager {
         shortName: isUser && opts.customName ? opts.customName.slice(0, 2) : entry.shortName,
         primaryColor: isUser && opts.primaryColor ? opts.primaryColor : entry.primaryColor,
         secondaryColor: isUser && opts.secondaryColor ? opts.secondaryColor : entry.secondaryColor,
+        awayPrimaryColor: isUser && opts.awayPrimaryColor ? opts.awayPrimaryColor : (entry.awayPrimaryColor ?? '#F8FAFC'),
+        awaySecondaryColor: isUser && opts.awaySecondaryColor ? opts.awaySecondaryColor : (entry.awaySecondaryColor ?? entry.primaryColor),
         isUser,
         formation: isUser ? formation : aiForm,
         style: isUser ? style : aiStyle,
+        ecoTag,
         squad: aiSquad,
         starterIds: isUser ? (hasCarryOver ? autoSelectStarters(carriedSquad, formation) : []) : autoSelectStarters(aiSquad, aiForm),
         perks: [],
@@ -680,23 +1025,36 @@ export class LeagueManager {
     const fixtures = generateRoundRobinFixtures(clubs.map(c => c.id), true);
     const storyline = rollSeasonStoryline(userClubTemplateId);
     const userClubName = clubs.find(c => c.isUser)?.name ?? '星辰联';
+    const corePackDraft: CorePackDraftState | null = hasCarryOver
+      ? null
+      : {
+          step: 0,
+          lines: ['DEF', 'MID', 'ATT'],
+          currentChoices: generateCorePackChoices('DEF', currentTier),
+          pickedCores: [],
+        };
     return {
       seasonNumber,
-      phase: hasCarryOver ? 'REGULAR_SEASON' : 'INIT_DRAFT',
+      phase: hasCarryOver ? 'SUMMER_WINDOW' : 'INIT_DRAFT',
       currentRound: 1,
       userClubId: userClubTemplateId,
       clubs,
       fixtures,
       draft: createInitialDraftState(metaLevels, currentTier),
+      corePackDraft,
       reDraft: null,
       metaPointsTotal,
+      clubFunds,
+      bestTierReached,
       metaLevels,
+      seasonPrivateTrainedIds: [],
       storyline,
-      pendingStoryEvent: hasCarryOver ? createOpeningBriefing(storyline, userClubName) : null,
+      pendingStoryEvent: null,
       storyLog: [],
       elementInventory: createInitialElements(),
       coachDeck: createStarterCoachDeck(),
       persistentSquad: hasCarryOver ? carriedSquad : undefined,
+      clubRoster: JSON.parse(JSON.stringify(carriedSquad)),
       skillWebUnlocked: [getOriginForStyle(style), getOriginForFormation(formation)],
       seasonRewardDrafts: undefined,
       seasonTrainedIds: [],
@@ -796,6 +1154,9 @@ export class LeagueManager {
     if (this.state.discoveredRecipes.length >= 5) {
       tryUnlockAchievement(this.state, 'ach_recipe_5');
     }
+    if ((res.card.level ?? 1) >= 4) {
+      tryUnlockAchievement(this.state, 'ach_lv4_card');
+    }
     return { ok: true, card: res.card };
   }
 
@@ -824,6 +1185,10 @@ export class LeagueManager {
       this.state.coachLoadoutIds.push(fused.id);
     }
     tryUnlockAchievement(this.state, 'ach_craft_card');
+    tryUnlockAchievement(this.state, 'ach_fusion_power');
+    if ((fused.level ?? 1) >= 4) {
+      tryUnlockAchievement(this.state, 'ach_lv4_card');
+    }
     return { ok: true, card: fused };
   }
 
@@ -843,6 +1208,9 @@ export class LeagueManager {
     if (!costElem) return { ok: false, reason: '库存元素不足（升阶需要消耗 1 个战术元素）' };
     inv[costElem] -= 1;
     upgradeCommandCard(card);
+    if ((card.level ?? 1) >= 4) {
+      tryUnlockAchievement(this.state, 'ach_lv4_card');
+    }
     return { ok: true, card, costElem };
   }
 
@@ -880,7 +1248,7 @@ export class LeagueManager {
     const meta = this.getMetaLevels();
     const tier = this.state.currentTier ?? 7;
     const tierBase = 38 + (7 - Math.max(1, Math.min(7, tier))) * 6;
-    const minBand = tierBase + meta.scout + (meta.fitness >= 3 ? 2 : 0);
+    const minBand = tierBase + meta.scout + (meta.medical >= 3 ? 2 : 0);
     const maxBand = tierBase + 14 + (meta.scout >= 3 ? 2 : 0);
     d.refreshesRemaining = rem - 1;
     d.currentPool = generateShuffleSet(20, minBand, maxBand);
@@ -926,7 +1294,7 @@ export class LeagueManager {
       const meta = this.getMetaLevels();
       const tier = this.state.currentTier ?? 7;
       const tierBase = 38 + (7 - Math.max(1, Math.min(7, tier))) * 6;
-      const minBand = tierBase + meta.scout + (meta.fitness >= 3 ? 2 : 0);
+      const minBand = tierBase + meta.scout + (meta.medical >= 3 ? 2 : 0);
       const maxBand = tierBase + 14 + (meta.scout >= 3 ? 2 : 0);
       d.currentSetIndex++;
       d.picksInCurrentSet = 0;
@@ -1017,6 +1385,9 @@ export class LeagueManager {
     this.state.phase = 'REGULAR_SEASON';
     this.state.currentRound = 1;
     ensureChronicles(this.state);
+    if ((this.state.currentTier ?? 7) === 1) {
+      tryUnlockAchievement(this.state, 'ach_top_tier');
+    }
     this.state.chronicleSeasonAdvancedIds = [];
     this.state.chronicleExtraUnlockedThisSeason = false;
     triggerSeasonStartChronicle(this.state, club);
@@ -1025,6 +1396,192 @@ export class LeagueManager {
     if (this.state.storyline) {
       this.state.pendingStoryEvent = createOpeningBriefing(this.state.storyline, club.name);
     }
+  }
+
+  // ==================== 1.5 开局 3 次核心开包 + 夏窗 / 冬窗系统 ====================
+
+  public getCorePackDraftState(): CorePackDraftState {
+    if (!this.state.corePackDraft) {
+      const tier = this.state.currentTier ?? 7;
+      this.state.corePackDraft = {
+        step: 0,
+        lines: ['DEF', 'MID', 'ATT'],
+        currentChoices: generateCorePackChoices('DEF', tier),
+        pickedCores: [],
+      };
+    }
+    return this.state.corePackDraft;
+  }
+
+  public pickCorePackPlayer(playerId: string): { ok: boolean; player?: DraftPlayer; completed?: boolean; reason?: string } {
+    return this.pickCorePackPlayers([playerId]);
+  }
+
+  public pickCorePackPlayers(playerIds: string[]): { ok: boolean; player?: DraftPlayer; players?: DraftPlayer[]; completed?: boolean; reason?: string } {
+    if (this.state.phase !== 'INIT_DRAFT') {
+      return { ok: false, reason: '当前不在开局核心开包阶段' };
+    }
+    const cpd = this.getCorePackDraftState();
+    if (cpd.step >= 3) {
+      return { ok: false, reason: '3 次核心开包已全部完成' };
+    }
+    const uniqueIds = Array.from(new Set(playerIds));
+    const chosenList = uniqueIds
+      .map(id => cpd.currentChoices.find(p => p.id === id))
+      .filter((p): p is DraftPlayer => !!p);
+    if (chosenList.length === 0 || chosenList.length !== uniqueIds.length) {
+      return { ok: false, reason: '未找到选中的核心候选球员' };
+    }
+
+    const club = this.getUserClub();
+    const roster = this.getClubRoster();
+    const added: DraftPlayer[] = [];
+    for (const chosen of chosenList) {
+      const copy1 = JSON.parse(JSON.stringify(chosen)) as DraftPlayer;
+      const copy2 = JSON.parse(JSON.stringify(chosen)) as DraftPlayer;
+      club.squad.push(copy1);
+      roster.push(copy2);
+      cpd.pickedCores.push(copy1);
+      added.push(copy1);
+    }
+    cpd.step += 1;
+
+    if (cpd.step < 3) {
+      const nextLine = cpd.lines[cpd.step];
+      cpd.currentChoices = generateCorePackChoices(nextLine, this.state.currentTier ?? 7);
+      return { ok: true, player: added[0], players: added, completed: false };
+    }
+
+    cpd.currentChoices = [];
+    club.starterIds = autoSelectStarters(club.squad, club.formation);
+    this.state.phase = 'SUMMER_WINDOW';
+    this.getYouthAcademyState();
+    this.getTransferMarketState();
+    tryUnlockAchievement(this.state, 'ach_first_draft');
+    return { ok: true, player: added[0], players: added, completed: true };
+  }
+
+  public getTransferWindowState(): {
+    isOpen: boolean;
+    window: 'summer' | 'winter' | 'closed';
+    roundsToNextWindow: number;
+    label: string;
+  } {
+    const ph = this.state.phase;
+    if (ph === 'SUMMER_WINDOW' || ph === 'SEASON_END') {
+      return { isOpen: true, window: 'summer', roundsToNextWindow: 0, label: '夏季转会窗开放中' };
+    }
+    if (ph === 'WINTER_WINDOW') {
+      return { isOpen: true, window: 'winter', roundsToNextWindow: 0, label: '冬季转会窗开放中 (半程补强)' };
+    }
+    const r = this.state.currentRound ?? 1;
+    const midRound = this.getMidSeasonRound();
+    const totalRounds = this.getTotalRegularRounds();
+    if (r <= midRound) {
+      return {
+        isOpen: false,
+        window: 'closed',
+        roundsToNextWindow: Math.max(1, midRound + 1 - r),
+        label: `转会窗已关闭 · 距冬窗还有 ${Math.max(1, midRound + 1 - r)} 轮`,
+      };
+    }
+    return {
+      isOpen: false,
+      window: 'closed',
+      roundsToNextWindow: Math.max(1, totalRounds - r + 1),
+      label: `转会窗已关闭 · 距夏窗还有 ${Math.max(1, totalRounds - r + 1)} 轮`,
+    };
+  }
+
+  /**
+   * 兜底免签梯队自由身球员（0 费用，防止夏窗资金耗尽凑不够 26 人卡死）
+   */
+  public signFreeAcademyFill(fillAll = false): { ok: boolean; added: number; reason?: string } {
+    const win = this.getTransferWindowState();
+    if (!win.isOpen) return { ok: false, added: 0, reason: '当前不在转会窗口期，无法免签球员' };
+    const roster = this.getClubRoster();
+    if (roster.length >= SEASON_SQUAD_SIZE && fillAll) {
+      return { ok: false, added: 0, reason: `大名单已满 ${SEASON_SQUAD_SIZE} 人，无需免签补齐` };
+    }
+    if (roster.length >= MAX_CLUB_ROSTER) {
+      return { ok: false, added: 0, reason: `俱乐部大名单已达上限 (${MAX_CLUB_ROSTER}人)` };
+    }
+    const tier = this.state.currentTier ?? 7;
+    const tierBase = Math.max(34, 38 + (7 - Math.max(1, Math.min(7, tier))) * 6);
+    const count = fillAll ? Math.max(1, SEASON_SQUAD_SIZE - roster.length) : 1;
+    let added = 0;
+    for (let i = 0; i < count; i++) {
+      if (roster.length >= MAX_CLUB_ROSTER) break;
+      const needGK = !roster.some(p => p.role === 'GK');
+      const pool = generateShuffleSet(6, Math.max(30, tierBase - 6), Math.max(36, tierBase - 1));
+      const p = (needGK ? pool.find(x => x.role === 'GK') : pool[0]) ?? pool[0];
+      p.scoutFogLevel = 2;
+      p.paEstMin = p.pa;
+      p.paEstMax = p.pa;
+      p.isNewSigning = true;
+      roster.push(p);
+      added++;
+    }
+    if (this.state.phase === 'SUMMER_WINDOW' || this.state.phase === 'WINTER_WINDOW') {
+      this.syncWindowRosterToClub();
+    }
+    return { ok: true, added };
+  }
+
+  private syncWindowRosterToClub(): void {
+    const club = this.getUserClub();
+    const roster = this.getClubRoster();
+    const sel = this.getRosterSelectedIds();
+    if (roster.length <= SEASON_SQUAD_SIZE) {
+      club.squad = JSON.parse(JSON.stringify(roster));
+    } else if (sel.length === SEASON_SQUAD_SIZE) {
+      club.squad = sel.map(id => roster.find(p => p.id === id)).filter((p): p is DraftPlayer => !!p).map(p => JSON.parse(JSON.stringify(p)));
+    } else {
+      const sorted = [...roster].sort((a, b) => b.ca - a.ca).slice(0, SEASON_SQUAD_SIZE);
+      club.squad = JSON.parse(JSON.stringify(sorted));
+    }
+    club.starterIds = autoSelectStarters(club.squad, club.formation);
+  }
+
+  public finishSummerWindowAndStartSeason(): { ok: boolean; reason?: string } {
+    if (this.state.phase !== 'SUMMER_WINDOW') {
+      return { ok: false, reason: '当前不在夏季转会窗阶段' };
+    }
+    const roster = this.getClubRoster();
+    if (roster.length < SEASON_SQUAD_SIZE) {
+      return { ok: false, reason: `大名单尚缺 ${SEASON_SQUAD_SIZE - roster.length} 人（需凑满 ${SEASON_SQUAD_SIZE} 人方可注册开赛）` };
+    }
+    if (!roster.some(p => p.role === 'GK')) {
+      return { ok: false, reason: '大名单至少需要 1 名门将 (GK)' };
+    }
+    if (this.state.transferMarket?.pendingBrokerResult) {
+      return { ok: false, reason: '请先处理经纪人密荐开出的待决球员' };
+    }
+    if (this.getRosterSelectedIds().length < SEASON_SQUAD_SIZE) {
+      this.autoSelectSeason16FromRoster();
+    }
+    this.syncWindowRosterToClub();
+    this.finishInitialDraft();
+    return { ok: true };
+  }
+
+  public closeWinterWindow(): { ok: boolean; reason?: string } {
+    if (this.state.phase !== 'WINTER_WINDOW') {
+      return { ok: false, reason: '当前不在冬季转会窗阶段' };
+    }
+    const roster = this.getClubRoster();
+    if (roster.length < SEASON_SQUAD_SIZE) {
+      return { ok: false, reason: `注册大名单不足 ${SEASON_SQUAD_SIZE} 人，请先补齐` };
+    }
+    if (this.state.transferMarket?.pendingBrokerResult) {
+      return { ok: false, reason: '请先处理经纪人密荐开出的待决球员' };
+    }
+    this.syncWindowRosterToClub();
+    this.state.phase = 'REGULAR_SEASON';
+    this.state.currentRound = this.getMidSeasonRound() + 1;
+    this.state.winterWindowDoneSeason = this.state.seasonNumber;
+    this.state.interMatchPrep = createInterMatchPrep(this.state, this.getUserClub());
+    return { ok: true };
   }
 
   // ==================== 2. 阵型与首发管理 ====================
@@ -1158,6 +1715,17 @@ export class LeagueManager {
     return club.captainId;
   }
 
+  public toggleStarPlayer(playerId: string): boolean {
+    const club = this.getUserClub();
+    const roster = this.getClubRoster();
+    let next = false;
+    const cp = club.squad.find(x => x.id === playerId);
+    if (cp) { next = !cp.isStarred; cp.isStarred = next; }
+    const rp = roster.find(x => x.id === playerId);
+    if (rp) { next = cp ? next : !rp.isStarred; rp.isStarred = next; }
+    return next;
+  }
+
   public setCaptain(playerId: string): { ok: boolean; msg?: string } {
     const club = this.getUserClub();
     const p = club.squad.find(x => x.id === playerId);
@@ -1167,6 +1735,31 @@ export class LeagueManager {
     }
     club.captainId = playerId;
     return { ok: true, msg: `已任命【${p.name}】佩戴队长袖标（本人在场冷静+4/传球+3，全队冷静+2/传球+1）` };
+  }
+
+  public setPlayerShirtNumber(playerId: string, rawNumber: number): { ok: boolean; msg: string } {
+    const club = this.getUserClub();
+    const p = club.squad.find(x => x.id === playerId);
+    if (!p) return { ok: false, msg: '未找到该球员' };
+    const nextNum = Math.max(1, Math.min(99, Math.round(rawNumber)));
+    if (p.shirtNumber === nextNum) {
+      return { ok: true, msg: `【${p.name}】当前已是 ${nextNum} 号球衣` };
+    }
+    const prevNum = p.shirtNumber;
+    const conflict = club.squad.find(x => x.id !== playerId && x.shirtNumber === nextNum);
+    if (conflict) {
+      conflict.shirtNumber = prevNum;
+    }
+    p.shirtNumber = nextNum;
+    const roster = this.getClubRoster();
+    const rp = roster.find(x => x.id === playerId);
+    if (rp) rp.shirtNumber = nextNum;
+    if (conflict) {
+      const rConflict = roster.find(x => x.id === conflict.id);
+      if (rConflict) rConflict.shirtNumber = prevNum;
+      return { ok: true, msg: `已将【${p.name}】设为 ${nextNum} 号（与【${conflict.name}】互换号码）` };
+    }
+    return { ok: true, msg: `已将【${p.name}】球衣号码设为 ${nextNum} 号` };
   }
 
   public getPlayerStoryTag(player: DraftPlayer): string | null {
@@ -1257,17 +1850,22 @@ export class LeagueManager {
     if (this.state.phase !== 'SEASON_END') {
       return { ok: false, reason: '专项特训仅在赛季末休赛期开放' };
     }
+    const tgLv = this.getMetaLevels().training_ground ?? 0;
+    const maxTrainsPerSeason = tgLv >= 6 ? 3 : tgLv >= 4 ? 2 : 1;
     this.state.seasonTrainedIds = this.state.seasonTrainedIds ?? [];
-    if (this.state.seasonTrainedIds.includes(playerId)) {
-      return { ok: false, reason: '该球员本休赛期已完成特训（每季限 1 次）' };
+    const trainedCount = this.state.seasonTrainedIds.filter(id => id === playerId).length;
+    if (trainedCount >= maxTrainsPerSeason) {
+      return { ok: false, reason: `该球员本休赛期特训次数已满 (${trainedCount}/${maxTrainsPerSeason})` };
     }
     if (this.state.metaPointsTotal < 10) {
-      return { ok: false, reason: 'Meta 点数不足（休赛期特训需要 10 pt）' };
+      return { ok: false, reason: 'PT 点数不足（休赛期特训需要 10 pt）' };
     }
     const club = this.getUserClub();
     const p = club.squad.find(x => x.id === playerId);
     if (!p) return { ok: false, reason: '未找到该球员' };
-    if (p.ca >= 94) return { ok: false, reason: '该球员已达当前培养上限 (CA 94)' };
+    const pa = p.pa ?? computeInitialPA(p.ca, p.age ?? 24, (p.age ?? 24) <= 19);
+    p.pa = pa;
+    if (p.ca >= pa) return { ok: false, reason: `该球员已达潜力上限 (PA ${pa})` };
 
     const oldCA = p.ca;
     this.state.metaPointsTotal -= 10;
@@ -1303,7 +1901,8 @@ export class LeagueManager {
       gainedText = '射门+2 速度+2 盘带+2';
     }
 
-    p.ca = computeWeightedCA(p.role, p.attributes);
+    p.ca = Math.min(pa, computeWeightedCA(p.role, p.attributes));
+    p.marketValue = calcTransferValue(p);
     this.state.seasonTrainedIds.push(playerId);
     if (this.state.persistentSquad) {
       const idx = this.state.persistentSquad.findIndex(x => x.id === playerId);
@@ -1608,14 +2207,14 @@ export class LeagueManager {
         }
       }
       if (meta) {
-        if (meta.coaching > 0) {
-          attrs.passing = clampAttr(attrs.passing + Math.min(3, meta.coaching));
-          attrs.shooting = clampAttr(attrs.shooting + Math.min(3, meta.coaching));
-          if (meta.coaching >= 2) attrs.defending = clampAttr(attrs.defending + Math.min(3, meta.coaching));
+        if (meta.training_ground > 0) {
+          attrs.passing = clampAttr(attrs.passing + Math.min(3, Math.ceil(meta.training_ground / 2)));
+          attrs.shooting = clampAttr(attrs.shooting + Math.min(3, Math.ceil(meta.training_ground / 2)));
+          if (meta.training_ground >= 3) attrs.defending = clampAttr(attrs.defending + Math.min(2, Math.floor(meta.training_ground / 3)));
         }
-        if (meta.fitness > 0) {
-          attrs.stamina = clampAttr(attrs.stamina + Math.min(3, meta.fitness) * 3);
-          if (meta.fitness >= 2) attrs.pace = clampAttr(attrs.pace + Math.min(3, meta.fitness));
+        if (meta.medical > 0) {
+          attrs.stamina = clampAttr(attrs.stamina + Math.min(3, Math.ceil(meta.medical / 2)) * 3);
+          if (meta.medical >= 2) attrs.pace = clampAttr(attrs.pace + Math.min(2, Math.floor(meta.medical / 3)));
         }
       }
       // 阵型熟练度 Lv.2 / Lv.3 加成
@@ -1661,6 +2260,10 @@ export class LeagueManager {
         if (perk.effect.goalkeepingBonus && p.role === 'GK') {
           attrs.goalkeeping = clampAttr(attrs.goalkeeping + perk.effect.goalkeepingBonus);
         }
+        if (perk.effect.dribblingBonus) attrs.dribbling = clampAttr(attrs.dribbling + perk.effect.dribblingBonus);
+        if (perk.effect.composureBonus) attrs.composure = clampAttr(attrs.composure + perk.effect.composureBonus);
+        if (perk.effect.strengthBonus) attrs.strength = clampAttr(attrs.strength + perk.effect.strengthBonus);
+        if (perk.effect.positioningBonus) attrs.positioning = clampAttr(attrs.positioning + perk.effect.positioningBonus);
       }
       // 战术技能网已点亮节点永久加成（单维被动上限 +12，防止 124 节点无限膨胀）
       if (club.isUser) {
@@ -1698,9 +2301,25 @@ export class LeagueManager {
       attrs.defending = clampAttr(attrs.defending + synergy.defendingDelta);
       attrs.pace = clampAttr(attrs.pace + synergy.paceDelta);
       attrs.stamina = clampAttr(attrs.stamina + synergy.staminaDelta);
+      attrs.dribbling = clampAttr(attrs.dribbling + synergy.dribblingDelta);
+      attrs.composure = clampAttr(attrs.composure + synergy.composureDelta);
+      attrs.positioning = clampAttr(attrs.positioning + synergy.positioningDelta);
       if (p.role === 'GK') {
         attrs.goalkeeping = clampAttr(attrs.goalkeeping + synergy.goalkeepingDelta);
       }
+
+      // 已觉醒隐藏特质的常驻战力增益
+      const pTraits = p.traits ?? [];
+      if (pTraits.includes('逆转王')) { attrs.shooting = clampAttr(attrs.shooting + 3); attrs.composure = clampAttr(attrs.composure + 4); }
+      if (pTraits.includes('大赛先生')) { attrs.shooting = clampAttr(attrs.shooting + 4); attrs.composure = clampAttr(attrs.composure + 4); }
+      if (pTraits.includes('闪电首开')) { attrs.pace = clampAttr(attrs.pace + 4); attrs.shooting = clampAttr(attrs.shooting + 3); }
+      if (pTraits.includes('世界波猎手')) { attrs.shooting = clampAttr(attrs.shooting + 4); }
+      if (pTraits.includes('门线战神') && p.role === 'GK') { attrs.goalkeeping = clampAttr(attrs.goalkeeping + 5); }
+      if (pTraits.includes('高空霸主')) { attrs.strength = clampAttr(attrs.strength + 5); attrs.shooting = clampAttr(attrs.shooting + 3); }
+      if (pTraits.includes('禁区清道夫')) { attrs.defending = clampAttr(attrs.defending + 4); attrs.positioning = clampAttr(attrs.positioning + 3); }
+      if (pTraits.includes('传球机器')) { attrs.passing = clampAttr(attrs.passing + 4); attrs.composure = clampAttr(attrs.composure + 3); }
+      if (pTraits.includes('铁血硬汉')) { attrs.strength = clampAttr(attrs.strength + 4); attrs.stamina = clampAttr(attrs.stamina + 4); }
+      if (pTraits.includes('助攻大师')) { attrs.passing = clampAttr(attrs.passing + 4); attrs.dribbling = clampAttr(attrs.dribbling + 3); }
 
       // 赛季故事线加成
       if (oppInTop4) {
@@ -1763,6 +2382,35 @@ export class LeagueManager {
           attrs.composure = clampAttr(attrs.composure + aiTierBonus);
           if (p.role === 'GK') attrs.goalkeeping = clampAttr(attrs.goalkeeping + aiTierBonus);
         }
+
+        // 赛前侦查破绽减益（红利 A：针对对手弱点位置/全队削弱对应属性）
+        const scoutIntel = this.state.interMatchPrep?.matchupIntel;
+        if (
+          scoutIntel?.oppClubId === club.id &&
+          scoutIntel.spotCorrect &&
+          (scoutIntel.chosenRewardKind ?? 'buff_debuff') === 'buff_debuff' &&
+          scoutIntel.activeDebuff
+        ) {
+          const db = scoutIntel.activeDebuff;
+          const pLine =
+            p.role === 'GK'
+              ? 'GK'
+              : ['CB', 'LB', 'RB', 'LWB', 'RWB'].includes(p.role)
+              ? 'DEF'
+              : ['CDM', 'CM', 'CAM', 'LM', 'RM'].includes(p.role)
+              ? 'MID'
+              : 'ATT';
+          if (db.targetLine === 'ALL' || db.targetLine === pLine) {
+            if (db.pacePenalty) attrs.pace = clampAttr(attrs.pace - db.pacePenalty);
+            if (db.defendingPenalty) attrs.defending = clampAttr(attrs.defending - db.defendingPenalty);
+            if (db.composurePenalty) attrs.composure = clampAttr(attrs.composure - db.composurePenalty);
+            if (db.goalkeepingPenalty && p.role === 'GK') {
+              attrs.goalkeeping = clampAttr(attrs.goalkeeping - db.goalkeepingPenalty);
+            }
+            if (db.passingPenalty) attrs.passing = clampAttr(attrs.passing - db.passingPenalty);
+            if (db.shootingPenalty) attrs.shooting = clampAttr(attrs.shooting - db.shootingPenalty);
+          }
+        }
       }
 
       const mergedTraits = p.traits ? [...p.traits] : [];
@@ -1792,6 +2440,9 @@ export class LeagueManager {
         strainWarning: p.strainWarning,
         isCaptain: p.id === this.getCaptainId(club),
         formationFamiliarity: club.isUser ? this.getPlayerFamiliarity(p, club.formation) : undefined,
+        secondaryRoles: p.secondaryRoles ? [...p.secondaryRoles] : [],
+        pa: p.pa,
+        isStarred: !!p.isStarred,
       };
     });
 
@@ -1825,6 +2476,9 @@ export class LeagueManager {
           strainWarning: p.strainWarning,
           isCaptain: p.id === this.getCaptainId(club),
           formationFamiliarity: club.isUser ? this.getPlayerFamiliarity(p, club.formation) : undefined,
+          secondaryRoles: p.secondaryRoles ? [...p.secondaryRoles] : [],
+          pa: p.pa,
+          isStarred: !!p.isStarred,
         };
       });
 
@@ -1845,6 +2499,38 @@ export class LeagueManager {
         : 30;
     }
 
+    let userEquippedSkills = club.isUser ? this.getEquippedActiveSkills() : undefined;
+    if (
+      club.isUser &&
+      userEquippedSkills &&
+      userEquippedSkills.length > 0 &&
+      this.state.interMatchPrep?.matchupIntel?.spotCorrect &&
+      this.state.interMatchPrep.matchupIntel.chosenRewardKind === 'skill_overclock'
+    ) {
+      const counterStyles = this.state.interMatchPrep.matchupIntel.counterStyles ?? [];
+      let matchedAny = false;
+      userEquippedSkills = userEquippedSkills.map(sk => {
+        if (sk.styleTag && counterStyles.includes(sk.styleTag)) {
+          matchedAny = true;
+          return {
+            ...sk,
+            effectiveRank: Math.min(5, (sk.effectiveRank ?? 1) + 1),
+            firstTriggerFreeCd: true,
+            scoutOverclocked: true,
+          };
+        }
+        return sk;
+      });
+      if (!matchedAny) {
+        userEquippedSkills[0] = {
+          ...userEquippedSkills[0],
+          effectiveRank: Math.min(5, (userEquippedSkills[0].effectiveRank ?? 1) + 1),
+          firstTriggerFreeCd: true,
+          scoutOverclocked: true,
+        };
+      }
+    }
+
     return {
       name: club.name,
       formation: club.formation,
@@ -1853,9 +2539,15 @@ export class LeagueManager {
       subs,
       tacticalMods,
       centralSpineBonus: spineBonus,
-      equippedSkills: club.isUser ? this.getEquippedActiveSkills() : undefined,
+      equippedSkills: userEquippedSkills,
+      activeAspects: club.isUser ? this.getActiveLegendaryAspects() : undefined,
+      perkSynergies: club.isUser ? this.getUserPerkSynergyFlags() : undefined,
       teamFamiliarityAvg: club.isUser ? teamFamAvg : undefined,
       teamChemistryAvg: club.isUser ? teamChemAvg : undefined,
+      scoutCounterLabel:
+        club.isUser && this.state.interMatchPrep?.matchupIntel?.spotCorrect
+          ? '破绽压制'
+          : undefined,
       gridSlots: club.gridSlots,
       slotDuties: club.slotDuties,
       weather: this.state.interMatchPrep?.weather ?? 'sunny',
@@ -1871,6 +2563,99 @@ export class LeagueManager {
     const home = this.state.clubs.find(c => c.id === fixture.homeClubId)!;
     const away = this.state.clubs.find(c => c.id === fixture.awayClubId)!;
     return new MatchEngine(this.buildTeamSetup(home, away.id), this.buildTeamSetup(away, home.id));
+  }
+
+  /**
+   * 序章第二幕：创建 45 分钟下半场 0:3 落后开局、通过战术卡连追两球至 2:3，随后老队长 #10 替补登场两度触发主动技完成 4:3 绝杀夺冠的剧本比赛引擎
+   */
+  public createPrologueMatchEngine(): MatchEngine {
+    const roles11: Array<PlayerInput['role']> = ['GK', 'LB', 'CB', 'CB', 'RB', 'CDM', 'CM', 'CAM', 'LW', 'RW', 'ST'];
+    const makeAttrs = (base: number): PlayerAttributes => ({
+      passing: base, shooting: base, dribbling: base, pace: base, strength: base,
+      defending: base, positioning: base, composure: base, stamina: 76, goalkeeping: base,
+    });
+    const homePlayers: PlayerInput[] = roles11.map((role, idx) => {
+      const isSt = role === 'ST';
+      const numMap = [1, 2, 4, 5, 3, 6, 8, 18, 11, 7, 19];
+      return {
+        id: isSt ? 'prologue_st_19' : `prologue_h_${idx}`,
+        name: isSt ? '陈小宇' : `曙光${idx + 1}号`,
+        role,
+        shirtNumber: numMap[idx] ?? idx + 2,
+        attributes: isSt
+          ? { passing: 72, shooting: 76, dribbling: 74, pace: 78, strength: 70, defending: 40, positioning: 75, composure: 74, stamina: 72, goalkeeping: 20 }
+          : makeAttrs(72),
+        traits: ['节拍器'],
+        goldTraits: [],
+        silverTraits: ['节拍器'],
+        fitness: 72,
+        isCaptain: false,
+      };
+    });
+    const veteranSub: PlayerInput = {
+      id: 'prologue_vet_10',
+      name: '林锋(老队长)',
+      role: 'ST',
+      shirtNumber: 10,
+      attributes: { passing: 82, shooting: 90, dribbling: 82, pace: 68, strength: 78, defending: 42, positioning: 88, composure: 94, stamina: 76, goalkeeping: 20 },
+      traits: ['远射重炮', '大赛先生'],
+      goldTraits: ['远射重炮'],
+      silverTraits: ['大赛先生'],
+      fitness: 82,
+      isCaptain: true,
+    };
+    const awayPlayers: PlayerInput[] = roles11.map((role, idx) => ({
+      id: `prologue_a_${idx}`,
+      name: `宿敌${idx + 1}号`,
+      role,
+      shirtNumber: idx + 1,
+      attributes: makeAttrs(role === 'GK' ? 66 : 70),
+      traits: [],
+      fitness: 72,
+    }));
+    const homeSetup: TeamSetup = {
+      name: '曙光竞技',
+      formation: '4-2-3-1',
+      style: 'tiki_taka',
+      players: homePlayers,
+      subs: [veteranSub],
+      prologueScripted: true,
+      weather: 'rain',
+      equippedSkills: [
+        {
+          id: 'sk_prologue_longshot',
+          name: '落叶重炮 · 最后一舞',
+          situation: 'trailing_late',
+          situationLabel: '弧顶重炮空当',
+          powerLabel: '老将绝杀 · 必中死角',
+          minFamiliarity: 0,
+          minChemistry: 0,
+          cooldownMinutes: 0,
+          maxPerMatch: 2,
+          instantAction: 'force_shot_on_target',
+          instantLabel: '林锋弧顶起脚轰出世界波',
+          vfxTheme: 'ult',
+          effectiveRank: 3,
+          effect: {
+            id: 'sk_prologue_longshot',
+            name: '落叶重炮 · 最后一舞',
+            durationMinutes: 10,
+            targetLine: 'ALL',
+            shootingDelta: 15,
+            paceDelta: 8,
+          },
+        },
+      ],
+    };
+    const awaySetup: TeamSetup = {
+      name: '铁幕联',
+      formation: '4-4-2',
+      style: 'park_bus',
+      players: awayPlayers,
+      subs: [],
+      weather: 'rain',
+    };
+    return new MatchEngine(homeSetup, awaySetup);
   }
 
   /**
@@ -1941,18 +2726,6 @@ export class LeagueManager {
       this.applyMatchOutcome(fx, res);
     }
 
-    // 新星故事线：U23 球员每轮稳定成长
-    if (this.state.storyline?.id === 'wonderkid') {
-      const userClub = this.getUserClub();
-      for (const p of userClub.squad) {
-        if (p.age <= 23) {
-          p.attributes.passing = Math.min(99, p.attributes.passing + 1);
-          p.attributes.shooting = Math.min(99, p.attributes.shooting + 1);
-          p.attributes.pace = Math.min(99, p.attributes.pace + 1);
-          p.ca = computeWeightedCA(p.role, p.attributes);
-        }
-      }
-    }
 
     // 赛后体能恢复、体能疲惫/轻伤判定与士气浮动
     const userEndFitness = new Map<string, number>();
@@ -1963,9 +2736,13 @@ export class LeagueManager {
     const myGoals = userIsHome ? userFixture.homeGoals : userFixture.awayGoals;
     const oppGoals = userIsHome ? userFixture.awayGoals : userFixture.homeGoals;
     const userWon = myGoals > oppGoals;
-    const fitLv = this.getMetaLevels().fitness ?? 0;
-    const activeRecover = 20 + fitLv * 3;
-    const restRecover = 46 + fitLv * 5;
+    const fitLv = this.getMetaLevels().medical ?? 0;
+    const userPerks = this.getUserClub().perks ?? [];
+    const perkRecovery = userPerks.reduce((s, pk) => s + (pk.effect.fitnessRecoveryBonus ?? 0), 0);
+    const perkElemDrops = userPerks.reduce((s, pk) => s + (pk.effect.elementDropBonus ?? 0), 0);
+    const perkYouthGrowth = userPerks.reduce((s, pk) => s + (pk.effect.youthGrowthBonus ?? 0), 0);
+    const activeRecover = 20 + fitLv * 3 + perkRecovery;
+    const restRecover = 46 + fitLv * 5 + perkRecovery;
     for (const c of this.state.clubs) {
       for (const p of c.squad) {
         if ((p.injuredRounds ?? 0) > 0) {
@@ -2004,13 +2781,42 @@ export class LeagueManager {
     updateOpponentIntelAfterMatch(this.state, oppClubId, myGoals, oppGoals);
     const userClubTmp = this.getUserClub();
     this.replaceUnavailableStarters(userClubTmp);
-    this.state.lastMatchReview = generatePostMatchReview(userMatchResult, userClubTmp.name);
+    const scoutedCorrect = !!this.state.interMatchPrep?.matchupIntel?.spotCorrect;
+    this.state.lastMatchReview = generatePostMatchReview(userMatchResult, userClubTmp.name, { scoutedCorrect });
     const hof = this.getHallOfFame();
     hof.totalGoals += myGoals;
     if (userWon) {
       hof.totalWins += 1;
       tryUnlockAchievement(this.state, 'ach_first_win');
       if (oppGoals === 0) tryUnlockAchievement(this.state, 'ach_clean_sheet');
+      if (myGoals - oppGoals >= 4) tryUnlockAchievement(this.state, 'ach_big_win');
+      if (this.getMatchLoadout().some(c => c.isCorrupted)) {
+        tryUnlockAchievement(this.state, 'ach_corrupted_win');
+      }
+      let runH = 0;
+      let runA = 0;
+      let trailed = false;
+      for (const ev of userMatchResult.events || []) {
+        if (ev.type !== 'goal') continue;
+        if (ev.team === 'home') runH++;
+        else runA++;
+        if ((userIsHome && runH < runA) || (!userIsHome && runA < runH)) {
+          trailed = true;
+        }
+      }
+      if (trailed) tryUnlockAchievement(this.state, 'ach_comeback_win');
+      const playedUserFx = this.state.fixtures
+        .filter(f => f.played && (f.homeClubId === this.state.userClubId || f.awayClubId === this.state.userClubId))
+        .sort((a, b) => a.round - b.round);
+      let streak = 0;
+      for (let i = playedUserFx.length - 1; i >= 0; i--) {
+        const fx = playedUserFx[i];
+        const uh = fx.homeClubId === this.state.userClubId;
+        const wonFx = uh ? fx.homeGoals > fx.awayGoals : fx.awayGoals > fx.homeGoals;
+        if (wonFx) streak++;
+        else break;
+      }
+      if (streak >= 5) tryUnlockAchievement(this.state, 'ach_win_streak_5');
     }
     const userSide = userIsHome ? 'home' : 'away';
     if (userMatchResult.players.some(p => p.team === userSide && p.matchStats.goals >= 3)) {
@@ -2019,7 +2825,7 @@ export class LeagueManager {
     if ((userMatchResult.unlockedHiddenTraits || []).some(u => u.team === userSide)) {
       tryUnlockAchievement(this.state, 'ach_hidden_trait');
     }
-    const drops = userWon ? 2 : 1;
+    const drops = (userWon ? 2 : 1) + perkElemDrops;
     const inv = this.getElementInventory();
     for (let i = 0; i < drops; i++) {
       const el = TACTICAL_ELEMENTS[Math.floor(Math.random() * TACTICAL_ELEMENTS.length)];
@@ -2029,31 +2835,92 @@ export class LeagueManager {
     // 积累当前阵型与战术风格熟练度经验（胜场+2，平负+1；战术幕僚Lv.5翻倍）
     const userClubNow = this.getUserClub();
     const mastery = this.getTacticalMastery();
-    const xpMul = this.getMetaLevels().coaching >= 5 ? 2 : 1;
+    const tgLv = this.getMetaLevels().training_ground ?? 0;
+    const xpMul = tgLv >= 5 ? 2 : 1;
     const xpGain = (userWon ? 2 : 1) * xpMul;
     mastery.formations[userClubNow.formation] = Math.min(15, (mastery.formations[userClubNow.formation] ?? 0) + xpGain);
     mastery.styles[userClubNow.style] = Math.min(15, (mastery.styles[userClubNow.style] ?? 0) + xpGain);
 
-    // 慢热成长：个人阵型熟练度（首发+3/+5，替补+1，幕僚Lv.5×1.5）
+    // 赛后俱乐部资金入账（门票 + 胜平基础奖金 + 球场主场加成 + 财政加成）
+    const metaNow = this.getMetaLevels();
+    const tierNow = this.state.currentTier ?? 7;
+    const tierFundScale = 1 + (7 - tierNow) * 0.12;
+    const baseMatchFunds = userWon ? 60 : myGoals === oppGoals ? 35 : 20;
+    const stadBonusRates = [0, 0.2, 0.35, 0.5, 0.5, 0.7, 0.85, 1.0, 1.2];
+    const finBonusRates = [0, 0.15, 0.25, 0.35, 0.35, 0.35, 0.35, 0.5, 0.6];
+    const homeMul = userIsHome ? 1 + (stadBonusRates[metaNow.stadium ?? 0] ?? 0) : 1;
+    const finMul = 1 + (finBonusRates[metaNow.finance ?? 0] ?? 0);
+    this.addClubFunds(Math.round(baseMatchFunds * tierFundScale * homeMul * finMul));
+
+    // 慢热成长：个人阵型熟练度 + 随比赛进度逐场积累属性成长（受赛季总上限约束，防止低级联赛超模）
     this.lastMatchGrowth = {};
     const unlockedTraitMap = new Map<string, string>();
     for (const u of userMatchResult.unlockedHiddenTraits || []) {
       if (u.team === userSide) unlockedTraitMap.set(u.playerId, u.trait);
     }
+    const matchStatsByPlayer = new Map(
+      userMatchResult.players.filter(mp => mp.team === userSide).map(mp => [mp.id, mp.matchStats])
+    );
     const webUnlocked = this.getSkillWebUnlocked();
     const hasFormNode = webUnlocked.includes(`fm_${userClubNow.formation}`);
-    const famMul = this.getMetaLevels().coaching >= 5 ? 1.5 : 1;
+    const famMul = tgLv >= 5 ? 1.5 : 1;
+    const rosterMapForGrowth = this.state.clubRoster
+      ? new Map(this.state.clubRoster.map(r => [r.id, r]))
+      : null;
     for (const p of userClubNow.squad) {
       const curFam = this.getPlayerFamiliarity(p, userClubNow.formation);
       const isStarter = userEndFitness.has(p.id);
-      const baseAdd = isStarter ? (3 + (hasFormNode ? 2 : 0)) : 1;
+      const youthExtra = p.age <= 23 ? perkYouthGrowth : 0;
+      const baseAdd = (isStarter ? (3 + (hasFormNode ? 2 : 0)) : 1) + youthExtra;
       const gain = Math.round(baseAdd * famMul);
       p.formationFamiliarity = p.formationFamiliarity ?? {};
       const nextFam = Math.min(100, curFam + gain);
       p.formationFamiliarity[userClubNow.formation] = nextFam;
+
+      let caGainThisMatch = 0;
+      const pa = p.pa ?? computeInitialPA(p.ca, p.age ?? 24, (p.age ?? 24) <= 19);
+      p.pa = pa;
+      if (isStarter && p.ca < pa && (p.age ?? 24) <= 29) {
+        const pst = p.seasonStats;
+        const goodSeasonPerf = pst.goals >= 8 || pst.assists >= 6 || pst.cleanSheets >= 8;
+        const seasonCap = this.computeSeasonTargetAttrGain(p, p.age ?? 24, goodSeasonPerf, tgLv);
+        const gainedSoFar = p.seasonAttrGained ?? 0;
+        if (gainedSoFar < seasonCap) {
+          const mStats = matchStatsByPlayer.get(p.id);
+          const matchHighlight = !!mStats && (mStats.goals > 0 || mStats.assists > 0 || (p.role === 'GK' && oppGoals === 0));
+          const ageBaseXp = (p.age ?? 24) < 18 ? 18 : (p.age ?? 24) <= 23 ? 32 : 15;
+          const storyXp = this.state.storyline?.id === 'wonderkid' && (p.age ?? 24) <= 23 ? 10 : 0;
+          const roundPaceMul = 34 / Math.max(10, this.getTotalRegularRounds());
+          const xpAdd = Math.round((ageBaseXp + (matchHighlight ? 12 : 0) + Math.round(tgLv * 1.5) + storyXp) * roundPaceMul);
+          p.seasonGrowthXp = (p.seasonGrowthXp ?? 0) + xpAdd;
+          while (p.seasonGrowthXp >= 100 && (p.seasonAttrGained ?? 0) < seasonCap && p.ca < pa) {
+            p.seasonGrowthXp -= 100;
+            const beforeCa = p.ca;
+            for (const k of this.getRoleWeightedKeys(p.role)) {
+              p.attributes[k] = Math.min(99, p.attributes[k] + 1);
+            }
+            p.ca = Math.min(pa, computeWeightedCA(p.role, p.attributes));
+            p.marketValue = calcTransferValue(p);
+            p.seasonAttrGained = (p.seasonAttrGained ?? 0) + 1;
+            caGainThisMatch += Math.max(0, p.ca - beforeCa);
+          }
+        }
+      }
+      if (rosterMapForGrowth) {
+        const rp = rosterMapForGrowth.get(p.id);
+        if (rp) {
+          rp.attributes = { ...p.attributes };
+          rp.ca = p.ca;
+          rp.marketValue = p.marketValue;
+          rp.seasonGrowthXp = p.seasonGrowthXp;
+          rp.seasonAttrGained = p.seasonAttrGained;
+        }
+      }
+
       this.lastMatchGrowth[p.id] = {
         famGain: Math.max(0, nextFam - curFam),
         chemGain: 0,
+        caGain: caGainThisMatch > 0 ? caGainThisMatch : undefined,
         unlockedTrait: unlockedTraitMap.get(p.id),
       };
     }
@@ -2189,7 +3056,7 @@ export class LeagueManager {
     });
     scored.sort((a, b) => b.score - a.score);
 
-    if (RE_DRAFT_ROUNDS.has(round)) {
+    if (this.getReDraftRounds().has(round)) {
       const other = scored.find(s => s.cat !== 'gamble' && s.cat !== 'season_perk')?.cat ?? 'player';
       const res: PostMatchRewardCategory[] = ['season_perk', 'gamble', other];
       for (let i = res.length - 1; i > 0; i--) {
@@ -2254,11 +3121,12 @@ export class LeagueManager {
 
     if (cat === 'player') {
       const financeBonus = this.getMetaLevels().finance >= 3 ? 2 : 0;
-      const milestoneBonus = RE_DRAFT_ROUNDS.has(rw.round) ? 4 : 0;
+      const isReDraft = this.getReDraftRounds().has(rw.round);
+      const milestoneBonus = isReDraft ? 4 : 0;
       const cands = generateShuffleSet(
         3,
         tierBase + winBonus + financeBonus + milestoneBonus,
-        tierBase + 13 + winBonus + financeBonus + (RE_DRAFT_ROUNDS.has(rw.round) ? 3 : 0)
+        tierBase + 13 + winBonus + financeBonus + (isReDraft ? 3 : 0)
       );
       cands.forEach((p, idx) => {
         options.push({
@@ -2640,8 +3508,12 @@ export class LeagueManager {
 
     if (opt.category === 'season_perk' && opt.perk) {
       club.perks.push(opt.perk);
-      if (computePerkSynergies(club.perks).synergies.length > 0) {
+      const syn = computePerkSynergies(club.perks);
+      if (syn.synergies.length > 0) {
         tryUnlockAchievement(this.state, 'ach_synergy');
+      }
+      if (syn.counts.attack >= 1 && syn.counts.defense >= 1 && syn.counts.control >= 1) {
+        tryUnlockAchievement(this.state, 'ach_triple_synergy');
       }
       rw.completed = true;
       rw.summaryText = `激活赛季战术词条【${opt.perk.name}】：${opt.perk.description}`;
@@ -3052,8 +3924,9 @@ export class LeagueManager {
           if (p.fitness >= 70) p.strainWarning = false;
         }
       }
-      if (ef.moraleShift && target) {
-        target.morale = ef.moraleShift;
+      if (ef.moraleShift) {
+        const list = target ? [target] : club.squad;
+        for (const p of list) p.morale = ef.moraleShift;
       }
       if (ef.injureStarterRounds && ef.injureStarterRounds > 0) {
         const starterSet = new Set(club.starterIds);
@@ -3107,19 +3980,36 @@ export class LeagueManager {
         } else {
           this.state.metaPointsTotal += 15;
         }
+        if ((synth.card.level ?? 1) >= 4) {
+          tryUnlockAchievement(this.state, 'ach_lv4_card');
+        }
       }
-      if (ef.tempTrait && target) {
-        target.tempTraits = target.tempTraits ? [...target.tempTraits] : [];
-        const existing = target.tempTraits.find(t => t.trait === ef.tempTrait!.trait);
+      const traitTarget = target ?? club.squad.find(p => p.id === club.captainId) ?? club.squad[0];
+      if (ef.tempTrait && traitTarget) {
+        traitTarget.tempTraits = traitTarget.tempTraits ? [...traitTarget.tempTraits] : [];
+        const existing = traitTarget.tempTraits.find(t => t.trait === ef.tempTrait!.trait);
         if (existing) {
           if (ef.tempTrait.tier === 'gold') existing.tier = 'gold';
           existing.remainingMatches = Math.max(existing.remainingMatches, ef.tempTrait.rounds);
         } else {
-          target.tempTraits.push({
+          traitTarget.tempTraits.push({
             trait: ef.tempTrait.trait,
             tier: ef.tempTrait.tier,
             remainingMatches: ef.tempTrait.rounds,
           });
+        }
+      }
+      if (ef.attrDelta) {
+        const { attr, delta, scope } = ef.attrDelta;
+        const targets =
+          scope === 'target' ? (target ? [target] : []) :
+          scope === 'u23' ? club.squad.filter(p => p.age <= 23) :
+          scope === 'veteran' ? club.squad.filter(p => p.age >= 27) :
+          scope === 'att' ? club.squad.filter(p => ['LW', 'RW', 'ST', 'CAM'].includes(p.role)) :
+          club.squad.filter(p => ['GK', 'CB', 'LB', 'RB', 'LWB', 'RWB', 'CDM'].includes(p.role));
+        for (const p of targets) {
+          p.attributes[attr] = Math.max(25, Math.min(99, p.attributes[attr] + delta));
+          p.ca = computeWeightedCA(p.role, p.attributes);
         }
       }
       if (ef.teamFamiliarityDelta !== undefined) {
@@ -3622,9 +4512,11 @@ export class LeagueManager {
   private advanceAfterRound(): void {
     const r = this.state.currentRound;
     const tier = this.state.currentTier ?? 7;
+    const totalRounds = this.getTotalRegularRounds();
+    const midRound = this.getMidSeasonRound();
 
-    // 常规赛第 8、16、24 轮结束后，AI 球队同步补强（玩家侧的赛季词条与强援已并入赛后 3 选 1）
-    if (this.state.phase === 'REGULAR_SEASON' && RE_DRAFT_ROUNDS.has(r)) {
+    // 常规赛阶段节点结束后，AI 球队同步补强（玩家侧的赛季词条与强援已并入赛后 3 选 1）
+    if (this.state.phase === 'REGULAR_SEASON' && this.getReDraftRounds().has(r)) {
       for (const aiClub of this.state.clubs) {
         if (aiClub.isUser) continue;
         const aiOffer = createReDraftOffer(r, aiClub.perks.map(p => p.id), undefined, tier);
@@ -3646,18 +4538,28 @@ export class LeagueManager {
       }
     }
 
-    // 34 轮双循环常规赛全部结束 -> 直接按积分榜排名结算并执行 7 级联赛升降级
-    if (this.state.phase === 'REGULAR_SEASON' && r >= TOTAL_REGULAR_ROUNDS) {
+    // 双循环常规赛全部结束 -> 直接按积分榜排名结算并执行 7 级联赛升降级
+    if (this.state.phase === 'REGULAR_SEASON' && r >= totalRounds) {
       const standings = this.getStandings();
       const userRank = standings.findIndex(s => s.clubId === this.state.userClubId) + 1;
       this.finalizeSeason(userRank);
       return;
     }
 
+    // 半程结束 -> 开启冬季转会窗（青训成长+自然揭雾+补招至6人，刷新冬窗货架）
+    if (this.state.phase === 'REGULAR_SEASON' && r === midRound && this.state.winterWindowDoneSeason !== this.state.seasonNumber) {
+      this.state.phase = 'WINTER_WINDOW';
+      this.advanceYouthAcademyMidSeason();
+      this.refreshTransferShelfForWindow();
+      return;
+    }
+
     // 常规赛下一轮
     this.state.currentRound = r + 1;
-    if ((this.state.currentRound === 9 || this.state.currentRound === 17) && this.state.storyline) {
-      const mappedRound = this.state.currentRound === 9 ? 3 : 5;
+    const storyR1 = Math.max(3, Math.round(totalRounds * 0.26));
+    const storyR2 = Math.max(storyR1 + 2, midRound);
+    if ((this.state.currentRound === storyR1 || this.state.currentRound === storyR2) && this.state.storyline) {
+      const mappedRound = this.state.currentRound === storyR1 ? 3 : 5;
       this.state.pendingStoryEvent = createMidSeasonChoice(this.state.storyline, mappedRound);
     }
   }
@@ -3702,8 +4604,12 @@ export class LeagueManager {
     const club = this.getUserClub();
     club.perks.push(perk);
     this.state.reDraft.perkChosen = true;
-    if (computePerkSynergies(club.perks).synergies.length > 0) {
+    const syn = computePerkSynergies(club.perks);
+    if (syn.synergies.length > 0) {
       tryUnlockAchievement(this.state, 'ach_synergy');
+    }
+    if (syn.counts.attack >= 1 && syn.counts.defense >= 1 && syn.counts.control >= 1) {
+      tryUnlockAchievement(this.state, 'ach_triple_synergy');
     }
     return { ok: true };
   }
@@ -3840,20 +4746,76 @@ export class LeagueManager {
     if (!prep || !prep.matchupIntel) return { ok: false, msg: '暂无对手情报' };
     if (prep.actionsLeft <= 0) return { ok: false, msg: '本轮整备行动点已用完' };
     if (prep.matchupIntel.scoutedThisRound) return { ok: false, msg: '本轮已完成对该对手的球探侦察' };
-    const rec = getOpponentIntelRecord(this.state, prep.matchupIntel.oppClubId);
+    const prev = prep.matchupIntel;
+    const rec = getOpponentIntelRecord(this.state, prev.oppClubId);
     rec.familiarity = Math.min(100, rec.familiarity + 30);
     const refreshed = buildOpponentMatchupIntel(this.state, this.getUserClub());
     if (refreshed) {
       refreshed.scoutedThisRound = true;
-      refreshed.chosenCounterId = prep.matchupIntel.chosenCounterId;
-      refreshed.spotCorrect = prep.matchupIntel.spotCorrect;
+      refreshed.chosenCounterId = prev.chosenCounterId;
+      refreshed.spotCorrect = prev.spotCorrect;
+      refreshed.usedDebunk = prev.usedDebunk;
+      refreshed.chosenRewardKind = prev.chosenRewardKind;
+      refreshed.mastery = prev.mastery;
+      refreshed.counterElements = prev.counterElements;
+      refreshed.counterStyles = prev.counterStyles;
+      refreshed.activeDebuff = prev.activeDebuff;
+      refreshed.masteryBonusElement = prev.masteryBonusElement;
+      if (prev.analysisPoints !== undefined && refreshed.analysisPoints !== undefined) {
+        refreshed.analysisPoints = Math.min(refreshed.maxAnalysisPoints ?? 3, prev.analysisPoints + 1);
+      }
+      if (prev.zones && refreshed.zones) {
+        const scannedSet = new Set(prev.zones.filter(z => z.scanned).map(z => z.id));
+        refreshed.zones = refreshed.zones.map(z => ({ ...z, scanned: z.scanned || scannedSet.has(z.id) }));
+      }
       prep.matchupIntel = refreshed;
     }
     prep.actionsLeft -= 1;
-    return { ok: true, msg: `侦察完成！对【${prep.matchupIntel.oppClubName}】了解度升至 ${rec.familiarity}%` };
+    return { ok: true, msg: `深度侦察完成！对【${prep.matchupIntel.oppClubName}】了解度升至 ${rec.familiarity}%，分析点 +1` };
   }
 
-  public chooseOpponentCounter(counterId: string): { ok: boolean; correct?: boolean; msg?: string } {
+  public scanOpponentZone(zoneId: ScoutingZoneId): { ok: boolean; msg?: string } {
+    const prep = this.getInterMatchPrep();
+    const intel = prep?.matchupIntel;
+    if (!prep || !intel) return { ok: false, msg: '暂无对手情报' };
+    const zones = intel.zones ?? [];
+    const zone = zones.find(z => z.id === zoneId);
+    if (!zone) return { ok: false, msg: '未找到对应区域录像' };
+    if (zone.scanned) return { ok: true, msg: `${zone.label}：${zone.summary}` };
+    const ap = intel.analysisPoints ?? 2;
+    if (ap <= 0) return { ok: false, msg: '本轮分析点数已用完，请直接对比线索并拍案指证！' };
+
+    intel.analysisPoints = ap - 1;
+    zone.scanned = true;
+    const rec = getOpponentIntelRecord(this.state, intel.oppClubId);
+    rec.familiarity = Math.min(100, rec.familiarity + 10);
+    intel.familiarity = rec.familiarity;
+
+    return {
+      ok: true,
+      msg: zone.isWeakZone
+        ? `录像扫描发现异常【${zone.label}】：${zone.summary}`
+        : `录像扫描【${zone.label}】：${zone.summary}（未见明显破绽）`,
+    };
+  }
+
+  public debunkSmokeClue(): { ok: boolean; msg?: string } {
+    const prep = this.getInterMatchPrep();
+    const intel = prep?.matchupIntel;
+    if (!prep || !intel) return { ok: false, msg: '暂无对手情报' };
+    if (intel.chosenCounterId) return { ok: false, msg: '本轮已完成战术指证' };
+    const smoke = intel.clues.find(c => c.isSmoke && !c.debunked);
+    if (!smoke) return { ok: false, msg: '当前线索均已交叉核实，无虚假烟雾弹' };
+    const ap = intel.analysisPoints ?? 2;
+    if (ap <= 0) return { ok: false, msg: '分析点数不足，无法交叉核实' };
+
+    intel.analysisPoints = ap - 1;
+    intel.usedDebunk = true;
+    smoke.debunked = true;
+    return { ok: true, msg: '交叉核实成功！已识破并剔除 1 条虚假烟雾弹' };
+  }
+
+  public chooseOpponentCounter(counterId: string): { ok: boolean; correct?: boolean; mastery?: 'master' | 'standard'; msg?: string } {
     const prep = this.getInterMatchPrep();
     const intel = prep?.matchupIntel;
     if (!prep || !intel) return { ok: false, msg: '暂无对手情报' };
@@ -3863,6 +4825,19 @@ export class LeagueManager {
     intel.chosenCounterId = opt.id;
     intel.spotCorrect = opt.isCorrect;
     if (opt.isCorrect) {
+      intel.counterElements = opt.counterElements;
+      intel.counterStyles = opt.counterStyles;
+      intel.activeDebuff = opt.oppDebuff;
+      intel.mastery = !intel.usedDebunk ? 'master' : 'standard';
+      if (intel.mastery === 'master') {
+        tryUnlockAchievement(this.state, 'ach_scout_master');
+      }
+      if (intel.mastery === 'master' && opt.counterElements?.[0]) {
+        const bonusEl = opt.counterElements[0] as ElementId;
+        const inv = this.getElementInventory();
+        inv[bonusEl] = (inv[bonusEl] ?? 0) + 1;
+        intel.masteryBonusElement = opt.counterElements[0];
+      }
       prep.nextMatchBuff = {
         ...(prep.nextMatchBuff ?? {}),
         passingBonus: (prep.nextMatchBuff?.passingBonus ?? 0) + (opt.buff.passingBonus ?? 0),
@@ -3872,9 +4847,36 @@ export class LeagueManager {
         energyBonus: (prep.nextMatchBuff?.energyBonus ?? 0) + (opt.buff.energyBonus ?? 0),
         note: opt.buff.note,
       };
-      return { ok: true, correct: true, msg: `异议成立！${opt.buff.note}` };
+      return {
+        ok: true,
+        correct: true,
+        mastery: intel.mastery,
+        msg:
+          intel.mastery === 'master'
+            ? `宗师洞察！未删错直抓破绽，额外获赠 1 枚克制元素！请选择本场针对红利`
+            : `异议成立！${opt.buff.note} · 请选择 1 项赛中针对红利`,
+      };
     }
     return { ok: true, correct: false, msg: '误判了烟雾弹！未触发针对性红利（无惩罚，可正常应战）' };
+  }
+
+  public chooseScoutReward(kind: ScoutRewardKind): { ok: boolean; msg?: string } {
+    const prep = this.getInterMatchPrep();
+    const intel = prep?.matchupIntel;
+    if (!prep || !intel) return { ok: false, msg: '暂无对手情报' };
+    if (!intel.spotCorrect) return { ok: false, msg: '破绽未指证成功，无法领取针对红利' };
+    if (intel.chosenRewardKind) return { ok: false, msg: '本轮针对红利已锁定' };
+
+    intel.chosenRewardKind = kind;
+    const tagMsg =
+      kind === 'buff_debuff'
+        ? `红利锁定【手牌减费+对手减益】：克制元素手牌本场-1费+5分，且${intel.activeDebuff?.label || '削弱对手弱点'}`
+        : `红利锁定【主动技超频】：克制流派主动技本场临时+1 Rank且首次释放免冷却`;
+    prep.nextMatchBuff = {
+      ...(prep.nextMatchBuff ?? {}),
+      note: `${prep.nextMatchBuff?.note ? `${prep.nextMatchBuff.note} · ` : ''}${tagMsg}`,
+    };
+    return { ok: true, msg: tagMsg };
   }
 
   public resolvePlayerTalk(choice: 'A' | 'B'): { ok: boolean; msg?: string } {
@@ -4026,6 +5028,34 @@ export class LeagueManager {
     };
   }
 
+  private getRoleWeightedKeys(role: DraftPlayer['role']): Array<keyof PlayerAttributes> {
+    if (role === 'GK') return ['goalkeeping', 'positioning', 'composure', 'passing'];
+    if (role === 'CB') return ['defending', 'strength', 'positioning', 'pace', 'passing'];
+    if (['LB', 'RB', 'LWB', 'RWB'].includes(role)) return ['pace', 'defending', 'passing', 'stamina', 'dribbling'];
+    if (['CDM', 'CM', 'CAM', 'LM', 'RM'].includes(role)) return ['passing', 'positioning', 'dribbling', 'stamina', 'defending', 'shooting'];
+    return ['shooting', 'pace', 'dribbling', 'positioning', 'composure'];
+  }
+
+  private computeSeasonTargetAttrGain(p: DraftPlayer, seasonAge: number, goodPerf: boolean, tgLv: number): number {
+    const pa = p.pa ?? Math.min(96, p.ca + (seasonAge <= 23 ? 16 : seasonAge <= 27 ? 8 : 3));
+    const effectiveCa = Math.max(20, p.ca - (p.seasonAttrGained ?? 0));
+    const gap = Math.max(0, pa - effectiveCa);
+    if (gap <= 0) return 0;
+    if (seasonAge < 18) {
+      const perfBonus = goodPerf ? 1 : 0;
+      const tgBonus = tgLv >= 6 ? 1 : 0;
+      return Math.min(gap, 3 + (gap >= 20 ? 1 : 0) + perfBonus + tgBonus);
+    }
+    if (seasonAge <= 23) {
+      const perfBonus = goodPerf ? 2 : 0;
+      const tgBonus = tgLv >= 8 ? 2 : tgLv >= 3 ? 1 : 0;
+      const storyBonus = this.state.storyline?.id === 'wonderkid' ? 1 : 0;
+      return Math.min(gap, 5 + Math.min(4, Math.ceil(gap / 6)) + perfBonus + tgBonus + storyBonus);
+    }
+    const perfBonus = goodPerf ? 1 : 0;
+    return Math.min(gap, 2 + Math.min(3, Math.floor(gap / 6)) + perfBonus);
+  }
+
   private finalizeSeason(finalRank: number): void {
     const standings = this.getStandings();
     const regularRank = standings.findIndex(s => s.clubId === this.state.userClubId) + 1;
@@ -4077,6 +5107,7 @@ export class LeagueManager {
       }
     }
     this.state.currentTier = newTier;
+    this.state.bestTierReached = Math.min(this.state.bestTierReached ?? 7, newTier);
     this.state.stayedTierCount = promotionStatus === 'stayed' ? (this.state.stayedTierCount ?? 0) + 1 : 0;
     if (promotionStatus === 'promoted') {
       recordChronicleMoment(
@@ -4116,7 +5147,7 @@ export class LeagueManager {
     const promoBonus = promotionStatus === 'promoted' ? 40 : 0;
     const champBonus = tier === 1 && finalRank === 1 ? 100 : 0;
     let metaEarned = tierScaled + promoBonus + champBonus;
-    if ((this.state.metaLevels?.finance ?? 0) >= 5) {
+    if ((this.state.metaLevels?.finance ?? 0) >= 8) {
       metaEarned = Math.round(metaEarned * 1.15);
     }
     let storyBonus = 0;
@@ -4127,6 +5158,11 @@ export class LeagueManager {
     }
 
     this.state.metaPointsTotal += metaEarned;
+    const finLv = this.state.metaLevels?.finance ?? 0;
+    const broadcastBase = Math.round((160 + Math.max(0, 14 - regularRank) * 18 + (promotionStatus === 'promoted' ? 140 : 0) + (finalRank === 1 ? 180 : 0)) * (1 + (7 - tier) * 0.25));
+    const broadcastMul = finLv >= 7 ? 1.4 : finLv >= 5 ? 1.25 : 1.0;
+    const interestBonus = finLv >= 6 ? Math.min(300, Math.round(this.getClubFunds() * 0.05)) : 0;
+    this.addClubFunds(Math.round(broadcastBase * broadcastMul) + interestBonus);
     const top = this.getTopScorers(1)[0];
     const topAst = this.getTopAssisters(1)[0];
     const hof = this.getHallOfFame();
@@ -4138,6 +5174,9 @@ export class LeagueManager {
     }
     if (regularRank <= 3) {
       tryUnlockAchievement(this.state, 'ach_playoffs');
+    }
+    if (tier === 1 || newTier === 1) {
+      tryUnlockAchievement(this.state, 'ach_top_tier');
     }
     const memories = [...(this.state.seasonMemories ?? [])]
       .sort((a, b) => b.dramaScore - a.dramaScore)
@@ -4178,49 +5217,60 @@ export class LeagueManager {
       return sb - sa;
     })[0];
 
-    // 赛季末动态能力结算：全队年龄 +1 岁，出场少/表现差会掉 CA，表现优异的年轻球员向潜力上限 PA 成长
+    const roleWeightedKeys = (role: DraftPlayer['role']) => this.getRoleWeightedKeys(role);
+
+    // 赛季末动态能力结算：全队年龄 +1 岁，老将自然衰退；按赛季目标增幅扣除「赛季中已涨步数」一次性差额补齐
     for (const p of userClub.squad) {
       const oldCa = p.ca;
       const pst = p.seasonStats;
-      p.age = (p.age ?? 24) + 1;
+      const seasonAge = p.age ?? 24;
+      p.age = seasonAge + 1;
       const pa = p.pa ?? Math.min(96, p.ca + (p.age <= 23 ? 16 : p.age <= 27 ? 8 : 3));
       p.pa = pa;
 
-      // 1. 出场过少（<=5场）导致竞技状态下滑
+      // 1. 出场过少（<=5场）：21岁以下新星免于倒扣，仅微幅磨合；成年球员状态下滑
       if (pst.appearances <= 5) {
-        const drop = metaLv.fitness >= 5 ? 1 : 2;
-        p.attributes.pace = clampAttr(p.attributes.pace - drop);
-        p.attributes.stamina = clampAttr(p.attributes.stamina - drop);
-        p.attributes.composure = clampAttr(p.attributes.composure - 1);
+        if (p.age <= 21) {
+          if (p.ca < pa && (p.seasonAttrGained ?? 0) === 0) {
+            for (const k of roleWeightedKeys(p.role)) {
+              p.attributes[k] = clampAttr(p.attributes[k] + 1);
+            }
+          }
+        } else {
+          const drop = (metaLv.medical ?? 0) >= 4 ? 1 : 2;
+          p.attributes.pace = clampAttr(p.attributes.pace - drop);
+          p.attributes.stamina = clampAttr(p.attributes.stamina - drop);
+          p.attributes.composure = clampAttr(p.attributes.composure - 1);
+        }
       } else if (
         pst.appearances >= 12 &&
-        (['ST', 'LW', 'RW', 'CAM'].includes(p.role) && pst.goals === 0 && pst.assists === 0)
+        (['ST', 'LW', 'RW', 'CAM'].includes(p.role) && pst.goals === 0 && pst.assists === 0) &&
+        p.age > 23
       ) {
-        // 2. 主力攻击手长期哑火（>=12场0球0助），状态下滑
+        // 2. 成年主力攻击手长期哑火（>=12场0球0助），状态下滑
         p.attributes.shooting = clampAttr(p.attributes.shooting - 1);
         p.attributes.composure = clampAttr(p.attributes.composure - 1);
-      } else if (pst.appearances >= 10) {
-        // 3. 表现优异成长（U23 成长更快，受潜力上限 PA 约束）
-        const goodPerf = pst.goals >= 8 || pst.assists >= 6 || pst.cleanSheets >= 8;
-        const baseGrowth = p.age <= 23 ? (goodPerf ? 4 : 3) : (goodPerf ? 3 : 2);
-        const academyBonus = p.age <= 23 && metaLv.academy >= 3 ? 1 : 0;
-        const delta = baseGrowth + academyBonus;
-        if (p.ca < pa) {
-          if (p.role === 'GK') {
-            p.attributes.goalkeeping = clampAttr(p.attributes.goalkeeping + delta);
-            p.attributes.positioning = clampAttr(p.attributes.positioning + 1);
-          } else {
-            p.attributes.passing = clampAttr(p.attributes.passing + delta);
-            p.attributes.composure = clampAttr(p.attributes.composure + 1);
-            if (pst.goals >= 4) p.attributes.shooting = clampAttr(p.attributes.shooting + delta);
-            if (['CB', 'LB', 'RB', 'LWB', 'RWB'].includes(p.role)) p.attributes.defending = clampAttr(p.attributes.defending + 1);
+      } else if (pst.appearances >= Math.max(6, Math.round(this.getTotalRegularRounds() * 0.30)) && p.ca < pa) {
+        // 3. 赛季末差额补齐：按赛季总轮数动态折算主力门槛，出场率不足则打折
+        const totalR = this.getTotalRegularRounds();
+        const fullStarterApps = Math.max(10, Math.round(totalR * 0.65));
+        const goodPerf = pst.goals >= Math.max(4, Math.round(totalR * 0.22)) || pst.assists >= Math.max(3, Math.round(totalR * 0.17)) || pst.cleanSheets >= Math.max(4, Math.round(totalR * 0.22));
+        const tgLv = metaLv.training_ground ?? 0;
+        const rawTargetGain = this.computeSeasonTargetAttrGain(p, seasonAge, goodPerf, tgLv);
+        const appRatio = Math.min(1, pst.appearances / fullStarterApps);
+        const discountedTarget = Math.max(1, Math.round(rawTargetGain * appRatio));
+        const alreadyGained = p.seasonAttrGained ?? 0;
+        const remainingGain = Math.max(0, Math.min(pa - p.ca, discountedTarget - alreadyGained));
+        if (remainingGain > 0) {
+          for (const k of roleWeightedKeys(p.role)) {
+            p.attributes[k] = clampAttr(p.attributes[k] + remainingGain);
           }
         }
       }
 
-      // 4. 老将体能/速度自然衰退（>=30岁），体能医疗Lv.5减半
+      // 4. 老将体能/速度自然衰退（>=30岁），运动医疗Lv.6减半
       if (p.age >= 30) {
-        const ageDrop = metaLv.fitness >= 5 ? 1 : 2;
+        const ageDrop = (metaLv.medical ?? 0) >= 6 ? 1 : 2;
         p.attributes.pace = clampAttr(p.attributes.pace - ageDrop);
         p.attributes.stamina = clampAttr(p.attributes.stamina - 1);
       }
@@ -4229,7 +5279,10 @@ export class LeagueManager {
       if (p.ca > pa && p.ca > oldCa) {
         p.ca = pa;
       }
+      p.marketValue = calcTransferValue(p);
       p.lastCaDelta = p.ca - oldCa;
+      p.seasonGrowthXp = 0;
+      p.seasonAttrGained = 0;
 
       const prevCareer = p.careerStats ?? { seasons: 0, appearances: 0, goals: 0, assists: 0, cleanSheets: 0, championships: 0 };
       p.careerStats = {
@@ -4242,16 +5295,28 @@ export class LeagueManager {
       };
     }
 
-    // 同步至 40 人大名单，且未入选本季 26 人的球员若长期枯坐板凳也轻微掉状态 (-1)
+    // 同步至 40 人大名单：U21 梯队小将受青训学院庇护按位置核心属性成长 (+2~4 CA)，非 U21 枯坐板凳轻微掉状态
     const activeIds = new Set(userClub.squad.map(p => p.id));
     const roster = this.getClubRoster();
+    const acaLv = metaLv.academy ?? 0;
     for (const rp of roster) {
       if (!activeIds.has(rp.id)) {
         const oldCa = rp.ca;
         rp.age = (rp.age ?? 24) + 1;
-        rp.attributes.stamina = clampAttr(rp.attributes.stamina - 1);
-        rp.attributes.pace = clampAttr(rp.attributes.pace - 1);
-        rp.ca = computeWeightedCA(rp.role, rp.attributes);
+        const rPa = rp.pa ?? computeInitialPA(rp.ca, rp.age, rp.age <= 21);
+        rp.pa = rPa;
+        if (rp.age <= 21 && rp.ca < rPa) {
+          const u21Boost = Math.min(rPa - rp.ca, 2 + (acaLv >= 8 ? 2 : acaLv >= 4 ? 1 : 0));
+          for (const k of roleWeightedKeys(rp.role)) {
+            rp.attributes[k] = clampAttr(rp.attributes[k] + u21Boost);
+          }
+          rp.ca = Math.min(rPa, computeWeightedCA(rp.role, rp.attributes));
+        } else if (rp.age > 21) {
+          rp.attributes.stamina = clampAttr(rp.attributes.stamina - 1);
+          rp.attributes.pace = clampAttr(rp.attributes.pace - 1);
+          rp.ca = computeWeightedCA(rp.role, rp.attributes);
+        }
+        rp.marketValue = calcTransferValue(rp);
         rp.lastCaDelta = rp.ca - oldCa;
       }
     }
@@ -4280,6 +5345,32 @@ export class LeagueManager {
 
     // 休赛期默契度微幅回落
     decayChemistryOffSeason(this.getChemistryLinks());
+
+    // 游子归家老队长 #10 林锋：首季圆满落幕，传奇挂靴转任主教练并传承【老队长的怒吼】+50 Meta
+    let retiredLegend: SeasonSummary['retiredLegend'] = null;
+    const capIdx = userClub.squad.findIndex(p => p.isPrologueCaptain || p.id === 'captain_lin_feng');
+    const rosterCapIdx = roster.findIndex(p => p.isPrologueCaptain || p.id === 'captain_lin_feng');
+    const capEntity = capIdx >= 0 ? userClub.squad[capIdx] : rosterCapIdx >= 0 ? roster[rosterCapIdx] : null;
+    if (capEntity) {
+      retiredLegend = {
+        name: capEntity.name,
+        age: Math.max(38, capEntity.age),
+        appearances: capEntity.seasonStats.appearances,
+        goals: capEntity.seasonStats.goals,
+        assists: capEntity.seasonStats.assists,
+        note: '游子归家圆满落幕！#10 林锋正式挂靴转任主教练，传承手牌【老队长的怒吼】并注入 +50 Meta 执教基金！',
+      };
+      if (capIdx >= 0) userClub.squad.splice(capIdx, 1);
+      if (rosterCapIdx >= 0) roster.splice(rosterCapIdx, 1);
+      userClub.starterIds = userClub.starterIds.filter(id => id !== capEntity.id);
+      if (userClub.captainId === capEntity.id) userClub.captainId = undefined;
+      if (this.state.rosterSelectedIds) {
+        this.state.rosterSelectedIds = this.state.rosterSelectedIds.filter(id => id !== capEntity.id);
+      }
+      this.grantCaptainRoarCard();
+      this.state.metaPointsTotal += 50;
+      metaEarned += 50;
+    }
 
     this.state.persistentSquad = JSON.parse(JSON.stringify(userClub.squad));
     const rewardCount = metaLv.scout >= 4 ? 4 : 3;
@@ -4344,10 +5435,15 @@ export class LeagueManager {
       promotionStatus,
       newTier,
       memories,
+      retiredLegend,
     };
 
     this.state.lastSummary = summary;
     this.state.phase = 'SEASON_END';
+    this.state.seasonPrivateTrainedIds = [];
+    this.advanceYouthAcademyEndSeason();
+    this.state.transferMarket = null;
+    this.getTransferMarketState();
   }
 
   public pickSeasonBonusReward(optionId: string): { ok: boolean; summary?: string; reason?: string } {
@@ -4411,5 +5507,619 @@ export class LeagueManager {
 
     sum.seasonBonusClaimedId = opt.id;
     return { ok: true, summary: sum.seasonBonusSummary };
+  }
+
+  // ==================== 6. 青训试训池（迷雾球探/自然成长/超19岁解约）与转会市场 ====================
+
+  public getYouthAcademyState(): YouthAcademyState {
+    const meta = this.getMetaLevels();
+    const seasonNum = this.state.seasonNumber ?? 1;
+    const tier = this.state.currentTier ?? 7;
+    const acaLv = meta.academy ?? 0;
+    const scoutLv = meta.scout ?? 0;
+    if (!this.state.youthAcademy) {
+      const cands = this.generateYouthPool(acaLv, tier, scoutLv, 6);
+      this.state.youthAcademy = {
+        seasonNumber: seasonNum,
+        freeRefreshesLeft: 1 + (acaLv >= 3 ? 3 : acaLv >= 2 ? 2 : acaLv >= 1 ? 1 : 0),
+        paidRefreshesUsed: 0,
+        candidates: cands,
+        overseasPackUsed: false,
+      };
+    }
+    return this.state.youthAcademy;
+  }
+
+  private generateYouthPool(acaLv: number, tier: number, scoutLv: number, count = 6): DraftPlayer[] {
+    const list: DraftPlayer[] = [];
+    for (let i = 0; i < count; i++) {
+      const p = generateYouthProspect(acaLv, tier, scoutLv, acaLv >= 2 ? 2 : 0);
+      if (acaLv >= 6 && (p.traits?.length ?? 0) === 0) {
+        p.traits = ['节拍器'];
+        p.silverTraits = ['节拍器'];
+      }
+      if (acaLv >= 7 && i === 0) {
+        const minGolden = acaLv >= 8 ? 88 : 86;
+        p.pa = Math.max(p.pa ?? 80, minGolden);
+        p.marketValue = calcTransferValue(p);
+        if (p.scoutFogLevel === 2) { p.paEstMin = p.pa; p.paEstMax = p.pa; }
+      }
+      list.push(p);
+    }
+    return list;
+  }
+
+  /**
+   * 冬窗（第 17 轮后）青训自然成长：在训小妖 CA +1~2，迷雾自动提升 1 级 (0->1 / 1->2)，并补招至 6 人
+   */
+  public advanceYouthAcademyMidSeason(): void {
+    const ya = this.getYouthAcademyState();
+    const meta = this.getMetaLevels();
+    const acaLv = meta.academy ?? 0;
+    const scoutLv = meta.scout ?? 0;
+    const tier = this.state.currentTier ?? 7;
+    const clampAttr = (v: number) => Math.min(99, v);
+
+    for (const p of ya.candidates) {
+      const pa = p.pa ?? computeInitialPA(p.ca, p.age, true);
+      p.pa = pa;
+      if (p.ca < pa) {
+        const gain = 1 + (acaLv >= 5 ? 1 : 0);
+        if (p.role === 'GK') {
+          p.attributes.goalkeeping = clampAttr(p.attributes.goalkeeping + gain);
+          p.attributes.positioning = clampAttr(p.attributes.positioning + 1);
+        } else {
+          p.attributes.passing = clampAttr(p.attributes.passing + gain);
+          p.attributes.dribbling = clampAttr(p.attributes.dribbling + gain);
+          p.attributes.composure = clampAttr(p.attributes.composure + 1);
+        }
+        p.ca = Math.min(pa, computeWeightedCA(p.role, p.attributes));
+        p.marketValue = calcTransferValue(p);
+      }
+      const curFog = p.scoutFogLevel ?? 0;
+      if (curFog < 2) {
+        const nextFog = (curFog + 1) as 1 | 2;
+        p.scoutFogLevel = nextFog;
+        if (nextFog === 1) {
+          p.paEstMin = Math.max(p.ca, pa - 4);
+          p.paEstMax = Math.min(99, pa + 4);
+        } else {
+          p.paEstMin = pa;
+          p.paEstMax = pa;
+        }
+      }
+    }
+
+    if (ya.candidates.length < 6) {
+      const need = 6 - ya.candidates.length;
+      ya.candidates.push(...this.generateYouthPool(acaLv, tier, scoutLv, need));
+    }
+    ya.freeRefreshesLeft = Math.max(ya.freeRefreshesLeft, 1);
+  }
+
+  /**
+   * 赛季末青训结算：在训小妖年龄 +1、CA 自然成长 +1~3、迷雾升至 Lv.2，超过 19 岁自动解约离队，补招 16~18 岁新秀至 6 人
+   */
+  public advanceYouthAcademyEndSeason(): { releasedNames: string[] } {
+    const ya = this.getYouthAcademyState();
+    const meta = this.getMetaLevels();
+    const acaLv = meta.academy ?? 0;
+    const scoutLv = meta.scout ?? 0;
+    const tier = this.state.currentTier ?? 7;
+    const clampAttr = (v: number) => Math.min(99, v);
+
+    const releasedNames: string[] = [];
+    const kept: DraftPlayer[] = [];
+    for (const p of ya.candidates) {
+      p.age = (p.age ?? 17) + 1;
+      if (p.age > 19) {
+        releasedNames.push(p.name);
+        continue;
+      }
+      const pa = p.pa ?? computeInitialPA(p.ca, p.age, true);
+      p.pa = pa;
+      if (p.ca < pa) {
+        const gain = 1 + (acaLv >= 6 ? 2 : acaLv >= 3 ? 1 : 0);
+        if (p.role === 'GK') {
+          p.attributes.goalkeeping = clampAttr(p.attributes.goalkeeping + gain);
+          p.attributes.positioning = clampAttr(p.attributes.positioning + 1);
+        } else {
+          p.attributes.passing = clampAttr(p.attributes.passing + gain);
+          p.attributes.dribbling = clampAttr(p.attributes.dribbling + gain);
+          p.attributes.shooting = clampAttr(p.attributes.shooting + 1);
+          p.attributes.composure = clampAttr(p.attributes.composure + 1);
+        }
+        p.ca = Math.min(pa, computeWeightedCA(p.role, p.attributes));
+        p.marketValue = calcTransferValue(p);
+      }
+      p.scoutFogLevel = 2;
+      p.paEstMin = pa;
+      p.paEstMax = pa;
+      kept.push(p);
+    }
+
+    if (kept.length < 6) {
+      kept.push(...this.generateYouthPool(acaLv, tier, scoutLv, 6 - kept.length));
+    }
+    ya.candidates = kept;
+    ya.seasonNumber = (this.state.seasonNumber ?? 1) + 1;
+    ya.freeRefreshesLeft = 1 + (acaLv >= 3 ? 3 : acaLv >= 2 ? 2 : acaLv >= 1 ? 1 : 0);
+    ya.paidRefreshesUsed = 0;
+    ya.overseasPackUsed = false;
+    return { releasedNames };
+  }
+
+  public rerollYouthProspects(paid = false): { ok: boolean; cost?: number; reason?: string } {
+    const win = this.getTransferWindowState();
+    if (!win.isOpen) return { ok: false, reason: `${win.label}，仅夏窗与冬窗可刷新青训试训营` };
+    const ya = this.getYouthAcademyState();
+    const meta = this.getMetaLevels();
+    const acaLv = meta.academy ?? 0;
+    const scoutLv = meta.scout ?? 0;
+    const tier = this.state.currentTier ?? 7;
+    if (!paid && ya.freeRefreshesLeft > 0) {
+      ya.freeRefreshesLeft -= 1;
+      ya.candidates = this.generateYouthPool(acaLv, tier, scoutLv, 6);
+      return { ok: true, cost: 0 };
+    }
+    const rawCost = 60 + ya.paidRefreshesUsed * 40;
+    const discount = scoutLv >= 8 ? 0.5 : scoutLv >= 5 ? 0.65 : scoutLv >= 4 ? 0.8 : 1.0;
+    const cost = Math.round(rawCost * discount);
+    if (!this.spendClubFunds(cost)) {
+      return { ok: false, reason: `俱乐部资金不足 (需要 ¥${cost}万)` };
+    }
+    ya.paidRefreshesUsed += 1;
+    ya.candidates = this.generateYouthPool(acaLv, tier, scoutLv, 6);
+    return { ok: true, cost };
+  }
+
+  public scoutYouthProspect(playerId: string): { ok: boolean; newLevel?: number; cost?: number; reason?: string } {
+    const ya = this.getYouthAcademyState();
+    const p = ya.candidates.find(c => c.id === playerId);
+    if (!p) return { ok: false, reason: '未找到该青训试训球员' };
+    const cur = p.scoutFogLevel ?? 0;
+    if (cur >= 2) return { ok: false, reason: '已完成全部球探精测' };
+    const scoutLv = this.getMetaLevels().scout ?? 0;
+    const baseCost = cur === 0 ? 35 : 75;
+    const discount = scoutLv >= 8 ? 0.5 : scoutLv >= 5 ? 0.65 : scoutLv >= 4 ? 0.8 : 1.0;
+    const cost = Math.round(baseCost * discount);
+    if (!this.spendClubFunds(cost)) {
+      return { ok: false, reason: `资金不足 (需要 ¥${cost}万)` };
+    }
+    const nextLv = (cur + 1) as 1 | 2;
+    p.scoutFogLevel = nextLv;
+    const pa = p.pa ?? computeInitialPA(p.ca, p.age, true);
+    p.pa = pa;
+    if (nextLv === 1) {
+      const spread = scoutLv >= 7 ? 3 : 5;
+      p.paEstMin = Math.max(p.ca, pa - Math.floor(Math.random() * spread + 1));
+      p.paEstMax = Math.min(99, pa + Math.floor(Math.random() * spread + 1));
+    } else {
+      p.paEstMin = pa;
+      p.paEstMax = pa;
+    }
+    return { ok: true, newLevel: nextLv, cost };
+  }
+
+  public signYouthProspect(playerId: string): { ok: boolean; player?: DraftPlayer; cost?: number; reason?: string } {
+    const win = this.getTransferWindowState();
+    if (!win.isOpen) return { ok: false, reason: `${win.label}，仅夏窗与冬窗可提拔青训球员` };
+    const ya = this.getYouthAcademyState();
+    const idx = ya.candidates.findIndex(c => c.id === playerId);
+    if (idx < 0) return { ok: false, reason: '未找到该青训球员' };
+    const roster = this.getClubRoster();
+    if (roster.length >= MAX_CLUB_ROSTER) {
+      return { ok: false, reason: `俱乐部大名单已满 (${MAX_CLUB_ROSTER}/${MAX_CLUB_ROSTER})` };
+    }
+    const p = ya.candidates[idx];
+    const acaLv = this.getMetaLevels().academy ?? 0;
+    const tgLv = this.getMetaLevels().training_ground ?? 0;
+    const feeMul = acaLv >= 5 ? 0.75 : acaLv >= 3 ? 0.85 : 1.0;
+    const signCost = Math.round(Math.max(25, (p.ca - 32) * 2.4) * feeMul);
+    if (!this.spendClubFunds(signCost)) {
+      return { ok: false, reason: `资金不足 (签字费 ¥${signCost}万)` };
+    }
+    ya.candidates.splice(idx, 1);
+    p.scoutFogLevel = 2;
+    p.paEstMin = p.pa;
+    p.paEstMax = p.pa;
+    p.isNewSigning = true;
+    p.isAcademy = true;
+    const uc = this.getUserClub();
+    const initFam = 65 + (tgLv >= 7 ? 25 : tgLv >= 5 ? 10 : 0);
+    p.formationFamiliarity = { [uc.formation]: Math.min(95, initFam) };
+    roster.push(JSON.parse(JSON.stringify(p)));
+    if (this.state.phase === 'SUMMER_WINDOW' || this.state.phase === 'WINTER_WINDOW') {
+      this.syncWindowRosterToClub();
+    }
+    return { ok: true, player: p, cost: signCost };
+  }
+
+  public getTransferMarketState(): TransferMarketState {
+    const meta = this.getMetaLevels();
+    const seasonNum = this.state.seasonNumber ?? 1;
+    const tier = this.state.currentTier ?? 7;
+    const trLv = meta.transfer ?? 0;
+    const scoutLv = meta.scout ?? 0;
+    if (!this.state.transferMarket || this.state.transferMarket.seasonNumber !== seasonNum) {
+      const shelfSize = trLv >= 6 ? 14 : trLv >= 3 ? 12 : trLv >= 2 ? 10 : trLv >= 1 ? 9 : 8;
+      const minBand = Math.max(36, 36 + (7 - tier) * 6);
+      const maxBand = Math.min(90, minBand + 14 + (trLv >= 6 ? 4 : 0));
+      const pool = generateShuffleSet(shelfSize, minBand, maxBand).map(p => {
+        p.scoutFogLevel = scoutLv >= 7 ? 2 : 1;
+        const pa = p.pa ?? computeInitialPA(p.ca, p.age);
+        p.pa = pa;
+        p.paEstMin = Math.max(p.ca, pa - 6);
+        p.paEstMax = Math.min(99, pa + 6);
+        p.marketValue = calcTransferValue(p);
+        return p;
+      });
+      this.state.transferMarket = {
+        seasonNumber: seasonNum,
+        freeRefreshesLeft: 1 + Math.min(3, scoutLv),
+        paidRefreshesUsed: 0,
+        marketPool: pool,
+        listings: [],
+        mysteryBoxSmallUsed: false,
+        mysteryBoxLargeUsed: false,
+        privateTrainCount: 0,
+        pendingBrokerResult: null,
+      };
+    }
+    return this.state.transferMarket;
+  }
+
+  private refreshTransferShelfForWindow(): void {
+    const tm = this.getTransferMarketState();
+    const meta = this.getMetaLevels();
+    const trLv = meta.transfer ?? 0;
+    const scoutLv = meta.scout ?? 0;
+    const tier = this.state.currentTier ?? 7;
+    const shelfSize = trLv >= 6 ? 14 : trLv >= 3 ? 12 : trLv >= 2 ? 10 : trLv >= 1 ? 9 : 8;
+    const minBand = Math.max(36, 36 + (7 - tier) * 6);
+    const maxBand = Math.min(90, minBand + 14 + (trLv >= 6 ? 4 : 0));
+    tm.marketPool = generateShuffleSet(shelfSize, minBand, maxBand).map(p => {
+      p.scoutFogLevel = scoutLv >= 7 ? 2 : 1;
+      const pa = p.pa ?? computeInitialPA(p.ca, p.age);
+      p.pa = pa;
+      p.paEstMin = Math.max(p.ca, pa - 6);
+      p.paEstMax = Math.min(99, pa + 6);
+      p.marketValue = calcTransferValue(p);
+      return p;
+    });
+    tm.freeRefreshesLeft = Math.max(tm.freeRefreshesLeft, 1);
+    tm.mysteryBoxSmallUsed = false;
+    tm.mysteryBoxLargeUsed = false;
+  }
+
+  public scoutTransferPlayer(playerId: string): { ok: boolean; cost?: number; reason?: string } {
+    const tm = this.getTransferMarketState();
+    const p = tm.marketPool.find(x => x.id === playerId);
+    if (!p) return { ok: false, reason: '货架上未找到该球员' };
+    if ((p.scoutFogLevel ?? 1) >= 2) return { ok: false, reason: '该球员球探报告已完全揭晓' };
+    const scoutLv = this.getMetaLevels().scout ?? 0;
+    const discount = scoutLv >= 8 ? 0.5 : scoutLv >= 5 ? 0.65 : scoutLv >= 4 ? 0.8 : 1.0;
+    const cost = Math.round(35 * discount);
+    if (!this.spendClubFunds(cost)) return { ok: false, reason: `资金不足 (考察费 ¥${cost}万)` };
+    p.scoutFogLevel = 2;
+    p.paEstMin = p.pa ?? p.ca;
+    p.paEstMax = p.pa ?? p.ca;
+    return { ok: true, cost };
+  }
+
+  public refreshTransferShelf(paid = false): { ok: boolean; cost?: number; reason?: string } {
+    const win = this.getTransferWindowState();
+    if (!win.isOpen) return { ok: false, reason: `${win.label}，仅夏窗与冬窗可刷新转会货架` };
+    const tm = this.getTransferMarketState();
+    const meta = this.getMetaLevels();
+    const trLv = meta.transfer ?? 0;
+    const scoutLv = meta.scout ?? 0;
+    const tier = this.state.currentTier ?? 7;
+    if (!paid && tm.freeRefreshesLeft > 0) {
+      tm.freeRefreshesLeft -= 1;
+    } else {
+      const rawCost = 80 + tm.paidRefreshesUsed * 50;
+      const discount = scoutLv >= 8 ? 0.5 : scoutLv >= 5 ? 0.65 : scoutLv >= 4 ? 0.8 : 1.0;
+      const cost = Math.round(rawCost * discount);
+      if (!this.spendClubFunds(cost)) return { ok: false, reason: `资金不足 (刷新需要 ¥${cost}万)` };
+      tm.paidRefreshesUsed += 1;
+    }
+    const shelfSize = trLv >= 6 ? 14 : trLv >= 3 ? 12 : trLv >= 2 ? 10 : trLv >= 1 ? 9 : 8;
+    const minBand = Math.max(36, 36 + (7 - tier) * 6);
+    const maxBand = Math.min(90, minBand + 14 + (trLv >= 6 ? 4 : 0));
+    tm.marketPool = generateShuffleSet(shelfSize, minBand, maxBand).map(p => {
+      p.scoutFogLevel = scoutLv >= 7 ? 2 : 1;
+      const pa = p.pa ?? computeInitialPA(p.ca, p.age);
+      p.pa = pa;
+      p.paEstMin = Math.max(p.ca, pa - 6);
+      p.paEstMax = Math.min(99, pa + 6);
+      p.marketValue = calcTransferValue(p);
+      return p;
+    });
+    return { ok: true };
+  }
+
+  public getBuyDiscountRate(): number {
+    const trLv = this.getMetaLevels().transfer ?? 0;
+    if (trLv >= 8) return 0.80;
+    if (trLv >= 7) return 0.84;
+    if (trLv >= 3) return 0.88;
+    if (trLv >= 2) return 0.92;
+    if (trLv >= 1) return 0.95;
+    return 1.0;
+  }
+
+  public buyTransferPlayer(playerId: string): { ok: boolean; player?: DraftPlayer; cost?: number; reason?: string } {
+    const win = this.getTransferWindowState();
+    if (!win.isOpen) return { ok: false, reason: `${win.label}，仅夏窗与冬窗可签约转会球员` };
+    const tm = this.getTransferMarketState();
+    const idx = tm.marketPool.findIndex(p => p.id === playerId);
+    if (idx < 0) return { ok: false, reason: '货架上未找到该球员' };
+    const roster = this.getClubRoster();
+    if (roster.length >= MAX_CLUB_ROSTER) return { ok: false, reason: `俱乐部大名单已满 (${MAX_CLUB_ROSTER}/${MAX_CLUB_ROSTER})` };
+    const p = tm.marketPool[idx];
+    const baseVal = p.marketValue ?? calcTransferValue(p);
+    const cost = Math.round(baseVal * this.getBuyDiscountRate());
+    if (!this.spendClubFunds(cost)) return { ok: false, reason: `资金不足 (转会费 ¥${cost}万)` };
+    tm.marketPool.splice(idx, 1);
+    p.scoutFogLevel = 2;
+    p.paEstMin = p.pa;
+    p.paEstMax = p.pa;
+    p.isNewSigning = true;
+    const tgLv = this.getMetaLevels().training_ground ?? 0;
+    if (tgLv >= 4) {
+      const uc = this.getUserClub();
+      p.formationFamiliarity = { [uc.formation]: tgLv >= 8 ? 75 : tgLv >= 7 ? 65 : 55 };
+    }
+    roster.push(JSON.parse(JSON.stringify(p)));
+    if (this.state.phase === 'SUMMER_WINDOW' || this.state.phase === 'WINTER_WINDOW') {
+      this.syncWindowRosterToClub();
+    }
+    return { ok: true, player: p, cost };
+  }
+
+  public quickSellRosterPlayer(playerId: string): { ok: boolean; revenue?: number; playerName?: string; reason?: string } {
+    const win = this.getTransferWindowState();
+    if (!win.isOpen) return { ok: false, reason: `${win.label}，仅夏窗与冬窗可出售球员` };
+    const roster = this.getClubRoster();
+    const minKeep = this.state.phase === 'SUMMER_WINDOW' ? 11 : SEASON_SQUAD_SIZE;
+    if (roster.length <= minKeep) return { ok: false, reason: `至少需保留 ${minKeep} 名球员` };
+    const idx = roster.findIndex(p => p.id === playerId);
+    if (idx < 0) return { ok: false, reason: '大名单中未找到该球员' };
+    const p = roster[idx];
+    if (p.isPrologueCaptain || p.id === 'captain_lin_feng') {
+      return { ok: false, reason: '老队长 #10 林锋正在上演游子归家最后一舞，无法出售！' };
+    }
+    if (p.role === 'GK' && roster.filter(x => x.role === 'GK').length <= 1) {
+      return { ok: false, reason: '不能出售最后 1 名门将 (GK)' };
+    }
+    const trLv = this.getMetaLevels().transfer ?? 0;
+    const rate = trLv >= 5 ? 0.92 : trLv >= 4 ? 0.89 : 0.85;
+    const revenue = Math.round((p.marketValue ?? calcTransferValue(p)) * rate);
+    const [sold] = roster.splice(idx, 1);
+    if (sold) {
+      const exCopy = JSON.parse(JSON.stringify(sold)) as DraftPlayer;
+      exCopy.formerUserClub = true;
+      this.state.exUserPlayersPool = [exCopy, ...(this.state.exUserPlayersPool ?? [])].slice(0, 12);
+      const aiTargets = this.state.clubs.filter(c => !c.isUser);
+      if (aiTargets.length > 0) {
+        const dest = aiTargets[Math.floor(Math.random() * aiTargets.length)];
+        const weakest = [...dest.squad].filter(q => q.role !== 'GK').sort((a, b) => a.ca - b.ca)[0];
+        if (weakest && weakest.ca <= exCopy.ca + 3) {
+          const wIdx = dest.squad.findIndex(q => q.id === weakest.id);
+          if (wIdx >= 0) {
+            dest.squad[wIdx] = exCopy;
+            dest.starterIds = autoSelectStarters(dest.squad, dest.formation);
+          }
+        }
+      }
+    }
+    this.state.rosterSelectedIds = (this.state.rosterSelectedIds ?? []).filter(id => id !== playerId);
+    this.addClubFunds(revenue);
+    if (this.state.phase === 'SUMMER_WINDOW' || this.state.phase === 'WINTER_WINDOW') {
+      this.syncWindowRosterToClub();
+    }
+    return { ok: true, revenue, playerName: p.name };
+  }
+
+  public listPlayerForAuction(playerId: string): { ok: boolean; listing?: TransferListing; reason?: string } {
+    const win = this.getTransferWindowState();
+    if (!win.isOpen) return { ok: false, reason: `${win.label}，仅夏窗与冬窗可挂牌出售` };
+    const tm = this.getTransferMarketState();
+    const trLv = this.getMetaLevels().transfer ?? 0;
+    const maxSlots = trLv >= 4 ? 5 : 3;
+    if (tm.listings.length >= maxSlots) return { ok: false, reason: `挂牌槽位已满 (${maxSlots}/${maxSlots})` };
+    if (tm.listings.some(l => l.playerId === playerId)) return { ok: false, reason: '该球员已在挂牌中' };
+    const roster = this.getClubRoster();
+    const minKeep = this.state.phase === 'SUMMER_WINDOW' ? 11 : SEASON_SQUAD_SIZE;
+    if (roster.length <= minKeep) return { ok: false, reason: `至少需保留 ${minKeep} 名球员` };
+    const p = roster.find(x => x.id === playerId);
+    if (!p) return { ok: false, reason: '未找到该球员' };
+    if (p.isPrologueCaptain || p.id === 'captain_lin_feng') {
+      return { ok: false, reason: '老队长 #10 林锋正在上演游子归家最后一舞，无法挂牌！' };
+    }
+    if (p.role === 'GK' && roster.filter(x => x.role === 'GK').length <= 1) return { ok: false, reason: '不能挂牌最后 1 名门将' };
+    const baseValue = p.marketValue ?? calcTransferValue(p);
+    const offerCount = (trLv >= 5 ? 2 : 1) + (Math.random() < 0.5 ? 1 : 0);
+    const maxMul = trLv >= 8 ? 1.35 : trLv >= 7 ? 1.28 : 1.18;
+    const offers: TransferOffer[] = [];
+    const aiClubs = FICTIONAL_CLUBS.filter(c => c.id !== this.state.userClubId);
+    for (let i = 0; i < offerCount; i++) {
+      const club = aiClubs[Math.floor(Math.random() * aiClubs.length)];
+      const isGiant = (p.pa ?? p.ca) >= 82 && Math.random() < 0.4;
+      const mul = 0.92 + Math.random() * (maxMul - 0.92) + (isGiant ? 0.1 : 0);
+      offers.push({
+        id: `offer_${Date.now()}_${i}`,
+        clubName: club.name,
+        offerPrice: Math.round(baseValue * mul),
+        isGiant,
+      });
+    }
+    const listing: TransferListing = {
+      playerId: p.id,
+      playerName: p.name,
+      role: p.role,
+      ca: p.ca,
+      pa: p.pa ?? p.ca,
+      age: p.age,
+      baseValue,
+      offers: offers.sort((a, b) => b.offerPrice - a.offerPrice),
+    };
+    tm.listings.push(listing);
+    return { ok: true, listing };
+  }
+
+  public acceptTransferOffer(playerId: string, offerId: string): { ok: boolean; revenue?: number; buyer?: string; reason?: string } {
+    const win = this.getTransferWindowState();
+    if (!win.isOpen) return { ok: false, reason: `${win.label}，无法在比赛期成交转会` };
+    const tm = this.getTransferMarketState();
+    const lIdx = tm.listings.findIndex(l => l.playerId === playerId);
+    if (lIdx < 0) return { ok: false, reason: '未找到该挂牌记录' };
+    const listing = tm.listings[lIdx];
+    const offer = listing.offers.find(o => o.id === offerId);
+    if (!offer) return { ok: false, reason: '未找到该报价' };
+    const roster = this.getClubRoster();
+    const rIdx = roster.findIndex(p => p.id === playerId);
+    const [soldAuc] = rIdx >= 0 ? roster.splice(rIdx, 1) : [undefined];
+    if (soldAuc) {
+      const exCopy = JSON.parse(JSON.stringify(soldAuc)) as DraftPlayer;
+      exCopy.formerUserClub = true;
+      this.state.exUserPlayersPool = [exCopy, ...(this.state.exUserPlayersPool ?? [])].slice(0, 12);
+      const aiDest = this.state.clubs.find(c => !c.isUser && c.name === offer.clubName) ?? this.state.clubs.find(c => !c.isUser);
+      if (aiDest) {
+        const weakIdx = aiDest.squad.findIndex(q => q.role !== 'GK');
+        if (weakIdx >= 0) {
+          aiDest.squad[weakIdx] = exCopy;
+          aiDest.starterIds = autoSelectStarters(aiDest.squad, aiDest.formation);
+        }
+      }
+    }
+    this.state.rosterSelectedIds = (this.state.rosterSelectedIds ?? []).filter(id => id !== playerId);
+    tm.listings.splice(lIdx, 1);
+    this.addClubFunds(offer.offerPrice);
+    if (this.state.phase === 'SUMMER_WINDOW' || this.state.phase === 'WINTER_WINDOW') {
+      this.syncWindowRosterToClub();
+    }
+    return { ok: true, revenue: offer.offerPrice, buyer: offer.clubName };
+  }
+
+  // ==================== 7. 经纪人密荐（输多赢少+百分比锚定+当场买/卖二选一）与特训 ====================
+
+  public openBrokerPackage(boxTier: 'small' | 'large'): { ok: boolean; result?: PendingBrokerResult; reason?: string } {
+    const win = this.getTransferWindowState();
+    if (!win.isOpen) return { ok: false, reason: `${win.label}，仅夏窗与冬窗可委托经纪人密荐` };
+    const tm = this.getTransferMarketState();
+    if (tm.pendingBrokerResult) return { ok: false, reason: '请先处理上一份经纪人密荐结果（签入或出售）' };
+    if (boxTier === 'small' && tm.mysteryBoxSmallUsed) return { ok: false, reason: '本转会窗常规密荐已委托过' };
+    if (boxTier === 'large' && tm.mysteryBoxLargeUsed) return { ok: false, reason: '本转会窗金牌密荐已委托过' };
+    const cost = boxTier === 'small' ? 220 : 450;
+    if (!this.spendClubFunds(cost)) return { ok: false, reason: `资金不足 (需要 ¥${cost}万)` };
+    if (boxTier === 'small') tm.mysteryBoxSmallUsed = true;
+    else tm.mysteryBoxLargeUsed = true;
+
+    const curTier = this.state.currentTier ?? 7;
+    const medLv = this.getMetaLevels().medical ?? 0;
+    const res = rollBrokerRecommendation(curTier, boxTier, medLv);
+    tm.pendingBrokerResult = res;
+    return { ok: true, result: res };
+  }
+
+  public resolveBrokerResult(action: 'sign' | 'sell'): { ok: boolean; revenue?: number; player?: DraftPlayer; reason?: string } {
+    const tm = this.getTransferMarketState();
+    const pending = tm.pendingBrokerResult;
+    if (!pending) return { ok: false, reason: '当前没有待处理的经纪人密荐球员' };
+
+    if (action === 'sell') {
+      tm.pendingBrokerResult = null;
+      this.addClubFunds(pending.sellPrice);
+      return { ok: true, revenue: pending.sellPrice, player: pending.player };
+    }
+
+    const roster = this.getClubRoster();
+    if (roster.length >= MAX_CLUB_ROSTER) {
+      return { ok: false, reason: `俱乐部大名单已满 (${MAX_CLUB_ROSTER}/${MAX_CLUB_ROSTER})，请先出售 1 人或选择立即转手变现` };
+    }
+    roster.push(JSON.parse(JSON.stringify(pending.player)));
+    tm.pendingBrokerResult = null;
+    if (this.state.phase === 'SUMMER_WINDOW' || this.state.phase === 'WINTER_WINDOW') {
+      this.syncWindowRosterToClub();
+    }
+    return { ok: true, player: pending.player };
+  }
+
+  public openMysteryBox(boxTier: 'small' | 'large'): { ok: boolean; player?: DraftPlayer; note?: string; reason?: string } {
+    const openRes = this.openBrokerPackage(boxTier);
+    if (!openRes.ok || !openRes.result) return { ok: false, reason: openRes.reason };
+    const signRes = this.resolveBrokerResult('sign');
+    if (!signRes.ok) return { ok: false, reason: signRes.reason };
+    return { ok: true, player: openRes.result.player, note: openRes.result.note };
+  }
+
+  public buyOverseasYouthPack(): { ok: boolean; players?: DraftPlayer[]; reason?: string } {
+    const win = this.getTransferWindowState();
+    if (!win.isOpen) return { ok: false, reason: `${win.label}，仅夏窗与冬窗可举办海外青年营` };
+    const ya = this.getYouthAcademyState();
+    if (ya.overseasPackUsed) return { ok: false, reason: '本赛季海外青年营名额已用完' };
+    if (!this.spendClubFunds(320)) return { ok: false, reason: '资金不足 (需要 ¥320万)' };
+    ya.overseasPackUsed = true;
+    const acaLv = this.getMetaLevels().academy ?? 0;
+    const scoutLv = this.getMetaLevels().scout ?? 0;
+    const curTier = this.state.currentTier ?? 7;
+    const pack: DraftPlayer[] = [];
+    for (let i = 0; i < 3; i++) {
+      const p = generateYouthProspect(acaLv, curTier, scoutLv, 2);
+      p.age = 16 + Math.floor(Math.random() * 2);
+      p.isAcademy = true;
+      ya.candidates.unshift(p);
+      pack.push(p);
+    }
+    return { ok: true, players: pack };
+  }
+
+  public privateDevilTraining(playerId: string): { ok: boolean; success?: boolean; paBreak?: number; note?: string; reason?: string } {
+    const win = this.getTransferWindowState();
+    if (!win.isOpen) return { ok: false, reason: `${win.label}，仅夏窗与冬窗可安排私教魔鬼特训` };
+    const tm = this.getTransferMarketState();
+    if (tm.privateTrainCount >= 2) return { ok: false, reason: '本赛季私人魔鬼特训次数已满 (2/2)' };
+    this.state.seasonPrivateTrainedIds = this.state.seasonPrivateTrainedIds ?? [];
+    if (this.state.seasonPrivateTrainedIds.includes(playerId)) {
+      return { ok: false, reason: '该球员本赛季已接受过私人魔鬼特训' };
+    }
+    const roster = this.getClubRoster();
+    const club = this.getUserClub();
+    const p = club.squad.find(x => x.id === playerId) ?? roster.find(x => x.id === playerId);
+    if (!p) return { ok: false, reason: '未找到该球员' };
+    if (!this.spendClubFunds(350)) return { ok: false, reason: '资金不足 (私人魔鬼特训需要 ¥350万)' };
+
+    tm.privateTrainCount += 1;
+    this.state.seasonPrivateTrainedIds.push(playerId);
+    const tgLv = this.getMetaLevels().training_ground ?? 0;
+    const medLv = this.getMetaLevels().medical ?? 0;
+    const successRate = Math.min(0.75, 0.5 + (tgLv >= 5 ? 0.15 : tgLv >= 2 ? 0.1 : tgLv >= 1 ? 0.05 : 0));
+    if (Math.random() < successRate) {
+      const paGain = tgLv >= 7 ? 3 : 2;
+      p.pa = Math.min(99, (p.pa ?? computeInitialPA(p.ca, p.age)) + paGain);
+      p.attributes.composure = Math.min(99, p.attributes.composure + 2);
+      p.attributes.stamina = Math.min(99, p.attributes.stamina + 2);
+      p.ca = Math.min(p.pa, computeWeightedCA(p.role, p.attributes));
+      p.marketValue = calcTransferValue(p);
+      const syncTarget = (arr?: DraftPlayer[]) => {
+        const t = arr?.find(x => x.id === playerId);
+        if (t) Object.assign(t, JSON.parse(JSON.stringify(p)));
+      };
+      syncTarget(club.squad);
+      syncTarget(roster);
+      return { ok: true, success: true, paBreak: paGain, note: `特训突破成功！${p.name} 潜力 PA +${paGain}（当前 PA ${p.pa}）` };
+    } else {
+      p.fitness = Math.max(40, (p.fitness ?? 100) - (medLv >= 7 ? 15 : 30));
+      p.injuredRounds = medLv >= 7 ? 1 : 2;
+      const syncTarget = (arr?: DraftPlayer[]) => {
+        const t = arr?.find(x => x.id === playerId);
+        if (t) { t.fitness = p.fitness; t.injuredRounds = p.injuredRounds; }
+      };
+      syncTarget(club.squad);
+      syncTarget(roster);
+      return { ok: true, success: false, note: `高强度加练拉伤！${p.name} 需伤停 ${p.injuredRounds} 轮` };
+    }
   }
 }

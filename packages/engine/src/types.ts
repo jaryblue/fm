@@ -96,6 +96,9 @@ export interface PlayerInput {
   silverTraits?: string[]; // FC26 银标 PlayStyle
   hiddenTrait?: string; // 未显露的触发式隐藏词条
   formationFamiliarity?: number; // 0-100 当前阵型个人熟练度
+  secondaryRoles?: PlayerRole[];
+  pa?: number;
+  isStarred?: boolean;
 }
 
 export interface TacticalMods {
@@ -112,6 +115,67 @@ export interface TacticalMods {
   shortPassBias?: number;     // -0.1..+0.14 短传渗透偏好
   gkQuickLaunch?: boolean;    // 门将快发长传反击
   staminaDrainMul?: number;   // 0.7..1.0 体能消耗倍率
+}
+
+export type SkillBranchChoice = 'A' | 'B';
+export type SkillVfxTheme = 'att' | 'def' | 'ult';
+export type SkillInstantAction =
+  | 'clear_danger'
+  | 'instant_counter_pass'
+  | 'force_through_ball'
+  | 'force_shot_on_target'
+  | 'win_foul_setpiece'
+  | 'GK_save_boost'
+  | 'tempo_burst_intercept';
+
+export type SkillMutationTag =
+  | 'bypass_offside'
+  | 'guarantee_shot_on_target'
+  | 'double_duration'
+  | 'refund_card_energy'
+  | 'reduce_all_cd'
+  | 'grant_shield_stack'
+  | 'steal_tempo'
+  | 'counter_damage_amp';
+
+export type LegendaryAspectId = string;
+
+export interface ActiveLegendaryAspect {
+  id: LegendaryAspectId;
+  nodeId: string;
+  name: string;
+  shortDesc: string;
+  system: '4-back' | '3-back' | '5-back';
+  style: TacticalStyle;
+  mechanicKey: string;
+}
+
+export interface PerkSkillSynergyFlags {
+  attackTier: number;
+  defenseTier: number;
+  controlTier: number;
+}
+
+export interface TriggerSkillResult {
+  triggered: boolean;
+  skillId: string;
+  skillName: string;
+  vfxTheme: SkillVfxTheme;
+  instantSummary: string;
+  effectiveRank: number;
+  isCardBoosted: boolean;
+  mutationChoice?: SkillBranchChoice;
+  mutationLabel?: string;
+  instantAction?: SkillInstantAction;
+  styleTag?: TacticalStyle;
+}
+
+export interface CoachMatchReward {
+  energyRefund?: number;
+  nextCardDiscount?: number;
+  refreshUsedCard?: boolean;
+  bannerText: string;
+  tone: string;
 }
 
 export type ActiveSkillSituation =
@@ -136,6 +200,19 @@ export interface EquippedActiveSkill {
   durationMinutes: number;
   powerLabel: string;
   effect: CommandCardEffect;
+  rank?: number;
+  bonusRank?: number;
+  effectiveRank?: number;
+  mutationChoice?: SkillBranchChoice;
+  mutationTag?: SkillMutationTag;
+  mutationLabel?: string;
+  instantAction?: SkillInstantAction;
+  instantLabel?: string;
+  vfxTheme?: SkillVfxTheme;
+  linkedElement?: 'press' | 'pass' | 'wing' | 'iron' | 'blitz';
+  styleTag?: TacticalStyle;
+  firstTriggerFreeCd?: boolean;
+  scoutOverclocked?: boolean;
 }
 
 export interface ActiveSkillPrompt {
@@ -145,6 +222,11 @@ export interface ActiveSkillPrompt {
   powerLabel: string;
   expiresTick: number;
   isCardBoosted: boolean;
+  effectiveRank?: number;
+  instantLabel?: string;
+  mutationChoice?: SkillBranchChoice;
+  mutationLabel?: string;
+  vfxTheme?: SkillVfxTheme;
 }
 
 export interface TeamSetup {
@@ -158,10 +240,14 @@ export interface TeamSetup {
   chemistryPairs?: Record<string, number>;
   centralSpineBonus?: number;
   equippedSkills?: EquippedActiveSkill[];
+  activeAspects?: ActiveLegendaryAspect[];
+  perkSynergies?: PerkSkillSynergyFlags;
   teamFamiliarityAvg?: number;
   teamChemistryAvg?: number;
+  scoutCounterLabel?: string;
   gridSlots?: Record<number, { col: number; row: number }>;
   slotDuties?: Record<number, PlayerDuty>;
+  prologueScripted?: boolean;
 }
 
 export interface PlayerState {
@@ -181,6 +267,9 @@ export interface PlayerState {
   goldTraits?: string[];
   silverTraits?: string[];
   hiddenTrait?: string;
+  secondaryRoles?: PlayerRole[];
+  pa?: number;
+  isStarred?: boolean;
   subbedIn?: boolean;
   fitness: number;       // 0-100
   strainWarning?: boolean;
@@ -261,6 +350,16 @@ export interface MatchEvent {
   narrativeTag?: 'BRACE' | 'HATTRICK' | 'LATE_WINNER' | 'MOMENTUM' | 'LULL';
 }
 
+export interface TacticalCallout {
+  id: string;
+  tick: number;
+  playerId: string;
+  team: TeamSide;
+  label: string;
+  kind: 'trait' | 'chemistry' | 'scout' | 'tactic';
+  pos: Vec2;
+}
+
 export interface TeamMatchStats {
   goals: number;
   shots: number;
@@ -318,6 +417,7 @@ export interface CommandCardEffect {
   chainEffect?: CommandCardChain;
   mechanic?: CardMechanic;
   forceStyle?: TacticalStyle;
+  element?: 'press' | 'pass' | 'wing' | 'iron' | 'blitz';
 }
 
 export interface ActiveCommandBuff {
@@ -325,6 +425,13 @@ export interface ActiveCommandBuff {
   name: string;
   endMinute: number;
   effect: CommandCardEffect;
+  startStats?: {
+    shots: number;
+    xG: number;
+    goals: number;
+    tackles: number;
+    passesSuccess: number;
+  };
 }
 
 export interface MatchState {
@@ -356,9 +463,26 @@ export interface MatchState {
   };
   pairPasses?: Record<string, number>;
   pairAssists?: Record<string, number>;
+  tacticalStats?: {
+    traitTriggers: number;
+    chemPasses: number;
+    scoutCounters: number;
+  };
+  skillResolution?: {
+    skillName: string;
+    outcomeText: string;
+    isPositive: boolean;
+    expiresTick: number;
+  } | null;
   activeSkillPrompt?: ActiveSkillPrompt | null;
   skillUses?: Record<string, number>;
   skillCooldowns?: Record<string, number>;
+  activeAspects?: ActiveLegendaryAspect[];
+  aspectStacks?: {
+    shieldCharges: number;
+    counterCharges: number;
+    passSeq: number;
+  };
 }
 
 export interface TacticalStyleConfig {

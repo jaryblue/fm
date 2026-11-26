@@ -25,6 +25,8 @@ import {
   drawRoundRect,
   drawText,
   drawWrappedText,
+  getCommandCardArtId,
+  getCommandCardElemId,
   HitRegistry,
   NavRailTab,
 } from '../CanvasKit';
@@ -164,31 +166,11 @@ export class CardCraftScreen {
   }
 
   private cardArtId(card: CommandCard): ArtAssetId {
-    if (card.mechanic === 'iron_wall_block') return 'cmd_iron_wall';
-    if (card.mechanic === 'gk_counter_launch') return 'cmd_blitz';
-    if (card.mechanic === 'set_piece_nuke') return 'cmd_set_piece';
-    if (card.mechanic === 'super_sub') return 'cmd_super_sub';
-    if (card.mechanic === 'offside_trap') return 'cmd_offside_trap';
-    if (card.mechanic === 'tiki_taka_flow') return 'cmd_tiki_taka';
-    if (card.mechanic === 'high_press_blitz') return 'cmd_gegenpress';
-    if (card.mechanic === 'long_shot_cannon') return 'cmd_blitz';
-    if (card.mechanic === 'blood_frenzy') return 'cmd_gegenpress';
-    if (card.mechanic === 'wing_overload') return 'cmd_wing_play';
-    const first = card.recipeKey?.split('+')[0];
-    if (first === 'press') return 'cmd_gegenpress';
-    if (first === 'pass') return 'cmd_tiki_taka';
-    if (first === 'wing') return 'cmd_wing_play';
-    if (first === 'iron') return 'cmd_iron_wall';
-    if (first === 'blitz') return 'cmd_blitz';
-    return card.isCorrupted ? 'cmd_gegenpress' : 'cmd_tiki_taka';
+    return getCommandCardArtId(card);
   }
 
   private cardElemId(card: CommandCard): ElementId {
-    const first = card.recipeKey?.split('+')[0] as ElementId | undefined;
-    if (first && TACTICAL_ELEMENTS.some(e => e.id === first)) return first;
-    if (card.targetLine === 'GK' || card.targetLine === 'DEF') return 'iron';
-    if (card.targetLine === 'ATT') return 'blitz';
-    return 'pass';
+    return getCommandCardElemId(card);
   }
 
   private statSnippet(card: CommandCard): string {
@@ -279,9 +261,9 @@ export class CardCraftScreen {
       bold: true,
       color: THEME.GOLD_LIGHT,
     });
-    drawButton(ctx, hits, 640, 88, 100, 26, '配方图鉴 📖', () => {
+    drawButton(ctx, hits, 640, 88, 100, 26, '配方图鉴', () => {
       this.recipesModalOpen = true;
-    }, { variant: 'primary', fontSize: 11 });
+    }, { variant: 'primary', fontSize: 11, icon: 'book' });
 
     const selCardForQuickEquip =
       this.selected && this.selected.kind === 'card'
@@ -322,10 +304,10 @@ export class CardCraftScreen {
           this.selected = { kind: 'card', cardId: card.id };
           this.detailModalOpen = true;
         });
-        const xHover = hits.isHovered(sx + sw - 24, sy + 4, 20, 20);
-        drawRoundRect(ctx, sx + sw - 24, sy + 5, 19, 19, 4, xHover ? '#991B1B' : 'rgba(15, 23, 42, 0.85)', xHover ? THEME.RED_LIGHT : THEME.BORDER);
-        drawText(ctx, '×', sx + sw - 14.5, sy + 14.5, { size: 13, bold: true, color: xHover ? '#FFFFFF' : '#FCA5A5', align: 'center' });
-        hits.add(sx + sw - 26, sy + 2, 24, 24, () => {
+        const xHover = hits.isHovered(sx + sw - 30, sy + 2, 28, 28);
+        drawRoundRect(ctx, sx + sw - 28, sy + 4, 24, 24, 5, xHover ? '#991B1B' : 'rgba(127, 29, 29, 0.72)', xHover ? THEME.RED_LIGHT : 'rgba(248, 113, 113, 0.45)');
+        drawText(ctx, '×', sx + sw - 16, sy + 16, { size: 14, bold: true, color: xHover ? '#FFFFFF' : '#FCA5A5', align: 'center' });
+        hits.add(sx + sw - 32, sy, 32, 32, () => {
           const res = league.toggleLoadoutCard(card.id);
           if (!res.ok) this.notice = res.reason || '卸下失败';
           else {
@@ -525,7 +507,7 @@ export class CardCraftScreen {
           color: card.isCorrupted ? '#FCA5A5' : THEME.TX1,
           align: 'center',
         });
-        const mechTxt = card.mechanic ? `⚡${MECHANIC_LABELS[card.mechanic]}` : this.statSnippet(card);
+        const mechTxt = card.mechanic ? MECHANIC_LABELS[card.mechanic] : this.statSnippet(card);
         drawText(ctx, mechTxt.slice(0, 12), bx + bw / 2, by + 128, { size: 10, bold: true, color: '#7DD3FC', align: 'center' });
         drawText(ctx, `${LINE_LABELS[card.targetLine ?? 'ALL']} · ${card.durationMinutes}分`, bx + bw / 2, by + 144, {
           size: 9.5,
@@ -676,11 +658,13 @@ export class CardCraftScreen {
         });
         if (pc.mechanic) {
           drawRoundRect(ctx, 806, 444, 424, 26, 6, 'rgba(56, 189, 248, 0.16)', 'rgba(56, 189, 248, 0.45)');
-          drawText(ctx, `⚡ 机制：${MECHANIC_LABELS[pc.mechanic]}`, 816, 457, { size: 12, bold: true, color: '#7DD3FC' });
+          drawIcon(ctx, 'bolt', 818, 457, 12, '#7DD3FC');
+          drawText(ctx, `机制：${MECHANIC_LABELS[pc.mechanic]}`, 830, 457, { size: 12, bold: true, color: '#7DD3FC' });
         }
         if (pc.chainEffect) {
           drawRoundRect(ctx, 806, 476, 424, 24, 6, 'rgba(192, 132, 252, 0.16)', 'rgba(192, 132, 252, 0.45)');
-          drawText(ctx, `🔗 ${pc.chainEffect.label}`, 816, 488, { size: 11, bold: true, color: '#E9D5FF' });
+          drawIcon(ctx, 'link', 818, 488, 11, '#E9D5FF');
+          drawText(ctx, pc.chainEffect.label, 830, 488, { size: 11, bold: true, color: '#E9D5FF' });
         }
         drawWrappedText(ctx, pc.summary, 806, 510, 424, 19, { size: 12, color: THEME.TX1, maxLines: 5 });
 
@@ -692,7 +676,7 @@ export class CardCraftScreen {
           456,
           56,
           canCraft
-            ? `⚡ 立即合成 Lv.${pc.level} 战术卡！`
+            ? `立即合成 Lv.${pc.level} 战术卡！`
             : deck.length >= 12
             ? '背包卡库已满 (12/12)'
             : '基础卡库存不足',
@@ -701,7 +685,7 @@ export class CardCraftScreen {
             if (res.ok && res.card) {
               this.fusionFlash = 0.6;
               this.selected = { kind: 'card', cardId: res.card.id };
-              this.notice = `⚡ 合成成功！【${res.card.name}】已收入左侧背包！`;
+              this.notice = `合成成功！【${res.card.name}】已收入左侧背包！`;
               SoundEngine.playRewardChime();
               actions.onBurst?.(1018, 228, sim.stabilityColor);
               actions.onSave();
@@ -718,9 +702,9 @@ export class CardCraftScreen {
           color: THEME.TX3,
           align: 'center',
         });
-        drawButton(ctx, hits, 918, 486, 200, 38, '打开配方图鉴一键填炉 📖', () => {
+        drawButton(ctx, hits, 918, 486, 200, 38, '打开配方图鉴一键填炉', () => {
           this.recipesModalOpen = true;
-        }, { variant: 'primary', fontSize: 12 });
+        }, { variant: 'primary', fontSize: 12, icon: 'book' });
       }
     } else {
       const cA = this.fuseSlots[0] ? deck.find(c => c.id === this.fuseSlots[0]) : null;
@@ -763,7 +747,7 @@ export class CardCraftScreen {
         628,
         456,
         56,
-        canFuse ? '✨ 立即二合一融合！' : '请从左侧再选 1 张卡投入融合',
+        canFuse ? '立即二合一融合！' : '请从左侧再选 1 张卡投入融合',
         () => {
           if (!cA || !cB) return;
           const res = league.fuseCoachCards(cA.id, cB.id);
@@ -771,7 +755,7 @@ export class CardCraftScreen {
           if (res.ok && res.card) {
             this.fusionFlash = 0.6;
             this.selected = { kind: 'card', cardId: res.card.id };
-            this.notice = `✨ 融合成功！诞生 Lv.${res.card.level}【${res.card.name}】`;
+            this.notice = `融合成功！诞生 Lv.${res.card.level}【${res.card.name}】`;
             SoundEngine.playRewardChime();
             actions.onBurst?.(1018, 280, '#C084FC');
             actions.onSave();
@@ -878,7 +862,7 @@ export class CardCraftScreen {
     this.drawCardAuraParticles(ctx, mx + 26, my + 56, mw - 52, 216, lv, !!card.isCorrupted, card.name.length + lv * 7, false);
     if (frameImg && typeof ctx.drawImage === 'function') {
       ctx.save();
-      ctx.globalAlpha = 0.72;
+      ctx.globalAlpha = 0.95;
       ctx.drawImage(frameImg, mx + 22, my + 52, mw - 44, 224);
       ctx.restore();
     }
@@ -892,12 +876,14 @@ export class CardCraftScreen {
     let infoY = my + 324;
     if (card.mechanic) {
       drawRoundRect(ctx, mx + 24, infoY, mw - 48, 28, 6, 'rgba(56, 189, 248, 0.16)', 'rgba(56, 189, 248, 0.45)');
-      drawText(ctx, `⚡ 机制：${MECHANIC_LABELS[card.mechanic]}`, mx + 36, infoY + 14, { size: 12, bold: true, color: '#7DD3FC' });
+      drawIcon(ctx, 'bolt', mx + 38, infoY + 14, 12, '#7DD3FC');
+      drawText(ctx, `机制：${MECHANIC_LABELS[card.mechanic]}`, mx + 50, infoY + 14, { size: 12, bold: true, color: '#7DD3FC' });
       infoY += 35;
     }
     if (card.chainEffect) {
       drawRoundRect(ctx, mx + 24, infoY, mw - 48, 28, 6, 'rgba(192, 132, 252, 0.16)', 'rgba(192, 132, 252, 0.45)');
-      drawText(ctx, `🔗 连锁：${card.chainEffect.label}`, mx + 36, infoY + 14, { size: 11.5, bold: true, color: '#E9D5FF' });
+      drawIcon(ctx, 'link', mx + 38, infoY + 14, 11, '#E9D5FF');
+      drawText(ctx, `连锁：${card.chainEffect.label}`, mx + 50, infoY + 14, { size: 11.5, bold: true, color: '#E9D5FF' });
       infoY += 35;
     }
     drawWrappedText(ctx, card.summary, mx + 24, infoY + 4, mw - 48, 20, { size: 12.5, color: THEME.TX1, maxLines: 4 });

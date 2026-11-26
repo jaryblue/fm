@@ -13,7 +13,7 @@ import { PlatformAdapter } from './Platform';
 import { PlayerModal } from './PlayerModal';
 import { SoundEngine } from './SoundEngine';
 import { StoryModal } from './StoryModal';
-import { THEME } from './Theme';
+import { IS_MOBILE, THEME } from './Theme';
 import { TutorialOverlay } from './TutorialOverlay';
 import { CardCraftScreen } from './screens/CardCraftScreen';
 import { ClubRosterScreen } from './screens/ClubRosterScreen';
@@ -24,12 +24,14 @@ import { MatchDayScreen } from './screens/MatchDayScreen';
 import { MetaScreen } from './screens/MetaScreen';
 import { PortalScreen } from './screens/PortalScreen';
 import { PostMatchReDraftScreen } from './screens/PostMatchReDraftScreen';
+import { PrologueScreen } from './screens/PrologueScreen';
 import { SeasonEndScreen } from './screens/SeasonEndScreen';
 import { TacticsScreen } from './screens/TacticsScreen';
 import { TitleScreen } from './screens/TitleScreen';
 
 export type ActiveRoute =
   | 'title'
+  | 'prologue'
   | 'meta'
   | 'roster'
   | 'hof'
@@ -53,6 +55,9 @@ export class GameApp {
   private rosterReturnRoute: ActiveRoute = 'title';
   private routeCooldownMs = 0;
   private elapsedTime = 0;
+  private grantCaptainHeirloomOnNextSeason = false;
+  private prologueMatchMode = false;
+  private prologueResumeFromMatch = false;
   private playerModal = new PlayerModal();
   private confirmModal = new ConfirmModal();
   private storyModal = new StoryModal();
@@ -66,6 +71,7 @@ export class GameApp {
   private bootIntro: BootIntro;
 
   private titleScreen = new TitleScreen();
+  private prologueScreen = new PrologueScreen();
   private clubRosterScreen = new ClubRosterScreen();
   private metaScreen = new MetaScreen();
   private hofScreen = new HallOfFameScreen();
@@ -104,12 +110,25 @@ export class GameApp {
 
   private setRoute(next: ActiveRoute, transitionLabel = ''): void {
     if (this.route !== next) {
+      SoundEngine.stopVoice();
       this.transition.trigger(() => {
         this.route = next;
         if (next === 'title') {
           this.titleScreen.resetEnterAnim();
+          SoundEngine.setScene('title');
+        } else if (next === 'prologue') {
+          if (this.prologueResumeFromMatch) {
+            this.prologueResumeFromMatch = false;
+            this.prologueScreen.resumeAfterAct2Match();
+          } else {
+            this.prologueScreen.reset();
+          }
+          SoundEngine.setScene('prologue');
         } else if (next === 'season_end') {
           this.seasonEndScreen.resetIntro();
+          SoundEngine.setScene('celebration');
+        } else if (next !== 'match') {
+          SoundEngine.setScene('portal');
         }
       }, transitionLabel);
     }
@@ -130,7 +149,7 @@ export class GameApp {
   }
 
   private navigateFromRail(tab: NavRailTab): void {
-    const isSeasonTab = this.route === 'portal' || this.route === 'league' || this.route === 'tactics' || this.route === 'cards';
+    const isSeasonTab = this.route === 'portal' || this.route === 'league' || this.route === 'tactics' || this.route === 'cards' || this.route === 'roster';
     if (tab === 'title') {
       this.setRoute('title');
     } else if (tab === 'meta') {
@@ -139,16 +158,39 @@ export class GameApp {
     } else if (tab === 'hof') {
       this.metaReturnRoute = isSeasonTab ? this.route : 'portal';
       this.setRoute('hof');
+    } else if (tab === 'transfer_hub') {
+      const tutNow = this.league.getTutorialProgress();
+      if (this.route === 'portal' && !tutNow.portal_summer) {
+        this.league.markTutorialStep('portal_summer');
+      }
+      if (this.route !== 'roster') {
+        this.clubRosterScreen.setSubTab('roster');
+      }
+      this.rosterReturnRoute = this.route === 'roster' ? this.rosterReturnRoute : (isSeasonTab ? this.route : 'portal');
+      if (this.route !== 'roster') {
+        this.setRoute('roster', 'TRANSFER HUB · 引援中心');
+      }
     } else {
+      if (tab === 'scout' && this.route === 'portal' && !this.league.getTutorialProgress().portal_scout) {
+        this.league.markTutorialStep('portal_scout');
+      }
       this.setRoute(tab);
     }
   }
 
   private syncRouteFromPhase(): void {
-    const phase = this.league.getState().phase;
-    if (phase === 'INIT_DRAFT') this.setRoute('draft', 'SHUFFLE DRAFT · 选秀建队');
-    else if (phase === 'RE_DRAFT') this.setRoute('post_match', 'POST MATCH · 赛后补强');
-    else if (phase === 'SEASON_END') this.setRoute('season_end', 'SEASON FINALE');
+    const st = this.league.getState();
+    const phase = st.phase;
+    if (phase === 'INIT_DRAFT') this.setRoute('draft', 'CORE PACKS · 核心开包');
+    else if (phase === 'SUMMER_WINDOW') {
+      this.setRoute('portal', 'SUMMER WINDOW · 季前备战门户');
+    } else if (phase === 'WINTER_WINDOW') {
+      this.clubRosterScreen.setSubTab('roster');
+      this.rosterReturnRoute = 'portal';
+      this.setRoute('roster', 'WINTER WINDOW · 冬季转会窗');
+    } else if (phase === 'RE_DRAFT' || (st.pendingPostMatchReward && !st.pendingPostMatchReward.completed)) {
+      this.setRoute('post_match', 'POST MATCH · 赛后补强');
+    } else if (phase === 'SEASON_END') this.setRoute('season_end', 'SEASON FINALE');
     else this.setRoute('portal', 'CLUB PORTAL · 赛季门户');
   }
 
@@ -202,6 +244,9 @@ export class GameApp {
     if (this.route === 'tactics') {
       return this.tacticsScreen.onWheel(deltaY);
     }
+    if (this.route === 'hof') {
+      return this.hofScreen.onWheel(deltaY);
+    }
     return false;
   }
 
@@ -236,7 +281,16 @@ export class GameApp {
     }
     if (this.route === 'match') {
       this.matchScreen.onKeyDown(code);
+    } else if (this.route === 'prologue') {
+      this.prologueScreen.onKeyDown(code);
     }
+  }
+
+  public needsHighFps(): boolean {
+    if (!this.bootIntro.isDone() || this.transition.isActive() || this.toast !== null) {
+      return true;
+    }
+    return this.route === 'match' || this.route === 'prologue' || this.route === 'post_match';
   }
 
   public update(dtSec: number): void {
@@ -255,10 +309,16 @@ export class GameApp {
     this.transition.update(dtSec);
     if (this.route === 'title') {
       this.titleScreen.update(dtSec);
+    } else if (this.route === 'portal') {
+      this.portalScreen.update(dtSec);
+    } else if (this.route === 'prologue') {
+      this.prologueScreen.update(dtSec);
     } else if (this.route === 'meta') {
       this.metaScreen.update(dtSec);
     } else if (this.route === 'cards') {
       this.cardCraftScreen.update(dtSec);
+    } else if (this.route === 'draft') {
+      this.draftScreen.update(dtSec);
     } else if (this.route === 'match') {
       this.matchScreen.update(dtSec);
     } else if (this.route === 'post_match') {
@@ -284,13 +344,16 @@ export class GameApp {
     }
 
     const bgId: ArtAssetId =
-      this.route === 'title' ||
-      this.route === 'portal' ||
-      this.route === 'league' ||
-      this.route === 'match' ||
-      this.route === 'hof' ||
       this.route === 'season_end'
+        ? 'bg_season_ceremony'
+        : this.route === 'title' ||
+          this.route === 'portal' ||
+          this.route === 'league' ||
+          this.route === 'match' ||
+          this.route === 'hof'
         ? 'stadium_bg'
+        : this.route === 'tactics'
+        ? 'bg_tactics'
         : this.route === 'draft' || this.route === 'post_match'
         ? 'bg_draft'
         : 'bg_portal';
@@ -313,11 +376,24 @@ export class GameApp {
     if (this.route === 'title') {
       this.titleScreen.render(ctx, this.hits, this.league, {
         onContinue: () => this.syncRouteFromPhase(),
+        onOpenPrologue: () => {
+          this.setRoute('prologue', 'PROLOGUE · 老将归来');
+        },
         onStartNewSeason: (opts: NewSeasonOptions) => {
           this.league.startNewSeason(opts);
+          const gotHeirloom = this.grantCaptainHeirloomOnNextSeason;
+          if (gotHeirloom) {
+            this.league.grantReturningCaptainPlayer();
+            this.grantCaptainHeirloomOnNextSeason = false;
+          }
           this.save();
-          this.setRoute('draft', 'SHUFFLE DRAFT · 选秀建队');
-          this.showToast(`${opts.customName || '新俱乐部'} 建队完成，开始选秀`, THEME.GREEN);
+          this.setRoute('draft', 'CORE PACKS · 核心开包');
+          this.showToast(
+            gotHeirloom
+              ? `${opts.customName || '新俱乐部'} 建队完成 · 老队长 #10 林锋（中轴全能 80+）游子归家压阵首季！`
+              : `${opts.customName || '新俱乐部'} 建队完成，开启 3 轮核心开包！`,
+            gotHeirloom ? THEME.GOLD_LIGHT : THEME.GREEN
+          );
         },
         onOpenMeta: () => {
           this.metaReturnRoute = 'title';
@@ -339,7 +415,9 @@ export class GameApp {
               this.platform.clearSave?.(SAVE_KEY);
               this.league = new LeagueManager();
               this.knownAchievements.clear();
-              this.showToast('存档已重置，欢迎开启全新生涯！', '#38BDF8');
+              this.grantCaptainHeirloomOnNextSeason = false;
+              this.setRoute('prologue', 'PROLOGUE · 全新生涯开启');
+              this.showToast('存档已重置，从老将序章开启全新生涯！', '#38BDF8');
             },
             '确认重置'
           );
@@ -350,9 +428,58 @@ export class GameApp {
             }
           : undefined,
       });
+    } else if (this.route === 'prologue') {
+      this.prologueScreen.render(ctx, this.hits, {
+        onEnterAct2Match: () => {
+          this.prologueMatchMode = true;
+          this.matchScreen.startPrologueMatch(
+            this.league,
+            () => {
+              this.prologueMatchMode = false;
+              this.prologueResumeFromMatch = true;
+              this.matchScreen.dispose();
+              this.setRoute('prologue', 'MIDNIGHT CALL · 更衣室未接来电');
+            },
+            () => {
+              this.shake.trigger(8, 0.30);
+              this.particles.burst(640, 140, THEME.GOLD_LIGHT, 30);
+            },
+            (intensity, dur) => this.shake.trigger(intensity, dur),
+            (bx, by, col) => this.particles.burst(bx, by, col || THEME.GOLD_LIGHT, 28)
+          );
+          this.setRoute('match', 'ACT II · 终场绝唱');
+        },
+        onAcceptHometown: () => {
+          this.league.markPrologueCompleted();
+          this.grantCaptainHeirloomOnNextSeason = true;
+          this.save();
+          this.titleScreen.openNewSeasonWizard();
+          this.setRoute('title', 'HOMETOWN CLUB · 重返家乡');
+          this.showToast('老队长 #10 林锋（80+中轴全能）已整装待发！请为家乡球队定名启程', THEME.GOLD_LIGHT);
+        },
+        onDeclineSecretEnding: () => {
+          this.league.markSecretRetiredEnding();
+          this.save();
+        },
+        onReturnTitle: () => {
+          this.setRoute('title', 'THE END · 传奇落幕');
+        },
+        onSkipPrologue: () => {
+          this.league.markPrologueCompleted();
+          this.save();
+          this.titleScreen.openNewSeasonWizard();
+          this.setRoute('title', 'SHUFFLE BUILD · 快速建队');
+        },
+        onBurst: (bx, by, col) => this.particles.burst(bx, by, col || THEME.GOLD_LIGHT, 28),
+        onShake: (intensity, dur) => this.shake.trigger(intensity, dur),
+      });
     } else if (this.route === 'roster') {
+      const stPhase = this.league.getState().phase;
+      const fromSeason = this.rosterReturnRoute !== 'title';
       this.clubRosterScreen.render(ctx, this.hits, this.league, {
         onBack: () => this.setRoute(this.rosterReturnRoute),
+        onNavigate: fromSeason ? (tab) => this.navigateFromRail(tab) : undefined,
+        activeRailTab: 'transfer_hub',
         onStartSeasonFromRoster: () => {
           const res = this.league.startSeasonFromRoster();
           if (res.ok) {
@@ -362,6 +489,17 @@ export class GameApp {
           } else {
             this.showToast(res.reason || '无法开启新赛季', THEME.RED_LIGHT);
           }
+        },
+        onSeasonStarted: () => {
+          this.save();
+          this.setRoute('portal', 'SEASON KICKOFF · 新赛季开赛');
+          this.showToast('26 人大名单注册完毕，新赛季正式打响！', THEME.GREEN);
+          this.particles.burst(640, 220, THEME.GREEN, 26);
+        },
+        onWinterClosed: () => {
+          this.save();
+          this.setRoute('portal', 'SECOND HALF · 下半程开启');
+          this.showToast('冬季转会窗已关闭，继续下半程征程！', '#38BDF8');
         },
         onInspectPlayer: (p, opts) => this.playerModal.open(p, opts),
         onSave: () => this.save(),
@@ -400,9 +538,9 @@ export class GameApp {
     } else if (this.route === 'draft') {
       this.draftScreen.render(ctx, this.hits, this.league, {
         onDone: () => {
-          this.setRoute('portal', 'CLUB PORTAL · 赛季开启');
-          this.showToast('26 人大名单组建完成', THEME.GREEN);
-          this.particles.burst(640, 220, THEME.GREEN, 26);
+          this.setRoute('portal', 'SUMMER WINDOW · 季前备战门户');
+          this.showToast('3 名核心球员已入队！请在门户页引导下前往引援中心凑齐 26 人大名单', THEME.GOLD_LIGHT);
+          this.particles.burst(640, 220, THEME.GOLD_LIGHT, 26);
         },
         onSave: () => this.save(),
         onInspectPlayer: (p) => this.playerModal.open(p),
@@ -417,7 +555,8 @@ export class GameApp {
               this.showToast('阵容已补齐 26 人，可退选调整或确认开赛', THEME.GREEN);
               this.particles.burst(1080, 220, THEME.GREEN, 20);
             },
-            '确认补齐'
+            '确认补齐',
+            'gold'
           );
         },
       });
@@ -428,17 +567,33 @@ export class GameApp {
       this.portalScreen.render(ctx, this.hits, this.league, {
         onNavigate: (tab) => this.navigateFromRail(tab),
         onSave: () => this.save(),
+        onToast: (msg, col) => this.showToast(msg, col),
+        onSeasonStarted: () => {
+          this.save();
+          this.showToast('26 人大名单注册完毕，新赛季正式打响！', THEME.GREEN);
+          this.particles.burst(640, 220, THEME.GREEN, 26);
+        },
+        onBurst: (bx, by, col) => this.particles.burst(bx, by, col || THEME.GOLD_LIGHT, 26),
+        onShake: (intensity, dur) => this.shake.trigger(intensity, dur),
         onQuickSim: () => {
-          const res = this.league.simulateUserRound();
-          if (res.ok) {
-            SoundEngine.playWhistle('fulltime');
-            this.save();
-            this.syncRouteFromPhase();
-            const g = res.userGoals ?? 0;
-            const o = res.oppGoals ?? 0;
-            const tag = g > o ? '取胜' : g === o ? '战平' : '惜败';
-            this.showToast(`本轮快进：${g}:${o} ${tag} ${res.oppName || ''}`, g > o ? THEME.GREEN : g === o ? THEME.GOLD_LIGHT : '#FCA5A5');
-          }
+          this.confirmModal.open(
+            '跳过本轮比赛',
+            '将直接模拟本轮比赛结果并推进赛程，无法撤销。确认跳过吗？',
+            () => {
+              const res = this.league.simulateUserRound();
+              if (res.ok) {
+                SoundEngine.playWhistle('fulltime');
+                this.save();
+                this.syncRouteFromPhase();
+                const g = res.userGoals ?? 0;
+                const o = res.oppGoals ?? 0;
+                const tag = g > o ? '取胜' : g === o ? '战平' : '惜败';
+                this.showToast(`本轮快进：${g}:${o} ${tag} ${res.oppName || ''}`, g > o ? THEME.GREEN : g === o ? THEME.GOLD_LIGHT : '#FCA5A5');
+              }
+            },
+            '确认跳过',
+            'primary'
+          );
         },
         onStartMatch: () => {
           this.matchScreen.start(
@@ -447,17 +602,24 @@ export class GameApp {
               this.shake.trigger(7, 0.28);
               this.particles.burst(640, 140, THEME.GOLD_LIGHT, 28);
             },
-            (intensity, dur) => this.shake.trigger(intensity, dur)
+            (intensity, dur) => this.shake.trigger(intensity, dur),
+            (bx, by, col) => this.particles.burst(bx, by, col || THEME.GOLD_LIGHT, 26)
           );
           this.setRoute('match', 'MATCH DAY · KICKOFF');
         },
       });
       if (!this.playerModal.isOpen() && !this.confirmModal.isOpen() && !this.league.getState().pendingStoryEvent) {
         const tut = this.league.getTutorialProgress();
-        if (!tut.portal_prep) {
-          this.tutorialOverlay.render(ctx, this.hits, this.league, 'portal_prep', () => this.save());
-        } else if (!tut.portal_scout) {
-          this.tutorialOverlay.render(ctx, this.hits, this.league, 'portal_scout', () => this.save());
+        if (this.league.getState().phase === 'SUMMER_WINDOW') {
+          if (!tut.portal_summer) {
+            this.tutorialOverlay.render(ctx, this.hits, this.league, 'portal_summer', () => this.save());
+          }
+        } else {
+          if (!tut.portal_prep) {
+            this.tutorialOverlay.render(ctx, this.hits, this.league, 'portal_prep', () => this.save());
+          } else if (!tut.portal_scout) {
+            this.tutorialOverlay.render(ctx, this.hits, this.league, 'portal_scout', () => this.save());
+          }
         }
       }
     } else if (this.route === 'league') {
@@ -471,7 +633,8 @@ export class GameApp {
               this.shake.trigger(7, 0.28);
               this.particles.burst(640, 140, THEME.GOLD_LIGHT, 28);
             },
-            (intensity, dur) => this.shake.trigger(intensity, dur)
+            (intensity, dur) => this.shake.trigger(intensity, dur),
+            (bx, by, col) => this.particles.burst(bx, by, col || THEME.GOLD_LIGHT, 26)
           );
           this.setRoute('match', 'MATCH DAY · KICKOFF');
         },
@@ -486,7 +649,8 @@ export class GameApp {
               this.shake.trigger(7, 0.28);
               this.particles.burst(640, 140, THEME.GOLD_LIGHT, 28);
             },
-            (intensity, dur) => this.shake.trigger(intensity, dur)
+            (intensity, dur) => this.shake.trigger(intensity, dur),
+            (bx, by, col) => this.particles.burst(bx, by, col || THEME.GOLD_LIGHT, 26)
           );
           this.setRoute('match', 'MATCH DAY · KICKOFF');
         },
@@ -504,7 +668,14 @@ export class GameApp {
       }
     } else if (this.route === 'match') {
       this.matchScreen.render(ctx, this.hits, this.league, (result) => {
-        SoundEngine.setScene('menu');
+        SoundEngine.setScene('portal');
+        if (this.prologueMatchMode) {
+          this.prologueMatchMode = false;
+          this.prologueResumeFromMatch = true;
+          this.matchScreen.dispose();
+          this.setRoute('prologue', 'MIDNIGHT CALL · 更衣室未接来电');
+          return;
+        }
         this.league.completeCurrentRoundWithUserResult(result);
         this.postMatchScreen.setLastMatch(result);
         this.matchScreen.dispose();
@@ -516,7 +687,9 @@ export class GameApp {
           this.setRoute('post_match', 'FULL TIME · 赛后复盘');
         }
       });
-      this.tutorialOverlay.render(ctx, this.hits, this.league, 'match', () => this.save());
+      if (!this.prologueMatchMode) {
+        this.tutorialOverlay.render(ctx, this.hits, this.league, 'match', () => this.save());
+      }
     } else if (this.route === 'post_match') {
       this.postMatchScreen.render(
         ctx,
@@ -530,6 +703,7 @@ export class GameApp {
         {
           onBurst: (bx, by, col) => this.particles.burst(bx, by, col || THEME.GOLD_LIGHT, 28),
           onShake: (intensity, dur) => this.shake.trigger(intensity, dur),
+          onInspectPlayer: (p) => this.playerModal.open(p),
         }
       );
       this.tutorialOverlay.render(ctx, this.hits, this.league, 'post_match', () => this.save());
@@ -543,6 +717,8 @@ export class GameApp {
               customName: curClub.name,
               primaryColor: curClub.primaryColor,
               secondaryColor: curClub.secondaryColor,
+              awayPrimaryColor: curClub.awayPrimaryColor,
+              awaySecondaryColor: curClub.awaySecondaryColor,
               formation: curClub.formation,
               style: curClub.style,
             },
@@ -551,11 +727,11 @@ export class GameApp {
             carryOver
           );
           this.save();
+          this.syncRouteFromPhase();
           if (carryOver) {
-            this.setRoute('portal', 'NEW SEASON · 保留班底');
-            this.showToast('已保留常驻班底，开启新赛季！', THEME.GREEN);
+            this.showToast('已保留常驻班底，进入新赛季夏季转会窗！', THEME.GREEN);
           } else {
-            this.setRoute('draft', 'SHUFFLE DRAFT · 新赛季');
+            this.showToast('新赛季开启，开始 3 轮核心开包！', THEME.GOLD_LIGHT);
           }
         },
         onOpenMeta: () => {
@@ -573,21 +749,41 @@ export class GameApp {
       this.storyModal.render(ctx, this.hits, this.league, () => this.save());
     }
 
-    this.playerModal.render(ctx, this.hits);
+    this.playerModal.render(ctx, this.hits, {
+      league: this.league,
+      onSave: () => this.save(),
+      onToast: (msg, col) => this.showToast(msg, col),
+    });
     this.confirmModal.render(ctx, this.hits);
     ctx.restore();
 
     this.particles.render(ctx);
 
     if (this.toast) {
-      const alpha = Math.min(1, this.toast.timer * 2);
+      // 顶部居中实色 Toast：快速淡出 + 上滑，避免半透明残影叠在内容上
+      const alpha = Math.min(1, this.toast.timer * 4);
+      const slide = (1 - alpha) * -10;
       ctx.save();
       ctx.globalAlpha = alpha;
-      drawRoundRect(ctx, 410, 78, 460, 36, 18, 'rgba(14,22,40,0.95)', this.toast.color, 1.4);
-      drawText(ctx, this.toast.text, 640, 96, {
+      ctx.font = `bold 13px ${THEME.FONT_FAMILY}`;
+      const tw = Math.min(760, Math.max(280, ctx.measureText(this.toast.text).width + 64));
+      const tx = 640 - tw / 2;
+      const ty = 82 + slide;
+      if (!IS_MOBILE) {
+        ctx.shadowColor = 'rgba(0,0,0,0.55)';
+        ctx.shadowBlur = 18;
+        ctx.shadowOffsetY = 6;
+      }
+      drawRoundRect(ctx, tx, ty, tw, 38, 19, 'rgb(12,19,35)', this.toast.color, 1.6);
+      ctx.shadowColor = 'transparent';
+      ctx.fillStyle = this.toast.color;
+      ctx.beginPath();
+      ctx.arc(tx + 22, ty + 19, 4, 0, Math.PI * 2);
+      ctx.fill();
+      drawText(ctx, this.toast.text, 640 + 8, ty + 19, {
         size: 13,
         bold: true,
-        color: this.toast.color,
+        color: THEME.TX1,
         align: 'center',
       });
       ctx.restore();

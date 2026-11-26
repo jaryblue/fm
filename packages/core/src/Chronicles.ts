@@ -238,7 +238,7 @@ export function triggerSeasonStartChronicle(
       round: 1,
       chronicleId: 'pyramid_climb',
       artId: isStagnant ? 'story_relegation' : 'story_underdog',
-      badge: `📖 新季主线 · 金字塔之路 第${pyr.chapter + 1}章`,
+      badge: `新季主线 · 金字塔之路 第${pyr.chapter + 1}章`,
       title: isStagnant ? `低级别坚守：第 ${tier} 级联赛的十字路口` : `迈向更高舞台：第 ${tier} 级联赛的考验`,
       body: isStagnant
         ? `球队已经在第 ${tier} 级联赛徘徊了数个赛季。外界质疑球队的天花板也就到此为止，新赛季你打算如何重整旗鼓？`
@@ -263,7 +263,7 @@ export function triggerSeasonStartChronicle(
         round: 1,
         chronicleId: 'captain_torch',
         artId: 'story_veteran',
-        badge: `📖 新季主线 · 袖标与薪火 第${cap.chapter + 1}章`,
+        badge: `新季主线 · 袖标与薪火 第${cap.chapter + 1}章`,
         title: '更衣室交接：新赛季由谁扛旗？',
         body: `新赛季集结，【${rookie.name}】的实力已逼近老队长【${veteran.name}】。更衣室都在看你如何安排新季核心秩序：`,
         options: [
@@ -292,7 +292,7 @@ export function triggerSeasonStartChronicle(
       round: 1,
       chronicleId: 'rival_chronicle',
       artId: 'story_revenge',
-      badge: '📖 新季主线 · 宿敌编年史 第1章',
+      badge: '新季主线 · 宿敌编年史 第1章',
       title: `窄路相逢：再战 ${rName}`,
       body: `跨过数个赛季，你们与【${rName}】已累计交手 ${rivalRec.playedCount} 次。新赛季抽签再次将两队放在一起，你如何定调这段恩怨？`,
       options: [
@@ -346,7 +346,7 @@ export function evaluateChronicleTrigger(
         round,
         chronicleId: 'relegation_fight',
         artId: 'story_relegation',
-        badge: '📖 长线主线 · 泥潭保级 第1章',
+        badge: '长线主线 · 泥潭保级 第1章',
         title: '风雨飘摇的保级警报',
         body: `连续的失分让【${userClub.name}】滑向降级危险区（当前第 ${rank} 名）。训练场外聚集了焦急的球迷，你决定如何稳住军心？`,
         options: [
@@ -363,7 +363,7 @@ export function evaluateChronicleTrigger(
         round,
         chronicleId: 'relegation_fight',
         artId: 'story_relegation',
-        badge: `📖 长线主线 · 泥潭保级 第${rel.chapter + 1}章`,
+        badge: `长线主线 · 泥潭保级 第${rel.chapter + 1}章`,
         title: '背水一战的更衣室抉择',
         body: `赛季进入冲刺生死时刻，伤病与体能压力让主力阵容捉襟见肘。面对接下来的硬仗，你把筹码押在哪边？`,
         options: [
@@ -393,7 +393,7 @@ export function evaluateChronicleTrigger(
         round,
         chronicleId: 'rival_chronicle',
         artId: 'story_revenge',
-        badge: '📖 长线主线 · 宿敌编年史 第1章',
+        badge: '长线主线 · 宿敌编年史 第1章',
         title: `宿敌档案：${rName} 的恩怨局`,
         body: `算上过往交锋，你们已与【${rName}】交手 ${rivalRec.playedCount} 次（${rivalRec.wins}胜${rivalRec.draws}平${rivalRec.losses}负）。这段跨季对决正在成为联赛焦点：`,
         options: [
@@ -423,7 +423,7 @@ export function evaluateChronicleTrigger(
         round,
         chronicleId: 'scout_poach',
         artId: 'story_poach',
-        badge: '📖 长线主线 · 球探风云 第1章',
+        badge: '长线主线 · 球探风云 第1章',
         title: `看台上的球探：${star.name} 引来关注`,
         body: `【${star.name}】本季打出统治级数据（${star.seasonStats.goals}球 ${star.seasonStats.assists}助 · CA ${star.ca}），已有上级联赛球探开出诱惑报价。你如何表态？`,
         options: [
@@ -453,7 +453,7 @@ export function evaluateChronicleTrigger(
           round,
           chronicleId: 'captain_torch',
           artId: 'story_veteran',
-          badge: '📖 长线主线 · 袖标与薪火 第1章',
+          badge: '长线主线 · 袖标与薪火 第1章',
           title: '老队长与年轻人的第一次对话',
           body: `训练结束后，${veteran.age} 岁的老将【${veteran.name}】主动找到你，谈起表现亮眼的小将【${rookie.name}】（${rookie.age} 岁 · CA ${rookie.ca}）。你希望两人如何相处？`,
           options: [
@@ -470,7 +470,7 @@ export function evaluateChronicleTrigger(
           round,
           chronicleId: 'captain_torch',
           artId: 'story_veteran',
-          badge: `📖 长线主线 · 袖标与薪火 第${cap.chapter + 1}章`,
+          badge: `长线主线 · 袖标与薪火 第${cap.chapter + 1}章`,
           title: '更衣室交接：关键战由谁扛旗？',
           body: `跨过赛季的磨合，【${rookie.name}】的实力已逼近老队长【${veteran.name}】。更衣室都在看你如何平衡这对核心！`,
           options: [
@@ -497,7 +497,7 @@ export function evaluateChronicleTrigger(
       round,
       chronicleId: 'academy_roots',
       artId: 'story_academy',
-      badge: '📖 长线主线 · 本土青训 第1章',
+      badge: '长线主线 · 本土青训 第1章',
       title: '青春的代价与光芒',
       body: `年轻球员们本季已累计出场 ${u23Apps} 人次，你用真金白银的出场时间喂出了这批青训骨架。下一步你打算怎么培养他们？`,
       options: [
@@ -525,7 +525,7 @@ export function evaluateChronicleTrigger(
       round,
       chronicleId: 'tactician_path',
       artId: 'story_tactician',
-      badge: '📖 长线主线 · 战术先驱 第1章',
+      badge: '长线主线 · 战术先驱 第1章',
       title: '当对手开始研究你的战术板',
       body: `你的【${userClub.formation}】体系已臻成熟，但联赛对手也开始针对性布防。面对研究透彻的防线，你决定如何破局？`,
       options: [
@@ -546,7 +546,7 @@ export function evaluateChronicleTrigger(
       round,
       chronicleId: 'pyramid_climb',
       artId: isStagnant ? 'story_relegation' : 'story_underdog',
-      badge: `📖 长线主线 · 金字塔之路 第${pyr.chapter + 1}章`,
+      badge: `长线主线 · 金字塔之路 第${pyr.chapter + 1}章`,
       title: isStagnant ? `低级别坚守：第 ${tier} 级联赛的十字路口` : `迈向更高舞台：第 ${tier} 级联赛的考验`,
       body: isStagnant
         ? `球队已经在第 ${tier} 级联赛徘徊了数个赛季。有人质疑球队的天花板也就到此为止，作为主帅，你的态度决定这支俱乐部的灵魂：`

@@ -103,7 +103,7 @@ export const TIER_GAMBLE_TEMPLATES: TierGambleTemplate[] = [
       const { u23 } = pickKeyPlayers(ctx.club);
       const p = computeAdjustedProbs(
         { pos: 55, neg: 25, jack: 20 },
-        { jackBonus: ctx.won ? 5 : 0, negReduce: ctx.metaLevels.fitness * 2 }
+        { jackBonus: ctx.won ? 5 : 0, negReduce: ctx.metaLevels.medical * 2 }
       );
       return {
         id: `pm_gb_gr_part_${ctx.round}`,
@@ -205,7 +205,7 @@ export const TIER_GAMBLE_TEMPLATES: TierGambleTemplate[] = [
     build: (ctx) => {
       const p = computeAdjustedProbs(
         { pos: 55, neg: 25, jack: 20 },
-        { jackBonus: ctx.metaLevels.fitness * 3, negReduce: ctx.metaLevels.fitness * 3 }
+        { jackBonus: ctx.metaLevels.medical * 3, negReduce: ctx.metaLevels.medical * 3 }
       );
       return {
         id: `pm_gb_gr_mud_${ctx.round}`,
@@ -359,7 +359,7 @@ export const TIER_GAMBLE_TEMPLATES: TierGambleTemplate[] = [
     build: (ctx) => {
       const p = computeAdjustedProbs(
         { pos: 50, neg: 30, jack: 20 },
-        { jackBonus: ctx.metaLevels.coaching * 2, negReduce: ctx.metaLevels.fitness * 2 }
+        { jackBonus: ctx.metaLevels.training_ground * 2, negReduce: ctx.metaLevels.medical * 2 }
       );
       return {
         id: `pm_gb_pro_sprint_${ctx.round}`,
@@ -417,7 +417,7 @@ export const TIER_GAMBLE_TEMPLATES: TierGambleTemplate[] = [
       const { topScorer } = pickKeyPlayers(ctx.club);
       const p = computeAdjustedProbs(
         { pos: 50, neg: 30, jack: 20 },
-        { jackBonus: ctx.won ? 6 : 0, negReduce: ctx.metaLevels.coaching * 2 }
+        { jackBonus: ctx.won ? 6 : 0, negReduce: ctx.metaLevels.training_ground * 2 }
       );
       return {
         id: `pm_gb_el_ego_${ctx.round}`,
@@ -475,7 +475,7 @@ export const TIER_GAMBLE_TEMPLATES: TierGambleTemplate[] = [
     build: (ctx) => {
       const p = computeAdjustedProbs(
         { pos: 52, neg: 28, jack: 20 },
-        { jackBonus: ctx.metaLevels.fitness * 3, negReduce: ctx.metaLevels.fitness * 2 }
+        { jackBonus: ctx.metaLevels.medical * 3, negReduce: ctx.metaLevels.medical * 2 }
       );
       return {
         id: `pm_gb_el_bio_${ctx.round}`,
@@ -536,7 +536,7 @@ export const TIER_GAMBLE_TEMPLATES: TierGambleTemplate[] = [
       const { veteran } = pickKeyPlayers(ctx.club);
       const p = computeAdjustedProbs(
         { pos: 56, neg: 24, jack: 20 },
-        { jackBonus: ctx.won ? 4 : 0, negReduce: ctx.metaLevels.fitness * 2 }
+        { jackBonus: ctx.won ? 4 : 0, negReduce: ctx.metaLevels.medical * 2 }
       );
       return {
         id: `pm_gb_all_vet_${ctx.round}`,
@@ -589,7 +589,7 @@ export const TIER_GAMBLE_TEMPLATES: TierGambleTemplate[] = [
     build: (ctx) => {
       const p = computeAdjustedProbs(
         { pos: 54, neg: 26, jack: 20 },
-        { jackBonus: ctx.metaLevels.coaching * 2, negReduce: ctx.metaLevels.finance * 2 }
+        { jackBonus: ctx.metaLevels.training_ground * 2, negReduce: ctx.metaLevels.finance * 2 }
       );
       return {
         id: `pm_gb_all_alch_${ctx.round}`,
@@ -623,6 +623,601 @@ export const TIER_GAMBLE_TEMPLATES: TierGambleTemplate[] = [
             label: '完美炼成！',
             summary: '直接炼成 1 张 Lv.4 满阶全队生效战术指挥卡 + Meta 15pt！',
             effect: { grantCardLevel: 4, metaDelta: 15 },
+          },
+        },
+      };
+    },
+  },
+  // ==================== 5. 扩充层级与全段位事件 (12 项) ====================
+  {
+    id: 'gr_midnight_barbecue',
+    bracket: 'grassroots',
+    tierMin: 6,
+    tierMax: 7,
+    cadences: ['normal', 'focus'],
+    rarity: 'common',
+    build: (ctx) => {
+      const p = computeAdjustedProbs(
+        { pos: 56, neg: 22, jack: 22 },
+        { jackBonus: ctx.metaLevels.training_ground * 2, negReduce: ctx.metaLevels.medical * 2 }
+      );
+      return {
+        id: `pm_gb_gr_bbq_${ctx.round}`,
+        category: 'gamble',
+        title: '街区烧烤团建：球场旁的深夜夜宵',
+        subtitle: `${p.pos}%体能+10士气回暖 | ${p.neg}%肠胃不适(首发伤停1轮) | ${p.jack}%更衣室沸腾(默契+12+Meta 12pt)`,
+        rarity: 'common',
+        gamble: {
+          eventId: 'gr_midnight_barbecue',
+          bracket: 'grassroots',
+          tierMin: 6,
+          tierMax: 7,
+          modifierHint: '体能康复天赋减少吃坏肚子的风险',
+          positive: {
+            tier: 'positive',
+            prob: p.pos,
+            label: '大快朵颐',
+            summary: '全队士气高涨且放松恢复：体能 +10',
+            effect: { fitnessDelta: 10, moraleShift: 'high' },
+          },
+          negative: {
+            tier: 'negative',
+            prob: p.neg,
+            label: '深夜暴食',
+            summary: '1 名首发不幸闹肚子缺阵 1 轮',
+            effect: { injureStarterRounds: 1 },
+          },
+          jackpot: {
+            tier: 'jackpot',
+            prob: p.jack,
+            label: '兄弟齐心！',
+            summary: '核心连线默契 +12，团队凝聚力大爆发 + Meta 12pt！',
+            effect: { pairChemistryDelta: 12, moraleShift: 'high', metaDelta: 12 },
+          },
+        },
+      };
+    },
+  },
+  {
+    id: 'gr_charity_match',
+    bracket: 'grassroots',
+    tierMin: 6,
+    tierMax: 7,
+    cadences: ['normal', 'crisis'],
+    rarity: 'rare',
+    build: (ctx) => {
+      const p = computeAdjustedProbs(
+        { pos: 54, neg: 26, jack: 20 },
+        { jackBonus: ctx.metaLevels.finance * 2, negReduce: ctx.metaLevels.medical * 2 }
+      );
+      return {
+        id: `pm_gb_gr_char_${ctx.round}`,
+        category: 'gamble',
+        title: '社区慈善义赛：临时加踢 90 分钟',
+        subtitle: `${p.pos}%获赠2战术元素 | ${p.neg}%疲劳透支(体能-10) | ${p.jack}%赞助惊喜(3元素+Lv.2指挥卡)`,
+        rarity: 'rare',
+        gamble: {
+          eventId: 'gr_charity_match',
+          bracket: 'grassroots',
+          tierMin: 6,
+          tierMax: 7,
+          modifierHint: '财政基建提升社区赞助惊喜率，体能天赋减免疲劳',
+          positive: {
+            tier: 'positive',
+            prob: p.pos,
+            label: '街头献礼',
+            summary: '老教练赠予 2 枚基础战术元素',
+            effect: { elementsGain: 2 },
+          },
+          negative: {
+            tier: 'negative',
+            prob: p.neg,
+            label: '双腿灌铅',
+            summary: '额外义赛消耗过度，全队体能 -10',
+            effect: { fitnessDelta: -10 },
+          },
+          jackpot: {
+            tier: 'jackpot',
+            prob: p.jack,
+            label: '名宿力挺！',
+            summary: '获得 3 枚战术元素 + 1 张 Lv.2 进阶指挥卡！',
+            effect: { elementsGain: 3, grantCardLevel: 2 },
+          },
+        },
+      };
+    },
+  },
+  {
+    id: 'gr_old_captain_notes',
+    bracket: 'grassroots',
+    tierMin: 6,
+    tierMax: 7,
+    cadences: ['focus', 'crisis'],
+    rarity: 'rare',
+    build: (ctx) => {
+      const key = pickKeyPlayers(ctx.club);
+      const p = computeAdjustedProbs(
+        { pos: 52, neg: 26, jack: 22 },
+        { jackBonus: ctx.metaLevels.training_ground * 2, negReduce: ctx.metaLevels.training_ground * 2 }
+      );
+      return {
+        id: `pm_gb_gr_note_${ctx.round}`,
+        category: 'gamble',
+        title: '老队长的褪色笔记：旧时代套路翻新',
+        subtitle: `${p.pos}%阵型熟练度+6 | ${p.neg}%套路过时(备战点-1) | ${p.jack}%顿悟阵型+12与临时特质[大赛先生]`,
+        rarity: 'rare',
+        gamble: {
+          eventId: 'gr_old_captain_notes',
+          bracket: 'grassroots',
+          tierMin: 6,
+          tierMax: 7,
+          modifierHint: '战术幕僚等级越高，拆解老笔记的容错率与顿悟率越高',
+          positive: {
+            tier: 'positive',
+            prob: p.pos,
+            label: '汲取经验',
+            summary: '全队当前阵型熟练度 +6',
+            effect: { teamFamiliarityDelta: 6 },
+          },
+          negative: {
+            tier: 'negative',
+            prob: p.neg,
+            label: '推演卡壳',
+            summary: '战术板讨论分歧，下轮赛前备战点 -1',
+            effect: { prepActionsDelta: -1 },
+          },
+          jackpot: {
+            tier: 'jackpot',
+            prob: p.jack,
+            label: '薪火相传！',
+            summary: `阵型熟练度 +12，${key.captain.name} 临时掌握【大赛先生】(银·3轮)！`,
+            effect: { targetPlayerId: key.captain.id, teamFamiliarityDelta: 12, tempTrait: { trait: '大赛先生', tier: 'silver', rounds: 3 } },
+          },
+        },
+      };
+    },
+  },
+  {
+    id: 'pro_rain_camp',
+    bracket: 'pro',
+    tierMin: 3,
+    tierMax: 5,
+    cadences: ['normal', 'crisis'],
+    rarity: 'common',
+    build: (ctx) => {
+      const p = computeAdjustedProbs(
+        { pos: 55, neg: 25, jack: 20 },
+        { jackBonus: ctx.metaLevels.training_ground * 2, negReduce: ctx.metaLevels.medical * 2 }
+      );
+      return {
+        id: `pm_gb_pro_rain_${ctx.round}`,
+        category: 'gamble',
+        title: '暴雨夜加练：定位球攻防死磕',
+        subtitle: `${p.pos}%下场传球防守+3 | ${p.neg}%湿滑受寒(体能-12) | ${p.jack}%后防全员防守永久+2+体能+6`,
+        rarity: 'common',
+        gamble: {
+          eventId: 'pro_rain_camp',
+          bracket: 'pro',
+          tierMin: 3,
+          tierMax: 5,
+          modifierHint: '体能医疗与战术幕僚分别降低伤寒风险并提高成套演练率',
+          positive: {
+            tier: 'positive',
+            prob: p.pos,
+            label: '定位球开窍',
+            summary: '下一场全队传球与防守 +3',
+            effect: { nextMatchBuff: { passingBonus: 3, defendingBonus: 3, note: '暴雨加练：全队传球/防守 +3' } },
+          },
+          negative: {
+            tier: 'negative',
+            prob: p.neg,
+            label: '雨战积劳',
+            summary: '场地泥泞耗力，全队体能 -12',
+            effect: { fitnessDelta: -12 },
+          },
+          jackpot: {
+            tier: 'jackpot',
+            prob: p.jack,
+            label: '风雨铁闸！',
+            summary: '全体后防线球员防守永久 +2，全队体能 +6！',
+            effect: { attrDelta: { attr: 'defending', delta: 2, scope: 'def' }, fitnessDelta: 6 },
+          },
+        },
+      };
+    },
+  },
+  {
+    id: 'pro_spy_drone',
+    bracket: 'pro',
+    tierMin: 3,
+    tierMax: 5,
+    cadences: ['normal', 'focus'],
+    rarity: 'rare',
+    build: (ctx) => {
+      const p = computeAdjustedProbs(
+        { pos: 52, neg: 26, jack: 22 },
+        { jackBonus: ctx.metaLevels.scout * 2, negReduce: ctx.metaLevels.finance * 2 }
+      );
+      return {
+        id: `pm_gb_pro_spy_${ctx.round}`,
+        category: 'gamble',
+        title: '对手训练场密探：拆解对手定位套路',
+        subtitle: `${p.pos}%对手了解度+25 | ${p.neg}%行动败露(备战点-1士气低) | ${p.jack}%了解度+45且下场冷静+5速度+3`,
+        rarity: 'rare',
+        gamble: {
+          eventId: 'pro_spy_drone',
+          bracket: 'pro',
+          tierMin: 3,
+          tierMax: 5,
+          modifierHint: '球探网络越高，斩获核心防线漏洞的概率越大',
+          positive: {
+            tier: 'positive',
+            prob: p.pos,
+            label: '暗度陈仓',
+            summary: '下轮对手情报了解度提升 25%',
+            effect: { scoutIntelDelta: 25 },
+          },
+          negative: {
+            tier: 'negative',
+            prob: p.neg,
+            label: '情报反转',
+            summary: '被对方放出假套路误导，下轮备战点 -1 且士气低落',
+            effect: { prepActionsDelta: -1, moraleShift: 'low' },
+          },
+          jackpot: {
+            tier: 'jackpot',
+            prob: p.jack,
+            label: '底牌尽览！',
+            summary: '了解度暴涨 45%，下一场全队冷静 +5、速度 +3！',
+            effect: { scoutIntelDelta: 45, nextMatchBuff: { composureBonus: 5, paceBonus: 3, note: '绝密破译：冷静 +5 速度 +3' } },
+          },
+        },
+      };
+    },
+  },
+  {
+    id: 'pro_agent_recommendation',
+    bracket: 'pro',
+    tierMin: 3,
+    tierMax: 5,
+    cadences: ['focus', 'crisis'],
+    rarity: 'epic',
+    build: (ctx) => {
+      const key = pickKeyPlayers(ctx.club);
+      const p = computeAdjustedProbs(
+        { pos: 50, neg: 28, jack: 22 },
+        { jackBonus: ctx.metaLevels.scout * 2, negReduce: ctx.metaLevels.training_ground * 2 }
+      );
+      return {
+        id: `pm_gb_pro_agent_${ctx.round}`,
+        category: 'gamble',
+        title: '金牌经纪人：突击射门名宿私教课',
+        subtitle: `${p.pos}%射门手临摹银[禁区狐狸](2轮) | ${p.neg}%重金白费(士气低落) | ${p.jack}%金[禁区狐狸](3轮)+锋线射门+2`,
+        rarity: 'epic',
+        gamble: {
+          eventId: 'pro_agent_recommendation',
+          bracket: 'pro',
+          tierMin: 3,
+          tierMax: 5,
+          modifierHint: '球探系统加持下更容易打通名宿私教的金色秘技',
+          positive: {
+            tier: 'positive',
+            prob: p.pos,
+            label: '小试牛刀',
+            summary: `${key.topScorer.name} 临时领悟银阶【禁区狐狸】(2轮)`,
+            effect: { targetPlayerId: key.topScorer.id, tempTrait: { trait: '禁区狐狸', tier: 'silver', rounds: 2 } },
+          },
+          negative: {
+            tier: 'negative',
+            prob: p.neg,
+            label: '消化不良',
+            summary: '动作大改导致射门手感生疏，士气暂时走低',
+            effect: { moraleShift: 'low' },
+          },
+          jackpot: {
+            tier: 'jackpot',
+            prob: p.jack,
+            label: '射术开光！',
+            summary: `${key.topScorer.name} 掌握金【禁区狐狸】(3轮)，锋线全体射门 +2！`,
+            effect: {
+              targetPlayerId: key.topScorer.id,
+              tempTrait: { trait: '禁区狐狸', tier: 'gold', rounds: 3 },
+              attrDelta: { attr: 'shooting', delta: 2, scope: 'att' },
+            },
+          },
+        },
+      };
+    },
+  },
+  {
+    id: 'el_champions_dinner',
+    bracket: 'elite',
+    tierMin: 1,
+    tierMax: 2,
+    cadences: ['normal', 'focus'],
+    rarity: 'rare',
+    build: (ctx) => {
+      const p = computeAdjustedProbs(
+        { pos: 54, neg: 24, jack: 22 },
+        { jackBonus: ctx.metaLevels.training_ground * 2, negReduce: ctx.metaLevels.training_ground * 2 }
+      );
+      return {
+        id: `pm_gb_el_din_${ctx.round}`,
+        category: 'gamble',
+        title: '更衣室大佬闭门会：明确核心话语权',
+        subtitle: `${p.pos}%搭档默契+10士气高 | ${p.neg}%派系嫌隙(默契-8) | ${p.jack}%绝对团结(默契+18+阵型+8+Meta 18pt)`,
+        rarity: 'rare',
+        gamble: {
+          eventId: 'el_champions_dinner',
+          bracket: 'elite',
+          tierMin: 1,
+          tierMax: 2,
+          modifierHint: '教练威望等级提高更衣室一统的概率',
+          positive: {
+            tier: 'positive',
+            prob: p.pos,
+            label: '求同存异',
+            summary: '主力连线默契 +10，全队士气提振',
+            effect: { pairChemistryDelta: 10, moraleShift: 'high' },
+          },
+          negative: {
+            tier: 'negative',
+            prob: p.neg,
+            label: '心结未解',
+            summary: '核心搭档球权分配未谈拢，默契度 -8',
+            effect: { pairChemistryDelta: -8 },
+          },
+          jackpot: {
+            tier: 'jackpot',
+            prob: p.jack,
+            label: '众志成城！',
+            summary: '搭档默契 +18、阵型熟练度 +8 + Meta 18pt！',
+            effect: { pairChemistryDelta: 18, teamFamiliarityDelta: 8, metaDelta: 18 },
+          },
+        },
+      };
+    },
+  },
+  {
+    id: 'el_var_pressure',
+    bracket: 'elite',
+    tierMin: 1,
+    tierMax: 2,
+    cadences: ['focus', 'crisis'],
+    rarity: 'epic',
+    build: (ctx) => {
+      const p = computeAdjustedProbs(
+        { pos: 50, neg: 26, jack: 24 },
+        { jackBonus: ctx.metaLevels.training_ground * 2, negReduce: ctx.metaLevels.finance * 2 }
+      );
+      return {
+        id: `pm_gb_el_var_${ctx.round}`,
+        category: 'gamble',
+        title: '欧陆发布会心理战：把压力甩给焦点裁判与对手',
+        subtitle: `${p.pos}%下场冷静+4传球+3 | ${p.neg}%口水战反噬(士气低+传球-2) | ${p.jack}%获Lv.3指挥卡+下场传射+5`,
+        rarity: 'epic',
+        gamble: {
+          eventId: 'el_var_pressure',
+          bracket: 'elite',
+          tierMin: 1,
+          tierMax: 2,
+          modifierHint: '顶级赛场舆论博弈波动大，幕僚与财政各保上下限',
+          positive: {
+            tier: 'positive',
+            prob: p.pos,
+            label: '占尽先机',
+            summary: '下一场全队冷静 +4、传球 +3',
+            effect: { nextMatchBuff: { composureBonus: 4, passingBonus: 3, note: '心理战占优：冷静 +4 传球 +3' } },
+          },
+          negative: {
+            tier: 'negative',
+            prob: p.neg,
+            label: '舆论反噬',
+            summary: '言论过激引发媒体围攻，士气低落且下场传球 -2',
+            effect: { moraleShift: 'low', nextMatchBuff: { passingBonus: -2, note: '舆论压力：传球 -2' } },
+          },
+          jackpot: {
+            tier: 'jackpot',
+            prob: p.jack,
+            label: '掌声雷动！',
+            summary: '直接获赠 1 张 Lv.3 指挥卡，下场射门与冷静 +5！',
+            effect: { grantCardLevel: 3, nextMatchBuff: { shootingBonus: 5, composureBonus: 5, note: '发布会将帅合一：射门/冷静 +5' } },
+          },
+        },
+      };
+    },
+  },
+  {
+    id: 'el_tactical_revolution',
+    bracket: 'elite',
+    tierMin: 1,
+    tierMax: 2,
+    cadences: ['normal', 'focus'],
+    rarity: 'epic',
+    build: (ctx) => {
+      const p = computeAdjustedProbs(
+        { pos: 50, neg: 28, jack: 22 },
+        { jackBonus: ctx.metaLevels.training_ground * 2, negReduce: ctx.metaLevels.training_ground * 2 }
+      );
+      return {
+        id: `pm_gb_el_rev_${ctx.round}`,
+        category: 'gamble',
+        title: 'AI 高级数据模型重构：赛前彻底升级战法库',
+        subtitle: `${p.pos}%阵型+8且获2元素 | ${p.neg}%过拟合混乱(阵型-6) | ${p.jack}%U23传球+2 + Lv.4满阶卡 + Meta 20pt`,
+        rarity: 'epic',
+        gamble: {
+          eventId: 'el_tactical_revolution',
+          bracket: 'elite',
+          tierMin: 1,
+          tierMax: 2,
+          modifierHint: '顶尖分析团队加持下有机会产出满阶 Lv.4 战术指令',
+          positive: {
+            tier: 'positive',
+            prob: p.pos,
+            label: '稳步迭代',
+            summary: '当前阵型熟练度 +8 并获得 2 枚元素',
+            effect: { teamFamiliarityDelta: 8, elementsGain: 2 },
+          },
+          negative: {
+            tier: 'negative',
+            prob: p.neg,
+            label: '模型过拟合',
+            summary: '指令过于繁琐令球员迟疑，阵型熟练度 -6',
+            effect: { teamFamiliarityDelta: -6 },
+          },
+          jackpot: {
+            tier: 'jackpot',
+            prob: p.jack,
+            label: '版本答案！',
+            summary: 'U23传球 +2、直接合成 Lv.4 指挥卡 + Meta 20pt！',
+            effect: { attrDelta: { attr: 'passing', delta: 2, scope: 'u23' }, grantCardLevel: 4, metaDelta: 20 },
+          },
+        },
+      };
+    },
+  },
+  {
+    id: 'all_youth_spark',
+    bracket: 'all',
+    tierMin: 1,
+    tierMax: 7,
+    cadences: ['normal', 'focus'],
+    rarity: 'common',
+    build: (ctx) => {
+      const p = computeAdjustedProbs(
+        { pos: 58, neg: 22, jack: 20 },
+        { jackBonus: ctx.metaLevels.training_ground * 2, negReduce: ctx.metaLevels.medical * 2 }
+      );
+      return {
+        id: `pm_gb_all_u23_${ctx.round}`,
+        category: 'gamble',
+        title: 'U23 青年近卫军特训：激发小将冲击力',
+        subtitle: `${p.pos}%U23速度+1体能+6 | ${p.neg}%练过头(全队体能-8) | ${p.jack}%U23速度+3+Meta 15pt`,
+        rarity: 'common',
+        gamble: {
+          eventId: 'all_youth_spark',
+          bracket: 'all',
+          tierMin: 1,
+          tierMax: 7,
+          modifierHint: '青训与体能保障分别提高兑现上限与恢复度',
+          positive: {
+            tier: 'positive',
+            prob: p.pos,
+            label: '初露锋芒',
+            summary: 'U23 球员速度 +1，全队体能 +6',
+            effect: { attrDelta: { attr: 'pace', delta: 1, scope: 'u23' }, fitnessDelta: 6 },
+          },
+          negative: {
+            tier: 'negative',
+            prob: p.neg,
+            label: '肌肉紧绷',
+            summary: '高强度冲刺引起轻微反应，全队体能 -8',
+            effect: { fitnessDelta: -8 },
+          },
+          jackpot: {
+            tier: 'jackpot',
+            prob: p.jack,
+            label: '超新星降临！',
+            summary: 'U23 全体速度永久 +3 + Meta 15pt！',
+            effect: { attrDelta: { attr: 'pace', delta: 3, scope: 'u23' }, metaDelta: 15 },
+          },
+        },
+      };
+    },
+  },
+  {
+    id: 'all_emergency_physio',
+    bracket: 'all',
+    tierMin: 1,
+    tierMax: 7,
+    cadences: ['normal', 'crisis'],
+    rarity: 'common',
+    build: (ctx) => {
+      const p = computeAdjustedProbs(
+        { pos: 60, neg: 20, jack: 20 },
+        { jackBonus: ctx.metaLevels.medical * 2, negReduce: ctx.metaLevels.medical * 2 }
+      );
+      return {
+        id: `pm_gb_all_phys_${ctx.round}`,
+        category: 'gamble',
+        title: '高压氧舱紧急理疗：与疲劳赛跑',
+        subtitle: `${p.pos}%全队体能+14 | ${p.neg}%理疗排异(随机首发伤停1轮) | ${p.jack}%体能+28+士气高+备战点+1`,
+        rarity: 'common',
+        gamble: {
+          eventId: 'all_emergency_physio',
+          bracket: 'all',
+          tierMin: 1,
+          tierMax: 7,
+          modifierHint: '体能康复基建同步压低事故率与提高完美复苏率',
+          positive: {
+            tier: 'positive',
+            prob: p.pos,
+            label: '稳步回血',
+            summary: '全队体能快速恢复 +14',
+            effect: { fitnessDelta: 14 },
+          },
+          negative: {
+            tier: 'negative',
+            prob: p.neg,
+            label: '排异反应',
+            summary: '1 名首发出现轻微不适，缺席下轮 1 场',
+            effect: { injureStarterRounds: 1 },
+          },
+          jackpot: {
+            tier: 'jackpot',
+            prob: p.jack,
+            label: '满血复活！',
+            summary: '全队体能 +28、士气高涨、下轮备战点 +1！',
+            effect: { fitnessDelta: 28, moraleShift: 'high', prepActionsDelta: 1 },
+          },
+        },
+      };
+    },
+  },
+  {
+    id: 'all_locker_bet',
+    bracket: 'all',
+    tierMin: 1,
+    tierMax: 7,
+    cadences: ['normal', 'focus', 'crisis'],
+    rarity: 'rare',
+    build: (ctx) => {
+      const p = computeAdjustedProbs(
+        { pos: 52, neg: 26, jack: 22 },
+        { jackBonus: ctx.metaLevels.finance * 2, negReduce: ctx.metaLevels.training_ground * 2 }
+      );
+      return {
+        id: `pm_gb_all_bet_${ctx.round}`,
+        category: 'gamble',
+        title: '更衣室军令状：主帅加码赛季奖金池',
+        subtitle: `${p.pos}%Meta+10与1元素 | ${p.neg}%背负包袱(士气低落) | ${p.jack}%Meta+25+Lv.3卡+2元素`,
+        rarity: 'rare',
+        gamble: {
+          eventId: 'all_locker_bet',
+          bracket: 'all',
+          tierMin: 1,
+          tierMax: 7,
+          modifierHint: '财政基建放大奖金激励收益，教练威望托底更衣室心态',
+          positive: {
+            tier: 'positive',
+            prob: p.pos,
+            label: '有赏有罚',
+            summary: '立即收获 Meta 10pt 与 1 枚战术元素',
+            effect: { metaDelta: 10, elementsGain: 1 },
+          },
+          negative: {
+            tier: 'negative',
+            prob: p.neg,
+            label: '重压反噬',
+            summary: '过于高调引发更衣室焦虑，士气滑落至低迷',
+            effect: { moraleShift: 'low' },
+          },
+          jackpot: {
+            tier: 'jackpot',
+            prob: p.jack,
+            label: '重赏必胜！',
+            summary: '收获 Meta 25pt + 1 张 Lv.3 指挥卡 + 2 枚元素！',
+            effect: { metaDelta: 25, grantCardLevel: 3, elementsGain: 2 },
           },
         },
       };

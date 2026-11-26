@@ -63,7 +63,7 @@ const TEMPLATES = {
     '梅开二度！{player}再次建功，一脚低射穿透门将十指关！{team}比分来到{score}！',
   ],
   goal_hattrick: [
-    '🎩 帽子戏法！{player}完成了本场比赛的第三个进球！彻底主宰赛场，比分{score}！',
+    '帽子戏法！{player}完成了本场比赛的第三个进球！彻底主宰赛场，比分{score}！',
   ],
   shot_saved: [
     '{player}一脚劲射，{goalkeeper}飞身将球扑出！精彩的扑救！',
@@ -93,13 +93,13 @@ const TEMPLATES = {
     '{player}带球突破时被{opponent}放倒，主裁判吹停比赛。',
   ],
   yellow_card: [
-    '🟨 {player}因为{reason}被主裁判出示黄牌警告！{team}需要控制动作了！',
-    '🟨 {player}战术犯规拉倒对手，主裁判果断出示黄牌！',
-    '🟨 裁判亮牌了！{player}因{reason}吃到黄牌，教练在场边大喊提醒冷静！',
+    '【黄牌】{player}因为{reason}被主裁判出示黄牌警告！{team}需要控制动作了！',
+    '【黄牌】{player}战术犯规拉倒对手，主裁判果断出示黄牌！',
+    '【黄牌】裁判亮牌了！{player}因{reason}吃到黄牌，教练在场边大喊提醒冷静！',
   ],
   red_card: [
-    '🟥 红牌！{player}因{reason}被直接罚下！{team}只能十人应战！',
-    '🟥 两黄变一红！{player}累计两张黄牌被罚出场！{team}陷入人数劣势！',
+    '【红牌】{player}因{reason}被直接罚下！{team}只能十人应战！',
+    '【红牌】两黄变一红！{player}累计两张黄牌被罚出场！{team}陷入人数劣势！',
   ],
   offside: [
     '{player}越位了！{team}的这次进攻被边裁举旗吹停。',
@@ -111,9 +111,9 @@ const TEMPLATES = {
     '{team}制造一次角球，准备开出战术配合！',
   ],
   substitution: [
-    '🔄 {team}做出换人调整！{playerOut}被换下，{playerIn}替补登场！',
-    '🔄 战术调整！{team}用{playerIn}换下{playerOut}，保持场上冲击力！',
-    '🔄 {team}进行人员轮换，{playerIn}替换{playerOut}上场！',
+    '【换人】{team}做出换人调整！{playerOut}被换下，{playerIn}替补登场！',
+    '【换人】战术调整！{team}用{playerIn}换下{playerOut}，保持场上冲击力！',
+    '【换人】{team}进行人员轮换，{playerIn}替换{playerOut}上场！',
   ],
   kick_off: [
     '比赛开始！{homeTeam}迎战{awayTeam}，主裁判一声哨响，对决正式打响！',
@@ -182,7 +182,7 @@ export class NarrativeState {
       this.momentum = team;
       const cnt = this.consecutiveShots[team];
       this.consecutiveShots[team] = 0;
-      return `🔥 ${teamName}攻势如潮！短时间内连续完成第 ${cnt} 脚射门压制对手！`;
+      return `【攻势如潮】${teamName}短时间内连续完成第 ${cnt} 脚射门压制对手！`;
     }
     return null;
   }
@@ -281,7 +281,7 @@ export class CommentaryEngine {
       score,
     });
 
-    return { text: `⚽ ${text}`, level: 'critical', narrativeTag };
+    return { text: `【进球】${text}`, level: 'critical', narrativeTag };
   }
 
   public formatShot(team: TeamSide, player: string, xG: number, minute: number): CommentaryResult {

@@ -37,9 +37,19 @@ export interface DraftPlayer extends PlayerInput {
   strainWarning?: boolean;
   morale?: PlayerMorale;
   isNewSigning?: boolean;
-  pa?: number;             // 潜力上限 (Potential Ability)
+  pa?: number;             // 潜力上限 (Potential Ability, 45-96)
+  scoutFogLevel?: 0 | 1 | 2; // 0=迷雾, 1=一阶体测, 2=二阶精测/已入队公开
+  paEstMin?: number;       // 迷雾状态下 PA 下限预估
+  paEstMax?: number;       // 迷雾状态下 PA 上限预估
+  marketValue?: number;    // 动态转会估值缓存
   lastCaDelta?: number;    // 上赛季结算 CA 涨跌变化
+  seasonGrowthXp?: number;   // 赛季内逐场累积的成长进度 (0~100)
+  seasonAttrGained?: number; // 赛季内已实时兑换的属性成长步数（用于赛季末差额补齐）
   isAcademy?: boolean;     // 青训学院提拔新星（天生高阵型熟练度）
+  isPrologueCaptain?: boolean; // 序章老队长 #10 林锋（首季游子归家碾压卡，季末退役转教练）
+  formerUserClub?: boolean; // 曾效力玩家俱乐部（转投 AI 后触发旧将反戈提示）
+  isStarred?: boolean;     // 玩家收藏/常用标记（换人与名单置顶）
+  coreTag?: 'veteran' | 'balanced' | 'wonderkid'; // 开局三核开包原型标签
   formationFamiliarity?: Partial<Record<FormationName, number>>; // 0-100 各阵型个人熟练度
   careerStats?: {
     seasons: number;
@@ -80,6 +90,15 @@ export interface TacticalPerk {
     paceBonus?: number;
     staminaBonus?: number;
     goalkeepingBonus?: number;
+    dribblingBonus?: number;
+    composureBonus?: number;
+    strengthBonus?: number;
+    positioningBonus?: number;
+    startEnergyBonus?: number;
+    elementDropBonus?: number;
+    fitnessRecoveryBonus?: number;
+    youthGrowthBonus?: number;
+    corruptedCardBoost?: number;
   };
 }
 
@@ -89,6 +108,8 @@ export interface ClubDirectoryEntry {
   shortName: string;
   primaryColor: string;
   secondaryColor: string;
+  awayPrimaryColor?: string;
+  awaySecondaryColor?: string;
   baseStrength: number;
 }
 
@@ -96,6 +117,7 @@ export interface LeagueTierDef {
   tier: number; // 1 = 最高级超级联赛, 7 = 最低级社区业余联赛
   name: string;
   shortLabel: string;
+  teamCount: number;
   baseCA: number;
   promoteCount: number;
   relegateCount: number;
@@ -108,6 +130,8 @@ export interface LeagueClub {
   shortName: string;
   primaryColor: string;
   secondaryColor: string;
+  awayPrimaryColor?: string;
+  awaySecondaryColor?: string;
   isUser: boolean;
   formation: FormationName;
   style: TacticalStyle;
@@ -115,6 +139,8 @@ export interface LeagueClub {
   starterIds: string[];        // 11人首发ID（按阵型槽位顺序）
   captainId?: string;          // 场上队长袖标归属球员 ID
   perks: TacticalPerk[];       // 本赛季激活的 Rogue 战术词条
+  ecoTag?: string;             // AI 球队生态招牌标签（青春风暴/铁血老兵/传控大师等）
+  isRival?: boolean;           // 跨赛季宿敌标记
   gridSlots?: Record<number, { col: number; row: number }>; // FM27 5×6 格子微调坐标
   slotDuties?: Record<number, PlayerDuty>; // 各槽位同位置职责风格
 }
@@ -149,14 +175,82 @@ export interface StandingRow {
 
 export type LeaguePhase =
   | 'INIT_DRAFT'
+  | 'SUMMER_WINDOW'
+  | 'WINTER_WINDOW'
   | 'REGULAR_SEASON'
   | 'RE_DRAFT'
   | 'PLAYOFF_SEMI'
   | 'PLAYOFF_FINAL'
   | 'SEASON_END';
 
-export type MetaBranch = 'scout' | 'finance' | 'coaching' | 'fitness' | 'academy';
+export type CorePackLine = 'DEF' | 'MID' | 'ATT';
+
+export interface CorePackDraftState {
+  step: number; // 0=防守, 1=中场, 2=前锋, 3=完成
+  lines: CorePackLine[];
+  currentChoices: DraftPlayer[];
+  pickedCores: DraftPlayer[];
+}
+
+export type BrokerOutcomeTier = 'bust' | 'solid' | 'gem' | 'superstar';
+
+export interface PendingBrokerResult {
+  boxTier: 'small' | 'large';
+  outcome: BrokerOutcomeTier;
+  outcomeLabel: string;
+  player: DraftPlayer;
+  sellPrice: number;
+  note: string;
+}
+
+export type MetaBranch =
+  | 'academy'
+  | 'scout'
+  | 'finance'
+  | 'transfer'
+  | 'medical'
+  | 'training_ground'
+  | 'stadium'
+  | 'analytics';
 export type MetaLevels = Record<MetaBranch, number>;
+
+export interface TransferOffer {
+  id: string;
+  clubName: string;
+  offerPrice: number;
+  isGiant?: boolean;
+}
+
+export interface TransferListing {
+  playerId: string;
+  playerName: string;
+  role: PlayerInput['role'];
+  ca: number;
+  pa: number;
+  age: number;
+  baseValue: number;
+  offers: TransferOffer[];
+}
+
+export interface YouthAcademyState {
+  seasonNumber: number;
+  freeRefreshesLeft: number;
+  paidRefreshesUsed: number;
+  candidates: DraftPlayer[];
+  overseasPackUsed: boolean;
+}
+
+export interface TransferMarketState {
+  seasonNumber: number;
+  freeRefreshesLeft: number;
+  paidRefreshesUsed: number;
+  marketPool: DraftPlayer[];
+  listings: TransferListing[];
+  mysteryBoxSmallUsed: boolean;
+  mysteryBoxLargeUsed: boolean;
+  privateTrainCount: number;
+  pendingBrokerResult?: PendingBrokerResult | null;
+}
 
 export interface TacticalMasteryData {
   formations: Record<FormationName, number>;
@@ -223,11 +317,37 @@ export interface OpponentIntelRecord {
   lastScore?: string;
 }
 
+export type ScoutingZoneId = 'defense' | 'wings' | 'midfield' | 'gk_core';
+export type ScoutRewardKind = 'buff_debuff' | 'skill_overclock';
+export type TacticalElementKey = 'press' | 'pass' | 'wing' | 'iron' | 'blitz';
+
+export interface ScoutingZoneIntel {
+  id: ScoutingZoneId;
+  label: string;
+  scanned: boolean;
+  keyPlayerName: string;
+  summary: string;
+  anomalyTag?: string;
+  isWeakZone: boolean;
+}
+
+export interface OpponentWeaknessDebuff {
+  targetLine: 'GK' | 'DEF' | 'MID' | 'ATT' | 'ALL';
+  pacePenalty?: number;
+  defendingPenalty?: number;
+  composurePenalty?: number;
+  goalkeepingPenalty?: number;
+  passingPenalty?: number;
+  shootingPenalty?: number;
+  label: string;
+}
+
 export interface OpponentClueItem {
   id: string;
   text: string;
   isSmoke?: boolean;
   confidence: 'high' | 'mid' | 'low';
+  debunked?: boolean;
 }
 
 export interface OpponentCounterOption {
@@ -235,6 +355,10 @@ export interface OpponentCounterOption {
   label: string;
   desc: string;
   isCorrect: boolean;
+  targetZone?: ScoutingZoneId;
+  counterElements?: TacticalElementKey[];
+  counterStyles?: TacticalStyle[];
+  oppDebuff?: OpponentWeaknessDebuff;
   buff: {
     passingBonus?: number;
     shootingBonus?: number;
@@ -248,6 +372,7 @@ export interface OpponentCounterOption {
 export interface OpponentMatchupIntel {
   oppClubId: string;
   oppClubName: string;
+  oppFormation?: FormationName;
   familiarity: number;
   recentFormText: string;
   h2hText: string;
@@ -256,6 +381,16 @@ export interface OpponentMatchupIntel {
   chosenCounterId?: string;
   spotCorrect?: boolean;
   scoutedThisRound?: boolean;
+  analysisPoints?: number;
+  maxAnalysisPoints?: number;
+  usedDebunk?: boolean;
+  zones?: ScoutingZoneIntel[];
+  chosenRewardKind?: ScoutRewardKind;
+  mastery?: 'master' | 'standard';
+  counterElements?: TacticalElementKey[];
+  counterStyles?: TacticalStyle[];
+  activeDebuff?: OpponentWeaknessDebuff;
+  masteryBonusElement?: TacticalElementKey;
 }
 
 export interface InterMatchPrepState {
@@ -388,6 +523,14 @@ export interface SeasonSummary {
   tierName?: string;
   promotionStatus?: 'promoted' | 'relegated' | 'stayed';
   newTier?: number;
+  retiredLegend?: {
+    name: string;
+    age: number;
+    appearances: number;
+    goals: number;
+    assists: number;
+    note: string;
+  } | null;
 }
 
 export interface SeasonHistoryRecord {
@@ -417,6 +560,7 @@ export interface HallOfFameData {
 
 export interface TutorialProgress {
   draft?: boolean;
+  portal_summer?: boolean;
   portal_prep?: boolean;
   portal_scout?: boolean;
   tactics?: boolean;
@@ -444,9 +588,16 @@ export interface LeagueSaveState {
   clubs: LeagueClub[];
   fixtures: FixtureMatch[];
   draft: DraftState;
+  corePackDraft?: CorePackDraftState | null;
+  winterWindowDoneSeason?: number;
   reDraft: ReDraftOffer | null;
   metaPointsTotal: number;
+  clubFunds?: number;
+  bestTierReached?: number;
   metaLevels?: MetaLevels;
+  youthAcademy?: YouthAcademyState | null;
+  transferMarket?: TransferMarketState | null;
+  seasonPrivateTrainedIds?: string[];
   storyline?: SeasonStoryline;
   pendingStoryEvent?: PendingStoryEvent | null;
   storyLog?: string[];
@@ -469,6 +620,8 @@ export interface LeagueSaveState {
   tacticalMastery?: TacticalMasteryData;
   skillWebUnlocked?: string[];
   skillLoadoutIds?: string[];
+  skillRanks?: Record<string, number>;
+  skillMutations?: Record<string, 'A' | 'B'>;
   chemistryLinks?: Record<string, ChemistryLink>;
   seasonRewardDrafts?: DraftPlayer[];
   seasonTrainedIds?: string[];
@@ -480,6 +633,10 @@ export interface LeagueSaveState {
   recentGambleEventIds?: string[];
   seasonMemories?: SeasonMemory[];
   lastSummary: SeasonSummary | null;
+  exUserPlayersPool?: DraftPlayer[];
+  rivalClubIds?: string[];
+  prologueCompleted?: boolean;
+  secretRetiredEnding?: boolean;
 }
 
 export interface ChemistryLink {

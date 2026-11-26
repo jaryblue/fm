@@ -5,11 +5,37 @@
  * - 25ms 前瞻步进音序器 + 电子管过载箱体滤波 + 母带动态压缩，确保音色饱满且节拍零抖动
  */
 
-export type BgmScene = 'menu' | 'match';
+import {
+  EXTERNAL_BGM_FILES,
+  EXTERNAL_SFX_FILES,
+  EXTERNAL_VOICE_FILES,
+  ExternalBgmId,
+  ExternalSfxId,
+  VoiceAssetId,
+} from './AudioManifest';
+
+export type BgmScene =
+  | 'title'
+  | 'prologue'
+  | 'portal'
+  | 'menu'
+  | 'match'
+  | 'match_climax'
+  | 'celebration';
 export type WeatherAudioKind = 'sunny' | 'rain' | 'wind' | 'heat';
 export type AudioMode = 'all' | 'sfx_only' | 'muted';
 
 export type RockStyle = 'hard_rock' | 'anime_rock';
+
+const SCENE_TO_BGM_ID: Record<BgmScene, ExternalBgmId> = {
+  title: 'bgm_title',
+  menu: 'bgm_title',
+  prologue: 'bgm_prologue',
+  portal: 'bgm_portal',
+  match: 'bgm_match_normal',
+  match_climax: 'bgm_match_climax',
+  celebration: 'bgm_celebration',
+};
 
 interface RockProgression {
   roots: number[];       // 4 小节根音频率 (Hz)
@@ -55,6 +81,18 @@ class SoundEngineImpl {
 
   // 摇滚引擎总线与音序器状态
   private masterBus: GainNode | null = null;
+  private bgmBus: GainNode | null = null;
+  private sfxBus: GainNode | null = null;
+  private voiceBus: GainNode | null = null;
+  private decodedCache = new Map<string, AudioBuffer>();
+  private loadingCache = new Map<string, Promise<AudioBuffer | null>>();
+  private extBgmSrc: AudioBufferSourceNode | null = null;
+  private extBgmGain: GainNode | null = null;
+  private extBgmId: ExternalBgmId | null = null;
+  private extBgmSeq = 0;
+  private voiceSrc: AudioBufferSourceNode | null = null;
+  private voiceCooldown = new Map<VoiceAssetId, number>();
+
   private rockDriveCurve: Float32Array | null = null;
   private bgmTimer: ReturnType<typeof setInterval> | null = null;
   private nextStepTime = 0;
@@ -64,7 +102,7 @@ class SoundEngineImpl {
   private leadMotif: Array<number | null> = []; // 16步主音旋律动机（音阶索引或 null）
   private fillStyle = 0; // 0..2 随机过门风格
 
-  private currentScene: BgmScene = 'menu';
+  private currentScene: BgmScene = 'title';
   private currentWeather: WeatherAudioKind = 'sunny';
   private highTension = false;
   public audioMode: AudioMode = 'all';
@@ -74,6 +112,7 @@ class SoundEngineImpl {
       document.addEventListener('visibilitychange', () => {
         if (document.hidden) {
           this.stopBgm();
+          this.stopVoice();
           this.stopCrowdAmbience();
           this.stopWeatherAmbience();
           if (this.ctx && this.ctx.state === 'running') {
@@ -83,10 +122,10 @@ class SoundEngineImpl {
           if (this.ctx && this.ctx.state === 'suspended') {
             this.ctx.resume().catch(() => {});
           }
-          if (this.audioMode === 'all' && !this.bgmTimer) {
+          if (this.audioMode === 'all' && !this.bgmTimer && !this.extBgmSrc) {
             this.startBgmLoop();
           }
-          if (this.currentScene === 'match') {
+          if (this.currentScene === 'match' || this.currentScene === 'match_climax') {
             this.startCrowdAmbience();
             this.startWeatherAmbience(this.currentWeather);
           }
@@ -143,6 +182,126 @@ class SoundEngineImpl {
     return bus;
   }
 
+  private getBgmBus(ctx: AudioContext): GainNode {
+    if (this.bgmBus) return this.bgmBus;
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(0.68, ctx.currentTime);
+    g.connect(this.getMasterBus(ctx));
+    this.bgmBus = g;
+    return g;
+  }
+
+  private getSfxBus(ctx: AudioContext): GainNode {
+    if (this.sfxBus) return this.sfxBus;
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(1.0, ctx.currentTime);
+    g.connect(this.getMasterBus(ctx));
+    this.sfxBus = g;
+    return g;
+  }
+
+  private getVoiceBus(ctx: AudioContext): GainNode {
+    if (this.voiceBus) return this.voiceBus;
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(1.0, ctx.currentTime);
+    g.connect(this.getMasterBus(ctx));
+    this.voiceBus = g;
+    return g;
+  }
+
+  private loadBuffer(ctx: AudioContext, url: string): Promise<AudioBuffer | null> {
+    const cached = this.decodedCache.get(url);
+    if (cached) return Promise.resolve(cached);
+    const pending = this.loadingCache.get(url);
+    if (pending) return pending;
+    const req = (async () => {
+      try {
+        if (typeof fetch !== 'function') return null;
+        const resp = await fetch(url);
+        if (!resp.ok) return null;
+        const arr = await resp.arrayBuffer();
+        const buf = await ctx.decodeAudioData(arr);
+        this.decodedCache.set(url, buf);
+        return buf;
+      } catch {
+        return null;
+      } finally {
+        this.loadingCache.delete(url);
+      }
+    })();
+    this.loadingCache.set(url, req);
+    return req;
+  }
+
+  private duckBgm(ctx: AudioContext, ducked: boolean): void {
+    const bus = this.getBgmBus(ctx);
+    const target = ducked ? 0.24 : 0.68;
+    try {
+      bus.gain.setTargetAtTime(target, ctx.currentTime, ducked ? 0.06 : 0.22);
+    } catch {
+      bus.gain.value = target;
+    }
+  }
+
+  public stopVoice(): void {
+    try {
+      this.voiceSrc?.stop();
+      this.voiceSrc?.disconnect();
+    } catch {
+      // ignore
+    }
+    this.voiceSrc = null;
+    if (this.ctx) this.duckBgm(this.ctx, false);
+  }
+
+  public playVoice(id: VoiceAssetId, cooldownMs = 2800): boolean {
+    if (this.muted) return false;
+    const url = EXTERNAL_VOICE_FILES[id];
+    if (!url) return false;
+    const nowMs = Date.now();
+    const last = this.voiceCooldown.get(id) ?? 0;
+    if (nowMs - last < cooldownMs) return false;
+    const ctx = this.ensureContext();
+    if (!ctx) return false;
+    this.voiceCooldown.set(id, nowMs);
+
+    void this.loadBuffer(ctx, url).then((buf) => {
+      if (!buf || this.muted) return;
+      this.stopVoice();
+      const src = ctx.createBufferSource();
+      src.buffer = buf;
+      src.connect(this.getVoiceBus(ctx));
+      this.duckBgm(ctx, true);
+      src.onended = () => {
+        if (this.voiceSrc === src) {
+          this.voiceSrc = null;
+          this.duckBgm(ctx, false);
+        }
+      };
+      src.start();
+      this.voiceSrc = src;
+    });
+    return true;
+  }
+
+  public playExternalSfx(id: ExternalSfxId, volume = 0.85): boolean {
+    if (this.muted) return false;
+    const url = EXTERNAL_SFX_FILES[id];
+    if (!url) return false;
+    const ctx = this.ensureContext();
+    if (!ctx) return false;
+    void this.loadBuffer(ctx, url).then((buf) => {
+      if (!buf || this.muted) return;
+      const src = ctx.createBufferSource();
+      const gain = ctx.createGain();
+      gain.gain.setValueAtTime(volume, ctx.currentTime);
+      src.buffer = buf;
+      src.connect(gain).connect(this.getSfxBus(ctx));
+      src.start();
+    });
+    return true;
+  }
+
   private getDistortionCurve(amount = 22): Float32Array {
     if (this.rockDriveCurve) return this.rockDriveCurve;
     const samples = 1024;
@@ -158,7 +317,7 @@ class SoundEngineImpl {
 
   public unlock(): void {
     const ctx = this.ensureContext();
-    if (ctx && this.audioMode === 'all' && !this.bgmTimer) {
+    if (ctx && this.audioMode === 'all' && !this.bgmTimer && !this.extBgmSrc) {
       this.setScene(this.currentScene, this.currentWeather);
     }
   }
@@ -171,6 +330,7 @@ class SoundEngineImpl {
     } else if (this.audioMode === 'sfx_only') {
       this.audioMode = 'muted';
       this.stopBgm();
+      this.stopVoice();
       this.stopCrowdAmbience();
       this.stopWeatherAmbience();
     } else {
@@ -195,21 +355,23 @@ class SoundEngineImpl {
     const changed = this.currentScene !== scene || this.currentWeather !== nextWeather;
     this.currentScene = scene;
     this.currentWeather = nextWeather;
-    if (scene !== 'match') this.highTension = false;
+    const isMatchScene = scene === 'match' || scene === 'match_climax';
+    if (!isMatchScene) this.highTension = false;
+    else if (scene === 'match_climax') this.highTension = true;
 
     if (this.muted) return;
     const ctx = this.ensureContext();
     if (!ctx) return;
 
     if (this.audioMode === 'all') {
-      if (changed || !this.bgmTimer) {
+      if (changed || (!this.bgmTimer && !this.extBgmSrc)) {
         this.rollPhraseVariation(true);
         this.startBgmLoop();
       }
     } else {
       this.stopBgm();
     }
-    if (scene === 'match') {
+    if (isMatchScene) {
       this.startCrowdAmbience();
       this.startWeatherAmbience(nextWeather);
     } else {
@@ -219,7 +381,7 @@ class SoundEngineImpl {
   }
 
   private getActiveStyle(): RockStyle {
-    return this.currentScene === 'match' ? 'anime_rock' : 'hard_rock';
+    return this.currentScene === 'match' || this.currentScene === 'match_climax' ? 'anime_rock' : 'hard_rock';
   }
 
   private rollPhraseVariation(forceFirst = false): void {
@@ -274,16 +436,12 @@ class SoundEngineImpl {
     this.fillStyle = Math.floor(Math.random() * 3);
   }
 
-  private startBgmLoop(): void {
-    this.stopBgm();
-    if (typeof document !== 'undefined' && document.hidden) return;
-    const ctx = this.ensureContext();
-    if (!ctx) return;
-
+  private startProceduralBgm(ctx: AudioContext): void {
+    this.stopProceduralBgm();
     this.stepIndex = 0;
     this.nextStepTime = ctx.currentTime + 0.05;
 
-    const scheduleAheadSec = 0.09;
+    const scheduleAheadSec = 0.16;
     const tick = () => {
       if (this.audioMode !== 'all') return;
       if (typeof document !== 'undefined' && document.hidden) return;
@@ -316,7 +474,47 @@ class SoundEngineImpl {
     };
 
     tick();
-    this.bgmTimer = setInterval(tick, 25);
+    this.bgmTimer = setInterval(tick, 60);
+  }
+
+  private startBgmLoop(): void {
+    if (typeof document !== 'undefined' && document.hidden) return;
+    const ctx = this.ensureContext();
+    if (!ctx) return;
+
+    const extId = SCENE_TO_BGM_ID[this.currentScene];
+    const extUrl = EXTERNAL_BGM_FILES[extId];
+    if (extUrl) {
+      if (this.extBgmId === extId && this.extBgmSrc) return;
+      const seq = ++this.extBgmSeq;
+      if (!this.decodedCache.has(extUrl) && !this.bgmTimer && !this.extBgmSrc) {
+        this.startProceduralBgm(ctx);
+      }
+      void this.loadBuffer(ctx, extUrl).then((buf) => {
+        if (!buf || seq !== this.extBgmSeq || this.audioMode !== 'all') return;
+        if (typeof document !== 'undefined' && document.hidden) return;
+        this.stopProceduralBgm();
+        this.fadeOutExternalBgm(ctx, 0.55);
+
+        const src = ctx.createBufferSource();
+        src.buffer = buf;
+        src.loop = true;
+        const g = ctx.createGain();
+        const now = ctx.currentTime;
+        g.gain.setValueAtTime(0.001, now);
+        g.gain.linearRampToValueAtTime(1.0, now + 0.65);
+        src.connect(g).connect(this.getBgmBus(ctx));
+        src.start(now);
+        this.extBgmSrc = src;
+        this.extBgmGain = g;
+        this.extBgmId = extId;
+      });
+      return;
+    }
+
+    this.extBgmSeq++;
+    this.fadeOutExternalBgm(ctx, 0.35);
+    this.startProceduralBgm(ctx);
   }
 
   private scheduleRockStep(
@@ -329,7 +527,7 @@ class SoundEngineImpl {
     const bar = Math.floor(step / 16); // 0..3
     const s = step % 16;               // 0..15
     const root = this.activeProg.roots[bar] ?? this.activeProg.roots[0];
-    const bus = this.getMasterBus(ctx);
+    const bus = this.getBgmBus(ctx);
 
     try {
       // 1. 架子鼓组（底鼓、军鼓、踩镲、第4小节过门 + 擦钹）
@@ -620,11 +818,41 @@ class SoundEngineImpl {
     osc.stop(time + dur + 0.02);
   }
 
-  private stopBgm(): void {
+  private stopProceduralBgm(): void {
     if (this.bgmTimer) {
       clearInterval(this.bgmTimer);
       this.bgmTimer = null;
     }
+  }
+
+  private fadeOutExternalBgm(ctx: AudioContext | null, fadeSec = 0.35): void {
+    const oldSrc = this.extBgmSrc;
+    const oldGain = this.extBgmGain;
+    this.extBgmSrc = null;
+    this.extBgmGain = null;
+    this.extBgmId = null;
+    if (!oldSrc) return;
+    try {
+      if (ctx && oldGain) {
+        const now = ctx.currentTime;
+        oldGain.gain.cancelScheduledValues(now);
+        oldGain.gain.setValueAtTime(oldGain.gain.value, now);
+        oldGain.gain.linearRampToValueAtTime(0.001, now + fadeSec);
+        oldSrc.stop(now + fadeSec + 0.03);
+      } else {
+        oldSrc.stop();
+        oldSrc.disconnect();
+        oldGain?.disconnect();
+      }
+    } catch {
+      // ignore
+    }
+  }
+
+  private stopBgm(): void {
+    this.extBgmSeq++;
+    this.stopProceduralBgm();
+    this.fadeOutExternalBgm(this.ctx, 0.15);
   }
 
   private startWeatherAmbience(weather: WeatherAudioKind): void {
@@ -806,6 +1034,8 @@ class SoundEngineImpl {
   }
 
   public playWhistle(kind: 'kickoff' | 'halftime' | 'fulltime' | 'foul'): void {
+    const extKey: ExternalSfxId = kind === 'foul' ? 'sfx_whistle_short' : 'sfx_whistle_long';
+    if (this.playExternalSfx(extKey, kind === 'fulltime' ? 0.9 : 0.75)) return;
     const ctx = this.ensureContext();
     if (!ctx) return;
     const now = ctx.currentTime;
@@ -871,6 +1101,7 @@ class SoundEngineImpl {
   }
 
   public playGoalCheer(): void {
+    this.playExternalSfx('sfx_goal_roar', 0.85);
     const ctx = this.ensureContext();
     if (!ctx) return;
     const now = ctx.currentTime;

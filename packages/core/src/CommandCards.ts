@@ -108,6 +108,38 @@ export function formatCardSummary(
   return `${card.durationMinutes}分 ${parts.join(' ')}`;
 }
 
+export function formatCardHumanIntent(
+  card: Pick<
+    CommandCard,
+    | 'targetLine'
+    | 'passingDelta'
+    | 'shootingDelta'
+    | 'defendingDelta'
+    | 'paceDelta'
+    | 'composureDelta'
+    | 'goalkeepingDelta'
+    | 'fitnessInstantDelta'
+    | 'mechanic'
+    | 'forceStyle'
+  >
+): string {
+  if (card.mechanic === 'set_piece_nuke') return '定位球核武，大幅拉高角球与任意球破门率';
+  if (card.mechanic === 'long_shot_cannon') return '解放禁区外重炮远射，强破对手密集铁桶阵';
+  if (card.mechanic === 'wing_overload') return '两翼强行起速传中，重点轰炸对方边路空当';
+  if (card.mechanic === 'high_press_blitz') return '前场疯狂反抢压迫，力争断球后就地打反击';
+  if (card.mechanic === 'iron_wall_block') return '全线收缩扎紧铁闸，死守禁区与门线绝险';
+  if (card.mechanic === 'blood_frenzy') return '落后搏命总攻，全员提速前插强抢绝平机会';
+  if (card.mechanic === 'tiki_taka_flow') return '中场高频短传控场，稳步渗透同时省力回体';
+  if (card.mechanic === 'gk_counter_launch') return '门将扑救后立刻长传发动闪电反击';
+  if ((card.shootingDelta ?? 0) >= 5 || card.targetLine === 'ATT') return '全线加强进攻渗透，显著提升禁区射门与威胁值';
+  if ((card.passingDelta ?? 0) >= 5 || card.targetLine === 'MID') return '抢回中场控制权，提升直塞穿透与前插创造机会';
+  if ((card.defendingDelta ?? 0) >= 5 || (card.goalkeepingDelta ?? 0) >= 5 || card.targetLine === 'DEF' || card.targetLine === 'GK') {
+    return '稳固后防与门线，大幅降低对手禁区内射门质量';
+  }
+  if ((card.fitnessInstantDelta ?? 0) > 0) return '紧急唤醒全队体能，防止末段跑不动丢球';
+  return '全面提升场上专注度与攻防转换效率';
+}
+
 export function createInitialElements(): Record<ElementId, number> {
   return { press: 2, pass: 2, wing: 1, iron: 2, blitz: 1 };
 }
@@ -251,6 +283,29 @@ export function createStarterCoachDeck(): CommandCard[] {
     c.summary = formatCardSummary(c);
     return c;
   });
+}
+
+/**
+ * 序章通关专属传承指挥卡：【老队长的怒吼】
+ */
+export function createCaptainRoarCard(): CommandCard {
+  const c: CommandCard = {
+    id: 'card_captain_roar',
+    name: '老队长的怒吼',
+    cost: 1,
+    durationMinutes: 12,
+    targetLine: 'ALL',
+    paceDelta: 6,
+    shootingDelta: 6,
+    composureDelta: 10,
+    fitnessInstantDelta: 10,
+    mechanic: 'blood_frenzy',
+    recipeKey: 'blitz',
+    level: 2,
+    summary: '',
+  };
+  c.summary = formatCardSummary(c);
+  return c;
 }
 
 const CHAIN_POOL: CommandCardChain[] = [
@@ -487,4 +542,41 @@ export function fuseTwoCards(a: CommandCard, b: CommandCard): CommandCard {
   };
   card.summary = formatCardSummary(card);
   return card;
+}
+
+const VALID_ELEMENTS = new Set<ElementId>(['press', 'pass', 'wing', 'iron', 'blitz']);
+
+/**
+ * 推导指挥卡的主导元素属性，用于触发技能树要素过载与三方联动
+ */
+export function inferCardElement(card: {
+  element?: ElementId;
+  recipeKey?: string;
+  mechanic?: CardMechanic;
+}): ElementId {
+  if (card.element && VALID_ELEMENTS.has(card.element)) {
+    return card.element;
+  }
+  if (card.recipeKey) {
+    const first = card.recipeKey.split('+')[0] as ElementId;
+    if (VALID_ELEMENTS.has(first)) return first;
+  }
+  switch (card.mechanic) {
+    case 'high_press_blitz':
+      return 'press';
+    case 'wing_overload':
+      return 'wing';
+    case 'iron_wall_block':
+    case 'offside_trap':
+    case 'gk_counter_launch':
+      return 'iron';
+    case 'long_shot_cannon':
+    case 'blood_frenzy':
+    case 'set_piece_nuke':
+      return 'blitz';
+    case 'tiki_taka_flow':
+    case 'super_sub':
+    default:
+      return 'pass';
+  }
 }

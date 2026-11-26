@@ -2,6 +2,7 @@
  * 页面 6：赛季荣耀结算与休赛期整备（2 阶段：赛季颁奖台 & 赛季宝箱 3 选 1 -> 休赛期引援交换 & 专项特训）
  */
 
+import { ACHIEVEMENTS } from '../../../core/src/Achievements';
 import { LeagueManager } from '../../../core/src/LeagueManager';
 import { AssetLoader } from '../AssetLoader';
 import { drawPlayerAvatar } from '../AvatarRenderer';
@@ -28,15 +29,17 @@ export class SeasonEndScreen {
   private enterTimer = 0;
   private ceremonyBurstDone = false;
   private selectedRewardId: string | null = null;
+  private selectedDropRosterId: string | null = null;
   private trainFocus: 'auto' | 'attack' | 'playmake' | 'defense' = 'auto';
   private memoryIdx = 0;
-  private notice = '点选左侧赛季引援新秀，再点右侧任意老将即可一对一交换并保留至下赛季';
+  private notice = '点选新秀与老将（顺序不限）即可一对一交换保留至下赛季';
 
   public resetIntro(): void {
     this.viewMode = 'ceremony';
     this.enterTimer = 0;
     this.ceremonyBurstDone = false;
     this.selectedRewardId = null;
+    this.selectedDropRosterId = null;
     this.memoryIdx = 0;
   }
 
@@ -62,7 +65,7 @@ export class SeasonEndScreen {
     const club = league.getUserClub();
     const summary = st.lastSummary;
 
-    drawChamferPanel(ctx, 40, 28, 1200, 664, 14, 'rgba(14, 22, 40, 0.96)', THEME.BORDER_GOLD, 1.5, THEME.GOLD_LIGHT);
+    drawChamferPanel(ctx, 40, 28, 1200, 664, 14, 'rgba(10, 16, 30, 0.84)', THEME.BORDER_GOLD, 1.5, THEME.GOLD_LIGHT);
 
     const isChamp = summary?.isChampion ?? false;
     const isPromo = summary?.promotionStatus === 'promoted';
@@ -75,12 +78,10 @@ export class SeasonEndScreen {
       actions.onBurst?.(920, 220, isChamp ? '#FACC15' : THEME.GREEN);
     }
 
-    if (isChamp) {
-      const curTier = summary?.newTier ?? 7;
-      const trophyId = curTier === 1 ? 'trophy_tier1' : curTier <= 4 ? 'trophy_tier2_4' : 'trophy_tier5_7';
-      const trophyImg = AssetLoader.get(trophyId) ?? AssetLoader.get('trophy_champ');
+    if (isChamp || isPromo) {
+      const trophyImg = AssetLoader.get('trophy_grand_cup') ?? AssetLoader.get('trophy_tier1');
       if (trophyImg && typeof ctx.drawImage === 'function') {
-        ctx.drawImage(trophyImg, 84, 46, 54, 54);
+        ctx.drawImage(trophyImg, 80, 44, 60, 60);
       } else {
         drawTrophyIcon(ctx, 110, 74, 42);
       }
@@ -117,12 +118,24 @@ export class SeasonEndScreen {
     }, { active: this.viewMode === 'roster_prep', fontSize: 10.5 });
 
     drawIcon(ctx, 'trophy', 1110, 69, 14, THEME.GOLD_LIGHT);
-    drawText(ctx, `成就 ${st.hallOfFame?.unlockedAchievements.length ?? 0}/12`, 1214, 69, {
+    drawText(ctx, `成就 ${st.hallOfFame?.unlockedAchievements.length ?? 0}/${ACHIEVEMENTS.length}`, 1214, 69, {
       size: 12.5,
       bold: true,
       color: THEME.TX2,
       align: 'right',
     });
+
+    if (summary?.retiredLegend) {
+      const rl = summary.retiredLegend;
+      drawRoundRect(ctx, 64, 108, 1152, 26, 6, 'rgba(120, 53, 15, 0.45)', THEME.GOLD, 1);
+      drawText(
+        ctx,
+        `游子归家 · 传奇挂靴转教练：#10 ${rl.name} (${rl.age}岁 · 本季 ${rl.appearances}场 ${rl.goals}球${rl.assists}助) 正式退役接过教鞭，传承【老队长的怒吼】+50 Meta！`,
+        640,
+        121,
+        { size: 11.5, bold: true, color: THEME.GOLD_LIGHT, align: 'center' }
+      );
+    }
 
     if (this.viewMode === 'ceremony') {
       this.renderCeremonyView(ctx, hits, league, actions);
@@ -151,15 +164,24 @@ export class SeasonEndScreen {
     const isPromo = summary?.promotionStatus === 'promoted';
 
     // 左栏：赛季个人荣誉颁奖台
-    drawChamferPanel(ctx, 64, 118, 460, 486, 12, THEME.BG_CARD, THEME.BORDER_GOLD, 1.2);
-    const celebrateArt = AssetLoader.get(isChamp ? 'champ_celebrate' : 'bg_champion');
+    drawChamferPanel(ctx, 64, 118, 460, 486, 12, 'rgba(14, 22, 40, 0.88)', THEME.BORDER_GOLD, 1.2);
+    const celebrateArt = AssetLoader.get('bg_season_ceremony') ?? AssetLoader.get('bg_champion');
     if (celebrateArt && typeof ctx.drawImage === 'function') {
       ctx.save();
       ctx.beginPath();
       ctx.rect(66, 120, 456, 108);
       ctx.clip();
-      ctx.globalAlpha = 0.35;
-      ctx.drawImage(celebrateArt, 66, 120, 456, 108);
+      ctx.globalAlpha = 0.55;
+      ctx.drawImage(celebrateArt, 66, 110, 456, 148);
+      ctx.restore();
+    }
+    const grandCup = AssetLoader.get('trophy_grand_cup');
+    if (grandCup && typeof ctx.drawImage === 'function') {
+      const cupEnter = easeOutBack(Math.max(0, Math.min(1, this.enterTimer / 0.45)));
+      const cyOff = (1 - cupEnter) * 18;
+      ctx.save();
+      ctx.globalAlpha = 0.92;
+      ctx.drawImage(grandCup, 426, 124 + cyOff, 86, 86);
       ctx.restore();
     }
     drawText(ctx, '赛季个人荣誉殿堂 · SEASON AWARDS', 84, 144, { size: 14, bold: true, color: THEME.GOLD_LIGHT });
@@ -340,9 +362,30 @@ export class SeasonEndScreen {
           col
         );
         drawFoilShimmer(ctx, bx, by, bw, bh, this.animClock + oi * 0.5, col + '33');
-        drawBadge(ctx, bx + 12, by + 12, 114, 20, opt.badge, '#1E293B', col);
-        drawText(ctx, opt.title, bx + 12, by + 50, { size: 13, bold: true, color: THEME.TX1 });
-        drawWrappedText(ctx, opt.subtitle, bx + 12, by + 74, bw - 24, 16, { size: 10.5, color: THEME.TX2, maxLines: 3 });
+        const showMythicFrame = oi === 2 || hovered;
+        if (showMythicFrame) {
+          const mf = AssetLoader.get('card_frame_mythic');
+          if (mf && typeof ctx.drawImage === 'function') {
+            ctx.save();
+            ctx.globalAlpha = oi === 2 ? 0.92 : 0.6;
+            ctx.drawImage(mf, bx - 5, by - 5, bw + 10, bh + 10);
+            ctx.restore();
+            drawRoundRect(
+              ctx,
+              bx + 10,
+              by + 10,
+              bw - 20,
+              bh - 20,
+              8,
+              hovered ? 'rgba(20, 34, 62, 0.92)' : 'rgba(11, 18, 34, 0.90)',
+              'rgba(250, 204, 21, 0.36)',
+              1
+            );
+          }
+        }
+        drawBadge(ctx, bx + 14, by + 14, 114, 20, opt.badge, '#1E293B', col);
+        drawText(ctx, opt.title, bx + 14, by + 50, { size: 13, bold: true, color: THEME.TX1 });
+        drawWrappedText(ctx, opt.subtitle, bx + 14, by + 74, bw - 28, 16, { size: 10.5, color: THEME.TX2, maxLines: 3 });
 
         const claim = () => {
           const res = league.pickSeasonBonusReward(opt.id);
@@ -353,7 +396,7 @@ export class SeasonEndScreen {
             actions.onSave?.();
           }
         };
-        drawButton(ctx, hits, bx + 12, by + bh - 40, bw - 24, 30, '开启宝箱 ✨', claim, { variant: 'gold', fontSize: 11.5 });
+        drawButton(ctx, hits, bx + 14, by + bh - 42, bw - 28, 28, '开启宝箱', claim, { variant: 'gold', fontSize: 11.5, icon: 'sparkle' });
         hits.add(bx, by, bw, bh, claim);
       });
     } else {
@@ -471,13 +514,26 @@ export class SeasonEndScreen {
         drawText(ctx, statLine, 168, ry + 54, { size: 12, color: THEME.TX2 });
         drawText(
           ctx,
-          isSel ? '已选中：请点击右侧老将完成交换' : `特质：${rp.traits?.join('·') || '均衡型'} · 点击选中`,
+          isSel ? '已选中：请点击右侧老将完成交换' : this.selectedDropRosterId ? '点击立即与右侧已选老将交换' : `特质：${rp.traits?.join('·') || '均衡型'} · 点击选中`,
           168,
           ry + 82,
-          { size: 11, bold: isSel, color: isSel ? THEME.GREEN : '#60A5FA' }
+          { size: 11, bold: isSel || !!this.selectedDropRosterId, color: isSel || this.selectedDropRosterId ? THEME.GREEN : '#60A5FA' }
         );
         hits.add(82, ry, 384, 110, () => {
-          this.selectedRewardId = isSel ? null : rp.id;
+          if (this.selectedDropRosterId) {
+            const res = league.recruitSeasonRewardToRoster(rp.id, this.selectedDropRosterId);
+            if (res.ok) {
+              this.notice = `交换成功！已将新秀编入常驻大名单`;
+              this.selectedRewardId = null;
+              this.selectedDropRosterId = null;
+              actions.onToast?.('新秀已替换入俱乐部大名单！', THEME.GREEN);
+              actions.onSave?.();
+            } else {
+              this.notice = res.reason || '交换失败';
+            }
+          } else {
+            this.selectedRewardId = isSel ? null : rp.id;
+          }
         });
       });
     }
@@ -486,7 +542,7 @@ export class SeasonEndScreen {
     const roster = league.getClubRoster();
     const rosterCount = roster.length;
     drawChamferPanel(ctx, 500, 122, 716, 480, 10, THEME.BG_CARD, THEME.BORDER);
-    drawText(ctx, `俱乐部大名单 (${rosterCount}/40) · 剩余 ${st.metaPointsTotal}pt`, 518, 144, {
+    drawText(ctx, `俱乐部大名单 (${rosterCount}/40) · 资金 ¥${league.getClubFunds()}万 · ${st.metaPointsTotal}pt`, 518, 144, {
       size: 13,
       bold: true,
       color: THEME.GOLD_LIGHT,
@@ -526,8 +582,10 @@ export class SeasonEndScreen {
       const px = 516 + col * 346;
       const py = 172 + row * 52;
       const canSwap = !!this.selectedRewardId;
+      const isDropSel = this.selectedDropRosterId === p.id;
       const isTrained = trainedSet.has(p.id);
-      const canTrain = !isTrained && st.metaPointsTotal >= 10 && p.ca < 94;
+      const paCap = p.pa ?? p.ca;
+      const canTrain = !isTrained && st.metaPointsTotal >= 10 && p.ca < paCap;
       drawRoundRect(
         ctx,
         px,
@@ -535,9 +593,25 @@ export class SeasonEndScreen {
         336,
         44,
         6,
-        canSwap ? 'rgba(30, 58, 95, 0.45)' : 'rgba(14, 22, 40, 0.8)',
-        canSwap ? THEME.GREEN : isTrained ? THEME.GOLD : THEME.BORDER
+        isDropSel ? 'rgba(20, 83, 45, 0.65)' : canSwap ? 'rgba(30, 58, 95, 0.45)' : 'rgba(14, 22, 40, 0.8)',
+        isDropSel ? THEME.GOLD_LIGHT : canSwap ? THEME.GREEN : isTrained ? THEME.GOLD : THEME.BORDER
       );
+      hits.add(px, py, 246, 44, () => {
+        if (this.selectedRewardId) {
+          const res = league.recruitSeasonRewardToRoster(this.selectedRewardId, p.id);
+          if (res.ok) {
+            this.notice = `交换成功！已将新秀编入常驻大名单`;
+            this.selectedRewardId = null;
+            this.selectedDropRosterId = null;
+            actions.onToast?.('新秀已替换入俱乐部大名单！', THEME.GREEN);
+            actions.onSave?.();
+          } else {
+            this.notice = res.reason || '交换失败';
+          }
+        } else {
+          this.selectedDropRosterId = isDropSel ? null : p.id;
+        }
+      });
       drawBadge(ctx, px + 8, py + 13, 34, 18, p.role, tierColor(p.tier));
       drawText(ctx, p.name, px + 48, py + 15, { size: 12, bold: true });
       drawText(
@@ -547,10 +621,10 @@ export class SeasonEndScreen {
         py + 32,
         { size: 10, color: THEME.TX3 }
       );
-      drawText(ctx, `CA ${p.ca}`, px + 244, py + 22, {
-        size: 13,
+      drawText(ctx, `CA ${p.ca}/${paCap}`, px + 244, py + 22, {
+        size: 12,
         bold: true,
-        color: THEME.GOLD_LIGHT,
+        color: p.ca >= paCap ? THEME.GOLD_LIGHT : '#7DD3FC',
         align: 'right',
         mono: true,
       });

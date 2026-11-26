@@ -5,13 +5,15 @@
  */
 
 import { GameApp, PlatformAdapter, SAVE_KEY, THEME } from '../../../packages/game-ui/src/index';
+import { IS_MOBILE } from '../../../packages/game-ui/src/Theme';
 
 const canvas = document.getElementById('gameCanvas') as HTMLCanvasElement;
 const ctx = canvas.getContext('2d')!;
 
 let currentDpr = 1;
 function applyHiDPI(): void {
-  const dpr = Math.min(2.5, Math.max(1, window.devicePixelRatio || 1));
+  const dprCap = IS_MOBILE ? 1.5 : 2.0;
+  const dpr = Math.min(dprCap, Math.max(1, window.devicePixelRatio || 1));
   if (dpr !== currentDpr || canvas.width !== Math.round(THEME.W * dpr)) {
     currentDpr = dpr;
     canvas.width = Math.round(THEME.W * dpr);
@@ -88,8 +90,14 @@ async function hydrateFromDatabase(key: string): Promise<void> {
     return;
   }
 
-  // 2. 兼容：当前口令首次使用，尝试迁移历史全局存档（无口令时代的数据）
-  if (key !== GLOBAL_SAVE_KEY) {
+  // 2. 兼容：当前口令首次使用，尝试迁移历史全局存档（若已主动重置过则不再回迁旧档）
+  let skipLegacy = false;
+  try {
+    skipLegacy = window.localStorage.getItem(`fm_skip_legacy_migration_${key}`) === '1';
+  } catch {
+    skipLegacy = false;
+  }
+  if (!skipLegacy && key !== GLOBAL_SAVE_KEY) {
     const legacyServer = await fetchSave(GLOBAL_SAVE_KEY);
     if (legacyServer) {
       memorySaveCache.set(key, legacyServer);
@@ -100,16 +108,18 @@ async function hydrateFromDatabase(key: string): Promise<void> {
   }
 
   // 3. 兼容：浏览器 localStorage 里的旧档（迁移到当前口令键）
-  try {
-    const legacy = window.localStorage.getItem(GLOBAL_SAVE_KEY) || window.localStorage.getItem(LEGACY_SAVE_KEY);
-    if (legacy) {
-      memorySaveCache.set(key, legacy);
-      await syncSaveToServer(key, legacy);
-      window.localStorage.removeItem(GLOBAL_SAVE_KEY);
-      window.localStorage.removeItem(LEGACY_SAVE_KEY);
+  if (!skipLegacy) {
+    try {
+      const legacy = window.localStorage.getItem(GLOBAL_SAVE_KEY) || window.localStorage.getItem(LEGACY_SAVE_KEY);
+      if (legacy) {
+        memorySaveCache.set(key, legacy);
+        await syncSaveToServer(key, legacy);
+        window.localStorage.removeItem(GLOBAL_SAVE_KEY);
+        window.localStorage.removeItem(LEGACY_SAVE_KEY);
+      }
+    } catch {
+      // ignore legacy migration errors
     }
-  } catch {
-    // ignore legacy migration errors
   }
 }
 
@@ -130,7 +140,17 @@ const steamPlatform: PlatformAdapter = {
     }, 120);
   },
   clearSave(_key: string): void {
+    if (saveSyncTimer !== null) {
+      window.clearTimeout(saveSyncTimer);
+      saveSyncTimer = null;
+    }
+    lastSyncedData = null;
     memorySaveCache.delete(activeSaveKey);
+    try {
+      window.localStorage.setItem(`fm_skip_legacy_migration_${activeSaveKey}`, '1');
+    } catch {
+      // ignore storage errors
+    }
     void fetch(`/api/saves/${encodeURIComponent(activeSaveKey)}`, { method: 'DELETE' }).catch(() => {});
   },
   getSafeArea() {
@@ -168,22 +188,31 @@ async function boot(): Promise<void> {
 
   const app = new GameApp(steamPlatform);
 
+  let lastInteractionMs = performance.now();
+  const markActive = () => {
+    lastInteractionMs = performance.now();
+  };
+
   canvas.addEventListener('pointermove', (e) => {
+    markActive();
     const pt = toDesignCoord(e.clientX, e.clientY);
     app.onPointerMove(pt.x, pt.y);
   });
 
   canvas.addEventListener('pointerdown', (e) => {
+    markActive();
     const pt = toDesignCoord(e.clientX, e.clientY);
     app.onPointerDown(pt.x, pt.y);
   });
 
   canvas.addEventListener('pointerup', (e) => {
+    markActive();
     const pt = toDesignCoord(e.clientX, e.clientY);
     app.onPointerUp?.(pt.x, pt.y);
   });
 
   canvas.addEventListener('wheel', (e) => {
+    markActive();
     const pt = toDesignCoord(e.clientX, e.clientY);
     if (app.onWheel?.(e.deltaY, pt.x, pt.y)) {
       e.preventDefault();
@@ -191,6 +220,7 @@ async function boot(): Promise<void> {
   }, { passive: false });
 
   window.addEventListener('keydown', (e) => {
+    markActive();
     if (e.code === 'Space' || e.code === 'Escape' || ['Digit1', 'Digit2', 'Digit3', 'Digit4'].includes(e.code)) {
       if (typeof (app as unknown as { onKeyDown?: (code: string) => void }).onKeyDown === 'function') {
         (app as unknown as { onKeyDown: (code: string) => void }).onKeyDown(e.code);
@@ -198,10 +228,17 @@ async function boot(): Promise<void> {
     }
   });
 
-  let lastTs = performance.now();
+  let lastRenderTs = performance.now();
   function loop(now: number) {
-    const dtSec = Math.min(0.05, (now - lastTs) / 1000);
-    lastTs = now;
+    const highFps = app.needsHighFps() || (now - lastInteractionMs) < 750;
+    const minFrameMs = highFps ? (IS_MOBILE ? 16 : 0) : (IS_MOBILE ? 80 : 33);
+    const elapsedMs = now - lastRenderTs;
+    if (elapsedMs < minFrameMs) {
+      requestAnimationFrame(loop);
+      return;
+    }
+    const dtSec = Math.min(0.05, elapsedMs / 1000);
+    lastRenderTs = now;
     app.update(dtSec);
     app.render(ctx);
     requestAnimationFrame(loop);

@@ -8,17 +8,29 @@ export const TEAMS_PER_TIER = 18;
 export const TOTAL_TIERS = 7;
 
 export const LEAGUE_TIERS: LeagueTierDef[] = [
-  { tier: 1, name: '第1级 · 超级联赛',     shortLabel: '超级', baseCA: 79, promoteCount: 0, relegateCount: 3, metaMul: 1.80 },
-  { tier: 2, name: '第2级 · 冠军联赛',     shortLabel: '冠军', baseCA: 72, promoteCount: 3, relegateCount: 3, metaMul: 1.50 },
-  { tier: 3, name: '第3级 · 甲级联赛',     shortLabel: '甲级', baseCA: 66, promoteCount: 3, relegateCount: 3, metaMul: 1.30 },
-  { tier: 4, name: '第4级 · 乙级联赛',     shortLabel: '乙级', baseCA: 60, promoteCount: 3, relegateCount: 3, metaMul: 1.15 },
-  { tier: 5, name: '第5级 · 丙级联赛',     shortLabel: '丙级', baseCA: 54, promoteCount: 3, relegateCount: 3, metaMul: 1.00 },
-  { tier: 6, name: '第6级 · 地区联赛',     shortLabel: '地区', baseCA: 48, promoteCount: 3, relegateCount: 3, metaMul: 0.95 },
-  { tier: 7, name: '第7级 · 社区业余联赛', shortLabel: '业余', baseCA: 42, promoteCount: 3, relegateCount: 0, metaMul: 0.90 },
+  { tier: 1, name: '第1级 · 超级联赛',     shortLabel: '超级', teamCount: 18, baseCA: 79, promoteCount: 0, relegateCount: 3, metaMul: 1.80 },
+  { tier: 2, name: '第2级 · 冠军联赛',     shortLabel: '冠军', teamCount: 18, baseCA: 72, promoteCount: 3, relegateCount: 3, metaMul: 1.50 },
+  { tier: 3, name: '第3级 · 甲级联赛',     shortLabel: '甲级', teamCount: 18, baseCA: 66, promoteCount: 3, relegateCount: 3, metaMul: 1.30 },
+  { tier: 4, name: '第4级 · 乙级联赛',     shortLabel: '乙级', teamCount: 16, baseCA: 60, promoteCount: 3, relegateCount: 3, metaMul: 1.15 },
+  { tier: 5, name: '第5级 · 丙级联赛',     shortLabel: '丙级', teamCount: 14, baseCA: 54, promoteCount: 3, relegateCount: 3, metaMul: 1.00 },
+  { tier: 6, name: '第6级 · 地区联赛',     shortLabel: '地区', teamCount: 12, baseCA: 48, promoteCount: 3, relegateCount: 3, metaMul: 0.95 },
+  { tier: 7, name: '第7级 · 社区业余联赛', shortLabel: '业余', teamCount: 10, baseCA: 42, promoteCount: 3, relegateCount: 0, metaMul: 0.90 },
 ];
 
 export function getLeagueTierInfo(tier: number): LeagueTierDef {
   return LEAGUE_TIERS.find(t => t.tier === tier) ?? LEAGUE_TIERS[LEAGUE_TIERS.length - 1];
+}
+
+export function getTierTeamCount(tier: number): number {
+  return getLeagueTierInfo(tier).teamCount;
+}
+
+export function getTierRegularRounds(tier: number): number {
+  return Math.max(2, (getTierTeamCount(tier) - 1) * 2);
+}
+
+export function getTierMidSeasonRound(tier: number): number {
+  return Math.max(1, getTierTeamCount(tier) - 1);
 }
 
 /**

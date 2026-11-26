@@ -2,7 +2,7 @@
  * 轻量二次确认弹窗（用于重开赛季、一键补齐等不可逆操作防误触）
  */
 
-import { drawButton, drawRoundRect, drawText, drawWrappedText, HitRegistry } from './CanvasKit';
+import { ButtonVariant, drawButton, drawRoundRect, drawText, drawWrappedText, HitRegistry } from './CanvasKit';
 import { THEME } from './Theme';
 
 export class ConfirmModal {
@@ -11,6 +11,7 @@ export class ConfirmModal {
   private message = '';
   private confirmLabel = '确认';
   private onConfirm: (() => void) | null = null;
+  private variant: ButtonVariant = 'danger';
 
   public isOpen(): boolean {
     return this.visible;
@@ -20,9 +21,11 @@ export class ConfirmModal {
     title: string,
     message: string,
     onConfirm: () => void,
-    confirmLabel = '确认继续'
+    confirmLabel = '确认继续',
+    variant: ButtonVariant = 'danger'
   ): void {
     this.visible = true;
+    this.variant = variant;
     this.title = title;
     this.message = message;
     this.confirmLabel = confirmLabel;
@@ -66,6 +69,6 @@ export class ConfirmModal {
       const cb = this.onConfirm;
       this.close();
       if (cb) cb();
-    }, { variant: 'danger', fontSize: 13 });
+    }, { variant: this.variant, fontSize: 13 });
   }
 }

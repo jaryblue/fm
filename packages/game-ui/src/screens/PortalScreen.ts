@@ -4,31 +4,62 @@
  */
 
 import { LeagueManager } from '../../../core/src/LeagueManager';
+import { getElementLabel, inferCardElement } from '../../../core/src/CommandCards';
 import { WEATHER_INFO } from '../../../core/src/Chronicles';
 import { computePerkSynergies } from '../../../core/src/PlayerPool';
-import { OpponentMatchupIntel, PrepTrainingKind } from '../../../core/src/types';
+import { OpponentMatchupIntel, PrepTrainingKind, ScoutingZoneId, ScoutRewardKind } from '../../../core/src/types';
+import { FORMATIONS } from '../../../engine/src/formations';
 import { TACTICAL_PRESETS } from '../../../engine/src/types';
+import { AssetLoader } from '../AssetLoader';
 import {
   drawBadge,
   drawBroadcastHeader,
   drawButton,
   drawChamferPanel,
+  drawFoilShimmer,
   drawNavRail,
   drawRoundRect,
   drawText,
   drawWrappedText,
+  fitText,
   HitRegistry,
   NavRailTab,
 } from '../CanvasKit';
 import { drawClubCrest } from '../ClubVisuals';
+import { easeOutBack } from '../Motion';
 import { SoundEngine } from '../SoundEngine';
 import { THEME } from '../Theme';
 import { drawIcon } from '../VectorIcons';
+
+const ELEMENT_COLOR: Record<string, string> = {
+  press: '#EF4444',
+  pass: '#38BDF8',
+  wing: '#F59E0B',
+  iron: '#22C55E',
+  blitz: '#C084FC',
+};
+
+function mapRoleToScoutZone(role: string): ScoutingZoneId {
+  if (role === 'GK' || role === 'ST') return 'gk_core';
+  if (role === 'CB') return 'defense';
+  if (['LB', 'RB', 'LWB', 'RWB', 'LM', 'RM', 'LW', 'RW'].includes(role)) return 'wings';
+  return 'midfield';
+}
 
 export class PortalScreen {
   private prepToast = '';
   private scoutModalOpen = false;
   private scoutNotice = '';
+  private selectedZoneId: ScoutingZoneId | null = null;
+  private animTime = 0;
+  private stampAnimTimer = 0;
+
+  public update(dtSec: number): void {
+    this.animTime += dtSec;
+    if (this.stampAnimTimer > 0) {
+      this.stampAnimTimer = Math.max(0, this.stampAnimTimer - dtSec);
+    }
+  }
 
   public handleEscape(): boolean {
     if (this.scoutModalOpen) {
@@ -47,6 +78,10 @@ export class PortalScreen {
       onStartMatch: () => void;
       onQuickSim?: () => void;
       onSave?: () => void;
+      onToast?: (msg: string, color?: string) => void;
+      onSeasonStarted?: () => void;
+      onBurst?: (x: number, y: number, color?: string) => void;
+      onShake?: (intensity: number, dur: number) => void;
     }
   ): void {
     const st = league.getState();
@@ -57,8 +92,10 @@ export class PortalScreen {
     const diffStars = '★'.repeat(8 - tierInfo.tier) + '☆'.repeat(tierInfo.tier - 1);
     const userRankIdx = standings.findIndex(r => r.isUser);
     const userRow = standings[userRankIdx];
+    const isSummerWindow = st.phase === 'SUMMER_WINDOW';
 
-    const stageLabel = `${tierInfo.shortLabel} · 第 ${st.currentRound}/34 轮`;
+    const totalRounds = league.getTotalRegularRounds();
+    const stageLabel = isSummerWindow ? '季前夏窗 · 未开启赛季' : `${tierInfo.shortLabel} · 第 ${st.currentRound}/${totalRounds} 轮`;
 
     drawBroadcastHeader(ctx, hits, {
       kicker: `SEASON ${st.seasonNumber} · ${tierInfo.name} (${diffStars})`,
@@ -67,31 +104,133 @@ export class PortalScreen {
       badge: stageLabel,
       metaPoints: st.metaPointsTotal,
       showSoundToggle: true,
-      rightAction: nextFx
-        ? { label: '进入比赛日', icon: 'play', variant: 'gold', onClick: actions.onStartMatch }
+      rightAction: isSummerWindow
+        ? { label: '前往引援中心', icon: 'sparkle', variant: 'primary', onClick: () => actions.onNavigate('transfer_hub') }
+        : nextFx
+        ? { label: '进入比赛日', icon: 'play', variant: 'ghost', onClick: actions.onStartMatch }
         : undefined,
     });
 
     drawNavRail(ctx, hits, 'portal', actions.onNavigate);
 
-    // ==================== 左栏 (x: 96..686, w: 590)：焦点战海报 + 赛前整备与沟通 ====================
-    // 左上：焦点战海报卡 (h: 280)
-    drawChamferPanel(ctx, 96, 80, 590, 280, 12, 'rgba(14, 22, 40, 0.92)', THEME.BORDER_GOLD, 1.4, THEME.GOLD_LIGHT);
-    drawText(ctx, `NEXT FIXTURE · 第 ${st.currentRound}/34 轮`, 118, 102, {
-      size: 12,
-      bold: true,
-      color: THEME.GOLD,
-      mono: true,
-    });
-    drawText(ctx, `${tierInfo.name} · 我队暂列第 ${userRankIdx + 1} 名`, 666, 102, {
-      size: 11.5,
-      color: '#38BDF8',
-      align: 'right',
-    });
+    // ==================== 左栏 (x: 96..686, w: 590)：焦点战海报主视觉 + 赛前整备与沟通 ====================
+    // 左上：焦点战海报卡 / 季前夏窗引援引导卡 (h: 294)
+    drawChamferPanel(ctx, 96, 80, 590, 294, 12, 'rgba(14, 22, 40, 0.94)', THEME.BORDER_GOLD, 1.5, THEME.GOLD_LIGHT);
 
-    const prep = league.getInterMatchPrep();
+    const prep = isSummerWindow ? undefined : league.getInterMatchPrep();
 
-    if (nextFx) {
+    if (isSummerWindow) {
+      const squadCount = club.squad.length;
+      const needCount = Math.max(0, 26 - squadCount);
+      const ready = squadCount >= 26;
+
+      drawText(ctx, 'PRE-SEASON · 夏季转会窗引援引导', 116, 98, {
+        size: 11.5,
+        bold: true,
+        color: THEME.GOLD,
+        mono: true,
+      });
+      drawText(ctx, `当前大名单 ${squadCount}/26 人 · 可用资金 ${club.transferBudget} 万`, 666, 98, {
+        size: 11.5,
+        color: ready ? THEME.GREEN : '#38BDF8',
+        align: 'right',
+      });
+
+      // 大名单注册进度条
+      drawRoundRect(ctx, 112, 114, 558, 52, 8, THEME.BG_CARD, ready ? THEME.GREEN : THEME.BORDER_GOLD, 1.2);
+      drawText(ctx, `一线队大名单注册进度：${squadCount} / 26 人`, 128, 130, {
+        size: 13.5,
+        bold: true,
+        color: THEME.TX1,
+      });
+      drawBadge(
+        ctx,
+        526,
+        120,
+        130,
+        20,
+        ready ? '已达标 · 可开启赛季' : `还差 ${needCount} 名球员`,
+        ready ? '#14532D' : '#78350F',
+        ready ? THEME.GREEN : THEME.GOLD_LIGHT
+      );
+      drawRoundRect(ctx, 128, 148, 526, 8, 4, '#1E293B');
+      drawRoundRect(ctx, 128, 148, Math.max(12, Math.round(Math.min(1, squadCount / 26) * 526)), 8, 4, ready ? THEME.GREEN : THEME.GOLD_LIGHT);
+
+      // 三大引援通道引导卡
+      const channels = [
+        { title: '青训学院', sub: '0 万免签提拔小妖', desc: '迷雾随赛季逐步清晰，赛季末超 19 岁自动离队', color: THEME.GREEN },
+        { title: '转会市场', sub: '预算签入即战力', desc: '补强薄弱位置，也可挂牌出售冗余球员回笼资金', color: '#38BDF8' },
+        { title: '神秘经纪人', sub: '高风险盲盒密荐', desc: '按联赛水平浮动，小概率直接开出超级巨星', color: '#C084FC' },
+      ];
+      channels.forEach((ch, ci) => {
+        const cx = 112 + ci * 189;
+        drawRoundRect(ctx, cx, 176, 180, 118, 8, 'rgba(15, 23, 42, 0.92)', THEME.BORDER, 1);
+        ctx.fillStyle = ch.color;
+        ctx.fillRect(cx + 8, 177, 164, 2);
+        drawText(ctx, ch.title, cx + 12, 198, { size: 13, bold: true, color: ch.color });
+        drawText(ctx, ch.sub, cx + 12, 218, { size: 11, bold: true, color: THEME.TX1 });
+        drawWrappedText(ctx, ch.desc, cx + 12, 238, 156, 17, { size: 10.5, color: THEME.TX2, maxLines: 3 });
+        hits.add(cx, 176, 180, 118, () => {
+          SoundEngine.playClick();
+          actions.onNavigate('transfer_hub');
+        });
+      });
+
+      drawButton(ctx, hits, 112, 308, 196, 48, `前往引援中心 (${squadCount}/26)`, () => actions.onNavigate('transfer_hub'), {
+        variant: ready ? 'ghost' : 'gold',
+        fontSize: 13,
+        icon: 'sparkle',
+      });
+      drawButton(ctx, hits, 316, 308, 164, 48, '青训免费补齐', () => {
+        const res = league.signFreeAcademyFill(true);
+        if (res.ok) {
+          SoundEngine.playCraftSuccess();
+          actions.onSave?.();
+          actions.onToast?.(`已从青训学院免费补齐 ${res.added} 名球员！`, THEME.GREEN);
+          actions.onBurst?.(398, 308, THEME.GREEN);
+        } else {
+          SoundEngine.playWarning();
+          actions.onToast?.(res.reason || '当前已满 26 人或青训人数不足', THEME.GOLD_LIGHT);
+        }
+      }, {
+        variant: 'primary',
+        disabled: ready,
+        fontSize: 12.5,
+      });
+      drawButton(ctx, hits, 488, 308, 182, 48, ready ? '▶ 确认开启新赛季' : '补齐青训并开赛 ▶', () => {
+        if (!ready) {
+          const fillRes = league.signFreeAcademyFill(true);
+          if (fillRes.ok) {
+            actions.onSave?.();
+          }
+        }
+        const res = league.finishSummerWindowAndStartSeason();
+        if (res.ok) {
+          SoundEngine.playFanfare();
+          actions.onSeasonStarted?.();
+        } else {
+          SoundEngine.playWarning();
+          actions.onToast?.(res.reason || '需凑齐 26 人大名单才能开启赛季', THEME.RED_LIGHT);
+        }
+      }, {
+        variant: ready ? 'gold' : 'primary',
+        fontSize: 13,
+      });
+    } else {
+      drawText(ctx, `NEXT FIXTURE · 第 ${st.currentRound}/${totalRounds} 轮`, 116, 98, {
+        size: 11.5,
+        bold: true,
+        color: THEME.GOLD,
+        mono: true,
+      });
+      drawText(ctx, `${tierInfo.name} · 我队暂列第 ${userRankIdx + 1} 名`, 666, 98, {
+        size: 11.5,
+        color: '#38BDF8',
+        align: 'right',
+      });
+    }
+
+    if (!isSummerWindow && nextFx) {
       const home = st.clubs.find(c => c.id === nextFx.homeClubId)!;
       const away = st.clubs.find(c => c.id === nextFx.awayClubId)!;
       const homeRankIdx = standings.findIndex(r => r.clubId === home.id);
@@ -99,30 +238,79 @@ export class PortalScreen {
       const homeRow = standings[homeRankIdx];
       const awayRow = standings[awayRankIdx];
 
-      drawChamferPanel(ctx, 114, 120, 554, 104, 10, THEME.BG_CARD, THEME.BORDER);
-      drawClubCrest(ctx, 226, 150, 19, home);
-      drawText(ctx, home.name, 226, 184, {
-        size: 15,
+      // 焦点对阵海报舞台 (x: 112, y: 116, w: 558, h: 122)
+      const stageX = 112, stageY = 116, stageW = 558, stageH = 122;
+      drawChamferPanel(ctx, stageX, stageY, stageW, stageH, 10, THEME.BG_CARD, THEME.BORDER, 1.0);
+      const vsBg = AssetLoader.get('fixture_vs_bg');
+      if (vsBg && typeof ctx.drawImage === 'function') {
+        ctx.save();
+        ctx.beginPath();
+        ctx.rect(stageX + 1, stageY + 1, stageW - 2, stageH - 2);
+        ctx.clip();
+        ctx.globalAlpha = 0.78;
+        ctx.drawImage(vsBg, stageX + 1, stageY + 1, stageW - 2, stageH - 2);
+        const scrim = ctx.createLinearGradient(stageX, stageY, stageX, stageY + stageH);
+        scrim.addColorStop(0, 'rgba(10, 16, 30, 0.15)');
+        scrim.addColorStop(1, 'rgba(10, 16, 30, 0.88)');
+        ctx.globalAlpha = 1;
+        ctx.fillStyle = scrim;
+        ctx.fillRect(stageX + 1, stageY + 1, stageW - 2, stageH - 2);
+        ctx.restore();
+      }
+
+      // 主客队队徽光晕
+      const drawCrestGlow = (cx: number, cy: number, col: string) => {
+        ctx.save();
+        ctx.globalAlpha = 0.28;
+        const g = ctx.createRadialGradient(cx, cy, 4, cx, cy, 50);
+        g.addColorStop(0, col);
+        g.addColorStop(1, 'rgba(0,0,0,0)');
+        ctx.fillStyle = g;
+        ctx.beginPath();
+        ctx.arc(cx, cy, 50, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.restore();
+      };
+      drawCrestGlow(224, 154, home.primaryColor);
+      drawCrestGlow(558, 154, away.primaryColor);
+
+      drawClubCrest(ctx, 224, 154, 28, home);
+      drawText(ctx, fitText(ctx, home.name, 178, 16, true), 224, 196, {
+        size: 16,
         bold: true,
         align: 'center',
         color: home.isUser ? THEME.GOLD_LIGHT : THEME.TX1,
       });
-      drawText(ctx, `第${homeRankIdx + 1}名 · ${homeRow?.points ?? 0}分 · ${home.formation}`, 226, 206, {
+      drawText(ctx, `第${homeRankIdx + 1}名 · ${homeRow?.points ?? 0}分 · ${home.formation}`, 224, 216, {
         size: 11,
         align: 'center',
         color: THEME.TX2,
       });
 
-      drawText(ctx, 'VS', 391, 172, { size: 24, bold: true, italic: true, align: 'center', color: THEME.GOLD_LIGHT });
+      ctx.save();
+      ctx.shadowColor = 'rgba(0, 0, 0, 0.85)';
+      ctx.shadowBlur = 12;
+      drawText(ctx, 'VS', 391, 160, { size: 28, bold: true, italic: true, align: 'center', color: THEME.GOLD_LIGHT });
+      ctx.restore();
+      drawBadge(
+        ctx,
+        355,
+        186,
+        72,
+        18,
+        home.isUser ? '我方主场' : '我方客场',
+        'rgba(15, 23, 42, 0.90)',
+        home.isUser ? THEME.GOLD_LIGHT : '#7DD3FC'
+      );
 
-      drawClubCrest(ctx, 556, 150, 19, away);
-      drawText(ctx, away.name, 556, 184, {
-        size: 15,
+      drawClubCrest(ctx, 558, 154, 28, away);
+      drawText(ctx, fitText(ctx, away.name, 178, 16, true), 558, 196, {
+        size: 16,
         bold: true,
         align: 'center',
         color: away.isUser ? THEME.GOLD_LIGHT : THEME.TX1,
       });
-      drawText(ctx, `第${awayRankIdx + 1}名 · ${awayRow?.points ?? 0}分 · ${away.formation}`, 556, 206, {
+      drawText(ctx, `第${awayRankIdx + 1}名 · ${awayRow?.points ?? 0}分 · ${away.formation}`, 558, 216, {
         size: 11,
         align: 'center',
         color: THEME.TX2,
@@ -132,53 +320,118 @@ export class PortalScreen {
       const oppClub = home.isUser ? away : home;
       const brief = league.getOpponentBriefing(oppClub.id);
       const intel = prep?.matchupIntel;
-      drawRoundRect(ctx, 114, 234, 554, 56, 8, 'rgba(15, 23, 42, 0.92)', 'rgba(56, 189, 248, 0.35)');
+      drawRoundRect(ctx, 112, 246, 558, 52, 8, 'rgba(15, 23, 42, 0.92)', 'rgba(56, 189, 248, 0.35)');
       const famText = intel ? `了解 ${intel.familiarity}%` : '球探情报';
       const famColor = intel && intel.familiarity >= 70 ? THEME.GREEN : '#38BDF8';
-      drawBadge(ctx, 124, 243, 76, 18, famText, '#1E3A5F', famColor);
-      drawText(ctx, `${brief.styleName} · ${brief.weakLineLabel}`, 208, 252, {
-        size: 12,
+      drawBadge(ctx, 122, 253, 76, 18, famText, '#1E3A5F', famColor);
+      const ecoSuffix = [brief.isRival ? '宿敌' : null, brief.ecoTag ?? null, brief.formerPlayerName ? `旧将:${brief.formerPlayerName.split('(')[0]}` : null].filter(Boolean).join(' · ');
+      drawText(ctx, fitText(ctx, `${brief.styleName} · ${brief.weakLineLabel}${ecoSuffix ? ` · ${ecoSuffix}` : ''}`, 318, 11.5, true), 206, 262, {
+        size: 11.5,
         bold: true,
-        color: THEME.TX1,
+        color: brief.isRival || brief.formerPlayerName ? THEME.GOLD_LIGHT : THEME.TX1,
       });
       const subTip = intel?.chosenCounterId
-        ? (intel.spotCorrect ? '异议成立：已锁定针对性赛前战术红利' : '已完成指证（误判干扰线索，正常应战）')
+        ? intel.spotCorrect
+          ? intel.chosenRewardKind === 'skill_overclock'
+            ? '红利锁定：克制主动技本场临时+1 Rank · 首触发免冷却'
+            : intel.chosenRewardKind === 'buff_debuff'
+            ? `红利锁定：克制手牌-1费+5分 · ${intel.activeDebuff?.label || '已挂弱点减益'}`
+            : '破绽指证成立！点「战前录像室」锁定 2 选 1 针对红利'
+          : '已完成指证（误判干扰线索，正常应战）'
         : brief.counterTip;
-      drawText(ctx, subTip, 124, 273, {
+      drawText(ctx, fitText(ctx, subTip, 396, 11.5), 122, 282, {
         size: 11.5,
         color: intel?.spotCorrect ? THEME.GREEN : THEME.GOLD_LIGHT,
       });
       if (intel) {
-        drawButton(ctx, hits, 534, 244, 122, 36, intel.chosenCounterId ? '情报详情' : '侦察抓破绽', () => {
+        const needsRewardPick = !!intel.spotCorrect && !intel.chosenRewardKind;
+        const btnLabel = !intel.chosenCounterId
+          ? '侦察抓破绽'
+          : needsRewardPick
+          ? '选择针对红利'
+          : '战术录像室';
+        drawButton(ctx, hits, 534, 254, 124, 36, btnLabel, () => {
           this.scoutNotice = '';
+          this.selectedZoneId = null;
           this.scoutModalOpen = true;
-        }, { variant: intel.chosenCounterId ? 'ghost' : 'primary', fontSize: 11.5 });
+        }, { variant: needsRewardPick ? 'gold' : intel.chosenCounterId ? 'ghost' : 'primary', fontSize: 11.5 });
       }
 
-      drawButton(ctx, hits, 114, 302, 156, 44, '首发与阵型', () => actions.onNavigate('tactics'), {
+      drawButton(ctx, hits, 112, 310, 156, 44, '首发与阵型', () => actions.onNavigate('tactics'), {
         variant: 'ghost',
         fontSize: 13,
         icon: 'tactics',
       });
-      drawButton(ctx, hits, 280, 302, 108, 44, '跳过本轮', () => {
+      drawButton(ctx, hits, 276, 310, 108, 44, '跳过本轮', () => {
         actions.onQuickSim?.();
       }, {
         variant: 'ghost',
         fontSize: 12.5,
       });
-      drawButton(ctx, hits, 398, 302, 270, 44, '▶ 亲自指挥本场对决', actions.onStartMatch, {
+      drawButton(ctx, hits, 392, 308, 278, 48, '▶ 亲自指挥本场对决', actions.onStartMatch, {
         variant: 'gold',
-        fontSize: 14,
+        fontSize: 15,
       });
     }
 
-    // 左下：天气预报 + 赛前轻训练 + 1对1球员沟通 (h: 330)
-    drawChamferPanel(ctx, 96, 374, 590, 330, 12, 'rgba(14, 22, 40, 0.92)', 'rgba(56, 189, 248, 0.45)');
-    if (prep) {
+    // 左下：天气预报 + 赛前轻训练 + 1对1球员沟通 (h: 318) / 未开启赛季时显示季前备战指引
+    drawChamferPanel(ctx, 96, 386, 590, 318, 12, 'rgba(14, 22, 40, 0.92)', 'rgba(56, 189, 248, 0.45)');
+    if (isSummerWindow) {
+      const gkCnt = club.squad.filter(p => p.role === 'GK').length;
+      const defCnt = club.squad.filter(p => ['CB', 'LB', 'RB', 'LWB', 'RWB'].includes(p.role)).length;
+      const midCnt = club.squad.filter(p => ['CDM', 'CM', 'CAM', 'LM', 'RM'].includes(p.role)).length;
+      const fwdCnt = club.squad.filter(p => ['LW', 'RW', 'ST'].includes(p.role)).length;
+      const avgOvr = club.squad.length > 0
+        ? Math.round(club.squad.reduce((acc, p) => acc + p.ca, 0) / club.squad.length)
+        : 0;
+
+      drawBadge(ctx, 114, 400, 108, 22, '季前备战指引', '#0F172A', THEME.GOLD_LIGHT);
+      drawText(ctx, `当前阵容均评 ${avgOvr} · ${club.formation} · ${TACTICAL_PRESETS[club.style].name}`, 232, 411, {
+        size: 12,
+        color: THEME.TX2,
+      });
+
+      const posBoxes = [
+        { label: '门将 GK', val: `${gkCnt} 人`, col: '#FBBF24' },
+        { label: '后卫 DEF', val: `${defCnt} 人`, col: '#38BDF8' },
+        { label: '中场 MID', val: `${midCnt} 人`, col: THEME.GREEN },
+        { label: '前锋 FWD', val: `${fwdCnt} 人`, col: '#F87171' },
+      ];
+      posBoxes.forEach((pb, idx) => {
+        const bx = 114 + idx * 140;
+        drawRoundRect(ctx, bx, 434, 132, 54, 8, THEME.BG_CARD, THEME.BORDER);
+        drawText(ctx, pb.label, bx + 66, 450, { size: 11, color: THEME.TX2, align: 'center' });
+        drawText(ctx, pb.val, bx + 66, 472, { size: 15, bold: true, color: pb.col, align: 'center' });
+      });
+
+      drawRoundRect(ctx, 114, 500, 554, 188, 10, THEME.BG_CARD, THEME.BORDER);
+      drawText(ctx, '新赛季启程三步走', 132, 524, { size: 14, bold: true, color: THEME.GOLD_LIGHT });
+      const steps = [
+        '✓ 1. 已完成 3 轮核心开包，获得初始建队基石球员',
+        `${club.squad.length >= 26 ? '✓' : '○'} 2. 在引援中心通过青训、转会或经纪人补齐 26 人大名单（当前 ${club.squad.length}/26）`,
+        '○ 3. 点击上方「确认开启新赛季」，正式进入第 1 轮备战与比赛日',
+      ];
+      steps.forEach((line, si) => {
+        drawText(ctx, line, 132, 554 + si * 26, {
+          size: 12,
+          color: si === 0 || (si === 1 && club.squad.length >= 26) ? THEME.GREEN : THEME.TX1,
+        });
+      });
+      drawButton(ctx, hits, 132, 636, 180, 38, '查看阵型与首发', () => actions.onNavigate('tactics'), {
+        variant: 'ghost',
+        fontSize: 12,
+        icon: 'tactics',
+      });
+      drawButton(ctx, hits, 326, 636, 180, 38, '前往引援中心', () => actions.onNavigate('transfer_hub'), {
+        variant: 'primary',
+        fontSize: 12,
+        icon: 'sparkle',
+      });
+    } else if (prep) {
       const wInfo = WEATHER_INFO[prep.weather];
-      drawBadge(ctx, 114, 390, 84, 22, wInfo.label, '#0F172A', wInfo.color);
-      drawText(ctx, wInfo.tip, 208, 401, { size: 12, color: THEME.TX2 });
-      drawText(ctx, `赛前整备次数 ${prep.actionsLeft}/1`, 666, 401, {
+      drawBadge(ctx, 114, 400, 84, 22, wInfo.label, '#0F172A', wInfo.color);
+      drawText(ctx, wInfo.tip, 208, 411, { size: 12, color: THEME.TX2 });
+      drawText(ctx, `赛前整备次数 ${prep.actionsLeft}/1`, 666, 411, {
         size: 12,
         bold: true,
         align: 'right',
@@ -195,7 +448,7 @@ export class PortalScreen {
       trainBtns.forEach((tb, bi) => {
         const bx = 114 + bi * 140;
         const done = prep.doneTraining === tb.kind;
-        drawButton(ctx, hits, bx, 424, 132, 38, tb.label, () => {
+        drawButton(ctx, hits, bx, 434, 132, 38, tb.label, () => {
           const res = league.applyPrepTraining(tb.kind);
           if (res.msg) this.prepToast = res.msg;
           if (res.ok) SoundEngine.playCraftSuccess();
@@ -210,40 +463,40 @@ export class PortalScreen {
 
       const talk = prep.playerTalk;
       if (talk) {
-        drawRoundRect(ctx, 114, 476, 554, 210, 10, THEME.BG_CARD, talk.resolved ? THEME.GREEN : THEME.BORDER_GOLD);
-        drawBadge(ctx, 128, 492, 46, 20, talk.role, '#1E3A5F', THEME.TX1);
-        drawText(ctx, `${talk.playerName} · 赛前一对一沟通`, 184, 502, { size: 13.5, bold: true, color: THEME.GOLD_LIGHT });
+        drawRoundRect(ctx, 114, 486, 554, 204, 10, THEME.BG_CARD, talk.resolved ? THEME.GREEN : THEME.BORDER_GOLD);
+        drawBadge(ctx, 128, 500, 46, 20, talk.role, '#1E3A5F', THEME.TX1);
+        drawText(ctx, `${talk.playerName} · 赛前一对一沟通`, 184, 510, { size: 13.5, bold: true, color: THEME.GOLD_LIGHT });
         if (talk.resolved) {
-          drawText(ctx, `已回应：${talk.chosenLabel}`, 128, 552, { size: 13, bold: true, color: THEME.GREEN });
+          drawText(ctx, `已回应：${talk.chosenLabel}`, 128, 558, { size: 13, bold: true, color: THEME.GREEN });
           drawWrappedText(
             ctx,
             this.prepToast || '球员士气已稳住，专注迎接本轮较量',
             128,
-            586,
+            592,
             524,
             20,
             { size: 12, color: THEME.TX2, maxLines: 3 }
           );
         } else {
-          drawWrappedText(ctx, talk.prompt, 128, 532, 524, 21, { size: 12.5, color: THEME.TX1, maxLines: 3 });
-          drawButton(ctx, hits, 128, 622, 256, 44, talk.optA.label, () => {
+          drawWrappedText(ctx, talk.prompt, 128, 538, 524, 21, { size: 12.5, color: THEME.TX1, maxLines: 3 });
+          drawButton(ctx, hits, 128, 632, 256, 42, talk.optA.label, () => {
             const res = league.resolvePlayerTalk('A');
             if (res.msg) this.prepToast = res.msg;
             if (res.ok) SoundEngine.playRewardChime();
             actions.onSave?.();
-          }, { variant: 'gold', fontSize: 12 });
-          drawButton(ctx, hits, 396, 622, 256, 44, talk.optB.label, () => {
+          }, { variant: 'primary', fontSize: 12 });
+          drawButton(ctx, hits, 396, 632, 256, 42, talk.optB.label, () => {
             const res = league.resolvePlayerTalk('B');
             if (res.msg) this.prepToast = res.msg;
             if (res.ok) SoundEngine.playRewardChime();
             actions.onSave?.();
-          }, { variant: 'primary', fontSize: 12 });
+          }, { variant: 'ghost', fontSize: 12 });
         }
       } else {
-        drawRoundRect(ctx, 114, 476, 554, 210, 10, THEME.BG_CARD, THEME.BORDER);
-        drawText(ctx, '更衣室氛围平稳 · 全队专注备战下轮对手', 132, 536, { size: 14, bold: true, color: THEME.TX1 });
+        drawRoundRect(ctx, 114, 486, 554, 204, 10, THEME.BG_CARD, THEME.BORDER);
+        drawText(ctx, '更衣室氛围平稳 · 全队专注备战下轮对手', 132, 542, { size: 14, bold: true, color: THEME.TX1 });
         const subMsg = this.prepToast || prep.nextMatchBuff?.note || st.lastMatchReview || '可从上方选择 1 项赛前轻训练调整状态';
-        drawWrappedText(ctx, subMsg, 132, 574, 518, 22, {
+        drawWrappedText(ctx, subMsg, 132, 580, 518, 22, {
           size: 12.5,
           color: this.prepToast || prep.nextMatchBuff?.note ? THEME.GREEN : st.lastMatchReview ? '#7DD3FC' : THEME.TX2,
           maxLines: 3,
@@ -252,7 +505,7 @@ export class PortalScreen {
     }
 
     // ==================== 右栏 (x: 702..1264, w: 562)：出战摘要 + 词条脉络 + 复盘与联赛入口 ====================
-    // 右上：当前出战配置快捷摘要（3 张大卡，告别 12 个小格子）(h: 196)
+    // 右上：当前出战配置快捷摘要 (h: 196)
     drawChamferPanel(ctx, 702, 80, 562, 196, 12, 'rgba(14, 22, 40, 0.94)', THEME.BORDER_GOLD, 1.2);
     drawText(ctx, '当前出战配置摘要', 722, 102, { size: 13.5, bold: true, color: THEME.GOLD_LIGHT });
     drawText(ctx, `激活：${club.formation} · ${TACTICAL_PRESETS[club.style].name}`, 1244, 102, {
@@ -269,7 +522,10 @@ export class PortalScreen {
 
     // 摘要卡 1：主动技
     drawRoundRect(ctx, 720, 122, 168, 138, 8, THEME.BG_CARD, 'rgba(56, 189, 248, 0.45)');
-    drawText(ctx, `⚡ 主动技 ${eqSkills.length}/4`, 732, 142, { size: 12.5, bold: true, color: '#38BDF8' });
+    ctx.fillStyle = '#38BDF8';
+    ctx.fillRect(728, 123, 152, 2);
+    drawIcon(ctx, 'bolt', 738, 142, 13, '#38BDF8');
+    drawText(ctx, `主动技 ${eqSkills.length}/4`, 749, 142, { size: 12.5, bold: true, color: '#38BDF8' });
     drawWrappedText(
       ctx,
       eqSkills.length > 0 ? eqSkills.slice(0, 3).map(s => s.name).join(' · ') : '尚未装备主动技，前往星图点亮并装配',
@@ -279,10 +535,12 @@ export class PortalScreen {
       18,
       { size: 11, color: eqSkills.length > 0 ? THEME.TX1 : THEME.TX3, maxLines: 2 }
     );
-    drawButton(ctx, hits, 732, 214, 144, 34, '调整技能', () => actions.onNavigate('meta'), { variant: 'primary', fontSize: 11.5 });
+    drawButton(ctx, hits, 732, 214, 144, 34, '调整技能', () => actions.onNavigate('meta'), { variant: 'ghost', fontSize: 11.5 });
 
     // 摘要卡 2：指挥手牌
     drawRoundRect(ctx, 898, 122, 168, 138, 8, THEME.BG_CARD, 'rgba(192, 132, 252, 0.45)');
+    ctx.fillStyle = '#C084FC';
+    ctx.fillRect(906, 123, 152, 2);
     drawText(ctx, `指挥牌 ${loadoutCards.length}/4`, 910, 142, { size: 12.5, bold: true, color: '#C084FC' });
     drawWrappedText(
       ctx,
@@ -293,10 +551,12 @@ export class PortalScreen {
       18,
       { size: 11, color: loadoutCards.length > 0 ? THEME.TX1 : THEME.TX3, maxLines: 2 }
     );
-    drawButton(ctx, hits, 910, 214, 144, 34, '配牌与合成', () => actions.onNavigate('cards'), { variant: 'primary', fontSize: 11.5 });
+    drawButton(ctx, hits, 910, 214, 144, 34, '配牌与合成', () => actions.onNavigate('cards'), { variant: 'ghost', fontSize: 11.5 });
 
-    // 摘要卡 3：战术预案（支持一键轮切下一套）
+    // 摘要卡 3：战术预案
     drawRoundRect(ctx, 1076, 122, 170, 138, 8, THEME.BG_CARD, THEME.BORDER_GOLD);
+    ctx.fillStyle = THEME.GOLD_LIGHT;
+    ctx.fillRect(1084, 123, 154, 2);
     drawText(ctx, curPresetIdx >= 0 ? `预案 ${curPresetIdx + 1}/4` : '4套战术预案', 1088, 142, { size: 12.5, bold: true, color: THEME.GOLD_LIGHT });
     drawText(ctx, `${club.formation}`, 1088, 170, { size: 14, bold: true, color: THEME.GREEN });
     drawText(ctx, `${TACTICAL_PRESETS[club.style].name}`, 1088, 192, { size: 11.5, color: THEME.TX2 });
@@ -309,7 +569,7 @@ export class PortalScreen {
         this.prepToast = `已切换至预案${nextIdx + 1}：${res.preset.formation} · ${TACTICAL_PRESETS[res.preset.style].name}`;
         actions.onSave?.();
       }
-    }, { variant: 'gold', fontSize: 11 });
+    }, { variant: 'ghost', fontSize: 11 });
     drawButton(ctx, hits, 1166, 214, 68, 34, '改战术', () => actions.onNavigate('tactics'), { variant: 'ghost', fontSize: 11 });
 
     // 右中：俱乐部赛季脉络与 Rogue 战术词条 (h: 222)
@@ -382,7 +642,7 @@ export class PortalScreen {
       { size: 10.5, color: THEME.TX3, align: 'center' }
     );
     drawButton(ctx, hits, 1088, 634, 146, 40, '赛程与积分榜 ▶', () => actions.onNavigate('league'), {
-      variant: 'primary',
+      variant: 'ghost',
       fontSize: 11.5,
     });
 
@@ -397,53 +657,69 @@ export class PortalScreen {
     league: LeagueManager,
     intel: OpponentMatchupIntel,
     actionsLeft: number,
-    actions: { onSave?: () => void }
+    actions: {
+      onSave?: () => void;
+      onBurst?: (x: number, y: number, color?: string) => void;
+      onShake?: (intensity: number, dur: number) => void;
+    }
   ): void {
-    ctx.fillStyle = 'rgba(4, 7, 14, 0.84)';
+    ctx.fillStyle = 'rgba(4, 7, 14, 0.86)';
     ctx.fillRect(0, 0, THEME.W, THEME.H);
     hits.clear();
 
-    const mx = 110;
-    const my = 56;
-    const mw = 1060;
-    const mh = 608;
-    drawChamferPanel(ctx, mx, my, mw, mh, 14, 'rgba(14, 22, 40, 0.98)', THEME.BORDER_GOLD, 1.6, THEME.GOLD_LIGHT);
+    const mx = 74;
+    const my = 42;
+    const mw = 1132;
+    const mh = 636;
+    drawChamferPanel(ctx, mx, my, mw, mh, 14, 'rgba(11, 17, 32, 0.98)', THEME.BORDER_GOLD, 1.8, THEME.GOLD_LIGHT);
 
-    drawText(ctx, `对手战术侦察与破绽指证 · ${intel.oppClubName}`, mx + 28, my + 32, {
-      size: 19,
+    // 顶栏：对手名称 + 阵型 + 了解度 + 分析点宝石 + 深度侦察
+    drawText(ctx, `战术录像室 · 沙盘抓破绽 · ${intel.oppClubName}`, mx + 24, my + 30, {
+      size: 18,
       bold: true,
       color: THEME.GOLD_LIGHT,
     });
-    drawButton(ctx, hits, mx + mw - 104, my + 18, 80, 32, '关闭', () => {
+    if (intel.oppFormation) {
+      drawBadge(ctx, mx + 368, my + 19, 66, 22, intel.oppFormation, '#1E3A5F', '#7DD3FC');
+    }
+    drawButton(ctx, hits, mx + mw - 96, my + 16, 74, 30, '关闭', () => {
       this.scoutModalOpen = false;
-    }, { variant: 'ghost', fontSize: 12, icon: 'close' });
+    }, { variant: 'ghost', fontSize: 11.5, icon: 'close' });
 
-    // 了解度进度条 + 深度侦察按钮
-    drawChamferPanel(ctx, mx + 28, my + 62, mw - 56, 86, 10, THEME.BG_CARD, THEME.BORDER);
+    drawChamferPanel(ctx, mx + 24, my + 56, mw - 48, 62, 10, THEME.BG_CARD, THEME.BORDER);
     const fam = intel.familiarity;
     const famCol = fam >= 70 ? THEME.GREEN : fam >= 40 ? '#38BDF8' : '#FBBF24';
-    drawText(ctx, `情报了解度：${fam}%`, mx + 46, my + 84, { size: 13, bold: true, color: famCol, mono: true });
-    drawRoundRect(ctx, mx + 188, my + 78, 280, 12, 6, '#1E293B');
-    drawRoundRect(ctx, mx + 188, my + 78, Math.max(8, Math.round((fam / 100) * 280)), 12, 6, famCol);
-    drawText(
-      ctx,
-      fam >= 70 ? '线索已交叉核实（已排除干扰情报）' : '了解度 < 70%：3 条线索中混有 1 条虚假烟雾弹，请对照赛果数据甄别',
-      mx + 482,
-      my + 84,
-      { size: 11, color: fam >= 70 ? THEME.GREEN : '#FBBF24' }
-    );
-    drawText(ctx, `${intel.recentFormText}   |   ${intel.h2hText}`, mx + 46, my + 120, {
-      size: 12,
+    drawText(ctx, `了解度 ${fam}%`, mx + 40, my + 75, { size: 12.5, bold: true, color: famCol, mono: true });
+    drawRoundRect(ctx, mx + 128, my + 69, 170, 10, 5, '#1E293B');
+    drawRoundRect(ctx, mx + 128, my + 69, Math.max(8, Math.round((fam / 100) * 170)), 10, 5, famCol);
+
+    const ap = intel.analysisPoints ?? 2;
+    const maxAp = intel.maxAnalysisPoints ?? 2;
+    drawText(ctx, '录像分析点:', mx + 318, my + 75, { size: 12, bold: true, color: '#7DD3FC' });
+    for (let gi = 0; gi < maxAp; gi++) {
+      const lit = gi < ap;
+      ctx.fillStyle = lit ? THEME.GOLD_LIGHT : '#1E293B';
+      ctx.beginPath();
+      ctx.arc(mx + 402 + gi * 18, my + 75, 5.5, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.strokeStyle = lit ? '#FEF08A' : '#475569';
+      ctx.lineWidth = 1.2;
+      ctx.stroke();
+    }
+    drawText(ctx, `${ap}/${maxAp}`, mx + 406 + maxAp * 18, my + 75, { size: 12, bold: true, color: THEME.GOLD_LIGHT, mono: true });
+    drawText(ctx, `${intel.recentFormText}   |   ${intel.h2hText}`, mx + 40, my + 101, {
+      size: 11.5,
       color: THEME.TX2,
     });
+
     drawButton(
       ctx,
       hits,
-      mx + mw - 270,
-      my + 104,
-      224,
+      mx + mw - 282,
+      my + 71,
+      244,
       32,
-      intel.scoutedThisRound ? '本轮已深度侦察 ✓' : '深度侦察 (+30%了解度 · 耗1整备)',
+      intel.scoutedThisRound ? '本轮已深度侦察 ✓' : '深度侦察 (+30%了解度 · +1分析点 · 耗1整备)',
       () => {
         const res = league.scoutOpponent();
         if (res.msg) this.scoutNotice = res.msg;
@@ -454,81 +730,420 @@ export class PortalScreen {
       {
         variant: intel.scoutedThisRound ? 'ghost' : 'primary',
         disabled: !!intel.scoutedThisRound || actionsLeft <= 0,
-        fontSize: 11,
+        fontSize: 10.5,
       }
     );
 
-    // 左列：3 条侦察线索（无剧透标签，需结合赛果与阵型判断真伪）
-    drawText(ctx, '一、球探与录像线索（对照上方战绩抽丝剥茧）', mx + 28, my + 174, {
-      size: 14,
-      bold: true,
-      color: '#38BDF8',
-    });
+    const colY = my + 130;
+    const zones = intel.zones ?? [];
+    const zoneLabelShort: Record<ScoutingZoneId, string> = {
+      gk_core: '门将/核心',
+      defense: '防线/肋部',
+      midfield: '中场轴心',
+      wings: '两翼走廊',
+    };
+
+    // ==================== 左列 (w: 296)：对手微型沙盘 + 4大可点击扫描热区 ====================
+    const lx = mx + 24;
+    const lw = 296;
+    drawText(ctx, '一、对手阵型沙盘（点击区块扫描录像）', lx, colY + 10, { size: 13.5, bold: true, color: '#38BDF8' });
+
+    const px = lx;
+    const py = colY + 26;
+    const pw = lw;
+    const ph = 228;
+    drawRoundRect(ctx, px, py, pw, ph, 10, '#0B241A', 'rgba(74, 222, 128, 0.35)', 1.2);
+    // 球场矢量网格线（垂直朝向：上=门将，下=前锋）
+    ctx.save();
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.16)';
+    ctx.lineWidth = 1;
+    ctx.strokeRect(px + 14, py + 12, pw - 28, ph - 24);
+    ctx.strokeRect(px + pw * 0.25, py + 12, pw * 0.5, 42);
+    ctx.beginPath();
+    ctx.moveTo(px + 14, py + ph - 16);
+    ctx.lineTo(px + pw - 14, py + ph - 16);
+    ctx.arc(px + pw / 2, py + ph - 16, 36, Math.PI, Math.PI * 2);
+    ctx.stroke();
+
+    // 四个区域的轻量高光感应带
+    const activeZ = zones.find(z => z.id === this.selectedZoneId) ?? zones.find(z => z.scanned) ?? zones[0];
     const isRevealed = !!intel.chosenCounterId;
+    const slots = FORMATIONS[intel.oppFormation ?? '4-4-2'] ?? FORMATIONS['4-4-2'];
+    slots.forEach(sl => {
+      const zId = mapRoleToScoutZone(sl.role);
+      const zObj = zones.find(z => z.id === zId);
+      const dx = px + 16 + (sl.baseY / 68) * (pw - 32);
+      const dy = py + 18 + Math.min(0.92, Math.max(0.06, sl.baseX / 84)) * (ph - 36);
+      const weakLit = zObj && (zObj.scanned || isRevealed) && zObj.isWeakZone;
+      const scannedNormal = zObj && zObj.scanned && !zObj.isWeakZone;
+
+      if (weakLit) {
+        const pulseR = 14 + Math.sin(this.animTime * 5.2) * 3;
+        ctx.strokeStyle = 'rgba(248, 113, 113, 0.85)';
+        ctx.lineWidth = 1.6;
+        ctx.beginPath();
+        ctx.arc(dx, dy, pulseR, 0, Math.PI * 2);
+        ctx.stroke();
+      } else if (this.selectedZoneId === zId) {
+        ctx.strokeStyle = 'rgba(56, 189, 248, 0.75)';
+        ctx.lineWidth = 1.4;
+        ctx.beginPath();
+        ctx.arc(dx, dy, 13, 0, Math.PI * 2);
+        ctx.stroke();
+      }
+
+      ctx.fillStyle = weakLit ? '#EF4444' : scannedNormal ? '#38BDF8' : '#334155';
+      ctx.beginPath();
+      ctx.arc(dx, dy, 8.5, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.strokeStyle = weakLit ? '#FDE047' : '#CBD5E1';
+      ctx.lineWidth = 1.2;
+      ctx.stroke();
+      drawText(ctx, sl.role.slice(0, 3), dx, dy + 0.5, { size: 7.5, bold: true, color: '#FFFFFF', align: 'center' });
+
+      if (zObj) {
+        hits.add(dx - 19, dy - 19, 38, 38, () => {
+          if (this.selectedZoneId === zId && !zObj.scanned && !isRevealed) {
+            const res = league.scanOpponentZone(zId);
+            if (res.msg) this.scoutNotice = res.msg;
+            if (res.ok) SoundEngine.playCraftSuccess();
+            else SoundEngine.playWarning();
+            actions.onSave?.();
+          } else {
+            this.selectedZoneId = zId;
+            SoundEngine.playClick();
+          }
+        });
+      }
+    });
+    ctx.restore();
+
+    // 4 个快捷区按钮 (2x2)
+    zones.forEach((z, zi) => {
+      const col = zi % 2;
+      const row = Math.floor(zi / 2);
+      const bx = lx + col * 150;
+      const by = py + ph + 10 + row * 48;
+      const bw = 146;
+      const bh = 42;
+      const isWeakFound = (z.scanned || isRevealed) && z.isWeakZone;
+      const isSel = this.selectedZoneId === z.id;
+      const bCol = isWeakFound ? '#EF4444' : z.scanned ? '#38BDF8' : isSel ? THEME.GOLD_LIGHT : THEME.BORDER;
+      drawRoundRect(ctx, bx, by, bw, bh, 7, isWeakFound ? 'rgba(127, 29, 29, 0.45)' : z.scanned ? '#12243D' : THEME.BG_CARD, bCol, isWeakFound || isSel ? 1.5 : 1);
+      drawText(ctx, z.label, bx + 10, by + 14, { size: 11, bold: true, color: isWeakFound ? '#FCA5A5' : THEME.TX1 });
+      drawText(
+        ctx,
+        isWeakFound ? '异常：发现破绽' : z.scanned ? '已核实 · 无明显短板' : isSel && ap > 0 && !isRevealed ? '再点一次或点下方扫描' : ap > 0 && !isRevealed ? '点击预览区域' : '待扫描',
+        bx + 10,
+        by + 30,
+        { size: 9.5, color: isWeakFound ? '#FDE047' : z.scanned ? '#7DD3FC' : isSel ? THEME.GOLD_LIGHT : THEME.TX3 }
+      );
+      hits.add(bx, by, bw, bh, () => {
+        if (this.selectedZoneId === z.id && !z.scanned && !isRevealed) {
+          const res = league.scanOpponentZone(z.id);
+          if (res.msg) this.scoutNotice = res.msg;
+          if (res.ok) SoundEngine.playCraftSuccess();
+          else SoundEngine.playWarning();
+          actions.onSave?.();
+        } else {
+          this.selectedZoneId = z.id;
+          SoundEngine.playClick();
+        }
+      });
+    });
+
+    // 沙盘最下方：当前选中/扫描区域精确情报卡片
+    const detailY = py + ph + 112;
+    const zShow = activeZ;
+    drawChamferPanel(ctx, lx, detailY, lw, 108, 9, 'rgba(15, 23, 42, 0.92)', zShow && (zShow.scanned || isRevealed) && zShow.isWeakZone ? '#EF4444' : THEME.BORDER);
+    if (zShow && (zShow.scanned || isRevealed)) {
+      drawBadge(
+        ctx,
+        lx + 12,
+        detailY + 12,
+        120,
+        20,
+        zShow.isWeakZone ? '录像锁定异常' : '录像实况记录',
+        zShow.isWeakZone ? '#7F1D1D' : '#1E3A5F',
+        zShow.isWeakZone ? '#FCA5A5' : '#7DD3FC'
+      );
+      drawText(ctx, zShow.label, lx + 140, detailY + 22, { size: 11.5, bold: true, color: THEME.GOLD_LIGHT });
+      drawWrappedText(ctx, zShow.summary, lx + 12, detailY + 42, lw - 24, 18, { size: 11.5, color: THEME.TX1, maxLines: 3 });
+    } else {
+      const zLabel = zShow ? zShow.label : '未选择区域';
+      drawText(ctx, `预览【${zLabel}】· 消耗 1 点分析点调取录像`, lx + 12, detailY + 24, { size: 12, bold: true, color: '#7DD3FC' });
+      drawWrappedText(ctx, '点击上方阵型区块可先自由预览，确认目标后点击右侧按钮或再点一次该区块执行扫描。', lx + 12, detailY + 46, lw - 24, 17, { size: 10.5, color: THEME.TX2, maxLines: 2 });
+      if (zShow && !zShow.scanned && !isRevealed) {
+        drawButton(ctx, hits, lx + lw - 134, detailY + 68, 122, 28, '扫描此区 (-1点)', () => {
+          const res = league.scanOpponentZone(zShow.id);
+          if (res.msg) this.scoutNotice = res.msg;
+          if (res.ok) SoundEngine.playCraftSuccess();
+          else SoundEngine.playWarning();
+          actions.onSave?.();
+        }, { variant: 'gold', disabled: ap <= 0, fontSize: 10.5 });
+      }
+    }
+
+    // ==================== 中列 (w: 374)：3 条录像线索 + 交叉核实排错 ====================
+    const cx = lx + lw + 20;
+    const cw = 374;
+    drawText(ctx, '二、情报线索库（1 条为烟雾弹）', cx, colY + 10, { size: 13.5, bold: true, color: '#38BDF8' });
+
     intel.clues.forEach((cl, ci) => {
-      const cy = my + 194 + ci * 108;
-      const borderCol = isRevealed && cl.isSmoke ? THEME.RED_LIGHT : THEME.BORDER_GOLD;
-      drawChamferPanel(ctx, mx + 28, cy, 488, 96, 8, THEME.BG_CARD, borderCol);
-      const confLabel = isRevealed && cl.isSmoke
-        ? '虚假烟雾弹 ✗'
+      const cy = colY + 26 + ci * 118;
+      const shownSmoke = !!cl.debunked || (isRevealed && !!cl.isSmoke);
+      const borderCol = shownSmoke ? THEME.RED_LIGHT : THEME.BORDER_GOLD;
+      drawChamferPanel(ctx, cx, cy, cw, 108, 9, shownSmoke ? 'rgba(30, 16, 22, 0.72)' : THEME.BG_CARD, borderCol);
+      const confLabel = shownSmoke
+        ? '烟雾弹已证伪 ✗'
         : cl.confidence === 'high'
         ? '核实线索'
         : cl.confidence === 'mid'
         ? '常规情报'
         : '小道消息';
-      const confCol = isRevealed && cl.isSmoke
+      const confCol = shownSmoke
         ? THEME.RED_LIGHT
         : cl.confidence === 'high'
         ? THEME.GREEN
         : cl.confidence === 'mid'
         ? '#38BDF8'
         : '#FBBF24';
-      drawBadge(ctx, mx + 44, cy + 14, 96, 20, confLabel, '#0F172A', confCol);
-      drawText(ctx, `线索 #${ci + 1}`, mx + 148, cy + 24, { size: 11, color: THEME.TX3, mono: true });
-      drawWrappedText(ctx, cl.text, mx + 44, cy + 44, 456, 20, { size: 12, color: THEME.TX1, maxLines: 2 });
+      drawBadge(ctx, cx + 14, cy + 12, shownSmoke ? 112 : 86, 20, confLabel, '#0F172A', confCol);
+      drawText(ctx, `线索 #${ci + 1}`, cx + (shownSmoke ? 134 : 108), cy + 22, { size: 11, color: THEME.TX3, mono: true });
+      drawWrappedText(ctx, cl.text, cx + 14, cy + 40, cw - 28, 19, {
+        size: 11.5,
+        color: shownSmoke ? THEME.TX3 : THEME.TX1,
+        maxLines: 3,
+      });
     });
 
-    // 右列：3 选 1 战术指证
-    drawText(ctx, '二、指证对手破绽（3 选 1 针对布置，答错无惩罚）', mx + 542, my + 174, {
-      size: 14,
-      bold: true,
-      color: THEME.GOLD_LIGHT,
-    });
-    intel.counters.forEach((cnt, idx) => {
-      const cy = my + 194 + idx * 108;
-      const isChosen = intel.chosenCounterId === cnt.id;
-      const borderCol = isChosen
-        ? (cnt.isCorrect ? THEME.GREEN : THEME.RED_LIGHT)
-        : isRevealed && cnt.isCorrect
-        ? THEME.GREEN
-        : THEME.BORDER;
-      drawChamferPanel(ctx, mx + 542, cy, 490, 96, 8, isChosen ? '#182642' : THEME.BG_CARD, borderCol, isChosen ? 1.8 : 1);
-      drawText(ctx, cnt.label, mx + 558, cy + 22, { size: 13, bold: true, color: THEME.GOLD_LIGHT });
-      drawWrappedText(ctx, cnt.desc, mx + 558, cy + 42, 336, 18, { size: 11, color: THEME.TX2, maxLines: 2 });
-      if (!isRevealed) {
-        drawButton(ctx, hits, mx + 908, cy + 32, 110, 32, '指证此破绽 ▶', () => {
+    const hasUndebunkedSmoke = intel.clues.some(c => c.isSmoke && !c.debunked);
+    const debunkY = colY + 384;
+    drawChamferPanel(ctx, cx, debunkY, cw, 92, 9, 'rgba(15, 23, 42, 0.92)', THEME.BORDER);
+    drawButton(
+      ctx,
+      hits,
+      cx + 14,
+      debunkY + 12,
+      cw - 28,
+      36,
+      !hasUndebunkedSmoke
+        ? '当前无待排除的虚假烟雾弹 ✓'
+        : intel.chosenCounterId
+        ? '已完成破绽指证'
+        : '交叉核实 · 排除 1 条烟雾弹 (耗1分析点)',
+      () => {
+        const res = league.debunkSmokeClue();
+        if (res.msg) this.scoutNotice = res.msg;
+        if (res.ok) SoundEngine.playCraftSuccess();
+        else SoundEngine.playWarning();
+        actions.onSave?.();
+      },
+      {
+        variant: hasUndebunkedSmoke && !intel.chosenCounterId ? 'primary' : 'ghost',
+        disabled: !hasUndebunkedSmoke || !!intel.chosenCounterId || ap <= 0,
+        fontSize: 11.5,
+      }
+    );
+    drawText(
+      ctx,
+      '提示：不用删错直接拍案指证抓出真破绽 → 获【宗师洞察】+1克制元素！',
+      cx + cw / 2,
+      debunkY + 68,
+      { size: 10.5, color: THEME.GOLD_LIGHT, align: 'center' }
+    );
+
+    // ==================== 右列 (w: 374)：拍案指证 & 2选1体系内红利 ====================
+    const rx = cx + cw + 20;
+    const rw = 374;
+    drawText(
+      ctx,
+      isRevealed ? '三、指证裁定与体系内针对红利' : '三、拍案指证（答对锁定 2 选 1 战术红利）',
+      rx,
+      colY + 10,
+      { size: 13.5, bold: true, color: THEME.GOLD_LIGHT }
+    );
+
+    if (!isRevealed) {
+      intel.counters.forEach((cnt, idx) => {
+        const cy = colY + 26 + idx * 144;
+        const zoneTag = cnt.targetZone ? zoneLabelShort[cnt.targetZone] : '全区';
+        drawChamferPanel(ctx, rx, cy, rw, 132, 9, THEME.BG_CARD, THEME.BORDER);
+        drawBadge(ctx, rx + 14, cy + 12, 86, 20, `区:${zoneTag}`, '#1E293B', '#7DD3FC');
+        const el0 = cnt.counterElements?.[0];
+        const el1 = cnt.counterElements?.[1];
+        if (el0) {
+          const elText = el1 ? `克制:${getElementLabel(el0)}/${getElementLabel(el1)}` : `克制:${getElementLabel(el0)}`;
+          drawBadge(ctx, rx + 106, cy + 12, 118, 20, elText, '#1E293B', ELEMENT_COLOR[el0] ?? THEME.GOLD_LIGHT);
+        }
+        drawText(ctx, fitText(ctx, cnt.label, rw - 28, 13.5, true), rx + 14, cy + 48, {
+          size: 13.5,
+          bold: true,
+          color: THEME.GOLD_LIGHT,
+        });
+        drawWrappedText(ctx, `基础红利：${cnt.desc}${cnt.oppDebuff ? ` · ${cnt.oppDebuff.label}` : ''}`, rx + 14, cy + 68, rw - 28, 16, {
+          size: 10.5,
+          color: THEME.TX2,
+          maxLines: 1,
+        });
+        drawButton(ctx, hits, rx + 14, cy + 90, rw - 28, 32, '拍案指证此破绽 ▶', () => {
           const res = league.chooseOpponentCounter(cnt.id);
           if (res.msg) this.scoutNotice = res.msg;
-          if (res.correct) SoundEngine.playBreakthrough();
-          else SoundEngine.playWarning();
+          if (res.correct) {
+            this.stampAnimTimer = 1.1;
+            SoundEngine.playBreakthrough();
+            actions.onShake?.(7, 0.22);
+            actions.onBurst?.(rx + rw / 2, colY + 120, THEME.GOLD_LIGHT);
+          } else {
+            SoundEngine.playWarning();
+          }
           actions.onSave?.();
-        }, { variant: 'gold', fontSize: 11 });
-      } else {
-        const badgeTxt = isChosen ? (cnt.isCorrect ? '异议成立 ✓' : '误判干扰 ✗') : cnt.isCorrect ? '真实破绽' : '干扰项';
-        const badgeCol = cnt.isCorrect ? THEME.GREEN : isChosen ? THEME.RED_LIGHT : THEME.TX3;
-        drawBadge(ctx, mx + 914, cy + 36, 98, 24, badgeTxt, '#0F172A', badgeCol);
-      }
-    });
+        }, { variant: 'gold', fontSize: 12 });
+      });
+    } else if (intel.spotCorrect) {
+      // 指证成立展示 + 体系内红利 2 选 1
+      const winCounter = intel.counters.find(c => c.isCorrect);
+      const isMaster = intel.mastery === 'master';
+      const stampP = this.stampAnimTimer > 0 ? easeOutBack(Math.min(1, (1.1 - this.stampAnimTimer) / 0.28)) : 1;
+
+      ctx.save();
+      drawChamferPanel(ctx, rx, colY + 26, rw, 106, 10, isMaster ? 'rgba(120, 53, 15, 0.36)' : 'rgba(20, 83, 45, 0.30)', isMaster ? THEME.GOLD_LIGHT : THEME.GREEN, 1.8);
+      if (isMaster) drawFoilShimmer(ctx, rx, colY + 26, rw, 106, this.animTime * 0.9, 'rgba(250, 204, 21, 0.25)');
+      const badgeW = isMaster ? 228 : 148;
+      ctx.save();
+      ctx.translate(rx + 14 + badgeW / 2, colY + 48);
+      ctx.scale(0.85 + 0.15 * stampP, 0.85 + 0.15 * stampP);
+      drawBadge(
+        ctx,
+        -badgeW / 2,
+        -11,
+        badgeW,
+        22,
+        isMaster ? '★ 宗师洞察 · 额外赠克制元素 +1' : '✓ 破绽指证成立',
+        isMaster ? '#78350F' : '#14532D',
+        isMaster ? THEME.GOLD_LIGHT : THEME.GREEN
+      );
+      ctx.restore();
+      drawText(ctx, winCounter?.label ?? '真实破绽已锁定', rx + 14, colY + 76, { size: 13.5, bold: true, color: THEME.TX1 });
+      drawWrappedText(ctx, winCounter?.buff.note ?? '', rx + 14, colY + 96, rw - 28, 16, { size: 10.5, color: '#7DD3FC', maxLines: 2 });
+      ctx.restore();
+
+      const loadoutCards = league.getMatchLoadout();
+      const counterEls = new Set(intel.counterElements ?? []);
+      const matchedCards = loadoutCards.filter(c => {
+        const mainEl = inferCardElement(c);
+        const parts = (c.recipeKey ?? '').split('+');
+        return counterEls.has(mainEl) || parts.some(p => counterEls.has(p as any));
+      });
+
+      const eqSkills = league.getEquippedActiveSkills();
+      const counterStyles = new Set(intel.counterStyles ?? []);
+      const matchedSkills = eqSkills.filter(s => s.styleTag && counterStyles.has(s.styleTag));
+      const targetSkills = matchedSkills.length > 0 ? matchedSkills : eqSkills.slice(0, 1);
+
+      const pickBonus = (kind: ScoutRewardKind) => {
+        const res = league.chooseScoutReward(kind);
+        if (res.msg) this.scoutNotice = res.msg;
+        if (res.ok) {
+          SoundEngine.playFanfare();
+          actions.onBurst?.(rx + rw / 2, colY + 300, THEME.GOLD_LIGHT);
+        }
+        actions.onSave?.();
+      };
+
+      const renderRewardChoiceCard = (
+        kind: ScoutRewardKind,
+        topY: number,
+        badgeTxt: string,
+        titleTxt: string,
+        bodyTxt: string,
+        subTxt: string,
+        accent: string
+      ) => {
+        const isChosen = intel.chosenRewardKind === kind;
+        const lockedOther = !!intel.chosenRewardKind && !isChosen;
+        drawChamferPanel(
+          ctx,
+          rx,
+          topY,
+          rw,
+          158,
+          10,
+          isChosen ? 'rgba(20, 83, 45, 0.32)' : THEME.BG_CARD,
+          isChosen ? THEME.GREEN : lockedOther ? THEME.BORDER : accent,
+          isChosen ? 1.8 : 1.2
+        );
+        drawBadge(ctx, rx + 14, topY + 12, 138, 20, badgeTxt, '#1E293B', accent);
+        if (isChosen) drawBadge(ctx, rx + rw - 110, topY + 12, 96, 20, '已锁定生效 ✓', '#14532D', THEME.GREEN);
+        drawText(ctx, titleTxt, rx + 14, topY + 46, { size: 13.5, bold: true, color: THEME.TX1 });
+        drawWrappedText(ctx, bodyTxt, rx + 14, topY + 66, rw - 28, 16, { size: 11, color: '#CBD5E1', maxLines: 2 });
+        drawText(ctx, fitText(ctx, subTxt, rw - 28, 10.5), rx + 14, topY + 102, { size: 10.5, color: accent });
+        if (!intel.chosenRewardKind) {
+          drawButton(ctx, hits, rx + 14, topY + 116, rw - 28, 32, `锁定此针对红利 ▶`, () => pickBonus(kind), {
+            variant: 'gold',
+            fontSize: 11.5,
+          });
+        }
+      };
+
+      const elNames = (intel.counterElements ?? []).map(e => getElementLabel(e)).join('/');
+      const cardMatchNote = matchedCards.length > 0
+        ? `当前出战手牌命中 ${matchedCards.length} 张：${matchedCards.map(c => c.name).join('、')}`
+        : `当前出战 4 张手牌暂无【${elNames}】卡（锁定后仍可去合成装配）`;
+      renderRewardChoiceCard(
+        'buff_debuff',
+        colY + 146,
+        `手牌元素(${elNames}) + 减益`,
+        '红利 A · 手牌降费超频 + 对手弱点减益',
+        `含【${elNames}】元素的出战 Buff 卡本场 -1 费且持续 +5 分；${intel.activeDebuff?.label ?? '大幅削弱对手弱点线'}。`,
+        cardMatchNote,
+        '#38BDF8'
+      );
+
+      const skillMatchNote = targetSkills.length > 0
+        ? `将超频主动技：${targetSkills.map(s => (s.effectiveRank ?? 1) >= 5 ? `${s.name}(满阶R5·首触发免CD)` : `${s.name}(R${s.effectiveRank ?? 1}→R${(s.effectiveRank ?? 1) + 1})`).join('、')}`
+        : '当前尚未装备主动技（前往天赋星图装配后即可生效）';
+      renderRewardChoiceCard(
+        'skill_overclock',
+        colY + 318,
+        '技能体系超频',
+        '红利 B · 克制主动技超频觉醒',
+        '匹配的星图主动技本场获得【临时 +1 Rank】且【首次触发免冷却】，更快打出改写战局的决定技！',
+        skillMatchNote,
+        THEME.GOLD_LIGHT
+      );
+    } else {
+      // 指证误判展示
+      intel.counters.forEach((cnt, idx) => {
+        const cy = colY + 26 + idx * 144;
+        const isChosen = intel.chosenCounterId === cnt.id;
+        drawChamferPanel(ctx, rx, cy, rw, 132, 9, isChosen ? '#2A181F' : THEME.BG_CARD, cnt.isCorrect ? THEME.GREEN : isChosen ? THEME.RED_LIGHT : THEME.BORDER);
+        drawText(ctx, cnt.label, rx + 14, cy + 28, { size: 13.5, bold: true, color: cnt.isCorrect ? THEME.GOLD_LIGHT : THEME.TX2 });
+        drawWrappedText(ctx, cnt.desc, rx + 14, cy + 54, rw - 28, 17, { size: 11, color: THEME.TX3, maxLines: 2 });
+        drawBadge(
+          ctx,
+          rx + 14,
+          cy + 92,
+          114,
+          24,
+          isChosen ? '误判烟雾弹 ✗' : cnt.isCorrect ? '真实破绽' : '干扰项',
+          '#0F172A',
+          cnt.isCorrect ? THEME.GREEN : isChosen ? THEME.RED_LIGHT : THEME.TX3
+        );
+      });
+    }
 
     const footerMsg =
       this.scoutNotice ||
       (intel.chosenCounterId
         ? intel.spotCorrect
-          ? '破绽指证成功！本场已获得对应属性加成与额外战术能量'
+          ? intel.chosenRewardKind
+            ? '赛前侦查与针对部署已全部就绪，祝本轮凯旋！'
+            : '异议成立！请在右栏【手牌+减益】与【主动技超频】中 2 选 1 锁定本场红利'
           : '本场未能识破烟雾弹，仍可按常规战术正常出战'
-        : '提示：对照阵型与近几轮进失球数据，找出彼此矛盾的小道消息并指证真实破绽');
-    drawText(ctx, footerMsg, mx + 28, my + mh - 34, {
-      size: 12,
+        : '操作：点击左侧沙盘扫描区（-1分析点）对比中栏线索，即可无误指证右栏真实破绽');
+    drawText(ctx, footerMsg, mx + 24, my + mh - 24, {
+      size: 11.5,
       bold: true,
       color: intel.spotCorrect ? THEME.GREEN : '#7DD3FC',
     });

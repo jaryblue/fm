@@ -5,12 +5,18 @@
 
 import { getDefenseSystem } from '../../engine/src/formations';
 import {
+  ActiveLegendaryAspect,
   ActiveSkillSituation,
   CommandCardEffect,
   DefenseSystem,
   EquippedActiveSkill,
   FormationName,
+  PerkSkillSynergyFlags,
   PlayerRole,
+  SkillBranchChoice,
+  SkillInstantAction,
+  SkillMutationTag,
+  SkillVfxTheme,
   TacticalMods,
   TacticalStyle,
 } from '../../engine/src/types';
@@ -21,6 +27,18 @@ export type SkillNodeKind =
   | 'fusion'      // 18个「防线体系 × 战术流派」融合奇点 (匹配当前体系+战术时 ×2 共鸣)
   | 'keystone'    // 6个跨流派奇点 + 1个中心终极核心
   | 'path';       // 74个路径/桥梁小节点（含行为修正因子）
+
+export const SKILL_RANK_UPGRADE_COSTS: Record<2 | 3, number> = {
+  2: 25,
+  3: 45,
+};
+
+export interface SkillMutationSpec {
+  choice: SkillBranchChoice;
+  name: string;
+  tag: SkillMutationTag;
+  shortDesc: string;
+}
 
 export interface SkillEffect {
   passing?: number;
@@ -46,6 +64,11 @@ export interface ActiveSkillDef {
   durationMinutes: number;
   powerLabel: string;
   effect: Omit<CommandCardEffect, 'id' | 'name' | 'durationMinutes'>;
+  instantAction?: SkillInstantAction;
+  instantLabel?: string;
+  vfxTheme?: SkillVfxTheme;
+  linkedElement?: 'press' | 'pass' | 'wing' | 'iron' | 'blitz';
+  mutations?: [SkillMutationSpec, SkillMutationSpec];
 }
 
 export interface SkillWebNode {
@@ -64,6 +87,7 @@ export interface SkillWebNode {
   effect: SkillEffect;
   mods?: TacticalMods;
   activeSkill?: ActiveSkillDef;
+  aspect?: ActiveLegendaryAspect;
   neighbors: string[];
 }
 
@@ -715,7 +739,227 @@ const ACTIVE_SKILL_SPECS: Record<string, ActiveSkillDef> = {
   },
 };
 
-export const SKILL_WEB_NODES: SkillWebNode[] = buildSkillWeb();
+type ElementAffinity = 'press' | 'pass' | 'wing' | 'iron' | 'blitz';
+
+interface SkillV4Profile {
+  instantAction: SkillInstantAction;
+  instantLabel: string;
+  vfxTheme: SkillVfxTheme;
+  linkedElement: ElementAffinity;
+  mutations: [SkillMutationSpec, SkillMutationSpec];
+}
+
+const MUTATION_TAG_DESC: Record<SkillMutationTag, string> = {
+  bypass_offside: '本次直塞无视越位线判定，锋线可提前反越位前插',
+  guarantee_shot_on_target: '强迫即刻/下一脚攻门直指门框，极大降低打偏率',
+  double_duration: '后续战术加成持续时间翻倍，长时间压制对手',
+  refund_card_energy: '立即为场边指挥台返还 +1 指挥能量',
+  reduce_all_cd: '其余已装备主动技能冷却立即缩减 3 分钟',
+  grant_shield_stack: '叠加 +1 绝杀护盾层（可自动化解一次禁区高危射门）',
+  steal_tempo: '打乱对手传控节奏并使其核心逼抢/持球短暂迟滞',
+  counter_damage_amp: '叠加 +1 反击威能层（消耗时显著拔高反击射门 xG）',
+};
+
+function makeProfile(
+  instantAction: SkillInstantAction,
+  instantLabel: string,
+  vfxTheme: SkillVfxTheme,
+  linkedElement: ElementAffinity,
+  aName: string,
+  aTag: SkillMutationTag,
+  bName: string,
+  bTag: SkillMutationTag
+): SkillV4Profile {
+  return {
+    instantAction,
+    instantLabel,
+    vfxTheme,
+    linkedElement,
+    mutations: [
+      { choice: 'A', name: aName, tag: aTag, shortDesc: MUTATION_TAG_DESC[aTag] },
+      { choice: 'B', name: bName, tag: bTag, shortDesc: MUTATION_TAG_DESC[bTag] },
+    ],
+  };
+}
+
+const SKILL_V4_PROFILES: Record<string, SkillV4Profile> = {
+  core_master: makeProfile('force_shot_on_target', '瞬间校准爆射破局', 'ult', 'blitz', '绝杀终章', 'guarantee_shot_on_target', '时空回溯', 'reduce_all_cd'),
+  sys_4back: makeProfile('clear_danger', '四卫防线合围解围', 'def', 'iron', '铁盾预置', 'grant_shield_stack', '压迫断档', 'steal_tempo'),
+  sys_3back: makeProfile('win_foul_setpiece', '翼卫突击造定位球', 'att', 'wing', '翼卫尖刀', 'counter_damage_amp', '走廊延展', 'double_duration'),
+  sys_5back: makeProfile('GK_save_boost', '五盾协防门线飞扑', 'def', 'iron', '门前结界', 'grant_shield_stack', '稳守反哺', 'refund_card_energy'),
+  sys_4back_t1: makeProfile('tempo_burst_intercept', '中前场压迫瞬断', 'ult', 'press', '窒息节奏', 'steal_tempo', '换挡提速', 'reduce_all_cd'),
+  sys_5back_t2: makeProfile('instant_counter_pass', '后场长传瞬间制导', 'ult', 'pass', '反越位直塞', 'bypass_offside', '致命反刺', 'counter_damage_amp'),
+  ori_press: makeProfile('tempo_burst_intercept', '瞬发绞杀逼抢断球', 'att', 'press', '节奏崩解', 'steal_tempo', '狩猎回响', 'refund_card_energy'),
+  ori_wing: makeProfile('win_foul_setpiece', '边路突破赢定位球', 'att', 'wing', '极速反越', 'bypass_offside', '边路续航', 'double_duration'),
+  ori_counter: makeProfile('instant_counter_pass', '断球一脚直塞反击', 'att', 'blitz', '反击锐化', 'counter_damage_amp', '反越位刺穿', 'bypass_offside'),
+  ori_bus: makeProfile('clear_danger', '禁区全员门线解围', 'def', 'iron', '绝境神盾', 'grant_shield_stack', '固若金汤', 'double_duration'),
+  ori_bal: makeProfile('force_through_ball', '中轴手术刀斜塞穿透', 'ult', 'pass', '全线运转', 'reduce_all_cd', '中场盈能', 'refund_card_energy'),
+  ori_tiki: makeProfile('force_through_ball', '二过一撕裂禁区弧', 'ult', 'pass', '隐形跑位', 'bypass_offside', '节奏加速', 'reduce_all_cd'),
+  key_press_wing: makeProfile('tempo_burst_intercept', '边路猎杀截断横传', 'att', 'press', '截断节奏', 'steal_tempo', '由守转刺', 'counter_damage_amp'),
+  key_wing_cnt: makeProfile('instant_counter_pass', '两翼闪电长传打身后', 'att', 'wing', '边路反越', 'bypass_offside', '翼锋爆破', 'counter_damage_amp'),
+  key_cnt_bus: makeProfile('clear_danger', '深防解围即刻蓄力', 'def', 'iron', '护盾蓄防', 'grant_shield_stack', '龟缩重炮', 'counter_damage_amp'),
+  key_bus_bal: makeProfile('GK_save_boost', '门神铁闸托出必进', 'def', 'iron', '绝对守护', 'grant_shield_stack', '稳健轮转', 'reduce_all_cd'),
+  key_bal_tiki: makeProfile('force_through_ball', '全域节拍撕裂防线', 'ult', 'pass', '持久控域', 'double_duration', '控场回能', 'refund_card_energy'),
+  key_tiki_press: makeProfile('tempo_burst_intercept', '五秒反抢瞬间夺回', 'ult', 'press', '高压锁死', 'steal_tempo', '全技能急转', 'reduce_all_cd'),
+  'fm_4-3-3': makeProfile('force_through_ball', '三叉戟肋部斜插直塞', 'att', 'pass', '反越位尖刀', 'bypass_offside', '必中搓射', 'guarantee_shot_on_target'),
+  'fm_4-2-3-1': makeProfile('force_shot_on_target', '双后腰护航前腰重炮', 'att', 'blitz', '门框校准', 'guarantee_shot_on_target', '双腰延时', 'double_duration'),
+  'fm_4-4-2': makeProfile('tempo_burst_intercept', '双锋夹击前场断球', 'att', 'press', '前场绞杀', 'steal_tempo', '压迫回能', 'refund_card_energy'),
+  'fm_4-1-2-1-2': makeProfile('force_through_ball', '菱形短传连续打穿', 'ult', 'pass', '菱角反越', 'bypass_offside', '中场变频', 'reduce_all_cd'),
+  'fm_4-4-1-1': makeProfile('instant_counter_pass', '影锋回撤顺势一塞', 'att', 'blitz', '反击利刃', 'counter_damage_amp', '打乱阵脚', 'steal_tempo'),
+  'fm_4-1-4-1': makeProfile('clear_danger', '单后腰弧顶铁壁封堵', 'def', 'iron', '屏障叠盾', 'grant_shield_stack', '防线回流', 'refund_card_energy'),
+  'fm_4-2-2-2': makeProfile('win_foul_setpiece', '双前腰连续穿插造险', 'att', 'pass', '魔方加速', 'reduce_all_cd', '持久围攻', 'double_duration'),
+  'fm_4-3-2-1': makeProfile('force_shot_on_target', '圣诞树肋部冷静打门', 'att', 'blitz', '肋部狙击', 'guarantee_shot_on_target', '聚能绝杀', 'counter_damage_amp'),
+  'fm_3-5-2': makeProfile('win_foul_setpiece', '五中场强压边路造险', 'ult', 'wing', '暗渡陈仓', 'bypass_offside', '边中回能', 'refund_card_energy'),
+  'fm_3-4-3': makeProfile('force_shot_on_target', '三锋狂潮强行命中', 'att', 'blitz', '强射必正', 'guarantee_shot_on_target', '碾压节奏', 'steal_tempo'),
+  'fm_3-4-2-1': makeProfile('force_through_ball', '双影锋内切斜塞禁区', 'att', 'pass', '极限前插', 'bypass_offside', '持续压制', 'double_duration'),
+  'fm_3-4-1-2': makeProfile('instant_counter_pass', '前腰直塞双锋单刀', 'ult', 'blitz', '双锋重击', 'counter_damage_amp', '快攻循环', 'reduce_all_cd'),
+  'fm_5-4-1': makeProfile('clear_danger', '五卫十人防线清球', 'def', 'iron', '城墙加盾', 'grant_shield_stack', '拖延时间', 'steal_tempo'),
+  'fm_5-3-2': makeProfile('GK_save_boost', '五卫协同门线零封扑救', 'def', 'iron', '绝对守护', 'grant_shield_stack', '铜墙长驻', 'double_duration'),
+  'fm_5-2-3': makeProfile('instant_counter_pass', '后场制导三叉戟反击', 'att', 'wing', '长传破越位', 'bypass_offside', '火箭蓄能', 'counter_damage_amp'),
+  'fm_5-2-1-2': makeProfile('force_shot_on_target', '铁桶前腰致胜远射', 'att', 'blitz', '终结一击', 'guarantee_shot_on_target', '绝地盈能', 'refund_card_energy'),
+};
+
+const LEGENDARY_ASPECT_SPECS: Record<string, { id: string; name: string; shortDesc: string; mechanicKey: string }> = {
+  'fus_4-back_gegenpress': { id: 'asp_4_press', name: '不熄压迫核心', shortDesc: '压迫技能/压迫卡有高概率返还1指挥能量并强化断球威慑', mechanicKey: 'press_refund' },
+  'fus_4-back_wing_play': { id: 'asp_4_wing', name: '四卫边路双飞翼', shortDesc: '边路触发技能获+1反击威能层，边路传导更快', mechanicKey: 'wing_counter_stack' },
+  'fus_4-back_counter': { id: 'asp_4_cnt', name: '猎豹防反矩阵', shortDesc: '成功解围或技能护盾化解后转化+1反击威能层', mechanicKey: 'clear_counter_stack' },
+  'fus_4-back_park_bus': { id: 'asp_4_bus', name: '钢铁四防线壁垒', shortDesc: '开局+1绝杀护盾层；危险触发技能额外再叠+1护盾', mechanicKey: 'bus_shield_start1' },
+  'fus_4-back_balanced': { id: 'asp_4_bal', name: '全能中轴协奏曲', shortDesc: '己方每连续完成4脚传导，全装备主动技能CD-1分钟', mechanicKey: 'pass4_cd_cut' },
+  'fus_4-back_tiki_taka': { id: 'asp_4_tiki', name: '四后卫传控枢纽', shortDesc: '每连续完成5脚精准传导，下一张指挥卡消耗-1能量', mechanicKey: 'pass5_card_discount' },
+  'fus_3-back_gegenpress': { id: 'asp_3_press', name: '三中卫狂暴前压', shortDesc: '压迫技能直接瓦解对手进攻流动性并强化即时断球', mechanicKey: 'press_tempo_drain' },
+  'fus_3-back_wing_play': { id: 'asp_3_wing', name: '翼卫走廊风暴', shortDesc: '翼卫/边路技能触发立即使全装备技能CD-2分钟', mechanicKey: 'wing_cd_refund' },
+  'fus_3-back_counter': { id: 'asp_3_cnt', name: '三卫直刺反击刃', shortDesc: '己方反击长传速度+20%，技能反击叠加反击威能', mechanicKey: 'counter_pass_speed' },
+  'fus_3-back_park_bus': { id: 'asp_3_bus', name: '三塔禁区铁闸', shortDesc: '开局+1护盾层；解围清球与门将应急稳态大幅上升', mechanicKey: 'gk_shield_start1' },
+  'fus_3-back_balanced': { id: 'asp_3_bal', name: '动态三后卫引擎', shortDesc: '每次触发任意主动技能同时叠加+1护盾与+1反击威能', mechanicKey: 'transition_surge' },
+  'fus_3-back_tiki_taka': { id: 'asp_3_tiki', name: '菱形控场万花筒', shortDesc: '每5次连续传导全装备技能CD-2分钟并提升直塞穿透', mechanicKey: 'pass5_cd_cut2' },
+  'fus_5-back_gegenpress': { id: 'asp_5_press', name: '五盾绞肉反抢网', shortDesc: '中后场触发拦截技能额外+1能量返还并震慑对手持球者', mechanicKey: 'midtrap_energy_steal' },
+  'fus_5-back_wing_play': { id: 'asp_5_wing', name: '双翼齐飞弹射器', shortDesc: '边路触发技能后下张手牌-1能量且下脚传导无视越位', mechanicKey: 'wing_switch_discount' },
+  'fus_5-back_counter': { id: 'asp_5_cnt', name: '深渊蛰伏绝杀阵', shortDesc: '禁区/危局技能蓄积反击威能（上限提至3层）一击毙命', mechanicKey: 'absorb_max3_counter' },
+  'fus_5-back_park_bus': { id: 'asp_5_bus', name: '绝对零封要塞', shortDesc: '开局自带2层绝对防御护盾，强力消解禁区致命射门', mechanicKey: 'fortress_shield_start2' },
+  'fus_5-back_balanced': { id: 'asp_5_bal', name: '五卫全能传奇冠冕', shortDesc: '全部已装备主动技能动态+1额外等级，稳固全队体力', mechanicKey: 'asp_5_bal' },
+  'fus_5-back_tiki_taka': { id: 'asp_5_tiki', name: '后场出球大师体系', shortDesc: '连续5脚稳健出球后立即刷新1张已打出的手牌', mechanicKey: 'deep_buildup_refresh' },
+};
+
+function enrichSkillWebV4(nodes: SkillWebNode[]): SkillWebNode[] {
+  for (const node of nodes) {
+    const prof = SKILL_V4_PROFILES[node.id];
+    if (node.activeSkill && prof) {
+      node.activeSkill.instantAction = prof.instantAction;
+      node.activeSkill.instantLabel = prof.instantLabel;
+      node.activeSkill.vfxTheme = prof.vfxTheme;
+      node.activeSkill.linkedElement = prof.linkedElement;
+      node.activeSkill.mutations = prof.mutations;
+      node.activeSkill.effect.element = prof.linkedElement;
+    }
+    if (node.kind === 'fusion' && node.systemTag && node.styleTag) {
+      const sp = LEGENDARY_ASPECT_SPECS[node.id];
+      if (sp) {
+        node.aspect = {
+          id: sp.id,
+          nodeId: node.id,
+          name: sp.name,
+          shortDesc: sp.shortDesc,
+          system: node.systemTag,
+          style: node.styleTag,
+          mechanicKey: sp.mechanicKey,
+        };
+      }
+    }
+  }
+  return nodes;
+}
+
+export const SKILL_WEB_NODES: SkillWebNode[] = enrichSkillWebV4(buildSkillWeb());
+
+export function getSkillRankUpgradeSpent(rank: number): number {
+  let spent = 0;
+  if (rank >= 2) spent += SKILL_RANK_UPGRADE_COSTS[2];
+  if (rank >= 3) spent += SKILL_RANK_UPGRADE_COSTS[3];
+  return spent;
+}
+
+export function getSkillTotalInvestedPoints(
+  unlockedIds: string[],
+  skillRanks?: Record<string, number>
+): number {
+  let total = 0;
+  for (const id of unlockedIds) {
+    total += getSkillRankUpgradeSpent(skillRanks?.[id] ?? 1);
+  }
+  return total;
+}
+
+export function computeSkillBonusRank(
+  node: SkillWebNode,
+  ctx: {
+    formation: FormationName;
+    style: TacticalStyle;
+    unlockedIds: string[];
+    formationMasteryLv?: number;
+    styleMasteryLv?: number;
+    perkSynergies?: PerkSkillSynergyFlags;
+  }
+): number {
+  if (!node.activeSkill) return 0;
+  const activeSys = getDefenseSystem(ctx.formation);
+  const fmLv = ctx.formationMasteryLv ?? 1;
+  const stLv = ctx.styleMasteryLv ?? 1;
+  let masteryBonus = 0;
+  if (node.formationTag) {
+    if (node.formationTag === ctx.formation) {
+      masteryBonus = fmLv >= 3 ? 2 : fmLv >= 2 ? 1 : 0;
+    }
+  } else if (node.styleTag) {
+    if (node.styleTag === ctx.style) {
+      masteryBonus = stLv >= 3 ? 2 : stLv >= 2 ? 1 : 0;
+    }
+  } else {
+    const bestLv = Math.max(fmLv, stLv);
+    masteryBonus = bestLv >= 3 ? 2 : bestLv >= 2 ? 1 : 0;
+  }
+
+  let perkBonus = 0;
+  const vfx = node.activeSkill.vfxTheme;
+  const elem = node.activeSkill.linkedElement;
+  if (ctx.perkSynergies) {
+    if ((vfx === 'att' || elem === 'blitz' || elem === 'wing') && ctx.perkSynergies.attackTier >= 1) {
+      perkBonus = 1;
+    } else if ((vfx === 'def' || elem === 'iron') && ctx.perkSynergies.defenseTier >= 1) {
+      perkBonus = 1;
+    } else if ((vfx === 'ult' || elem === 'pass' || elem === 'press') && ctx.perkSynergies.controlTier >= 1) {
+      perkBonus = 1;
+    }
+  }
+
+  const asp5BalBonus =
+    ctx.unlockedIds.includes('fus_5-back_balanced') && activeSys === '5-back' && ctx.style === 'balanced'
+      ? 1
+      : 0;
+
+  return Math.min(2, masteryBonus + perkBonus + asp5BalBonus);
+}
+
+export function getActiveLegendaryAspects(
+  unlockedIds: string[],
+  formation: FormationName,
+  style: TacticalStyle
+): ActiveLegendaryAspect[] {
+  const unlockedSet = new Set(unlockedIds);
+  const activeSys = getDefenseSystem(formation);
+  const res: ActiveLegendaryAspect[] = [];
+  for (const node of SKILL_WEB_NODES) {
+    if (
+      node.kind === 'fusion' &&
+      node.aspect &&
+      unlockedSet.has(node.id) &&
+      node.systemTag === activeSys &&
+      node.styleTag === style
+    ) {
+      res.push(node.aspect);
+    }
+  }
+  return res;
+}
 
 export function isActiveSkillNode(node: SkillWebNode): boolean {
   return !!node.activeSkill;
@@ -726,9 +970,49 @@ export function getUnlockedActiveSkillNodes(unlockedIds: string[]): SkillWebNode
   return SKILL_WEB_NODES.filter(n => set.has(n.id) && !!n.activeSkill);
 }
 
-export function toEquippedActiveSkill(node: SkillWebNode): EquippedActiveSkill | null {
+export function toEquippedActiveSkill(
+  node: SkillWebNode,
+  opts?: {
+    rank?: number;
+    bonusRank?: number;
+    mutationChoice?: SkillBranchChoice;
+  }
+): EquippedActiveSkill | null {
   if (!node.activeSkill) return null;
   const s = node.activeSkill;
+  const rank = Math.max(1, Math.min(3, opts?.rank ?? 1));
+  const bonusRank = Math.max(0, Math.min(2, opts?.bonusRank ?? 0));
+  const effectiveRank = Math.min(5, rank + bonusRank);
+  const powerMul = 1 + (effectiveRank - 1) * 0.2;
+  const scaleDelta = (val?: number) => (val !== undefined ? Math.round(val * powerMul) : undefined);
+
+  const chosenMutation =
+    effectiveRank >= 2 && s.mutations
+      ? s.mutations.find(m => m.choice === (opts?.mutationChoice ?? 'A')) ?? s.mutations[0]
+      : undefined;
+
+  let durationMinutes = s.durationMinutes + (effectiveRank >= 3 ? 2 : 0) + (effectiveRank >= 5 ? 2 : 0);
+  if (chosenMutation?.tag === 'double_duration') {
+    durationMinutes *= 2;
+  }
+  const cooldownMinutes = Math.max(4, s.cooldownMinutes - (effectiveRank >= 2 ? 1 : 0) - (effectiveRank >= 4 ? 1 : 0));
+  const maxPerMatch = s.maxPerMatch + (effectiveRank >= 4 ? 1 : 0);
+
+  const scaledEffect: CommandCardEffect = {
+    ...s.effect,
+    id: `sk_${node.id}`,
+    name: s.name,
+    durationMinutes,
+    element: s.linkedElement,
+    passingDelta: scaleDelta(s.effect.passingDelta),
+    shootingDelta: scaleDelta(s.effect.shootingDelta),
+    defendingDelta: scaleDelta(s.effect.defendingDelta),
+    paceDelta: scaleDelta(s.effect.paceDelta),
+    composureDelta: scaleDelta(s.effect.composureDelta),
+    goalkeepingDelta: scaleDelta(s.effect.goalkeepingDelta),
+    fitnessInstantDelta: scaleDelta(s.effect.fitnessInstantDelta),
+  };
+
   return {
     id: node.id,
     name: s.name,
@@ -736,16 +1020,22 @@ export function toEquippedActiveSkill(node: SkillWebNode): EquippedActiveSkill |
     situationLabel: s.situationLabel,
     minFamiliarity: s.minFamiliarity,
     minChemistry: s.minChemistry,
-    cooldownMinutes: s.cooldownMinutes,
-    maxPerMatch: s.maxPerMatch,
-    durationMinutes: s.durationMinutes,
-    powerLabel: s.powerLabel,
-    effect: {
-      id: `sk_${node.id}`,
-      name: s.name,
-      durationMinutes: s.durationMinutes,
-      ...s.effect,
-    },
+    cooldownMinutes,
+    maxPerMatch,
+    durationMinutes,
+    powerLabel: `R${effectiveRank} · ${s.powerLabel}`,
+    effect: scaledEffect,
+    rank,
+    bonusRank,
+    effectiveRank,
+    mutationChoice: chosenMutation?.choice,
+    mutationTag: chosenMutation?.tag,
+    mutationLabel: chosenMutation ? `${chosenMutation.choice}:${chosenMutation.name}` : undefined,
+    instantAction: s.instantAction,
+    instantLabel: s.instantLabel,
+    vfxTheme: s.vfxTheme,
+    linkedElement: s.linkedElement,
+    styleTag: node.styleTag,
   };
 }
 

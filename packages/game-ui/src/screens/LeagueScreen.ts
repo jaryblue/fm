@@ -58,7 +58,7 @@ export class LeagueScreen {
       kicker: `LEAGUE & FIXTURES · SEASON ${st.seasonNumber} (${diffStars})`,
       title: `${tierInfo.name} · 赛程与积分榜`,
       club,
-      badge: `第 ${st.currentRound}/34 轮`,
+      badge: `第 ${st.currentRound}/${league.getTotalRegularRounds()} 轮`,
       metaPoints: st.metaPointsTotal,
       showSoundToggle: true,
       rightAction: nextFx

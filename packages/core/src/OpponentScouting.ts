@@ -2,7 +2,7 @@
  * 对手了解度、历史交锋记录、16维战术/球员/心态破绽推演（1400+ 动态随机线索池）与赛后复盘
  */
 
-import { MatchState } from '../../engine/src/types';
+import { MatchState, TacticalStyle } from '../../engine/src/types';
 import {
   DraftPlayer,
   LeagueClub,
@@ -11,15 +11,20 @@ import {
   OpponentCounterOption,
   OpponentIntelRecord,
   OpponentMatchupIntel,
+  OpponentWeaknessDebuff,
+  ScoutingZoneId,
+  ScoutingZoneIntel,
+  TacticalElementKey,
 } from './types';
 
 export function getOpponentIntelRecord(state: LeagueSaveState, oppClubId: string): OpponentIntelRecord {
   if (!state.opponentIntel) state.opponentIntel = {};
   if (!state.opponentIntel[oppClubId]) {
     const scoutLv = state.metaLevels?.scout ?? 0;
+    const analyticsLv = state.metaLevels?.analytics ?? 0;
     state.opponentIntel[oppClubId] = {
       clubId: oppClubId,
-      familiarity: Math.min(80, 15 + scoutLv * 12),
+      familiarity: Math.min(85, 15 + scoutLv * 7 + analyticsLv * 6),
       playedCount: 0,
       wins: 0,
       draws: 0,
@@ -46,7 +51,8 @@ export function updateOpponentIntelAfterMatch(
 
 export function generatePostMatchReview(
   m: MatchState,
-  userClubName: string
+  userClubName: string,
+  opts?: { scoutedCorrect?: boolean }
 ): string {
   const isHome = m.homeName === userClubName;
   const myGoals = isHome ? m.homeScore : m.awayScore;
@@ -55,23 +61,53 @@ export function generatePostMatchReview(
   const oppStats = isHome ? m.stats.away : m.stats.home;
   const totPoss = myStats.possessionTicks + oppStats.possessionTicks || 1;
   const myPoss = Math.round((myStats.possessionTicks / totPoss) * 100);
+  const diff = myGoals - oppGoals;
+  const scoutNote = opts?.scoutedCorrect ? '赛前破绽抓捕已生效，' : '';
 
-  if (myGoals > oppGoals) {
-    if (oppStats.xG > myStats.xG + 0.4) {
-      return `复盘：虽然 ${myGoals}:${oppGoals} 取胜，但对手创造了 ${oppStats.xG.toFixed(2)} xG，下场需留意防线保护。`;
+  if (diff > 0) {
+    if (oppGoals === 0 && diff >= 2) {
+      if (oppStats.xG > myStats.xG + 0.25 || oppStats.shotsOnTarget > myStats.shotsOnTarget + 1) {
+        return `复盘：${scoutNote}顶住对手猛攻（预期进球 ${myStats.xG.toFixed(2)} : ${oppStats.xG.toFixed(2)}），凭借稳健门线与高效反击 ${myGoals}:${oppGoals} 零封完胜！`;
+      }
+      return `复盘：${scoutNote}零封对手并以 ${myGoals}:${oppGoals} 完胜（射正 ${myStats.shotsOnTarget}:${oppStats.shotsOnTarget}），攻防两端统治比赛！`;
     }
-    return `复盘：控球 ${myPoss}%、预期进球 ${myStats.xG.toFixed(2)}，成功兑现战术优势拿下三分。`;
+    if (oppGoals === 0) {
+      if (oppStats.xG > myStats.xG + 0.35) {
+        return `复盘：${scoutNote}顶住对手反扑（门将 ${myStats.saves} 次扑救），${myGoals}:${oppGoals} 零封险胜带走三分！`;
+      }
+      if (myStats.xG >= 1.15) {
+        return `复盘：${scoutNote}全场创造 ${myStats.xG.toFixed(2)} 预期进球并实现零封，${myGoals}:${oppGoals} 稳健拿下三分！`;
+      }
+      return `复盘：${scoutNote}防守端滴水不漏实现零封，${myGoals}:${oppGoals} 稳稳拿下三分！`;
+    }
+    if (oppStats.xG > myStats.xG + 0.4) {
+      return `复盘：门将贡献 ${myStats.saves} 次关键扑救守住胜果，虽 ${myGoals}:${oppGoals} 取胜，下场仍需留意防线保护。`;
+    }
+    return `复盘：${scoutNote}控球 ${myPoss}%、预期进球 ${myStats.xG.toFixed(2)}，高质量执行战术拿下三分！`;
   }
-  if (myGoals === oppGoals) {
-    return `复盘：双方 ${myGoals}:${oppGoals} 战平（xG ${myStats.xG.toFixed(2)} : ${oppStats.xG.toFixed(2)}），临门一脚效率决定胜负。`;
+  if (diff === 0) {
+    if (myStats.saves >= 4) {
+      return `复盘：门将献上 ${myStats.saves} 次高光扑救力保不败，${myGoals}:${oppGoals} 拼下宝贵 1 分！`;
+    }
+    return `复盘：${scoutNote}双方 ${myGoals}:${oppGoals} 激战成和（射正 ${myStats.shotsOnTarget}:${oppStats.shotsOnTarget}），临门一脚把握将决定下次胜负。`;
   }
+  // 失利场次：区分惜败/防守高光/门前效率/压制
   if (myPoss >= 55 && oppStats.xG >= myStats.xG) {
-    return `复盘：控球 ${myPoss}% 却以 ${myGoals}:${oppGoals} 落败，对手高效反击打穿了高位防线身后。`;
+    return `复盘：${scoutNote}控球占优 (${myPoss}%) 却 ${myGoals}:${oppGoals} 惜败，对手反击效率极高，需收紧防线身后空间。`;
   }
   if (myStats.xG > oppStats.xG + 0.35) {
-    return `复盘：创造出 ${myStats.xG.toFixed(2)} xG 却惜败，门前冷静度与射门把握尚需特训提升。`;
+    return `复盘：${scoutNote}创造出 ${myStats.xG.toFixed(2)} 预期进球占据主动却惜败，门前冷静度与射门终结可再加强。`;
   }
-  return `复盘：本场被对手压制（xG ${myStats.xG.toFixed(2)} : ${oppStats.xG.toFixed(2)}），下轮建议赛前侦察抓对手弱点。`;
+  if (diff === -1 && myStats.shotsOnTarget >= oppStats.shotsOnTarget && myStats.shotsOnTarget >= 3) {
+    return `复盘：${scoutNote}射正 ${myStats.shotsOnTarget}:${oppStats.shotsOnTarget} 毫不逊色且仅丢 1 球惜败，离抢分只差一次致命终结！`;
+  }
+  if (myStats.saves >= 4) {
+    return `复盘：${scoutNote}虽 ${myGoals}:${oppGoals} 告负，但门将全场 ${myStats.saves} 次扑救表现顽强，下轮可强化前场推进分担防守压力。`;
+  }
+  if (opts?.scoutedCorrect) {
+    return `复盘：赛前侦察已压制对手部分威慑，但场上对抗仍处下风（预期进球 ${myStats.xG.toFixed(2)} : ${oppStats.xG.toFixed(2)}），下轮可考虑调整阵型站位或轮换体能更佳的首发。`;
+  }
+  return `复盘：本场攻防节奏被对手压制（预期进球 ${myStats.xG.toFixed(2)} : ${oppStats.xG.toFixed(2)}），下轮建议赛前侦察抓对手弱点。`;
 }
 
 type WeaknessArchetypeId =
@@ -127,6 +163,10 @@ interface ArchetypeContext {
 
 interface ArchetypeDef {
   id: WeaknessArchetypeId;
+  targetZone: ScoutingZoneId;
+  counterElements: TacticalElementKey[];
+  counterStyles: TacticalStyle[];
+  oppDebuff: OpponentWeaknessDebuff;
   counterLabels: string[];
   counterDesc: string;
   buff: OpponentCounterOption['buff'];
@@ -148,6 +188,10 @@ const CLUE_CHANNELS = [
 const ARCHETYPES: Record<WeaknessArchetypeId, ArchetypeDef> = {
   high_line_behind: {
     id: 'high_line_behind',
+    targetZone: 'defense',
+    counterElements: ['blitz', 'wing'],
+    counterStyles: ['counter', 'wing_play'],
+    oppDebuff: { targetLine: 'DEF', pacePenalty: 5, label: '对手防线回追 -5' },
     counterLabels: ['指证：直塞打高位身后', '指证：反击突击防线空当', '指证：斜长传吊打身后'],
     counterDesc: '速度+3、传球+2、开局能量+1',
     buff: { paceBonus: 3, passingBonus: 2, energyBonus: 1, note: '抓准高位防线身后空当！全队速度+3、传球+2，开局能量+1' },
@@ -169,6 +213,10 @@ const ARCHETYPES: Record<WeaknessArchetypeId, ArchetypeDef> = {
   },
   flank_fatigue: {
     id: 'flank_fatigue',
+    targetZone: 'wings',
+    counterElements: ['wing', 'press'],
+    counterStyles: ['wing_play', 'gegenpress'],
+    oppDebuff: { targetLine: 'DEF', pacePenalty: 4, defendingPenalty: 4, label: '对手两翼边防 -4' },
     counterLabels: ['指证：两翼轮番冲击边路', '指证：边路强吃体能短板', '指证：边中结合撕开肋部'],
     counterDesc: '速度+3、射门+2、开局能量+1',
     buff: { paceBonus: 3, shootingBonus: 2, energyBonus: 1, note: '撕开对手边路防线！全队速度+3、射门+2，开局能量+1' },
@@ -190,6 +238,10 @@ const ARCHETYPES: Record<WeaknessArchetypeId, ArchetypeDef> = {
   },
   midfield_press: {
     id: 'midfield_press',
+    targetZone: 'midfield',
+    counterElements: ['press', 'blitz'],
+    counterStyles: ['gegenpress', 'counter'],
+    oppDebuff: { targetLine: 'MID', composurePenalty: 5, passingPenalty: 4, label: '对手中场出球/冷静 -5' },
     counterLabels: ['指证：中路高压绞杀出球', '指证：贴身逼抢切断节拍', '指证：封锁中场出球轴心'],
     counterDesc: '传球+3、防守+2、开局能量+1',
     buff: { passingBonus: 3, defendingBonus: 2, energyBonus: 1, note: '切断对手中场出球轴心！全队传球+3、防守+2，开局能量+1' },
@@ -211,6 +263,10 @@ const ARCHETYPES: Record<WeaknessArchetypeId, ArchetypeDef> = {
   },
   gk_longshot: {
     id: 'gk_longshot',
+    targetZone: 'gk_core',
+    counterElements: ['blitz', 'pass'],
+    counterStyles: ['tiki_taka', 'balanced'],
+    oppDebuff: { targetLine: 'GK', goalkeepingPenalty: 6, label: '对手门将扑救 -6' },
     counterLabels: ['指证：外围远射轰门试探', '指证：弧顶重炮打击门将', '指证：多起脚考验门线站位'],
     counterDesc: '射门+4、传球+1、开局能量+1',
     buff: { shootingBonus: 4, passingBonus: 1, energyBonus: 1, note: '瞄准门将站位与扑救短板！全队射门+4、传球+1，开局能量+1' },
@@ -232,6 +288,10 @@ const ARCHETYPES: Record<WeaknessArchetypeId, ArchetypeDef> = {
   },
   park_bus_cross: {
     id: 'park_bus_cross',
+    targetZone: 'defense',
+    counterElements: ['wing', 'pass'],
+    counterStyles: ['wing_play', 'tiki_taka'],
+    oppDebuff: { targetLine: 'DEF', defendingPenalty: 5, label: '对手禁区防空 -5' },
     counterLabels: ['指证：边路起球破密集防线', '指证：高空轰炸砸开铁桶', '指证：转移调度拉扯大巴'],
     counterDesc: '传球+3、射门+2、开局能量+1',
     buff: { passingBonus: 3, shootingBonus: 2, energyBonus: 1, note: '两翼传中撕破铁桶阵！全队传球+3、射门+2，开局能量+1' },
@@ -253,6 +313,10 @@ const ARCHETYPES: Record<WeaknessArchetypeId, ArchetypeDef> = {
   },
   leaky_box: {
     id: 'leaky_box',
+    targetZone: 'defense',
+    counterElements: ['blitz', 'pass'],
+    counterStyles: ['tiki_taka', 'counter'],
+    oppDebuff: { targetLine: 'DEF', defendingPenalty: 5, composurePenalty: 4, label: '对手中卫盯防 -5' },
     counterLabels: ['指证：肋部渗透强攻禁区', '指证：直捣漏洞百出的禁区', '指证：小范围配合打穿中卫'],
     counterDesc: '射门+3、速度+2、开局能量+1',
     buff: { shootingBonus: 3, paceBonus: 2, energyBonus: 1, note: '直捣脆弱禁区腹地！全队射门+3、速度+2，开局能量+1' },
@@ -274,6 +338,10 @@ const ARCHETYPES: Record<WeaknessArchetypeId, ArchetypeDef> = {
   },
   drought_attack: {
     id: 'drought_attack',
+    targetZone: 'gk_core',
+    counterElements: ['iron', 'press'],
+    counterStyles: ['park_bus', 'gegenpress'],
+    oppDebuff: { targetLine: 'ATT', shootingPenalty: 5, composurePenalty: 4, label: '对手锋线信心 -5' },
     counterLabels: ['指证：全线压上围攻半场', '指证：大胆前压碾压攻势', '指证：趁对手哑火猛攻抢分'],
     counterDesc: '传球+2、射门+2、开局能量+1',
     buff: { passingBonus: 2, shootingBonus: 2, energyBonus: 1, note: '趁对手锋线哑火大胆压上！全队传球+2、射门+2，开局能量+1' },
@@ -295,6 +363,10 @@ const ARCHETYPES: Record<WeaknessArchetypeId, ArchetypeDef> = {
   },
   card_prone: {
     id: 'card_prone',
+    targetZone: 'defense',
+    counterElements: ['wing', 'blitz'],
+    counterStyles: ['wing_play', 'counter'],
+    oppDebuff: { targetLine: 'DEF', composurePenalty: 6, defendingPenalty: 3, label: '对手防线焦躁 -6冷' },
     counterLabels: ['指证：突破造犯规抢定位球', '指证：冲击毛躁防线造黄牌', '指证：盘带贴身诱发犯规'],
     counterDesc: '射门+2、速度+2、传球+1、开局能量+1',
     buff: { shootingBonus: 2, paceBonus: 2, passingBonus: 1, energyBonus: 1, note: '利用对手防线毛躁制造定位球！全队攻传+2、速度+2，开局能量+1' },
@@ -316,6 +388,10 @@ const ARCHETYPES: Record<WeaknessArchetypeId, ArchetypeDef> = {
   },
   slow_cb_turn: {
     id: 'slow_cb_turn',
+    targetZone: 'defense',
+    counterElements: ['blitz', 'wing'],
+    counterStyles: ['counter', 'wing_play'],
+    oppDebuff: { targetLine: 'DEF', pacePenalty: 6, label: '对手中卫转身 -6速' },
     counterLabels: ['指证：变向与小快灵戏耍中卫', '指证：地面斜塞打中卫转身', '指证：高频换位撕扯笨重中卫'],
     counterDesc: '速度+3、射门+2、开局能量+1',
     buff: { paceBonus: 3, shootingBonus: 2, energyBonus: 1, note: '专打中卫转身笨重！全队速度+3、射门+2，开局能量+1' },
@@ -337,6 +413,10 @@ const ARCHETYPES: Record<WeaknessArchetypeId, ArchetypeDef> = {
   },
   tired_core_legs: {
     id: 'tired_core_legs',
+    targetZone: 'wings',
+    counterElements: ['press', 'wing'],
+    counterStyles: ['gegenpress', 'wing_play'],
+    oppDebuff: { targetLine: 'ALL', pacePenalty: 4, label: '对手疲惫线跑动 -4' },
     counterLabels: ['指证：高节奏拉锯拖垮体能', '指证：重点冲击疲惫主力点', '指证：加快转换消耗对手残血'],
     counterDesc: '速度+2、传球+3、开局能量+1',
     buff: { paceBonus: 2, passingBonus: 3, energyBonus: 1, note: '精准打击体能透支点！全队速度+2、传球+3，开局能量+1' },
@@ -358,6 +438,10 @@ const ARCHETYPES: Record<WeaknessArchetypeId, ArchetypeDef> = {
   },
   weak_foot_turnover: {
     id: 'weak_foot_turnover',
+    targetZone: 'midfield',
+    counterElements: ['press', 'iron'],
+    counterStyles: ['gegenpress', 'balanced'],
+    oppDebuff: { targetLine: 'MID', passingPenalty: 5, label: '对手中场传控 -5' },
     counterLabels: ['指证：围堵出球弱点打反击', '指证：压迫失误率高发区', '指证：断球就地发起快攻'],
     counterDesc: '防守+3、速度+2、开局能量+1',
     buff: { defendingBonus: 3, paceBonus: 2, energyBonus: 1, note: '精准断球反击！全队防守+3、速度+2，开局能量+1' },
@@ -379,6 +463,10 @@ const ARCHETYPES: Record<WeaknessArchetypeId, ArchetypeDef> = {
   },
   rookie_inexperience: {
     id: 'rookie_inexperience',
+    targetZone: 'midfield',
+    counterElements: ['press', 'blitz'],
+    counterStyles: ['gegenpress', 'counter'],
+    oppDebuff: { targetLine: 'MID', composurePenalty: 6, label: '对手新秀心慌 -6冷' },
     counterLabels: ['指证：老道施压考验年轻球员', '指证：针对U21新星心态盲区', '指证：节奏变化打乱新秀防线'],
     counterDesc: '传球+2、射门+2、防守+1、开局能量+1',
     buff: { passingBonus: 2, shootingBonus: 2, defendingBonus: 1, energyBonus: 1, note: '老辣针对年轻新星！全队传射+2、防守+1，开局能量+1' },
@@ -400,6 +488,10 @@ const ARCHETYPES: Record<WeaknessArchetypeId, ArchetypeDef> = {
   },
   low_composure_panic: {
     id: 'low_composure_panic',
+    targetZone: 'midfield',
+    counterElements: ['press', 'wing'],
+    counterStyles: ['gegenpress', 'wing_play'],
+    oppDebuff: { targetLine: 'ALL', composurePenalty: 5, label: '对手关键球冷静 -5' },
     counterLabels: ['指证：高压抢攻逼出防线慌乱', '指证：针对冷静度不足强行施压', '指证：连续冲击击溃心理防线'],
     counterDesc: '射门+3、传球+2、开局能量+1',
     buff: { shootingBonus: 3, passingBonus: 2, energyBonus: 1, note: '高压击溃脆弱心态！全队射门+3、传球+2，开局能量+1' },
@@ -421,6 +513,10 @@ const ARCHETYPES: Record<WeaknessArchetypeId, ArchetypeDef> = {
   },
   drought_striker_tilt: {
     id: 'drought_striker_tilt',
+    targetZone: 'gk_core',
+    counterElements: ['iron', 'pass'],
+    counterStyles: ['park_bus', 'balanced'],
+    oppDebuff: { targetLine: 'ATT', shootingPenalty: 6, label: '对手射手心态 -6射' },
     counterLabels: ['指证：孤立球荒前锋诱导浪射', '指证：放突不放传锁死锋线心态', '指证：针对急躁射手稳守反击'],
     counterDesc: '防守+3、传球+2、开局能量+1',
     buff: { defendingBonus: 3, passingBonus: 2, energyBonus: 1, note: '利用前锋球荒急躁心态！全队防守+3、传球+2，开局能量+1' },
@@ -442,6 +538,10 @@ const ARCHETYPES: Record<WeaknessArchetypeId, ArchetypeDef> = {
   },
   dressing_room_rift: {
     id: 'dressing_room_rift',
+    targetZone: 'gk_core',
+    counterElements: ['press', 'blitz'],
+    counterStyles: ['gegenpress', 'counter'],
+    oppDebuff: { targetLine: 'ALL', composurePenalty: 5, passingPenalty: 3, label: '对手更衣室失和 -5冷' },
     counterLabels: ['指证：抢开局击穿低迷士气', '指证：乘更衣室动荡痛打落水狗', '指证：前15分钟强攻抢先手'],
     counterDesc: '射门+3、速度+2、开局能量+1',
     buff: { shootingBonus: 3, paceBonus: 2, energyBonus: 1, note: '趁对手士气低迷抢下先手！全队射门+3、速度+2，开局能量+1' },
@@ -463,6 +563,10 @@ const ARCHETYPES: Record<WeaknessArchetypeId, ArchetypeDef> = {
   },
   overconfident_complacency: {
     id: 'overconfident_complacency',
+    targetZone: 'gk_core',
+    counterElements: ['iron', 'blitz'],
+    counterStyles: ['counter', 'park_bus'],
+    oppDebuff: { targetLine: 'DEF', defendingPenalty: 4, composurePenalty: 4, label: '对手轻敌漏防 -4' },
     counterLabels: ['指证：诱敌深入打轻敌反击', '指证：抓对手大意冒进打身后', '指证：稳固阵脚惩罚对手轻敌'],
     counterDesc: '防守+2、速度+3、开局能量+1',
     buff: { defendingBonus: 2, paceBonus: 3, energyBonus: 1, note: '惩罚对手连胜轻敌冒进！全队防守+2、速度+3，开局能量+1' },
@@ -687,22 +791,98 @@ export function buildOpponentMatchupIntel(state: LeagueSaveState, userClub: Leag
   const w2 = wrongPool[1];
 
   const rawCounters: OpponentCounterOption[] = [
-    { id: `cnt_${arch.id}`, label: chosenLabel, desc: arch.counterDesc, isCorrect: true, buff: arch.buff },
-    { id: `cnt_${w1.id}`, label: pickRand(w1.counterLabels), desc: w1.counterDesc, isCorrect: false, buff: w1.buff },
-    { id: `cnt_${w2.id}`, label: pickRand(w2.counterLabels), desc: w2.counterDesc, isCorrect: false, buff: w2.buff },
+    {
+      id: `cnt_${arch.id}`,
+      label: chosenLabel,
+      desc: arch.counterDesc,
+      isCorrect: true,
+      targetZone: arch.targetZone,
+      counterElements: arch.counterElements,
+      counterStyles: arch.counterStyles,
+      oppDebuff: arch.oppDebuff,
+      buff: arch.buff,
+    },
+    {
+      id: `cnt_${w1.id}`,
+      label: pickRand(w1.counterLabels),
+      desc: w1.counterDesc,
+      isCorrect: false,
+      targetZone: w1.targetZone,
+      counterElements: w1.counterElements,
+      counterStyles: w1.counterStyles,
+      oppDebuff: w1.oppDebuff,
+      buff: w1.buff,
+    },
+    {
+      id: `cnt_${w2.id}`,
+      label: pickRand(w2.counterLabels),
+      desc: w2.counterDesc,
+      isCorrect: false,
+      targetZone: w2.targetZone,
+      counterElements: w2.counterElements,
+      counterStyles: w2.counterStyles,
+      oppDebuff: w2.oppDebuff,
+      buff: w2.buff,
+    },
   ];
   for (let i = rawCounters.length - 1; i > 0; i--) {
     const j = Math.floor(Math.random() * (i + 1));
     [rawCounters[i], rawCounters[j]] = [rawCounters[j], rawCounters[i]];
   }
 
+  const weakLabel = chosenLabel.replace('指证：', '');
+  const zones: ScoutingZoneIntel[] = [
+    {
+      id: 'gk_core',
+      label: '门将与锋线核心',
+      scanned: fam >= 70,
+      keyPlayerName: `${ctxObj.gkName} / ${ctxObj.attName}`,
+      summary: `门将 ${ctxObj.gkName} 扑${ctxObj.gkSave} · 锋线${ctxObj.attName}(${ctxObj.attGoals}球)`,
+      anomalyTag: arch.targetZone === 'gk_core' ? weakLabel : undefined,
+      isWeakZone: arch.targetZone === 'gk_core',
+    },
+    {
+      id: 'defense',
+      label: '防线与中卫肋部',
+      scanned: fam >= 70,
+      keyPlayerName: ctxObj.cbName,
+      summary: `中卫 ${ctxObj.cbName} 速${ctxObj.cbPace}/防${ctxObj.cbDef}`,
+      anomalyTag: arch.targetZone === 'defense' ? weakLabel : undefined,
+      isWeakZone: arch.targetZone === 'defense',
+    },
+    {
+      id: 'midfield',
+      label: '中场轴心与抗压',
+      scanned: fam >= 70,
+      keyPlayerName: ctxObj.midName,
+      summary: `中场 ${ctxObj.midName} 传${ctxObj.midPass}/冷${ctxObj.midComp}`,
+      anomalyTag: arch.targetZone === 'midfield' ? weakLabel : undefined,
+      isWeakZone: arch.targetZone === 'midfield',
+    },
+    {
+      id: 'wings',
+      label: '两翼走廊与体能',
+      scanned: fam >= 70,
+      keyPlayerName: ctxObj.fbName,
+      summary: `边防 ${ctxObj.fbName} 体能${ctxObj.fbFit}%/防${ctxObj.fbDef}`,
+      anomalyTag: arch.targetZone === 'wings' ? weakLabel : undefined,
+      isWeakZone: arch.targetZone === 'wings',
+    },
+  ];
+  const maxAnalysisPoints = 2 + ((state.metaLevels?.analytics ?? 0) >= 1 ? 1 : 0) + ((state.metaLevels?.analytics ?? 0) >= 5 ? 1 : 0);
+
   return {
     oppClubId: oppId,
     oppClubName: opp.name,
+    oppFormation: opp.formation,
     familiarity: fam,
     recentFormText,
     h2hText,
     clues,
     counters: rawCounters,
+    analysisPoints: maxAnalysisPoints,
+    maxAnalysisPoints,
+    usedDebunk: false,
+    zones,
   };
 }

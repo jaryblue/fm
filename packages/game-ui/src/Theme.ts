@@ -2,6 +2,11 @@
  * FM27 风格 1280×720 设计系统常量
  */
 
+export const IS_MOBILE =
+  typeof window !== 'undefined' &&
+  (Boolean(window.matchMedia?.('(pointer: coarse)').matches) ||
+    /Mobi|Android|iPhone|iPad|iPod/i.test(navigator.userAgent || ''));
+
 export const THEME = {
   W: 1280,
   H: 720,

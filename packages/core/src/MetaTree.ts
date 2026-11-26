@@ -1,5 +1,5 @@
 /**
- * 5 分支局外 Meta 天赋树 (Lv.1~5) + 教练阵型/战术熟练度体系（覆盖 16 种阵型）
+ * 8 分支俱乐部基建系统 (Lv.1~8 · 全部消耗 clubFunds · Lv.6~8 绑定联赛阶梯) + 教练阵型/战术熟练度体系
  */
 
 import { FormationName, TacticalStyle } from '../../engine/src/types';
@@ -12,95 +12,195 @@ export interface MetaBranchDef {
   accent: string;
   maxLevel: number;
   costs: number[];
+  minTierRequired: number[];
   levelDescriptions: string[];
 }
 
+export const INFRA_COSTS: number[] = [180, 320, 520, 800, 1150, 1600, 2200, 3000];
+export const INFRA_MIN_TIERS: number[] = [7, 7, 7, 7, 7, 5, 3, 1];
+
 export const META_BRANCHES: MetaBranchDef[] = [
+  {
+    id: 'academy',
+    name: '青训学院',
+    icon: 'sparkle',
+    accent: '#F97316',
+    maxLevel: 8,
+    costs: INFRA_COSTS,
+    minTierRequired: INFRA_MIN_TIERS,
+    levelDescriptions: [
+      '每季免费青训试训刷新 +1 次，休赛期自动提拔 1 名 U19 新星',
+      '每季免费青训试训刷新 +2 次，提拔新星基础 CA +2、PA +2',
+      '每季免费青训试训刷新 +3 次，青训签字费降低 15%',
+      '储备名单 U21 小妖季末梯队锻炼成长额外 +1 CA',
+      '储备名单 U21 小妖季末成长额外 +2 CA，青训签字费降低 25%',
+      '青训试训小妖必带 1 个实用比赛特质词条',
+      '黄金一代：每季青训试训池必保底 1 名 PA ≥ 86 高潜胚子',
+      '顶级青训摇篮：U21 梯队成长 +3 CA，高潜胚子保底 PA ≥ 88',
+    ],
+  },
   {
     id: 'scout',
     name: '球探网络',
-    icon: '🔍',
+    icon: 'search',
     accent: '#38BDF8',
-    maxLevel: 5,
-    costs: [40, 80, 140, 200, 280],
+    maxLevel: 8,
+    costs: INFRA_COSTS,
+    minTierRequired: INFRA_MIN_TIERS,
     levelDescriptions: [
-      '选秀解锁 1 次刷新候选池机会，候选池底线 +1',
-      '选秀解锁 2 次刷新候选池机会，候选池底线 +2',
-      '选秀解锁 3 次刷新，S/A 级高潜球员出现率显著提升',
-      '赛季末引援新秀池扩为 4 人，U22 妖人概率翻倍',
-      '全联盟顶级球探网：高潜新星 PA 上限额外 +3',
+      '选秀/转会免费刷新 +1 次，迷雾 PA 预测误差收窄至 ±10',
+      '选秀/转会免费刷新 +2 次，迷雾 PA 预测误差收窄至 ±8',
+      '选秀/转会免费刷新 +3 次，迷雾 PA 预测误差收窄至 ±6',
+      '青训一阶体测自动多揭晓 +2 项属性，探查与付费刷新费 -20%',
+      '探查与付费刷新费 -35%，季末引援池扩至 4 人',
+      '转会货架发现他队漏网高潜新星概率翻倍',
+      '高潜新星 PA 上限额外 +2，迷雾 PA 误差收窄至 ±3',
+      '全联盟顶级球探网：高潜新星 PA 上限额外 +4，探查半价',
     ],
   },
   {
     id: 'finance',
-    name: '财政预算',
-    icon: '💰',
+    name: '商业财政',
+    icon: 'coin',
     accent: '#D4A843',
-    maxLevel: 5,
-    costs: [40, 80, 140, 200, 280],
+    maxLevel: 8,
+    costs: INFRA_COSTS,
+    minTierRequired: INFRA_MIN_TIERS,
     levelDescriptions: [
-      '开局 Shuffle Draft 预算 +60 (共 2,140)',
-      '开局 Shuffle Draft 预算 +120 (共 2,200)',
-      '开局预算 +180 (共 2,260)，且赛后3选1新援保底 CA +2',
+      '开局资金 +150，常规赛单场门票奖金 +15%',
+      '开局资金 +300，常规赛单场门票奖金 +25%',
+      '开局资金 +450，常规赛单场门票奖金 +35%',
       '每赛季开局额外获赠 2 个随机基础战术元素',
-      '豪门赞助：赛季结算 Meta 点数奖励额外 +15%',
+      '赛季末联赛转播分红 +25%',
+      '休赛期结余资金享 5% 理财利息（单季利息上限 ¥300）',
+      '商业开发升级：单场门票奖金 +50%，转播分红 +40%',
+      '豪门全球赞助：赛季结算 PT 额外 +15%，单场门票 +60%',
     ],
   },
   {
-    id: 'coaching',
-    name: '战术幕僚',
-    icon: '📋',
+    id: 'transfer',
+    name: '转会谈判室',
+    icon: 'chart',
     accent: '#A855F7',
-    maxLevel: 5,
-    costs: [40, 80, 140, 200, 280],
+    maxLevel: 8,
+    costs: INFRA_COSTS,
+    minTierRequired: INFRA_MIN_TIERS,
     levelDescriptions: [
-      '全队传球与射门 +1，赛季词条盲盒稀有权重提升',
-      '全队传球、射门与防守 +2',
-      '全队传球、射门与防守 +3，赛季词条盲盒扩为 4 选 1',
-      '比赛日中场休息额外回复 +2 战术能量（共+2）',
-      '战术实验室：每次使用战术/阵型获得的熟练度经验翻倍',
+      '转会市场货架扩至 9 人，买人转会费 -5%',
+      '转会市场货架扩至 10 人，买人转会费 -8%',
+      '转会市场货架扩至 12 人，买人转会费 -12%',
+      '挂牌竞价槽位扩至 5 个，快速兜售保底比例提至 89%',
+      '快速兜售保底提至 92%，挂牌吸引 AI 竞标俱乐部 +1 家',
+      '转会市场货架扩至 14 人且必含 1 名 S/A 级球星',
+      '买人转会费 -16%，AI 竞价报价上限 +15%',
+      '顶级谈判专家：买人转会费 -20%，AI 竞价报价上限 +25%',
     ],
   },
   {
-    id: 'fitness',
-    name: '体能医疗',
-    icon: '⚡',
+    id: 'medical',
+    name: '运动医疗中心',
+    icon: 'bolt',
     accent: '#22C55E',
-    maxLevel: 5,
-    costs: [40, 80, 140, 200, 280],
+    maxLevel: 8,
+    costs: INFRA_COSTS,
+    minTierRequired: INFRA_MIN_TIERS,
     levelDescriptions: [
-      '全队体能耐久 +3',
-      '全队体能耐久 +6，速度 +2',
-      '全队体能耐久 +9，速度 +3，首轮选秀质量保底提升',
-      '休赛期允许同一名核心球员特训 2 次',
-      '运动科学中心：老将衰退减半、低出场球员掉点风险降低',
+      '全队赛后基础体能恢复 +2%，降低黑市“玻璃人”概率',
+      '全队赛后基础体能恢复 +4%，伤病停赛风险小幅降低',
+      '全队赛后基础体能恢复 +6%，首轮选秀质量保底提升',
+      '低出场球员赛季掉点风险减半',
+      '全队赛后体能恢复 +8%，连续作战疲劳警告阈值放宽',
+      '30 岁以上老将赛季速度与体能自然衰退减半',
+      '运动科学理疗：私人魔鬼特训失败轻伤惩罚减半',
+      '顶级运动医疗中心：伤病轮次自动 -1（最低1），老将抗衰退最大化',
     ],
   },
   {
-    id: 'academy',
-    name: '青训学院',
-    icon: '🌱',
-    accent: '#F97316',
-    maxLevel: 5,
-    costs: [50, 90, 150, 220, 300],
+    id: 'training_ground',
+    name: '训练基地',
+    icon: 'clipboard',
+    accent: '#EC4899',
+    maxLevel: 8,
+    costs: INFRA_COSTS,
+    minTierRequired: INFRA_MIN_TIERS,
     levelDescriptions: [
-      '每个休赛期自动提拔 1 名 18~20 岁青训新星进 40 人大名单',
-      '提拔的青训新星基础 CA +2、潜力 PA +3',
-      'U23 球员赛季成长速度额外 +1',
-      '提拔的青训新星必带 1 个实用比赛特质词条',
-      '黄金一代：青训有高概率产出 S/A 级超新星',
+      '私人魔鬼特训成功率 +5%，U23 一线队成长速度微幅提升',
+      '私人魔鬼特训成功率 +10%，全队基础体能消耗小幅优化',
+      'U23 一线队出场达标时赛季成长额外 +1 CA',
+      '休赛期允许同一名核心球员特训 2 次，新援初始阵型熟练度 +15%',
+      '私人魔鬼特训成功率 +15%，青训小妖入队自带 +10% 熟练度',
+      '休赛期单名球员可特训上限扩至 3 次',
+      '私人魔鬼特训成功时 PA 突破幅度额外 +1，新援初始熟练度 +25%',
+      '世界级科尔尼基地：U23 成长额外 +2 CA，新援初始熟练度 +35%',
+    ],
+  },
+  {
+    id: 'stadium',
+    name: '主场球场',
+    icon: 'shield',
+    accent: '#EAB308',
+    maxLevel: 8,
+    costs: INFRA_COSTS,
+    minTierRequired: INFRA_MIN_TIERS,
+    levelDescriptions: [
+      '主场比赛门票奖金额外 +20%',
+      '主场比赛门票奖金额外 +35%',
+      '主场比赛门票奖金额外 +50%',
+      '主场作战开场士气更容易触发高昂状态',
+      '主场比赛门票奖金额外 +70%',
+      '扩建看台：主场氛围压迫感增强，门票奖金 +85%',
+      '欧战级专业球场：主场门票奖金翻倍 (+100%)',
+      '魔鬼主场圣殿：主场门票 +120%，主场高昂士气概率大幅提升',
+    ],
+  },
+  {
+    id: 'analytics',
+    name: '数据分析室',
+    icon: 'tactics',
+    accent: '#06B6D4',
+    maxLevel: 8,
+    costs: INFRA_COSTS,
+    minTierRequired: INFRA_MIN_TIERS,
+    levelDescriptions: [
+      '赛前对手侦察分析点数 +1（初始 3 点）',
+      '转会市场自动标注【高性价比】标签',
+      '交叉核实剔除烟雾弹不再额外扣减分析点',
+      '转会市场自动高亮【大潜力差 (PA-CA≥12)】妖人目标',
+      '赛前侦察分析点数 +2（初始 4 点）',
+      '青训一阶体测直接揭示隐藏词条具体名称',
+      '转会市场直接显示目标球员在当前阵型的适配度评分',
+      '超级数据中枢：赛前抓破绽克制红利额外放大',
     ],
   },
 ];
 
 export function createDefaultMetaLevels(): MetaLevels {
-  return { scout: 0, finance: 0, coaching: 0, fitness: 0, academy: 0 };
+  return {
+    academy: 0,
+    scout: 0,
+    finance: 0,
+    transfer: 0,
+    medical: 0,
+    training_ground: 0,
+    stadium: 0,
+    analytics: 0,
+  };
+}
+
+export function getMetaUpgradeRequirement(
+  branch: MetaBranch,
+  currentLevel: number
+): { cost: number; minTier: number } | null {
+  const def = META_BRANCHES.find(b => b.id === branch);
+  if (!def || currentLevel >= def.maxLevel) return null;
+  return {
+    cost: def.costs[currentLevel],
+    minTier: def.minTierRequired[currentLevel] ?? 7,
+  };
 }
 
 export function getMetaUpgradeCost(branch: MetaBranch, currentLevel: number): number | null {
-  const def = META_BRANCHES.find(b => b.id === branch);
-  if (!def || currentLevel >= def.maxLevel) return null;
-  return def.costs[currentLevel];
+  return getMetaUpgradeRequirement(branch, currentLevel)?.cost ?? null;
 }
 
 export function createDefaultTacticalMastery(): TacticalMasteryData {

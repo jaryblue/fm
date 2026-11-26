@@ -14,6 +14,7 @@ import {
 } from '../../../engine/src/types';
 import { LeagueManager } from '../../../core/src/LeagueManager';
 import { DraftPlayer } from '../../../core/src/types';
+import { AssetLoader } from '../AssetLoader';
 import {
   drawBadge,
   drawBroadcastHeader,
@@ -22,12 +23,13 @@ import {
   drawNavRail,
   drawRoundRect,
   drawText,
+  fitText,
   HitRegistry,
   NavRailTab,
   tierColor,
 } from '../CanvasKit';
 import { MECHANIC_LABELS } from '../../../core/src/CommandCards';
-import { drawJerseyIcon } from '../ClubVisuals';
+import { drawPlayerAvatar } from '../AvatarRenderer';
 import { SoundEngine } from '../SoundEngine';
 import { THEME } from '../Theme';
 import { drawIcon } from '../VectorIcons';
@@ -38,9 +40,9 @@ const STYLE_LIST: TacticalStyle[] = ['tiki_taka', 'gegenpress', 'balanced', 'win
 export class TacticsScreen {
   private selectedStarterIdx: number | null = null;
   private selectedBenchPlayerId: string | null = null;
+  private swapMode = false;
   private benchPage = 0;
   private activeSysTab: DefenseSystem | null = null;
-  private gridMode = false;
   private styleModalOpen = false;
   private presetModalOpen = false;
   private presetNotice = '每场比赛最多携带 4 套预置战术（阵型+球员+风格）与 4 张手牌实时控场';
@@ -57,6 +59,7 @@ export class TacticsScreen {
     if (this.selectedStarterIdx !== null || this.selectedBenchPlayerId !== null) {
       this.selectedStarterIdx = null;
       this.selectedBenchPlayerId = null;
+      this.swapMode = false;
       return true;
     }
     return false;
@@ -94,6 +97,7 @@ export class TacticsScreen {
     league.updateUserTactics(club.formation, club.style, next);
     this.selectedStarterIdx = null;
     this.selectedBenchPlayerId = null;
+    this.swapMode = false;
     onSave();
   }
 
@@ -138,78 +142,111 @@ export class TacticsScreen {
     }
   ): void {
     const { x, y, w, h, detailed } = opts;
-    drawRoundRect(ctx, x, y, w, h, 8, opts.bgColor, opts.borderColor, opts.borderWidth ?? 1.2);
+    drawRoundRect(ctx, x, y, w, h, detailed ? 8 : 7, opts.bgColor, opts.borderColor, opts.borderWidth ?? 1.2);
 
-    // 第一行：位置标签 + 右侧 CA + 队长/状态角标
-    const roleW = Math.min(54, Math.max(36, opts.roleLabel.length * 9 + 12));
+    const a = player.attributes;
+    const hasGold = (player.goldTraits?.length ?? 0) > 0;
+    const fit = Math.round(player.fitness ?? 100);
+    const famCol = opts.fam >= 85 ? THEME.GOLD_LIGHT : opts.fam >= 65 ? THEME.GREEN : opts.fam >= 35 ? '#38BDF8' : '#FCA5A5';
+
+    const paVal = player.pa ?? player.ca;
+    const paColor = paVal - player.ca >= 8 ? '#C084FC' : '#7DD3FC';
+
+    if (!detailed) {
+      // 紧凑版球场首发卡 (106×62)：零遮挡 + 显示 CA/PA + 年龄/兼职
+      const roleMaxW = opts.statusBadge ? 38 : opts.isCaptain ? 42 : 48;
+      const roleW = Math.min(roleMaxW, Math.max(30, opts.roleLabel.length * 7.5 + 8));
+      drawBadge(ctx, x + 5, y + 4, roleW, 14, opts.roleLabel, opts.roleBg, opts.roleFg);
+
+      if (opts.statusBadge) {
+        drawBadge(ctx, x + w - 31, y + 4, 27, 14, opts.statusBadge.text, opts.statusBadge.bg, opts.statusBadge.fg);
+      } else if (opts.isCaptain) {
+        drawBadge(ctx, x + w - 19, y + 4, 15, 14, 'C', '#FACC15', '#080C14');
+      }
+
+      const caRight = opts.statusBadge ? x + w - 34 : opts.isCaptain ? x + w - 22 : x + w - 5;
+      drawText(ctx, `${player.ca}/${paVal}`, caRight, y + 11, {
+        size: 10.5,
+        bold: true,
+        color: paVal - player.ca >= 8 ? '#E9D5FF' : THEME.GOLD_LIGHT,
+        align: 'right',
+        mono: true,
+      });
+
+      drawPlayerAvatar(ctx, x + 4, y + 20, 22, 24, player, club, { radius: 4, showFrame: false });
+      const nameStr = fitText(ctx, `${hasGold ? '★' : ''}${player.name}`, w - 32, 10, true);
+      drawText(ctx, nameStr, x + 28, y + 27, {
+        size: 10,
+        bold: true,
+        color: hasGold || player.isNewSigning ? THEME.GOLD_LIGHT : THEME.TX1,
+      });
+      const secTxt = player.secondaryRoles && player.secondaryRoles.length > 0 ? `·兼${player.secondaryRoles[0]}` : '';
+      drawText(ctx, fitText(ctx, `${player.age}岁${secTxt}`, w - 32, 8.5), x + 28, y + 39, {
+        size: 8.5,
+        color: '#93C5FD',
+      });
+
+      const botY = y + h - 8;
+      drawText(ctx, `熟${opts.fam}%`, x + 6, botY, {
+        size: 8.5,
+        color: famCol,
+        mono: true,
+      });
+      drawText(ctx, `体${fit}%`, x + w - 6, botY, {
+        size: 8.5,
+        color: fit < 60 ? '#FBBF24' : THEME.TX2,
+        align: 'right',
+        mono: true,
+      });
+      return;
+    }
+
+    // 详细版替补席卡片 (156×88)
+    const roleW = Math.min(50, Math.max(34, opts.roleLabel.length * 8.5 + 10));
     drawBadge(ctx, x + 6, y + 5, roleW, 16, opts.roleLabel, opts.roleBg, opts.roleFg);
 
     if (opts.statusBadge) {
-      drawBadge(ctx, x + w - 36, y + 5, 30, 16, opts.statusBadge.text, opts.statusBadge.bg, opts.statusBadge.fg);
+      drawBadge(ctx, x + w - 34, y + 5, 28, 16, opts.statusBadge.text, opts.statusBadge.bg, opts.statusBadge.fg);
     } else if (opts.isCaptain) {
-      drawBadge(ctx, x + w - 23, y + 5, 17, 16, 'C', '#FACC15', '#080C14');
+      drawBadge(ctx, x + w - 22, y + 5, 16, 16, 'C', '#FACC15', '#080C14');
     }
 
-    const caRight = opts.statusBadge ? x + w - 40 : opts.isCaptain ? x + w - 27 : x + w - 7;
-    drawText(ctx, `${player.ca}`, caRight, y + 13, {
-      size: 12.5,
+    const caRight = opts.statusBadge ? x + w - 38 : opts.isCaptain ? x + w - 25 : x + w - 6;
+    drawText(ctx, `${player.ca}/${paVal}`, caRight, y + 13, {
+      size: 11.5,
       bold: true,
-      color: THEME.GOLD_LIGHT,
+      color: paVal - player.ca >= 8 ? paColor : THEME.GOLD_LIGHT,
       align: 'right',
       mono: true,
     });
 
-    const a = player.attributes;
-    const hasGold = (player.goldTraits?.length ?? 0) > 0;
-    const nameStr = `${hasGold ? '★' : ''}${player.name.slice(0, detailed ? 5 : 4)}`;
-
-    // 第二行：球衣图标 + 姓名 + 核心属性/年龄副标
-    const jerseySize = detailed ? 24 : 21;
-    const jerseyX = x + 18;
-    const midY = detailed ? y + 36 : y + 35;
-    drawJerseyIcon(ctx, jerseyX, midY, jerseySize, club, player.shirtNumber);
-    drawText(ctx, nameStr, x + 34, midY - (detailed ? 5 : 4), {
-      size: detailed ? 12 : 11,
+    const nameStr = fitText(ctx, `${hasGold ? '★' : ''}${player.name}`, w - 46, 12, true);
+    drawPlayerAvatar(ctx, x + 6, y + 20, 28, 34, player, club, { radius: 5, showFrame: true });
+    const midY = y + 36;
+    drawText(ctx, nameStr, x + 38, midY - 4, {
+      size: 11.5,
       bold: true,
       color: hasGold || player.isNewSigning ? THEME.GOLD_LIGHT : THEME.TX1,
     });
 
-    if (detailed) {
-      const secTxt = player.secondaryRoles && player.secondaryRoles.length > 0 ? `·兼${player.secondaryRoles[0]}` : '';
-      drawText(ctx, `${player.age}岁${secTxt}`, x + 34, midY + 9, {
-        size: 9,
-        color: THEME.TX2,
-      });
-      const attrLine = player.role === 'GK'
-        ? `扑${a.goalkeeping} 站${a.positioning} 冷${a.composure}`
-        : `速${a.pace} 射${a.shooting} 传${a.passing} 防${a.defending}`;
-      drawText(ctx, attrLine, x + 7, y + 58, {
-        size: 9.5,
-        color: '#93C5FD',
-        mono: true,
-      });
-    } else {
-      const shortAttr = player.role === 'GK'
-        ? `扑${a.goalkeeping} 站${a.positioning}`
-        : ['CB', 'LB', 'RB', 'LWB', 'RWB'].includes(player.role)
-        ? `防${a.defending} 速${a.pace}`
-        : ['CDM', 'CM', 'CAM', 'LM', 'RM'].includes(player.role)
-        ? `传${a.passing} 防${a.defending}`
-        : `射${a.shooting} 速${a.pace}`;
-      drawText(ctx, shortAttr, x + 34, midY + 9, {
-        size: 8.8,
-        color: '#93C5FD',
-        mono: true,
-      });
-    }
+    const secTxt = player.secondaryRoles && player.secondaryRoles.length > 0 ? `·兼${player.secondaryRoles.slice(0, 2).join('/')}` : '';
+    drawText(ctx, fitText(ctx, `${player.age}岁${secTxt}`, w - 44, 9.5), x + 38, midY + 10, {
+      size: 9,
+      color: '#93C5FD',
+    });
+    const attrLine = player.role === 'GK'
+      ? `扑${a.goalkeeping} 站${a.positioning} 冷${a.composure}`
+      : `速${a.pace} 射${a.shooting} 传${a.passing} 防${a.defending}`;
+    drawText(ctx, attrLine, x + 7, y + 58, {
+      size: 9.5,
+      color: '#93C5FD',
+      mono: true,
+    });
 
-    // 底部行：熟练度 + 体能 / 赛季进助攻
-    const fit = Math.round(player.fitness ?? 100);
-    const famCol = opts.fam >= 85 ? THEME.GOLD_LIGHT : opts.fam >= 65 ? THEME.GREEN : opts.fam >= 35 ? '#38BDF8' : '#FCA5A5';
     const botY = y + h - 10;
     const g = player.seasonStats.goals;
     const ast = player.seasonStats.assists;
-    const leftTxt = detailed && (g > 0 || ast > 0) ? `熟${opts.fam}% · ${g}球${ast}助` : `熟${opts.fam}%`;
+    const leftTxt = g > 0 || ast > 0 ? `熟${opts.fam}% · ${g}球${ast}助` : `熟${opts.fam}%`;
     drawText(ctx, leftTxt, x + 7, botY, {
       size: 9.2,
       color: famCol,
@@ -284,7 +321,7 @@ export class TacticsScreen {
 
     drawButton(ctx, hits, 938, 88, 132, 32, '战术预案 (4套)', () => {
       this.presetModalOpen = true;
-    }, { variant: 'gold', fontSize: 11.5 });
+    }, { variant: 'ghost', fontSize: 11.5 });
 
     if (actions.onOpenRoster) {
       drawButton(ctx, hits, 1078, 88, 172, 32, '球队榜单 / 大名单', actions.onOpenRoster, {
@@ -302,24 +339,22 @@ export class TacticsScreen {
     drawRoundRect(ctx, px + 12, py + 10, pw - 24, 36, 6, 'rgba(14,22,40,0.92)', (selectedStarter || selectedBench) ? THEME.GREEN : THEME.BORDER);
     drawIcon(ctx, (selectedStarter || selectedBench) ? 'refresh' : 'tactics', px + 28, py + 28, 14, (selectedStarter || selectedBench) ? THEME.GREEN : THEME.GOLD_LIGHT);
     const hintText = selectedStarter
-      ? (this.gridMode && this.selectedStarterIdx! > 0
-        ? `已选【${selectedStarter.name}】：点击绿茵格子调整站位，或点队友/替补替换`
-        : `已选首发【${selectedStarter.name}】：点击任意队友互换，或点右侧替补替换`)
+      ? (this.swapMode
+        ? `换位/换人模式【${selectedStarter.name}】：点击球场队友换位，或点右侧替补换上`
+        : this.selectedStarterIdx! > 0
+        ? `已选【${selectedStarter.name}】：点击球场空位格子微调站位，或使用周边浮层操作`
+        : `已选门将【${selectedStarter.name}】：请在周边浮层触发换人或查看详情`)
       : selectedBench
       ? `已选替补【${selectedBench.name}】：点击下方球场任意首发位置换上`
-      : '点选首发或替补卡片即可换人 · 下方操作栏调整职责/设队长/详情';
+      : '点击球场球员即可微调站位、设置角色或触发换人';
     drawText(ctx, hintText, px + 44, py + 28, {
       size: 11.5,
       bold: !!(selectedStarter || selectedBench),
       color: (selectedStarter || selectedBench) ? THEME.GREEN : THEME.GOLD_LIGHT,
     });
 
-    drawButton(ctx, hits, px + pw - 148, py + 14, 74, 28, '5×6格子', () => {
-      this.gridMode = !this.gridMode;
-    }, { active: this.gridMode, fontSize: 11 });
-
     if (club.gridSlots || club.slotDuties) {
-      drawButton(ctx, hits, px + pw - 68, py + 14, 52, 28, '重置', () => {
+      drawButton(ctx, hits, px + pw - 74, py + 14, 58, 28, '重置', () => {
         league.resetClubGridAndDuties();
         actions.onSave();
       }, { variant: 'ghost', fontSize: 11 });
@@ -328,41 +363,76 @@ export class TacticsScreen {
     const slots = FORMATIONS[club.formation];
     // 固定预留底部 48px 操作栏，球场高度永远稳定不跳动
     const pitchX = px + 24, pitchY = py + 54, pitchW = pw - 48, pitchH = ph - 118;
-    const stripeH = pitchH / 8;
-    for (let si = 0; si < 8; si++) {
-      ctx.fillStyle = si % 2 === 0 ? THEME.BG_PITCH : THEME.BG_PITCH_ALT;
-      ctx.fillRect(pitchX, pitchY + si * stripeH, pitchW, stripeH);
+    const tacGrass = AssetLoader.get('pitch_grass_top');
+    if (tacGrass && typeof ctx.drawImage === 'function') {
+      ctx.save();
+      ctx.beginPath();
+      ctx.rect(pitchX, pitchY, pitchW, pitchH);
+      ctx.clip();
+      ctx.translate(pitchX + pitchW / 2, pitchY + pitchH / 2);
+      ctx.rotate(Math.PI / 2);
+      ctx.drawImage(tacGrass, -pitchH / 2, -pitchW / 2, pitchH, pitchW);
+      ctx.restore();
+    } else {
+      const stripeH = pitchH / 8;
+      for (let si = 0; si < 8; si++) {
+        ctx.fillStyle = si % 2 === 0 ? THEME.BG_PITCH : THEME.BG_PITCH_ALT;
+        ctx.fillRect(pitchX, pitchY + si * stripeH, pitchW, stripeH);
+      }
     }
-    ctx.strokeStyle = 'rgba(255,255,255,0.35)';
+    ctx.strokeStyle = 'rgba(255,255,255,0.38)';
     ctx.lineWidth = 1.5;
     ctx.strokeRect(pitchX, pitchY, pitchW, pitchH);
     ctx.beginPath();
     ctx.moveTo(pitchX, pitchY + pitchH / 2);
     ctx.lineTo(pitchX + pitchW, pitchY + pitchH / 2);
     ctx.stroke();
+    ctx.beginPath();
+    ctx.arc(pitchX + pitchW / 2, pitchY + pitchH / 2, 44, 0, Math.PI * 2);
+    ctx.stroke();
+    const penW = Math.round(pitchW * 0.56);
+    const penH = Math.round(pitchH * 0.14);
+    const sixW = Math.round(pitchW * 0.26);
+    const sixH = Math.round(pitchH * 0.055);
+    ctx.strokeRect(pitchX + (pitchW - penW) / 2, pitchY, penW, penH);
+    ctx.strokeRect(pitchX + (pitchW - penW) / 2, pitchY + pitchH - penH, penW, penH);
+    ctx.strokeRect(pitchX + (pitchW - sixW) / 2, pitchY, sixW, sixH);
+    ctx.strokeRect(pitchX + (pitchW - sixW) / 2, pitchY + pitchH - sixH, sixW, sixH);
 
-    if (this.gridMode) {
-      const cellW = pitchW / 5;
-      const cellH = pitchH / 6;
+    const toTacScreen = (baseX: number, baseY: number) => {
+      const normX = Math.max(0, Math.min(1, (baseX - 5) / 73));
+      const normY = Math.max(0, Math.min(1, baseY / PITCH.WIDTH));
+      return {
+        x: pitchX + 8 + normY * (pitchW - 16),
+        y: pitchY + 34 + (1 - normX) * (pitchH - 68),
+      };
+    };
+
+    if (this.selectedStarterIdx !== null && this.selectedStarterIdx > 0 && !this.swapMode) {
+      const cellW = (12 / PITCH.WIDTH) * (pitchW - 16);
+      const cellH = (13 / 73) * (pitchH - 68);
+      const sIdx = this.selectedStarterIdx;
+      const curGrid = club.gridSlots?.[sIdx];
       for (let c = 0; c < 5; c++) {
         for (let r = 0; r < 6; r++) {
-          const gx = pitchX + c * cellW;
-          const gy = pitchY + (5 - r) * cellH;
-          ctx.strokeStyle = 'rgba(250, 204, 21, 0.24)';
-          ctx.lineWidth = 1;
+          const gp = gridToPitch(c, r);
+          const center = toTacScreen(gp.baseX, gp.baseY);
+          const gx = center.x - cellW / 2;
+          const gy = center.y - cellH / 2;
+          const isCur = !!(curGrid && curGrid.col === c && curGrid.row === r);
+          const isHov = hits.isHovered(gx, gy, cellW, cellH);
+          ctx.strokeStyle = isCur ? 'rgba(250, 204, 21, 0.52)' : isHov ? 'rgba(56, 189, 248, 0.48)' : 'rgba(250, 204, 21, 0.16)';
+          ctx.lineWidth = isCur || isHov ? 1.4 : 1;
           ctx.strokeRect(gx + 1, gy + 1, cellW - 2, cellH - 2);
-          if (this.selectedStarterIdx !== null && this.selectedStarterIdx > 0) {
-            const curGrid = club.gridSlots?.[this.selectedStarterIdx];
-            if (curGrid && curGrid.col === c && curGrid.row === r) {
-              ctx.fillStyle = 'rgba(250, 204, 21, 0.16)';
-              ctx.fillRect(gx + 1, gy + 1, cellW - 2, cellH - 2);
-            }
-            const sIdx = this.selectedStarterIdx;
-            hits.add(gx, gy, cellW, cellH, () => {
-              league.setClubGridSlot(sIdx, c, r);
-              actions.onSave();
-            });
+          if (isCur || isHov) {
+            ctx.fillStyle = isCur ? 'rgba(250, 204, 21, 0.16)' : 'rgba(56, 189, 248, 0.12)';
+            ctx.fillRect(gx + 1, gy + 1, cellW - 2, cellH - 2);
           }
+          hits.add(gx, gy, cellW, cellH, () => {
+            SoundEngine.playClick();
+            league.setClubGridSlot(sIdx, c, r);
+            actions.onSave();
+          });
         }
       }
     }
@@ -371,11 +441,34 @@ export class TacticsScreen {
     const slotCoords = slots.map((sl, idx) => {
       const customGrid = idx > 0 ? club.gridSlots?.[idx] : undefined;
       const pos = customGrid ? gridToPitch(customGrid.col, customGrid.row) : sl;
-      return {
-        x: pitchX + (pos.baseY / PITCH.WIDTH) * pitchW,
-        y: pitchY + (1 - pos.baseX / PITCH.LENGTH) * pitchH,
-      };
+      return toTacScreen(pos.baseX, pos.baseY);
     });
+
+    const roleLine = (r: string) =>
+      r === 'GK' ? 'GK' :
+      ['CB', 'LB', 'RB', 'LWB', 'RWB'].includes(r) ? 'DEF' :
+      ['CDM', 'CM', 'CAM', 'LM', 'RM'].includes(r) ? 'MID' : 'ATT';
+
+    // 同线阵型结构虚线
+    ctx.save();
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.16)';
+    ctx.lineWidth = 1.2;
+    ctx.setLineDash([4, 4]);
+    (['DEF', 'MID', 'ATT'] as const).forEach(lg => {
+      const pts = slots
+        .map((sl, idx) => ({ role: sl.role, coord: slotCoords[idx] }))
+        .filter(item => roleLine(item.role) === lg)
+        .sort((a, b) => a.coord.x - b.coord.x);
+      if (pts.length >= 2) {
+        ctx.beginPath();
+        ctx.moveTo(pts[0].coord.x, pts[0].coord.y);
+        for (let k = 1; k < pts.length; k++) {
+          ctx.lineTo(pts[k].coord.x, pts[k].coord.y);
+        }
+        ctx.stroke();
+      }
+    });
+    ctx.restore();
 
     const pointToSegDist = (px0: number, py0: number, x1: number, y1: number, x2: number, y2: number) => {
       const dx = x2 - x1;
@@ -457,22 +550,19 @@ export class TacticsScreen {
       const sx = slotCoords[i].x;
       const sy = slotCoords[i].y;
       const isSelected = this.selectedStarterIdx === i;
-      const canDropBench = this.selectedBenchPlayerId !== null;
-      const roleLine = (r: string) =>
-        r === 'GK' ? 'GK' :
-        ['CB', 'LB', 'RB', 'LWB', 'RWB'].includes(r) ? 'DEF' :
-        ['CDM', 'CM', 'CAM', 'LM', 'RM'].includes(r) ? 'MID' : 'ATT';
-      const exactFit = player.role === slot.role;
-      const secondaryFit = !exactFit && (player.secondaryRoles?.includes(slot.role) ?? false);
-      const lineFit = exactFit || secondaryFit || (roleLine(player.role) === roleLine(slot.role) && (slot.role !== 'GK' || player.role === 'GK'));
       const isInjured = (player.injuredRounds ?? 0) > 0;
       const isSuspended = (player.suspendedRounds ?? 0) > 0;
       const isBlocked = isInjured || isSuspended;
+      const canDropBench = this.selectedBenchPlayerId !== null && !isBlocked;
+      const isSwapTarget = this.swapMode && this.selectedStarterIdx !== null && this.selectedStarterIdx !== i && !isBlocked;
+      const exactFit = player.role === slot.role;
+      const secondaryFit = !exactFit && (player.secondaryRoles?.includes(slot.role) ?? false);
+      const lineFit = exactFit || secondaryFit || (roleLine(player.role) === roleLine(slot.role) && (slot.role !== 'GK' || player.role === 'GK'));
       const fitBorder = isBlocked
         ? THEME.RED_LIGHT
         : isSelected
         ? THEME.GOLD_LIGHT
-        : canDropBench
+        : canDropBench || isSwapTarget
         ? THEME.GREEN
         : !lineFit
         ? THEME.RED_LIGHT
@@ -486,9 +576,24 @@ export class TacticsScreen {
       const slotDuty = club.slotDuties?.[i] ?? 'default';
       const dutyOpt = slotDuty !== 'default' ? ROLE_DUTY_OPTIONS[slot.role]?.find(d => d.duty === slotDuty) : undefined;
       const roleLabel = dutyOpt ? `${slot.role}·${dutyOpt.label.slice(0, 2)}` : `${slot.role}${secondaryFit ? '·兼' : ''}`;
-      const cw = 108;
-      const ch = 76;
+      const cw = 106;
+      const ch = 62;
 
+      ctx.save();
+      if (isSelected) {
+        const pulse = 0.65 + 0.35 * Math.sin(performance.now() / 220);
+        ctx.shadowColor = `rgba(250, 204, 21, ${(0.75 * pulse).toFixed(2)})`;
+        ctx.shadowBlur = 16;
+        drawRoundRect(ctx, sx - cw / 2 - 4, sy - ch / 2 - 4, cw + 8, ch + 8, 10, 'rgba(250, 204, 21, 0.10)', THEME.GOLD_LIGHT, 2);
+      } else if (isSwapTarget || canDropBench) {
+        const pulse = 0.6 + 0.4 * Math.sin(performance.now() / 240);
+        ctx.shadowColor = `rgba(34, 197, 94, ${(0.55 * pulse).toFixed(2)})`;
+        ctx.shadowBlur = 10;
+      } else if (isBlocked || !lineFit) {
+        const pulse = 0.55 + 0.45 * Math.sin(performance.now() / 220);
+        ctx.shadowColor = `rgba(239, 68, 68, ${(0.55 * pulse).toFixed(2)})`;
+        ctx.shadowBlur = 10;
+      }
       this.drawPlayerCard(ctx, club, player, {
         x: sx - cw / 2,
         y: sy - ch / 2,
@@ -498,8 +603,8 @@ export class TacticsScreen {
         roleBg: !lineFit ? '#7F1D1D' : secondaryFit ? '#0C4A6E' : '#1E293B',
         roleFg: !lineFit ? '#FCA5A5' : secondaryFit ? '#7DD3FC' : !exactFit ? '#FBBF24' : THEME.GOLD_LIGHT,
         borderColor: fitBorder,
-        bgColor: isBlocked ? 'rgba(127,29,29,0.88)' : isSelected ? '#2C220B' : canDropBench ? '#102A1B' : !lineFit ? 'rgba(127,29,29,0.78)' : 'rgba(14,22,40,0.94)',
-        borderWidth: isBlocked || isSelected || canDropBench || !lineFit ? 2 : 1.2,
+        bgColor: isBlocked ? 'rgba(127,29,29,0.88)' : isSelected ? '#33260A' : (canDropBench || isSwapTarget) ? '#102A1B' : !lineFit ? 'rgba(127,29,29,0.78)' : 'rgba(14,22,40,0.94)',
+        borderWidth: isBlocked || isSelected || canDropBench || isSwapTarget || !lineFit ? 2.2 : 1.2,
         fam,
         isCaptain: player.id === captainId,
         statusBadge: isBlocked
@@ -509,62 +614,133 @@ export class TacticsScreen {
           : undefined,
         detailed: false,
       });
+      ctx.restore();
+
+      if (!lineFit || fam < 35) {
+        ctx.fillStyle = !lineFit ? THEME.RED_LIGHT : '#F59E0B';
+        ctx.fillRect(sx - cw / 2 + 1, sy - ch / 2 + 6, 2.5, ch - 12);
+      }
 
       hits.add(sx - cw / 2, sy - ch / 2, cw, ch, () => {
         SoundEngine.playClick();
         if (this.selectedBenchPlayerId) {
           this.swapStarterWithPlayer(league, i, this.selectedBenchPlayerId, actions.onSave);
-        } else if (this.selectedStarterIdx === null) {
-          this.selectedStarterIdx = i;
+        } else if (this.swapMode && this.selectedStarterIdx !== null) {
+          if (this.selectedStarterIdx === i) {
+            this.swapMode = false;
+          } else {
+            this.swapStarterWithPlayer(league, this.selectedStarterIdx, pid, actions.onSave);
+          }
         } else if (this.selectedStarterIdx === i) {
           this.selectedStarterIdx = null;
+          this.swapMode = false;
         } else {
-          this.swapStarterWithPlayer(league, this.selectedStarterIdx, pid, actions.onSave);
+          this.selectedStarterIdx = i;
+          this.swapMode = false;
         }
       });
     });
 
-    // 球场底部固定 48px 已选球员操作栏（职责 + 设为队长 + 详情 + 取消）
-    const barY = pitchY + pitchH + 10;
-    drawRoundRect(ctx, pitchX, barY, pitchW, 46, 7, 'rgba(14, 22, 40, 0.94)', (selectedStarter || selectedBench) ? THEME.BORDER_GOLD : THEME.BORDER, 1.2);
+    // 选中首发球员周边浮动快捷操作栏（换位/换人 + 球场角色 + 详情，设队长收在详情内）
     if (selectedStarter && this.selectedStarterIdx !== null) {
       const sIdx = this.selectedStarterIdx;
+      const coord = slotCoords[sIdx];
       const slotRole = slots[sIdx]?.role;
       const dutyOptions = slotRole ? ROLE_DUTY_OPTIONS[slotRole] : undefined;
       const curDuty = club.slotDuties?.[sIdx] ?? 'default';
+      if (coord) {
+        if (this.swapMode) {
+          const pillW = 224;
+          const pillH = 38;
+          const px0 = Math.max(pitchX + 6, Math.min(pitchX + pitchW - pillW - 6, Math.round(coord.x - pillW / 2)));
+          const placeAbove = coord.y + 38 + pillH > pitchY + pitchH - 6;
+          const py0 = placeAbove ? Math.round(coord.y - 38 - pillH) : Math.round(coord.y + 38);
+          drawRoundRect(ctx, px0, py0, pillW, pillH, 8, 'rgba(10, 28, 22, 0.96)', THEME.GREEN, 1.5);
+          hits.add(px0, py0, pillW, pillH, () => {});
+          drawText(ctx, '请点队友或右侧替补换人', px0 + 10, py0 + 19, { size: 11, bold: true, color: THEME.GREEN });
+          drawButton(ctx, hits, px0 + pillW - 58, py0 + 6, 50, 26, '取消', () => {
+            this.swapMode = false;
+          }, { variant: 'ghost', fontSize: 10.5 });
+        } else {
+          const hasDuties = !!(dutyOptions && dutyOptions.length > 0);
+          const popW = 264;
+          const popH = hasDuties ? 116 : 80;
+          const popX = Math.max(pitchX + 6, Math.min(pitchX + pitchW - popW - 6, Math.round(coord.x - popW / 2)));
+          const placeAbove = coord.y + 40 + popH > pitchY + pitchH - 6;
+          const popY = placeAbove ? Math.round(coord.y - 40 - popH) : Math.round(coord.y + 40);
 
-      drawText(ctx, `${slotRole}·${selectedStarter.name.slice(0, 4)}`, pitchX + 12, barY + 23, { size: 12, bold: true, color: THEME.GOLD_LIGHT });
+          ctx.save();
+          ctx.shadowColor = 'rgba(0, 0, 0, 0.65)';
+          ctx.shadowBlur = 18;
+          drawRoundRect(ctx, popX, popY, popW, popH, 10, 'rgba(9, 15, 29, 0.96)', THEME.GOLD_LIGHT, 1.5);
+          ctx.restore();
+          hits.add(popX, popY, popW, popH, () => {});
 
-      let bx = pitchX + 96;
-      if (dutyOptions && dutyOptions.length > 0) {
-        const btnW = Math.min(72, Math.floor((pitchW - 260) / dutyOptions.length) - 4);
-        dutyOptions.forEach((opt) => {
-          drawButton(ctx, hits, bx, barY + 9, btnW, 28, opt.label.slice(0, 4), () => {
-            league.setClubSlotDuty(sIdx, opt.duty);
-            actions.onSave();
-          }, { active: curDuty === opt.duty, fontSize: 10.5 });
-          bx += btnW + 4;
-        });
-      } else {
-        drawText(ctx, '该位置无细分职责', bx, barY + 23, { size: 11, color: THEME.TX3 });
-      }
+          // 指向选中球员的小三角指示标
+          const tipX = Math.max(popX + 16, Math.min(popX + popW - 16, coord.x));
+          ctx.save();
+          ctx.fillStyle = THEME.GOLD_LIGHT;
+          ctx.beginPath();
+          if (placeAbove) {
+            ctx.moveTo(tipX - 6, popY + popH);
+            ctx.lineTo(tipX + 6, popY + popH);
+            ctx.lineTo(tipX, popY + popH + 6);
+          } else {
+            ctx.moveTo(tipX - 6, popY);
+            ctx.lineTo(tipX + 6, popY);
+            ctx.lineTo(tipX, popY - 6);
+          }
+          ctx.closePath();
+          ctx.fill();
+          ctx.restore();
 
-      const isCap = selectedStarter.id === captainId;
-      drawButton(ctx, hits, pitchX + pitchW - 186, barY + 9, 64, 28, isCap ? '现队长' : '设队长', () => {
-        if (!isCap) {
-          SoundEngine.playRewardChime();
-          league.setCaptain(selectedStarter.id);
-          actions.onSave();
+          // 头部：球衣号 + 姓名 + 位置/CA + 关闭
+          const shirtTxt = selectedStarter.shirtNumber ? `#${selectedStarter.shirtNumber} ` : '';
+          drawText(ctx, `${shirtTxt}${selectedStarter.name.slice(0, 6)}`, popX + 12, popY + 18, { size: 12.5, bold: true, color: THEME.TX1 });
+          drawText(ctx, `${slotRole} · CA ${selectedStarter.ca}`, popX + popW - 38, popY + 18, { size: 10.5, bold: true, color: THEME.GOLD_LIGHT, align: 'right', mono: true });
+          drawButton(ctx, hits, popX + popW - 30, popY + 7, 22, 22, '×', () => {
+            this.selectedStarterIdx = null;
+            this.swapMode = false;
+          }, { variant: 'ghost', fontSize: 12 });
+
+          // 主操作行：换位/换人 + 球员详情
+          drawButton(ctx, hits, popX + 12, popY + 36, 118, 30, '换位 / 换人', () => {
+            this.swapMode = true;
+          }, { variant: 'primary', icon: 'refresh', fontSize: 11.5 });
+          drawButton(ctx, hits, popX + 136, popY + 36, 116, 30, '球员详情', () => {
+            actions.onInspectPlayer(selectedStarter);
+          }, { variant: 'ghost', icon: 'chart', fontSize: 11.5 });
+
+          // 球场角色/职责行
+          if (hasDuties && dutyOptions) {
+            drawText(ctx, '角色', popX + 12, popY + 90, { size: 10.5, color: THEME.TX3 });
+            const availW = popW - 52;
+            const gap = 4;
+            const btnW = Math.floor((availW - gap * (dutyOptions.length - 1)) / dutyOptions.length);
+            dutyOptions.forEach((opt, di) => {
+              const bx = popX + 42 + di * (btnW + gap);
+              drawButton(ctx, hits, bx, popY + 76, btnW, 28, opt.label.slice(0, 4), () => {
+                league.setClubSlotDuty(sIdx, opt.duty);
+                actions.onSave();
+              }, { active: curDuty === opt.duty, fontSize: 10.5 });
+            });
+          }
         }
-      }, { variant: isCap ? 'gold' : 'ghost', disabled: isCap, fontSize: 10.5 });
+      }
+    }
 
-      drawButton(ctx, hits, pitchX + pitchW - 116, barY + 9, 54, 28, '详情', () => {
-        actions.onInspectPlayer(selectedStarter);
-      }, { variant: 'primary', fontSize: 10.5 });
-
-      drawButton(ctx, hits, pitchX + pitchW - 56, barY + 9, 46, 28, '取消', () => {
-        this.selectedStarterIdx = null;
-      }, { variant: 'ghost', fontSize: 10.5 });
+    // 球场底部状态提示条（46px，保持球场高度稳定）
+    const barY = pitchY + pitchH + 10;
+    drawRoundRect(ctx, pitchX, barY, pitchW, 46, 7, 'rgba(14, 22, 40, 0.94)', (selectedStarter || selectedBench) ? THEME.BORDER_GOLD : THEME.BORDER, 1.2);
+    if (selectedStarter && this.swapMode) {
+      drawText(ctx, `换位/换人模式【${selectedStarter.name}】：点击球场队友互换，或点击右侧替补换上`, pitchX + 14, barY + 23, {
+        size: 11.5,
+        bold: true,
+        color: THEME.GREEN,
+      });
+      drawButton(ctx, hits, pitchX + pitchW - 92, barY + 9, 80, 28, '取消换人', () => {
+        this.swapMode = false;
+      }, { variant: 'ghost', fontSize: 11 });
     } else if (selectedBench) {
       drawText(ctx, `已选替补【${selectedBench.role}·${selectedBench.name}】· 点球场任意位置换上`, pitchX + 14, barY + 23, {
         size: 12,
@@ -577,8 +753,14 @@ export class TacticsScreen {
       drawButton(ctx, hits, pitchX + pitchW - 58, barY + 9, 48, 28, '取消', () => {
         this.selectedBenchPlayerId = null;
       }, { variant: 'ghost', fontSize: 11 });
+    } else if (selectedStarter) {
+      drawText(ctx, `已选【${selectedStarter.name}】· 点空白格微调站位`, pitchX + pitchW / 2, barY + 23, {
+        size: 11,
+        color: THEME.GOLD_LIGHT,
+        align: 'center',
+      });
     } else {
-      drawText(ctx, '点击球场或替补卡片进行换人 · 选中首发后可在此设置职责、队长与查看详情', pitchX + pitchW / 2, barY + 23, {
+      drawText(ctx, '点球场球员调站位/换人 · 点替补卡替换上场', pitchX + pitchW / 2, barY + 23, {
         size: 11.5,
         color: THEME.TX3,
         align: 'center',
@@ -610,10 +792,10 @@ export class TacticsScreen {
     drawText(ctx, `替补席 (${benchSquad.length}人)`, 758, 164, { size: 15, bold: true, color: THEME.GOLD_LIGHT });
     drawText(
       ctx,
-      this.selectedStarterIdx !== null ? '点击任意替补卡直接换入首发' : '点击替补卡选中，再点左侧球场替换',
+      this.selectedStarterIdx !== null && this.swapMode ? '点击任意替补卡直接换入首发' : '点击替补卡选中，再点左侧球场替换',
       1246,
       164,
-      { size: 11, color: this.selectedStarterIdx !== null ? THEME.GREEN : THEME.TX3, align: 'right' }
+      { size: 11, color: this.selectedStarterIdx !== null && this.swapMode ? THEME.GREEN : THEME.TX3, align: 'right' }
     );
 
     const pageSize = 15; // 3列 × 5行 = 15张卡片，26人阵容一页全展示
@@ -633,7 +815,7 @@ export class TacticsScreen {
       const isSuspended = (p.suspendedRounds ?? 0) > 0;
       const isInjured = (p.injuredRounds ?? 0) > 0;
       const isBlocked = isSuspended || isInjured;
-      const canQuickSwap = this.selectedStarterIdx !== null && !isBlocked;
+      const canQuickSwap = this.selectedStarterIdx !== null && this.swapMode && !isBlocked;
       const fam = league.getPlayerFamiliarity(p, club.formation);
 
       const statusBadge = isBlocked
@@ -670,9 +852,11 @@ export class TacticsScreen {
           return;
         }
         SoundEngine.playClick();
-        if (this.selectedStarterIdx !== null) {
+        if (this.selectedStarterIdx !== null && this.swapMode) {
           this.swapStarterWithPlayer(league, this.selectedStarterIdx, p.id, actions.onSave);
         } else {
+          this.selectedStarterIdx = null;
+          this.swapMode = false;
           this.selectedBenchPlayerId = isBenchSelected ? null : p.id;
         }
       });
@@ -881,12 +1065,12 @@ export class TacticsScreen {
       drawText(ctx, `          ${starterNames.slice(6, 11).join(' · ')}`, px + 14, py + 74, { size: 11, color: THEME.TX2 });
       drawText(ctx, `当前配置: ${club.formation} · ${TACTICAL_PRESETS[club.style].name}`, px + 14, py + 98, { size: 10, color: THEME.TX3 });
 
-      drawButton(ctx, hits, px + 14, py + 116, 174, 32, '💾 保存当前阵容至此', () => {
+      drawButton(ctx, hits, px + 14, py + 116, 174, 32, '保存当前阵容至此', () => {
         SoundEngine.playClick();
         league.saveTacticalPreset(idx);
         actions.onSave();
         this.presetNotice = `已将当前【${club.formation} · ${TACTICAL_PRESETS[club.style].name}】及 11 名首发保存至预案 ${idx + 1}！`;
-      }, { variant: 'primary', fontSize: 11 });
+      }, { variant: 'primary', fontSize: 11, icon: 'save' });
 
       drawButton(ctx, hits, px + 198, py + 116, 140, 32, '▶ 载入此预案', () => {
         SoundEngine.playClick();
@@ -922,7 +1106,8 @@ export class TacticsScreen {
       drawBadge(ctx, cx + 40, cy + 10, 34, 18, `Lv.${card.level ?? 1}`, '#0F172A', '#38BDF8');
       drawText(ctx, card.name.slice(0, 9), cx + 80, cy + 19, { size: 12, bold: true, color: THEME.TX1 });
       const mech = card.mechanic ? MECHANIC_LABELS[card.mechanic] : card.summary.slice(0, 16);
-      drawText(ctx, `⚡ ${mech}`, cx + 10, cy + 44, { size: 10, bold: true, color: '#7DD3FC' });
+      drawIcon(ctx, 'bolt', cx + 16, cy + 44, 11, '#7DD3FC');
+      drawText(ctx, mech, cx + 26, cy + 44, { size: 10, bold: true, color: '#7DD3FC' });
       drawText(ctx, `${card.durationMinutes}分钟 · ${card.chainEffect ? card.chainEffect.label.slice(0, 12) : '基础强化'}`, cx + 10, cy + 64, { size: 10, color: THEME.TX2 });
     });
   }
