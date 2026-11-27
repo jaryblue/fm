@@ -1020,7 +1020,7 @@ export class MatchDayScreen {
       }
     } else if (!this.isPaused && st.phase !== 'full_time' && this.hitStopTimer <= 0) {
       const tutState = this.isPrologueMode ? this.engine.getPrologueTutorialState() : null;
-      const effSpeed = tutState?.waitingForSub ? 0 : st.activeSkillPrompt ? 0.15 : tutState?.waitingForCard ? 0.08 : this.v6HoveringCard ? 0.25 : this.speed;
+      const effSpeed = st.activeSkillPrompt ? 0.25 : (tutState?.waitingForSub || tutState?.waitingForCard) ? 0.55 : this.v6HoveringCard ? 0.25 : this.speed;
       this.tickAcc += dtSec * 10 * effSpeed;
       let steps = 0;
       while (this.tickAcc >= 1 && steps < 20) {
@@ -3275,8 +3275,6 @@ export class MatchDayScreen {
       const pulse = 0.55 + 0.45 * Math.sin(this.elapsedSec * 7);
       const subsUsedNow = this.userSide === 'home' ? st.homeSubsUsed : st.awaySubsUsed;
       ctx.save();
-      ctx.fillStyle = 'rgba(4, 8, 18, 0.58)';
-      ctx.fillRect(0, 0, THEME.W, THEME.H);
       drawRoundRect(ctx, 1036, 90, 222, 44, 8, 'rgba(14, 22, 40, 0.98)', THEME.GOLD_LIGHT, 2.4);
       drawButton(ctx, hits, 1042, 96, 210, 32, `换人 / 战术 (${subsUsedNow}/5)`, () => {
         if (st.phase !== 'full_time') this.openTacticalModal(st);
@@ -3285,7 +3283,7 @@ export class MatchDayScreen {
       ctx.lineWidth = 3;
       ctx.strokeRect(1036, 90, 222, 44);
 
-      drawChamferPanel(ctx, 666, 84, 358, 54, 10, 'rgba(8, 15, 32, 0.98)', THEME.GOLD_LIGHT, 2.2);
+      drawChamferPanel(ctx, 666, 84, 358, 54, 10, 'rgba(8, 15, 32, 0.96)', THEME.GOLD_LIGHT, 2.2);
       drawBadge(ctx, 678, 100, 72, 22, '80\' 换人', '#78350F', THEME.GOLD_LIGHT);
       drawText(ctx, '陈小宇抽筋！点右侧按钮换上老队长 ▶', 758, 111, { size: 12, bold: true, color: '#FEF08A' });
       ctx.restore();

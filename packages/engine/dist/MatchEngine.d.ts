@@ -48,6 +48,7 @@ export declare class MatchEngine {
     private prologueAwayGoalCount;
     private prologueGoalDelayTicks;
     private prologueScriptTicks;
+    private prologueClockTicks;
     private pendingTacticalCallouts;
     private userScoutCounterLabel;
     private lastScoutCalloutMin;
@@ -126,6 +127,14 @@ export declare class MatchEngine {
     };
     private scoreScriptedPrologueGoal;
     private stepPrologueScripted;
+    /**
+     * 序章软性跑位引导：仅调整 targetPos，不覆盖 p.pos，保持 10Hz 真实物理跑动
+     */
+    private applyPrologueSoftGuidance;
+    /**
+     * 序章阶段里程碑与动态保底护栏：不冻结物理、不瞬移球，超窗时通过真实抢断/直塞/射门推进节奏
+     */
+    private stepPrologueMilestones;
     /**
      * 单步推进 1 个 tick (0.1s 物理时间)
      */

@@ -115,6 +115,7 @@ export class MatchEngine {
   private prologueAwayGoalCount = 0;
   private prologueGoalDelayTicks = 0;
   private prologueScriptTicks = 0;
+  private prologueClockTicks = 0;
   private pendingTacticalCallouts: TacticalCallout[] = [];
   private userScoutCounterLabel = '';
   private lastScoutCalloutMin = -20;
@@ -225,6 +226,40 @@ export class MatchEngine {
         if (af.lineShiftDelta) out.lineShift = clamp((out.lineShift ?? 0) + af.lineShiftDelta, -12, 12);
         if (af.oppThroughPassBonus) out.oppThroughPassBonus += af.oppThroughPassBonus;
         if (af.mouBusLeading && isLeading) out.oppShotXgPenalty += 0.22;
+      }
+    }
+    if (this.prologueScriptedMode) {
+      if (team === 'home') {
+        if (this.prologueStage === 0) {
+          out.tempoMul *= 1.15;
+          out.throughPassBias = (out.throughPassBias ?? 0) + 0.08;
+          out.crossBias = (out.crossBias ?? 0) + 0.08;
+          out.boxCrashBonus = (out.boxCrashBonus ?? 0) + 1;
+        } else if (this.prologueStage === 1 || this.prologueStage === 3 || this.prologueStage === 5) {
+          out.tempoMul *= 1.32;
+          out.throughPassBias = (out.throughPassBias ?? 0) + 0.18;
+          out.crossBias = (out.crossBias ?? 0) + 0.18;
+          out.boxCrashBonus = (out.boxCrashBonus ?? 0) + 2;
+          out.pressDistBonus = (out.pressDistBonus ?? 0) + 5;
+        } else if (this.prologueStage === 2 && this.state.awayScore < 3) {
+          out.blockBonus -= 0.10;
+        } else if (this.prologueStage === 2 || this.prologueStage === 6) {
+          out.tempoMul *= 1.22;
+          out.throughPassBias = (out.throughPassBias ?? 0) + 0.12;
+          out.crossBias = (out.crossBias ?? 0) + 0.10;
+          out.boxCrashBonus = (out.boxCrashBonus ?? 0) + 1;
+        } else if (this.prologueStage >= 7) {
+          out.blockBonus += 0.15;
+          out.oppShotXgPenalty += 0.25;
+        }
+      } else {
+        if (this.prologueStage === 1 || this.prologueStage === 3 || this.prologueStage === 5) {
+          out.oppShotXgPenalty += 0.15;
+        } else if (this.prologueStage === 2 && this.state.awayScore < 3) {
+          out.tempoMul *= 1.30;
+          out.throughPassBias = (out.throughPassBias ?? 0) + 0.18;
+          out.boxCrashBonus = (out.boxCrashBonus ?? 0) + 2;
+        }
       }
     }
     return out;
@@ -482,6 +517,7 @@ export class MatchEngine {
     this.setupKickoff('home');
     if (this.prologueScriptedMode) {
       this.state.tick = 45 * SIM_CONFIG.TICKS_PER_MINUTE;
+      this.prologueClockTicks = 45 * SIM_CONFIG.TICKS_PER_MINUTE;
       this.state.minute = 45;
       this.state.phase = 'second_half';
       this.state.homeAttackDir = 1;
@@ -1280,6 +1316,196 @@ export class MatchEngine {
   }
 
   /**
+   * 序章软性跑位引导：仅调整 targetPos，不覆盖 p.pos，保持 10Hz 真实物理跑动
+   */
+  private applyPrologueSoftGuidance(): void {
+    const s = this.state;
+    const side: TeamSide = this.userTeamSide ?? 'home';
+    const dir = this.getAttackDir(side);
+    const striker = s.players.find(p => p.team === side && !p.redCard && p.id === 'prologue_st_19');
+    const veteran = s.players.find(
+      p => p.team === side && !p.redCard && (p.id === 'prologue_vet_10' || p.name.includes('梅利纳') || p.name.includes('林锋'))
+    );
+
+    if (this.prologueStage === 1 || this.prologueStage === 3) {
+      if (striker) {
+        striker.targetPos = {
+          x: dir === 1 ? PITCH.LENGTH - 15 : 15,
+          y: PITCH.GOAL_Y + (this.prologueStage === 1 ? -1.0 : 1.0),
+        };
+      }
+    } else if (this.prologueStage === 2 && s.awayScore < 3) {
+      const awayAttacker =
+        s.players.find(p => p.team === 'away' && !p.redCard && p.role === 'ST') ??
+        s.players.find(p => p.team === 'away' && !p.redCard && ['CAM', 'LW', 'RW'].includes(p.role));
+      if (awayAttacker) {
+        awayAttacker.targetPos = {
+          x: 24,
+          y: PITCH.GOAL_Y + (s.awayScore === 1 ? -1.5 : 1.5),
+        };
+      }
+    } else if ((this.prologueStage === 5 || this.prologueStage === 6) && veteran) {
+      const oppXs = s.players
+        .filter(p => p.team !== side && !p.redCard)
+        .map(p => p.pos.x)
+        .sort((a, b) => (dir === 1 ? b - a : a - b));
+      const offsideLineX = oppXs[1] ?? (dir === 1 ? 80 : 25);
+      const safeMaxX =
+        dir === 1
+          ? Math.min(offsideLineX - 2.0, 78)
+          : Math.max(offsideLineX + 2.0, PITCH.LENGTH - 78);
+      const readyToAttack = this.prologueStage === 5 || s.minute >= 89;
+      const runTargetX = readyToAttack
+        ? dir === 1
+          ? Math.min(PITCH.LENGTH - 18, Math.max(safeMaxX, 82))
+          : Math.max(18, Math.min(safeMaxX, PITCH.LENGTH - 82))
+        : safeMaxX;
+      veteran.targetPos = {
+        x: runTargetX,
+        y: PITCH.GOAL_Y + (this.prologueStage === 5 ? -1.0 : 0.8),
+      };
+    }
+  }
+
+  /**
+   * 序章阶段里程碑与动态保底护栏：不冻结物理、不瞬移球，超窗时通过真实抢断/直塞/射门推进节奏
+   */
+  private stepPrologueMilestones(): void {
+    const s = this.state;
+    const side: TeamSide = this.userTeamSide ?? 'home';
+    const dir = this.getAttackDir(side);
+    const sk = this.userEquippedSkills[0];
+    const waitingPrologue =
+      this.prologueWaitingForCard !== null || this.prologueWaitingForSub || !!s.activeSkillPrompt;
+    if (!waitingPrologue) {
+      this.prologueScriptTicks++;
+    }
+
+    const striker =
+      s.players.find(p => p.team === side && !p.redCard && p.id === 'prologue_st_19') ??
+      s.players.find(p => p.team === side && !p.redCard && ['ST', 'CAM', 'LW', 'RW'].includes(p.role)) ??
+      s.players.find(p => p.team === side && !p.redCard && p.role !== 'GK');
+    const veteran =
+      s.players.find(p => p.team === side && !p.redCard && (p.id === 'prologue_vet_10' || p.name.includes('梅利纳') || p.name.includes('林锋'))) ??
+      striker;
+
+    const driveTeamAttack = (atkTeam: TeamSide, finisher: PlayerState | undefined, minTicksForShot: number, minTicksForSteal: number) => {
+      if (!finisher || s.ball.mode === 'shot' || s.ball.mode === 'pass') return;
+      const atkDir = this.getAttackDir(atkTeam);
+      const holder = s.ball.holderId ? s.players.find(p => p.id === s.ball.holderId) : undefined;
+      if (holder && holder.team === atkTeam) {
+        const relX = toRelativeX(holder.pos.x, atkDir);
+        if (relX >= 62) {
+          this.executeShot(holder, 0.78, true);
+        } else if (holder.id !== finisher.id) {
+          this.executePass(holder, finisher, 'through');
+        }
+      } else if (this.prologueScriptTicks >= minTicksForSteal) {
+        const presser =
+          s.players
+            .filter(p => p.team === atkTeam && !p.redCard && p.role !== 'GK')
+            .sort((a, b) => dist2D(a.pos, s.ball.pos) - dist2D(b.pos, s.ball.pos))[0] ?? finisher;
+        if (holder && holder.team !== atkTeam) holder.stunTicks = 6;
+        presser.matchStats.tackles++;
+        s.stats[atkTeam].tackles++;
+        this.giveBallTo(presser);
+        this.pushEvent('tackle', atkTeam, presser.id, presser.name, presser.pos, `${presser.name} 积极反抢夺回球权！`);
+        if (presser.id !== finisher.id && toRelativeX(presser.pos.x, atkDir) < 62) {
+          this.executePass(presser, finisher, 'through');
+        } else if (toRelativeX(presser.pos.x, atkDir) >= 58) {
+          this.executeShot(presser, 0.78, true);
+        }
+      } else if (this.prologueScriptTicks >= minTicksForShot && s.ball.mode === 'loose') {
+        this.giveBallTo(finisher);
+        if (toRelativeX(finisher.pos.x, atkDir) >= 58) {
+          this.executeShot(finisher, 0.78, true);
+        }
+      }
+    };
+
+    if (this.prologueStage === 0) {
+      if (s.minute >= 47 && this.prologueWaitingForCard === null) {
+        this.prologueWaitingForCard = 1;
+        this.pushEvent('commentary', side, '', '', { x: s.ball.pos.x, y: s.ball.pos.y }, '【场外指挥】我方边路推进至前场！打出进攻卡【拉开宽度】撕开防线！', undefined, 'important');
+      }
+    } else if (this.prologueStage === 1) {
+      if (s.homeScore >= 1) {
+        this.prologuePendingForcedGoal = false;
+        this.prologueGuaranteedGoal = false;
+        this.prologueStage = 2;
+        this.prologueScriptTicks = 0;
+      } else if (this.prologueScriptTicks > 85) {
+        this.prologueGuaranteedGoal = true;
+        driveTeamAttack(side, striker, 85, 130);
+      }
+    } else if (this.prologueStage === 2) {
+      const awayAttacker =
+        s.players.find(p => p.team === 'away' && !p.redCard && p.role === 'ST') ??
+        s.players.find(p => p.team === 'away' && !p.redCard && ['CAM', 'LW', 'RW'].includes(p.role)) ??
+        s.players.find(p => p.team === 'away' && !p.redCard && p.role !== 'GK');
+      if (s.minute >= 56 && s.awayScore === 1) {
+        this.prologueAllowAwayGoal = true;
+        driveTeamAttack('away', awayAttacker, 1, 10);
+      } else if (s.minute >= 65 && s.awayScore === 2) {
+        this.prologueAllowAwayGoal = true;
+        driveTeamAttack('away', awayAttacker, 1, 10);
+      } else if (s.awayScore >= 3 && s.minute >= 73 && this.prologueWaitingForCard === null) {
+        this.prologueWaitingForCard = 2;
+        this.pushEvent('commentary', side, '', '', { x: s.ball.pos.x, y: s.ball.pos.y }, '【1:3 绝境】背水一战！打出进攻卡【边路强突造角】，搏命反扑！', undefined, 'important');
+      }
+    } else if (this.prologueStage === 3) {
+      if (s.homeScore >= 2) {
+        this.prologuePendingForcedGoal = false;
+        this.prologueGuaranteedGoal = false;
+        this.prologueStage = 4;
+        this.prologueScriptTicks = 0;
+      } else if (this.prologueScriptTicks > 85) {
+        this.prologueGuaranteedGoal = true;
+        driveTeamAttack(side, striker, 85, 130);
+      }
+    } else if (this.prologueStage === 4) {
+      if (s.minute >= 80 && s.homeSubs.some(sub => sub.id === 'prologue_vet_10')) {
+        if (!this.prologueWaitingForSub) {
+          this.prologueWaitingForSub = true;
+          this.pushEvent('commentary', side, '', '', { x: PITCH.HALF_X, y: PITCH.HALF_Y }, '【80\' 抽筋警报】#19 陈小宇拼到抽筋！请点击右上【换人/战术】，换上老队长 #10 梅利纳！', undefined, 'important');
+        }
+      }
+    } else if (this.prologueStage === 5 && s.homeScore < 3) {
+      if (this.prologueScriptTicks > 80 || s.minute >= 85) {
+        this.prologueGuaranteedGoal = true;
+        driveTeamAttack(side, veteran, 80, 120);
+      }
+    } else if (this.prologueStage === 6 && s.homeScore === 3 && sk && !s.activeSkillPrompt) {
+      if (!this.prologueSkillTriggered && (s.skillUses?.[sk.id] ?? 0) < sk.maxPerMatch) {
+        const vetInAttack = veteran && toRelativeX(veteran.pos.x, dir) >= 62;
+        const homeHasPossession = s.ball.lastTouchTeam === side || (s.ball.holderId && s.players.find(p => p.id === s.ball.holderId)?.team === side);
+        if ((s.minute >= 89 && homeHasPossession && vetInAttack) || s.minute >= 90) {
+          if (veteran && !veteran.hasBall && s.ball.mode !== 'shot') {
+            const holder = s.ball.holderId ? s.players.find(p => p.id === s.ball.holderId) : undefined;
+            if (holder && holder.team === side && holder.id !== veteran.id) {
+              this.executePass(holder, veteran, 'through');
+            }
+          }
+          s.activeSkillPrompt = {
+            skillId: sk.id,
+            name: sk.name,
+            situationLabel: `${s.minute}' 3:3 补时最后一攻 · 冠军绝杀`,
+            powerLabel: '最后一舞 · 4:3 逆转夺冠',
+            expiresTick: s.tick + 9999,
+            isCardBoosted: true,
+            effectiveRank: 3,
+            instantLabel: sk.instantLabel,
+            vfxTheme: 'ult',
+          };
+        }
+      } else if (this.prologueSkillTriggered && this.prologueScriptTicks > 40) {
+        this.prologueGuaranteedGoal = true;
+        driveTeamAttack(side, veteran, 40, 60);
+      }
+    }
+  }
+
+  /**
    * 单步推进 1 个 tick (0.1s 物理时间)
    */
   public step(): MatchState {
@@ -1291,17 +1517,31 @@ export class MatchEngine {
       return s;
     }
 
-    const freezePrologueClock =
-      this.prologueScriptedMode &&
-      (this.prologueWaitingForCard !== null || this.prologueWaitingForSub || !!s.activeSkillPrompt);
-    if (!freezePrologueClock) {
-      s.tick++;
+    // 物理 tick 永远推进，保证传跑、物理与动画永不卡死
+    s.tick++;
+    if (this.prologueScriptedMode) {
+      const waitingPrologue =
+        this.prologueWaitingForCard !== null || this.prologueWaitingForSub || !!s.activeSkillPrompt;
+      const capMin =
+        this.prologueWaitingForCard === 1 ? 49 :
+        this.prologueStage === 1 ? 51 :
+        this.prologueStage === 2 && s.awayScore < 3 ? 72 :
+        this.prologueWaitingForCard === 2 ? 75 :
+        this.prologueStage === 3 ? 79 :
+        this.prologueWaitingForSub ? 82 :
+        this.prologueStage === 5 ? 87 :
+        this.prologueStage === 6 ? 91 : 95;
+      if (!waitingPrologue && this.prologueClockTicks < capMin * SIM_CONFIG.TICKS_PER_MINUTE) {
+        this.prologueClockTicks++;
+      }
+      s.minute = Math.min(95, Math.floor(this.prologueClockTicks / SIM_CONFIG.TICKS_PER_MINUTE));
+    } else {
       s.minute = Math.min(95, Math.floor(s.tick / SIM_CONFIG.TICKS_PER_MINUTE));
-      for (const side of ['home', 'away'] as const) {
-        while (this.aiSegmentCards[side].length > 0 && this.aiSegmentCards[side][0].minute <= s.minute) {
-          const next = this.aiSegmentCards[side].shift()!;
-          this.applyCommandCard(side, next.effect);
-        }
+    }
+    for (const side of ['home', 'away'] as const) {
+      while (this.aiSegmentCards[side].length > 0 && this.aiSegmentCards[side][0].minute <= s.minute) {
+        const next = this.aiSegmentCards[side].shift()!;
+        this.applyCommandCard(side, next.effect);
       }
     }
     if (this.setPieceBoostTicks > 0) this.setPieceBoostTicks--;
@@ -1337,7 +1577,20 @@ export class MatchEngine {
       this.pushEvent('halftime', 'home', '', '主队', { x: PITCH.HALF_X, y: PITCH.HALF_Y }, hc.text, undefined, hc.level);
       return s;
     }
-    if (s.phase === 'second_half' && s.tick >= secondHalfEnd) {
+    if (this.prologueScriptedMode) {
+      if (
+        s.phase === 'second_half' &&
+        this.prologueStage >= 7 &&
+        this.prologueClockTicks >= 92 * SIM_CONFIG.TICKS_PER_MINUTE &&
+        this.prologueScriptTicks >= 20
+      ) {
+        s.phase = 'full_time';
+        this.finalizeStats();
+        const fc = this.commentary.formatFulltime(s.minute, s.homeScore, s.awayScore);
+        this.pushEvent('fulltime', 'home', '', '主队', { x: PITCH.HALF_X, y: PITCH.HALF_Y }, fc.text, undefined, fc.level);
+        return s;
+      }
+    } else if (s.phase === 'second_half' && s.tick >= secondHalfEnd) {
       s.phase = 'full_time';
       this.finalizeStats();
       const fc = this.commentary.formatFulltime(s.minute, s.homeScore, s.awayScore);
@@ -1357,6 +1610,9 @@ export class MatchEngine {
       this.getEffectiveMods('home'),
       this.getEffectiveMods('away')
     );
+    if (this.prologueScriptedMode) {
+      this.applyPrologueSoftGuidance();
+    }
 
     // 2. 处理球状态机
     if (s.ball.mode === 'dead') {
@@ -1437,218 +1693,7 @@ export class MatchEngine {
       }
     }
     if (this.prologueScriptedMode && this.userTeamSide) {
-      const side = this.userTeamSide;
-      const dir = this.getAttackDir(side);
-      const sk = this.userEquippedSkills[0];
-      const nudgeForward = (p: PlayerState, tx: number, ty: number, speedMul = 1.15) => {
-        p.targetPos = { x: tx, y: ty };
-        const dx = tx - p.pos.x;
-        const dy = ty - p.pos.y;
-        const d = Math.hypot(dx, dy);
-        if (d > 1.5) {
-          const stepSpd = Math.min(d, 0.85 * speedMul);
-          p.vel = { x: (dx / d) * stepSpd * 10, y: (dy / d) * stepSpd * 10 };
-          p.pos = { x: p.pos.x + (dx / d) * stepSpd, y: p.pos.y + (dy / d) * stepSpd };
-        }
-      };
-      const guideHomeBuildUp = (minX: number) => {
-        const carrier = s.players.find(p => p.team === side && !p.redCard && p.hasBall)
-          ?? s.players.find(p => p.team === side && !p.redCard && ['CAM', 'CM', 'LW', 'RW'].includes(p.role))
-          ?? s.players.find(p => p.team === side && !p.redCard && p.role !== 'GK');
-        if (carrier) {
-          if (!carrier.hasBall && s.ball.mode !== 'pass' && s.ball.mode !== 'shot' && s.ball.lastTouchTeam !== side) {
-            this.giveBallTo(carrier);
-          }
-          if (toRelativeX(carrier.pos.x, dir) < minX) {
-            nudgeForward(carrier, dir === 1 ? minX + 4 : PITCH.LENGTH - (minX + 4), PITCH.HALF_Y, 1.25);
-          }
-        }
-        const striker = s.players.find(p => p.team === side && !p.redCard && p.id === 'prologue_st_19');
-        if (striker && toRelativeX(striker.pos.x, dir) < minX + 10) {
-          nudgeForward(striker, dir === 1 ? minX + 14 : PITCH.LENGTH - (minX + 14), PITCH.GOAL_Y - 1.5, 1.2);
-        }
-      };
-
-      if (this.prologueStage === 0 && s.minute >= 46) {
-        guideHomeBuildUp(64);
-        if (s.minute >= 47 && this.prologueWaitingForCard === null) {
-          this.prologueWaitingForCard = 1;
-          this.pushEvent('commentary', side, '', '', { x: s.ball.pos.x, y: s.ball.pos.y }, '【场外指挥】我方边路推进至前场！打出进攻卡【拉开宽度】撕开防线！', undefined, 'important');
-        }
-      } else if (this.prologueStage === 1) {
-        this.prologueGuaranteedGoal = true;
-        if (s.homeScore >= 1) {
-          this.prologuePendingForcedGoal = false;
-          this.prologueGuaranteedGoal = false;
-          this.prologueStage = 2;
-        } else if (this.prologuePendingForcedGoal) {
-          const attacker = s.players.find(p => p.team === side && !p.redCard && p.id === 'prologue_st_19')
-            ?? s.players.find(p => p.team === side && !p.redCard && ['ST', 'CAM', 'LW', 'RW'].includes(p.role))
-            ?? s.players.find(p => p.team === side && !p.redCard && p.role !== 'GK');
-          if (attacker) {
-            nudgeForward(attacker, dir === 1 ? PITCH.LENGTH - 15 : 15, PITCH.GOAL_Y - 1, 1.35);
-          }
-          if (this.prologueGoalDelayTicks > 0) {
-            this.prologueGoalDelayTicks--;
-            if (this.prologueGoalDelayTicks === 10 && attacker && !attacker.hasBall && s.ball.mode === 'held') {
-              const holder = s.players.find(p => p.id === s.ball.holderId && p.team === side);
-              if (holder && holder.id !== attacker.id) {
-                this.executePass(holder, attacker, 'through');
-              }
-            }
-          } else if (s.ball.mode !== 'shot' && attacker && toRelativeX(attacker.pos.x, dir) >= 72) {
-            if (!attacker.hasBall) this.giveBallTo(attacker);
-            this.executeShot(attacker, 0.78, true);
-          }
-        }
-      } else if (this.prologueStage === 2) {
-        // 50'~65' 客队平滑反击连入两球 (1:1 -> 1:2 -> 1:3)，随后 73' 引导第二张进攻卡
-        const awayAttacker = s.players.find(p => p.team === 'away' && !p.redCard && p.role === 'ST')
-          ?? s.players.find(p => p.team === 'away' && !p.redCard && ['CAM', 'LW', 'RW'].includes(p.role))
-          ?? s.players.find(p => p.team === 'away' && !p.redCard && p.role !== 'GK');
-        if (s.minute >= 52 && this.prologueAwayGoalCount === 0 && s.awayScore === 1) {
-          if (awayAttacker) {
-            if (!awayAttacker.hasBall && s.ball.mode !== 'shot' && s.ball.mode !== 'pass' && s.ball.lastTouchTeam !== 'away') {
-              this.giveBallTo(awayAttacker);
-            }
-            // 推进期间压制普通 AI 提前瞎射，避免门将扑出后反复抢回球无限射门
-            awayAttacker.decisionCooldown = 6;
-            const prog = Math.min(1, Math.max(0, (s.minute - 52) / 3));
-            const targetX = 48 - prog * 24; // 52' 从中场 48m 平滑推进到 55' 禁区前沿 24m
-            nudgeForward(awayAttacker, targetX, PITCH.GOAL_Y - 1.5, 1.35);
-            if ((s.minute >= 55 && awayAttacker.pos.x <= 28) || s.minute >= 57) {
-              if (s.ball.mode !== 'shot') {
-                this.prologueAwayGoalCount = 1;
-                this.prologueAllowAwayGoal = true;
-                awayAttacker.decisionCooldown = 0;
-                if (!awayAttacker.hasBall) this.giveBallTo(awayAttacker);
-                this.executeShot(awayAttacker, 0.88, true);
-              }
-            }
-          }
-        } else if (s.minute >= 61 && this.prologueAwayGoalCount === 1 && s.awayScore === 2) {
-          if (awayAttacker) {
-            if (!awayAttacker.hasBall && s.ball.mode !== 'shot' && s.ball.mode !== 'pass' && s.ball.lastTouchTeam !== 'away') {
-              this.giveBallTo(awayAttacker);
-            }
-            awayAttacker.decisionCooldown = 6;
-            const prog = Math.min(1, Math.max(0, (s.minute - 61) / 3));
-            const targetX = 48 - prog * 24;
-            nudgeForward(awayAttacker, targetX, PITCH.GOAL_Y + 1.5, 1.35);
-            if ((s.minute >= 64 && awayAttacker.pos.x <= 28) || s.minute >= 66) {
-              if (s.ball.mode !== 'shot') {
-                this.prologueAwayGoalCount = 2;
-                this.prologueAllowAwayGoal = true;
-                awayAttacker.decisionCooldown = 0;
-                if (!awayAttacker.hasBall) this.giveBallTo(awayAttacker);
-                this.executeShot(awayAttacker, 0.88, true);
-              }
-            }
-          }
-        } else if (s.minute >= 71 && s.awayScore >= 3) {
-          guideHomeBuildUp(66);
-          if (s.minute >= 73 && this.prologueWaitingForCard === null) {
-            this.prologueWaitingForCard = 2;
-            this.pushEvent('commentary', side, '', '', { x: s.ball.pos.x, y: s.ball.pos.y }, '【1:3 绝境】背水一战！打出进攻卡【边路强突造角】，搏命反扑！', undefined, 'important');
-          }
-        }
-      } else if (this.prologueStage === 3) {
-        this.prologueGuaranteedGoal = true;
-        if (s.homeScore >= 2) {
-          this.prologuePendingForcedGoal = false;
-          this.prologueGuaranteedGoal = false;
-          this.prologueStage = 4;
-          const crampStriker = s.players.find(p => p.team === side && p.id === 'prologue_st_19')
-            ?? s.players.find(p => p.team === side && !p.redCard && p.role === 'ST');
-          if (crampStriker) crampStriker.fitness = 30;
-          this.pushEvent('commentary', side, '', '', { x: PITCH.HALF_X, y: PITCH.HALF_Y }, '【2:3 看到希望】#19 陈小宇梅开二度，但落地时小腿抽筋！替补席上 #10 梅利纳撕开了左膝冰袋！', undefined, 'important');
-        } else if (this.prologuePendingForcedGoal) {
-          const attacker = s.players.find(p => p.team === side && !p.redCard && p.id === 'prologue_st_19')
-            ?? s.players.find(p => p.team === side && !p.redCard && ['ST', 'CAM', 'RW', 'LW'].includes(p.role))
-            ?? s.players.find(p => p.team === side && !p.redCard && p.role !== 'GK');
-          if (attacker) {
-            nudgeForward(attacker, dir === 1 ? PITCH.LENGTH - 15 : 15, PITCH.GOAL_Y + 1.0, 1.35);
-          }
-          if (this.prologueGoalDelayTicks > 0) {
-            this.prologueGoalDelayTicks--;
-            if (this.prologueGoalDelayTicks === 10 && attacker && !attacker.hasBall && s.ball.mode === 'held') {
-              const holder = s.players.find(p => p.id === s.ball.holderId && p.team === side);
-              if (holder && holder.id !== attacker.id) {
-                this.executePass(holder, attacker, 'through');
-              }
-            }
-          } else if (s.ball.mode !== 'shot' && attacker && toRelativeX(attacker.pos.x, dir) >= 72) {
-            if (!attacker.hasBall) this.giveBallTo(attacker);
-            this.executeShot(attacker, 0.78, true);
-          }
-        }
-      } else if (this.prologueStage === 4) {
-        if (s.minute >= 80 && s.homeSubs.some(sub => sub.id === 'prologue_vet_10')) {
-          if (!this.prologueWaitingForSub) {
-            this.prologueWaitingForSub = true;
-            this.pushEvent('commentary', side, '', '', { x: PITCH.HALF_X, y: PITCH.HALF_Y }, '【80\' 抽筋警报】#19 陈小宇拼到抽筋！请点击右上【换人/战术】，换上老队长 #10 梅利纳！', undefined, 'important');
-          }
-        }
-      } else if (this.prologueStage === 5 && s.homeScore < 3) {
-        const veteran = s.players.find(p => p.team === side && (p.id === 'prologue_vet_10' || p.name.includes('梅利纳') || p.name.includes('林锋')))
-          ?? s.players.find(p => p.team === side && p.role !== 'GK');
-        if (veteran && s.minute >= 80) {
-          // 保持在越位线前（不超过对方倒数第二名防守队员），临近 84' 再反越位前插接球
-          const oppXs = s.players
-            .filter(p => p.team !== side && !p.redCard)
-            .map(p => p.pos.x)
-            .sort((a, b) => (dir === 1 ? b - a : a - b));
-          const offsideLineX = oppXs[1] ?? (dir === 1 ? 80 : 25);
-          const safeMaxX = dir === 1 ? Math.min(offsideLineX - 2.0, 76) : Math.max(offsideLineX + 2.0, PITCH.LENGTH - 76);
-          if (s.minute < 84) {
-            if (dir === 1 && veteran.pos.x > safeMaxX) veteran.pos.x = safeMaxX;
-            if (dir === -1 && veteran.pos.x < safeMaxX) veteran.pos.x = safeMaxX;
-          }
-          const runTargetX = s.minute >= 84
-            ? (dir === 1 ? Math.min(PITCH.LENGTH - 18, Math.max(safeMaxX, 82)) : Math.max(18, Math.min(safeMaxX, PITCH.LENGTH - 82)))
-            : safeMaxX;
-          nudgeForward(veteran, runTargetX, PITCH.GOAL_Y - 1.0, 1.25);
-        }
-        if (s.minute >= 85 && s.ball.mode !== 'shot' && veteran && toRelativeX(veteran.pos.x, dir) >= 68) {
-          this.prologueGuaranteedGoal = true;
-          if (!veteran.hasBall) this.giveBallTo(veteran);
-          this.executeShot(veteran, 0.85, true);
-        }
-      } else if (this.prologueStage === 6 && s.homeScore === 3 && sk) {
-        const veteran = s.players.find(p => p.team === side && (p.id === 'prologue_vet_10' || p.name.includes('梅利纳') || p.name.includes('林锋')))
-          ?? s.players.find(p => p.team === side && p.role !== 'GK');
-        if (veteran && s.minute >= 86) {
-          // 86'~89' 保持在弧顶越位线前策应，90' 踏入禁区弧顶起脚重炮
-          const oppXs = s.players
-            .filter(p => p.team !== side && !p.redCard)
-            .map(p => p.pos.x)
-            .sort((a, b) => (dir === 1 ? b - a : a - b));
-          const offsideLineX = oppXs[1] ?? (dir === 1 ? 80 : 25);
-          const safeMaxX = dir === 1 ? Math.min(offsideLineX - 2.0, 75) : Math.max(offsideLineX + 2.0, PITCH.LENGTH - 75);
-          if (s.minute < 89) {
-            if (dir === 1 && veteran.pos.x > safeMaxX) veteran.pos.x = safeMaxX;
-            if (dir === -1 && veteran.pos.x < safeMaxX) veteran.pos.x = safeMaxX;
-          }
-          const runTargetX = s.minute >= 89
-            ? (dir === 1 ? Math.min(PITCH.LENGTH - 21, Math.max(safeMaxX, 81)) : Math.max(21, Math.min(safeMaxX, PITCH.LENGTH - 81)))
-            : safeMaxX;
-          nudgeForward(veteran, runTargetX, PITCH.GOAL_Y + 0.8, 1.25);
-        }
-        if (s.minute >= 90 && !s.activeSkillPrompt && s.ball.mode !== 'shot' && veteran && toRelativeX(veteran.pos.x, dir) >= 68) {
-          if (!veteran.hasBall) this.giveBallTo(veteran);
-          s.activeSkillPrompt = {
-            skillId: sk.id,
-            name: sk.name,
-            situationLabel: `${s.minute}' 3:3 补时最后一攻 · 冠军绝杀`,
-            powerLabel: '最后一舞 · 4:3 逆转夺冠',
-            expiresTick: s.tick + 9999,
-            isCardBoosted: true,
-            effectiveRank: 3,
-            instantLabel: sk.instantLabel,
-            vfxTheme: 'ult',
-          };
-        }
-      }
+      this.stepPrologueMilestones();
     }
     if (!this.prologueScriptedMode && !s.activeSkillPrompt && this.userTeamSide && this.userEquippedSkills.length > 0 && s.tick % 2 === 0) {
       this.evaluateActiveSkillTriggers(this.userTeamSide);
@@ -2027,11 +2072,25 @@ export class MatchEngine {
     if (this.prologueScriptedMode && team === this.userTeamSide) {
       this.prologueSkillTriggered = true;
       this.prologueGuaranteedGoal = true;
-      const veteran = s.players.find(p => p.team === team && (p.id === 'prologue_vet_10' || p.name.includes('梅利纳') || p.name.includes('林锋'))) ?? s.players.find(p => p.team === team && p.role !== 'GK');
+      const dir = this.getAttackDir(team);
+      const veteran = s.players.find(p => p.team === team && (p.id === 'prologue_vet_10' || p.name.includes('梅利纳') || p.name.includes('林锋')))
+        ?? s.players.find(p => p.team === team && p.role !== 'GK');
       const wasStage5 = this.prologueStage === 5;
       if (veteran) {
-        if (!veteran.hasBall) this.giveBallTo(veteran);
-        this.executeShot(veteran, 0.85, true);
+        if (veteran.hasBall) {
+          this.executeShot(veteran, 0.85, true);
+        } else {
+          const holder = s.ball.holderId ? s.players.find(p => p.id === s.ball.holderId) : undefined;
+          if (holder && holder.team === team && holder.id !== veteran.id) {
+            this.executePass(holder, veteran, 'through');
+            this.guaranteeShotOnTargetTicks[team] = 90;
+          } else {
+            if (holder && holder.team !== team) holder.stunTicks = 10;
+            veteran.targetPos = { x: dir === 1 ? PITCH.LENGTH - 19 : 19, y: PITCH.GOAL_Y };
+            this.giveBallTo(veteran);
+            this.executeShot(veteran, 0.85, true);
+          }
+        }
       }
       s.activeSkillPrompt = null;
       s.skillUses = s.skillUses ?? {};
@@ -2965,9 +3024,37 @@ export class MatchEngine {
     const cardXgDefensePenalty = defShotMods.oppShotXgPenalty * 0.45;
     let goalProb = clamp(0.33 + b.shotXG * 0.88 + attrDiffBonus - gkSaveBonus - strainGoalPenalty - cardXgDefensePenalty, 0.12, 0.76);
     if (this.prologueScriptedMode) {
-      if (shootTeam === this.userTeamSide && (this.prologueSkillTriggered || this.prologueGuaranteedGoal)) goalProb = 1.0;
-      else if (shootTeam === 'away' && this.prologueAllowAwayGoal) goalProb = 1.0;
-      else goalProb = 0.0;
+      const homeCap =
+        this.prologueStage <= 0 ? 0 :
+        this.prologueStage === 1 ? 1 :
+        this.prologueStage === 2 ? 1 :
+        this.prologueStage === 3 ? 2 :
+        this.prologueStage === 4 ? 2 :
+        this.prologueStage === 5 ? 3 :
+        this.prologueStage === 6 ? (this.prologueSkillTriggered ? 4 : 3) : 4;
+      const awayCap = this.prologueStage === 2 ? 3 : 1;
+
+      if (shootTeam === 'home') {
+        if (this.state.homeScore >= homeCap) {
+          goalProb = 0.0;
+        } else if (this.prologueSkillTriggered || this.prologueGuaranteedGoal || this.prologueScriptTicks > 95) {
+          goalProb = 1.0;
+        } else {
+          goalProb = Math.max(goalProb, 0.55);
+        }
+      } else {
+        if (this.state.awayScore >= awayCap) {
+          goalProb = 0.0;
+        } else if (
+          this.prologueAllowAwayGoal ||
+          (this.state.minute >= 56 && this.state.awayScore === 1) ||
+          (this.state.minute >= 65 && this.state.awayScore === 2)
+        ) {
+          goalProb = 1.0;
+        } else {
+          goalProb = Math.max(goalProb, 0.55);
+        }
+      }
     }
 
     if (Math.random() < goalProb) {
@@ -2995,9 +3082,15 @@ export class MatchEngine {
           this.prologuePendingForcedGoal = false;
           this.prologueGuaranteedGoal = false;
           this.prologueSkillTriggered = false;
+          this.prologueScriptTicks = 0;
           if (this.state.homeScore === 1 && this.prologueStage < 2) this.prologueStage = 2;
-          else if (this.state.homeScore === 2 && this.prologueStage < 4) this.prologueStage = 4;
-          else if (this.state.homeScore === 3 && this.prologueStage < 6) this.prologueStage = 6;
+          else if (this.state.homeScore === 2 && this.prologueStage < 4) {
+            this.prologueStage = 4;
+            const crampStriker = this.state.players.find(p => p.team === 'home' && p.id === 'prologue_st_19')
+              ?? this.state.players.find(p => p.team === 'home' && !p.redCard && p.role === 'ST');
+            if (crampStriker) crampStriker.fitness = 30;
+            this.pushEvent('commentary', 'home', '', '', { x: PITCH.HALF_X, y: PITCH.HALF_Y }, '【2:3 看到希望】#19 陈小宇梅开二度，但落地时小腿抽筋！替补席上 #10 梅利纳撕开了左膝冰袋！', undefined, 'important');
+          } else if (this.state.homeScore === 3 && this.prologueStage < 6) this.prologueStage = 6;
           else if (this.state.homeScore >= 4 && this.prologueStage < 7) this.prologueStage = 7;
         }
       } else {

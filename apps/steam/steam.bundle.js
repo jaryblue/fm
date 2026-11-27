@@ -6785,6 +6785,7 @@
       this.prologueAwayGoalCount = 0;
       this.prologueGoalDelayTicks = 0;
       this.prologueScriptTicks = 0;
+      this.prologueClockTicks = 0;
       this.pendingTacticalCallouts = [];
       this.userScoutCounterLabel = "";
       this.lastScoutCalloutMin = -20;
@@ -6862,6 +6863,7 @@
       this.setupKickoff("home");
       if (this.prologueScriptedMode) {
         this.state.tick = 45 * SIM_CONFIG.TICKS_PER_MINUTE;
+        this.prologueClockTicks = 45 * SIM_CONFIG.TICKS_PER_MINUTE;
         this.state.minute = 45;
         this.state.phase = "second_half";
         this.state.homeAttackDir = 1;
@@ -6941,6 +6943,40 @@
           if (af.lineShiftDelta) out.lineShift = clamp((out.lineShift ?? 0) + af.lineShiftDelta, -12, 12);
           if (af.oppThroughPassBonus) out.oppThroughPassBonus += af.oppThroughPassBonus;
           if (af.mouBusLeading && isLeading) out.oppShotXgPenalty += 0.22;
+        }
+      }
+      if (this.prologueScriptedMode) {
+        if (team === "home") {
+          if (this.prologueStage === 0) {
+            out.tempoMul *= 1.15;
+            out.throughPassBias = (out.throughPassBias ?? 0) + 0.08;
+            out.crossBias = (out.crossBias ?? 0) + 0.08;
+            out.boxCrashBonus = (out.boxCrashBonus ?? 0) + 1;
+          } else if (this.prologueStage === 1 || this.prologueStage === 3 || this.prologueStage === 5) {
+            out.tempoMul *= 1.32;
+            out.throughPassBias = (out.throughPassBias ?? 0) + 0.18;
+            out.crossBias = (out.crossBias ?? 0) + 0.18;
+            out.boxCrashBonus = (out.boxCrashBonus ?? 0) + 2;
+            out.pressDistBonus = (out.pressDistBonus ?? 0) + 5;
+          } else if (this.prologueStage === 2 && this.state.awayScore < 3) {
+            out.blockBonus -= 0.1;
+          } else if (this.prologueStage === 2 || this.prologueStage === 6) {
+            out.tempoMul *= 1.22;
+            out.throughPassBias = (out.throughPassBias ?? 0) + 0.12;
+            out.crossBias = (out.crossBias ?? 0) + 0.1;
+            out.boxCrashBonus = (out.boxCrashBonus ?? 0) + 1;
+          } else if (this.prologueStage >= 7) {
+            out.blockBonus += 0.15;
+            out.oppShotXgPenalty += 0.25;
+          }
+        } else {
+          if (this.prologueStage === 1 || this.prologueStage === 3 || this.prologueStage === 5) {
+            out.oppShotXgPenalty += 0.15;
+          } else if (this.prologueStage === 2 && this.state.awayScore < 3) {
+            out.tempoMul *= 1.3;
+            out.throughPassBias = (out.throughPassBias ?? 0) + 0.18;
+            out.boxCrashBonus = (out.boxCrashBonus ?? 0) + 2;
+          }
         }
       }
       return out;
@@ -7837,6 +7873,166 @@
       return s;
     }
     /**
+     * 序章软性跑位引导：仅调整 targetPos，不覆盖 p.pos，保持 10Hz 真实物理跑动
+     */
+    applyPrologueSoftGuidance() {
+      const s = this.state;
+      const side = this.userTeamSide ?? "home";
+      const dir = this.getAttackDir(side);
+      const striker = s.players.find((p) => p.team === side && !p.redCard && p.id === "prologue_st_19");
+      const veteran = s.players.find(
+        (p) => p.team === side && !p.redCard && (p.id === "prologue_vet_10" || p.name.includes("\u6885\u5229\u7EB3") || p.name.includes("\u6797\u950B"))
+      );
+      if (this.prologueStage === 1 || this.prologueStage === 3) {
+        if (striker) {
+          striker.targetPos = {
+            x: dir === 1 ? PITCH.LENGTH - 15 : 15,
+            y: PITCH.GOAL_Y + (this.prologueStage === 1 ? -1 : 1)
+          };
+        }
+      } else if (this.prologueStage === 2 && s.awayScore < 3) {
+        const awayAttacker = s.players.find((p) => p.team === "away" && !p.redCard && p.role === "ST") ?? s.players.find((p) => p.team === "away" && !p.redCard && ["CAM", "LW", "RW"].includes(p.role));
+        if (awayAttacker) {
+          awayAttacker.targetPos = {
+            x: 24,
+            y: PITCH.GOAL_Y + (s.awayScore === 1 ? -1.5 : 1.5)
+          };
+        }
+      } else if ((this.prologueStage === 5 || this.prologueStage === 6) && veteran) {
+        const oppXs = s.players.filter((p) => p.team !== side && !p.redCard).map((p) => p.pos.x).sort((a, b) => dir === 1 ? b - a : a - b);
+        const offsideLineX = oppXs[1] ?? (dir === 1 ? 80 : 25);
+        const safeMaxX = dir === 1 ? Math.min(offsideLineX - 2, 78) : Math.max(offsideLineX + 2, PITCH.LENGTH - 78);
+        const readyToAttack = this.prologueStage === 5 || s.minute >= 89;
+        const runTargetX = readyToAttack ? dir === 1 ? Math.min(PITCH.LENGTH - 18, Math.max(safeMaxX, 82)) : Math.max(18, Math.min(safeMaxX, PITCH.LENGTH - 82)) : safeMaxX;
+        veteran.targetPos = {
+          x: runTargetX,
+          y: PITCH.GOAL_Y + (this.prologueStage === 5 ? -1 : 0.8)
+        };
+      }
+    }
+    /**
+     * 序章阶段里程碑与动态保底护栏：不冻结物理、不瞬移球，超窗时通过真实抢断/直塞/射门推进节奏
+     */
+    stepPrologueMilestones() {
+      const s = this.state;
+      const side = this.userTeamSide ?? "home";
+      const dir = this.getAttackDir(side);
+      const sk = this.userEquippedSkills[0];
+      const waitingPrologue = this.prologueWaitingForCard !== null || this.prologueWaitingForSub || !!s.activeSkillPrompt;
+      if (!waitingPrologue) {
+        this.prologueScriptTicks++;
+      }
+      const striker = s.players.find((p) => p.team === side && !p.redCard && p.id === "prologue_st_19") ?? s.players.find((p) => p.team === side && !p.redCard && ["ST", "CAM", "LW", "RW"].includes(p.role)) ?? s.players.find((p) => p.team === side && !p.redCard && p.role !== "GK");
+      const veteran = s.players.find((p) => p.team === side && !p.redCard && (p.id === "prologue_vet_10" || p.name.includes("\u6885\u5229\u7EB3") || p.name.includes("\u6797\u950B"))) ?? striker;
+      const driveTeamAttack = (atkTeam, finisher, minTicksForShot, minTicksForSteal) => {
+        if (!finisher || s.ball.mode === "shot" || s.ball.mode === "pass") return;
+        const atkDir = this.getAttackDir(atkTeam);
+        const holder = s.ball.holderId ? s.players.find((p) => p.id === s.ball.holderId) : void 0;
+        if (holder && holder.team === atkTeam) {
+          const relX = toRelativeX(holder.pos.x, atkDir);
+          if (relX >= 62) {
+            this.executeShot(holder, 0.78, true);
+          } else if (holder.id !== finisher.id) {
+            this.executePass(holder, finisher, "through");
+          }
+        } else if (this.prologueScriptTicks >= minTicksForSteal) {
+          const presser = s.players.filter((p) => p.team === atkTeam && !p.redCard && p.role !== "GK").sort((a, b) => dist2D(a.pos, s.ball.pos) - dist2D(b.pos, s.ball.pos))[0] ?? finisher;
+          if (holder && holder.team !== atkTeam) holder.stunTicks = 6;
+          presser.matchStats.tackles++;
+          s.stats[atkTeam].tackles++;
+          this.giveBallTo(presser);
+          this.pushEvent("tackle", atkTeam, presser.id, presser.name, presser.pos, `${presser.name} \u79EF\u6781\u53CD\u62A2\u593A\u56DE\u7403\u6743\uFF01`);
+          if (presser.id !== finisher.id && toRelativeX(presser.pos.x, atkDir) < 62) {
+            this.executePass(presser, finisher, "through");
+          } else if (toRelativeX(presser.pos.x, atkDir) >= 58) {
+            this.executeShot(presser, 0.78, true);
+          }
+        } else if (this.prologueScriptTicks >= minTicksForShot && s.ball.mode === "loose") {
+          this.giveBallTo(finisher);
+          if (toRelativeX(finisher.pos.x, atkDir) >= 58) {
+            this.executeShot(finisher, 0.78, true);
+          }
+        }
+      };
+      if (this.prologueStage === 0) {
+        if (s.minute >= 47 && this.prologueWaitingForCard === null) {
+          this.prologueWaitingForCard = 1;
+          this.pushEvent("commentary", side, "", "", { x: s.ball.pos.x, y: s.ball.pos.y }, "\u3010\u573A\u5916\u6307\u6325\u3011\u6211\u65B9\u8FB9\u8DEF\u63A8\u8FDB\u81F3\u524D\u573A\uFF01\u6253\u51FA\u8FDB\u653B\u5361\u3010\u62C9\u5F00\u5BBD\u5EA6\u3011\u6495\u5F00\u9632\u7EBF\uFF01", void 0, "important");
+        }
+      } else if (this.prologueStage === 1) {
+        if (s.homeScore >= 1) {
+          this.prologuePendingForcedGoal = false;
+          this.prologueGuaranteedGoal = false;
+          this.prologueStage = 2;
+          this.prologueScriptTicks = 0;
+        } else if (this.prologueScriptTicks > 85) {
+          this.prologueGuaranteedGoal = true;
+          driveTeamAttack(side, striker, 85, 130);
+        }
+      } else if (this.prologueStage === 2) {
+        const awayAttacker = s.players.find((p) => p.team === "away" && !p.redCard && p.role === "ST") ?? s.players.find((p) => p.team === "away" && !p.redCard && ["CAM", "LW", "RW"].includes(p.role)) ?? s.players.find((p) => p.team === "away" && !p.redCard && p.role !== "GK");
+        if (s.minute >= 56 && s.awayScore === 1) {
+          this.prologueAllowAwayGoal = true;
+          driveTeamAttack("away", awayAttacker, 1, 10);
+        } else if (s.minute >= 65 && s.awayScore === 2) {
+          this.prologueAllowAwayGoal = true;
+          driveTeamAttack("away", awayAttacker, 1, 10);
+        } else if (s.awayScore >= 3 && s.minute >= 73 && this.prologueWaitingForCard === null) {
+          this.prologueWaitingForCard = 2;
+          this.pushEvent("commentary", side, "", "", { x: s.ball.pos.x, y: s.ball.pos.y }, "\u30101:3 \u7EDD\u5883\u3011\u80CC\u6C34\u4E00\u6218\uFF01\u6253\u51FA\u8FDB\u653B\u5361\u3010\u8FB9\u8DEF\u5F3A\u7A81\u9020\u89D2\u3011\uFF0C\u640F\u547D\u53CD\u6251\uFF01", void 0, "important");
+        }
+      } else if (this.prologueStage === 3) {
+        if (s.homeScore >= 2) {
+          this.prologuePendingForcedGoal = false;
+          this.prologueGuaranteedGoal = false;
+          this.prologueStage = 4;
+          this.prologueScriptTicks = 0;
+        } else if (this.prologueScriptTicks > 85) {
+          this.prologueGuaranteedGoal = true;
+          driveTeamAttack(side, striker, 85, 130);
+        }
+      } else if (this.prologueStage === 4) {
+        if (s.minute >= 80 && s.homeSubs.some((sub) => sub.id === "prologue_vet_10")) {
+          if (!this.prologueWaitingForSub) {
+            this.prologueWaitingForSub = true;
+            this.pushEvent("commentary", side, "", "", { x: PITCH.HALF_X, y: PITCH.HALF_Y }, "\u301080' \u62BD\u7B4B\u8B66\u62A5\u3011#19 \u9648\u5C0F\u5B87\u62FC\u5230\u62BD\u7B4B\uFF01\u8BF7\u70B9\u51FB\u53F3\u4E0A\u3010\u6362\u4EBA/\u6218\u672F\u3011\uFF0C\u6362\u4E0A\u8001\u961F\u957F #10 \u6885\u5229\u7EB3\uFF01", void 0, "important");
+          }
+        }
+      } else if (this.prologueStage === 5 && s.homeScore < 3) {
+        if (this.prologueScriptTicks > 80 || s.minute >= 85) {
+          this.prologueGuaranteedGoal = true;
+          driveTeamAttack(side, veteran, 80, 120);
+        }
+      } else if (this.prologueStage === 6 && s.homeScore === 3 && sk && !s.activeSkillPrompt) {
+        if (!this.prologueSkillTriggered && (s.skillUses?.[sk.id] ?? 0) < sk.maxPerMatch) {
+          const vetInAttack = veteran && toRelativeX(veteran.pos.x, dir) >= 62;
+          const homeHasPossession = s.ball.lastTouchTeam === side || s.ball.holderId && s.players.find((p) => p.id === s.ball.holderId)?.team === side;
+          if (s.minute >= 89 && homeHasPossession && vetInAttack || s.minute >= 90) {
+            if (veteran && !veteran.hasBall && s.ball.mode !== "shot") {
+              const holder = s.ball.holderId ? s.players.find((p) => p.id === s.ball.holderId) : void 0;
+              if (holder && holder.team === side && holder.id !== veteran.id) {
+                this.executePass(holder, veteran, "through");
+              }
+            }
+            s.activeSkillPrompt = {
+              skillId: sk.id,
+              name: sk.name,
+              situationLabel: `${s.minute}' 3:3 \u8865\u65F6\u6700\u540E\u4E00\u653B \xB7 \u51A0\u519B\u7EDD\u6740`,
+              powerLabel: "\u6700\u540E\u4E00\u821E \xB7 4:3 \u9006\u8F6C\u593A\u51A0",
+              expiresTick: s.tick + 9999,
+              isCardBoosted: true,
+              effectiveRank: 3,
+              instantLabel: sk.instantLabel,
+              vfxTheme: "ult"
+            };
+          }
+        } else if (this.prologueSkillTriggered && this.prologueScriptTicks > 40) {
+          this.prologueGuaranteedGoal = true;
+          driveTeamAttack(side, veteran, 40, 60);
+        }
+      }
+    }
+    /**
      * 单步推进 1 个 tick (0.1s 物理时间)
      */
     step() {
@@ -7846,15 +8042,21 @@
         this.startSecondHalf();
         return s;
       }
-      const freezePrologueClock = this.prologueScriptedMode && (this.prologueWaitingForCard !== null || this.prologueWaitingForSub || !!s.activeSkillPrompt);
-      if (!freezePrologueClock) {
-        s.tick++;
+      s.tick++;
+      if (this.prologueScriptedMode) {
+        const waitingPrologue = this.prologueWaitingForCard !== null || this.prologueWaitingForSub || !!s.activeSkillPrompt;
+        const capMin = this.prologueWaitingForCard === 1 ? 49 : this.prologueStage === 1 ? 51 : this.prologueStage === 2 && s.awayScore < 3 ? 72 : this.prologueWaitingForCard === 2 ? 75 : this.prologueStage === 3 ? 79 : this.prologueWaitingForSub ? 82 : this.prologueStage === 5 ? 87 : this.prologueStage === 6 ? 91 : 95;
+        if (!waitingPrologue && this.prologueClockTicks < capMin * SIM_CONFIG.TICKS_PER_MINUTE) {
+          this.prologueClockTicks++;
+        }
+        s.minute = Math.min(95, Math.floor(this.prologueClockTicks / SIM_CONFIG.TICKS_PER_MINUTE));
+      } else {
         s.minute = Math.min(95, Math.floor(s.tick / SIM_CONFIG.TICKS_PER_MINUTE));
-        for (const side of ["home", "away"]) {
-          while (this.aiSegmentCards[side].length > 0 && this.aiSegmentCards[side][0].minute <= s.minute) {
-            const next = this.aiSegmentCards[side].shift();
-            this.applyCommandCard(side, next.effect);
-          }
+      }
+      for (const side of ["home", "away"]) {
+        while (this.aiSegmentCards[side].length > 0 && this.aiSegmentCards[side][0].minute <= s.minute) {
+          const next = this.aiSegmentCards[side].shift();
+          this.applyCommandCard(side, next.effect);
         }
       }
       if (this.setPieceBoostTicks > 0) this.setPieceBoostTicks--;
@@ -7885,7 +8087,15 @@
         this.pushEvent("halftime", "home", "", "\u4E3B\u961F", { x: PITCH.HALF_X, y: PITCH.HALF_Y }, hc.text, void 0, hc.level);
         return s;
       }
-      if (s.phase === "second_half" && s.tick >= secondHalfEnd) {
+      if (this.prologueScriptedMode) {
+        if (s.phase === "second_half" && this.prologueStage >= 7 && this.prologueClockTicks >= 92 * SIM_CONFIG.TICKS_PER_MINUTE && this.prologueScriptTicks >= 20) {
+          s.phase = "full_time";
+          this.finalizeStats();
+          const fc = this.commentary.formatFulltime(s.minute, s.homeScore, s.awayScore);
+          this.pushEvent("fulltime", "home", "", "\u4E3B\u961F", { x: PITCH.HALF_X, y: PITCH.HALF_Y }, fc.text, void 0, fc.level);
+          return s;
+        }
+      } else if (s.phase === "second_half" && s.tick >= secondHalfEnd) {
         s.phase = "full_time";
         this.finalizeStats();
         const fc = this.commentary.formatFulltime(s.minute, s.homeScore, s.awayScore);
@@ -7903,6 +8113,9 @@
         this.getEffectiveMods("home"),
         this.getEffectiveMods("away")
       );
+      if (this.prologueScriptedMode) {
+        this.applyPrologueSoftGuidance();
+      }
       if (s.ball.mode === "dead") {
         this.handleDeadBall();
       } else if (s.ball.mode === "held") {
@@ -7969,192 +8182,7 @@
         }
       }
       if (this.prologueScriptedMode && this.userTeamSide) {
-        const side = this.userTeamSide;
-        const dir = this.getAttackDir(side);
-        const sk = this.userEquippedSkills[0];
-        const nudgeForward = (p, tx, ty, speedMul = 1.15) => {
-          p.targetPos = { x: tx, y: ty };
-          const dx = tx - p.pos.x;
-          const dy = ty - p.pos.y;
-          const d = Math.hypot(dx, dy);
-          if (d > 1.5) {
-            const stepSpd = Math.min(d, 0.85 * speedMul);
-            p.vel = { x: dx / d * stepSpd * 10, y: dy / d * stepSpd * 10 };
-            p.pos = { x: p.pos.x + dx / d * stepSpd, y: p.pos.y + dy / d * stepSpd };
-          }
-        };
-        const guideHomeBuildUp = (minX) => {
-          const carrier = s.players.find((p) => p.team === side && !p.redCard && p.hasBall) ?? s.players.find((p) => p.team === side && !p.redCard && ["CAM", "CM", "LW", "RW"].includes(p.role)) ?? s.players.find((p) => p.team === side && !p.redCard && p.role !== "GK");
-          if (carrier) {
-            if (!carrier.hasBall && s.ball.mode !== "pass" && s.ball.mode !== "shot" && s.ball.lastTouchTeam !== side) {
-              this.giveBallTo(carrier);
-            }
-            if (toRelativeX(carrier.pos.x, dir) < minX) {
-              nudgeForward(carrier, dir === 1 ? minX + 4 : PITCH.LENGTH - (minX + 4), PITCH.HALF_Y, 1.25);
-            }
-          }
-          const striker = s.players.find((p) => p.team === side && !p.redCard && p.id === "prologue_st_19");
-          if (striker && toRelativeX(striker.pos.x, dir) < minX + 10) {
-            nudgeForward(striker, dir === 1 ? minX + 14 : PITCH.LENGTH - (minX + 14), PITCH.GOAL_Y - 1.5, 1.2);
-          }
-        };
-        if (this.prologueStage === 0 && s.minute >= 46) {
-          guideHomeBuildUp(64);
-          if (s.minute >= 47 && this.prologueWaitingForCard === null) {
-            this.prologueWaitingForCard = 1;
-            this.pushEvent("commentary", side, "", "", { x: s.ball.pos.x, y: s.ball.pos.y }, "\u3010\u573A\u5916\u6307\u6325\u3011\u6211\u65B9\u8FB9\u8DEF\u63A8\u8FDB\u81F3\u524D\u573A\uFF01\u6253\u51FA\u8FDB\u653B\u5361\u3010\u62C9\u5F00\u5BBD\u5EA6\u3011\u6495\u5F00\u9632\u7EBF\uFF01", void 0, "important");
-          }
-        } else if (this.prologueStage === 1) {
-          this.prologueGuaranteedGoal = true;
-          if (s.homeScore >= 1) {
-            this.prologuePendingForcedGoal = false;
-            this.prologueGuaranteedGoal = false;
-            this.prologueStage = 2;
-          } else if (this.prologuePendingForcedGoal) {
-            const attacker = s.players.find((p) => p.team === side && !p.redCard && p.id === "prologue_st_19") ?? s.players.find((p) => p.team === side && !p.redCard && ["ST", "CAM", "LW", "RW"].includes(p.role)) ?? s.players.find((p) => p.team === side && !p.redCard && p.role !== "GK");
-            if (attacker) {
-              nudgeForward(attacker, dir === 1 ? PITCH.LENGTH - 15 : 15, PITCH.GOAL_Y - 1, 1.35);
-            }
-            if (this.prologueGoalDelayTicks > 0) {
-              this.prologueGoalDelayTicks--;
-              if (this.prologueGoalDelayTicks === 10 && attacker && !attacker.hasBall && s.ball.mode === "held") {
-                const holder = s.players.find((p) => p.id === s.ball.holderId && p.team === side);
-                if (holder && holder.id !== attacker.id) {
-                  this.executePass(holder, attacker, "through");
-                }
-              }
-            } else if (s.ball.mode !== "shot" && attacker && toRelativeX(attacker.pos.x, dir) >= 72) {
-              if (!attacker.hasBall) this.giveBallTo(attacker);
-              this.executeShot(attacker, 0.78, true);
-            }
-          }
-        } else if (this.prologueStage === 2) {
-          const awayAttacker = s.players.find((p) => p.team === "away" && !p.redCard && p.role === "ST") ?? s.players.find((p) => p.team === "away" && !p.redCard && ["CAM", "LW", "RW"].includes(p.role)) ?? s.players.find((p) => p.team === "away" && !p.redCard && p.role !== "GK");
-          if (s.minute >= 52 && this.prologueAwayGoalCount === 0 && s.awayScore === 1) {
-            if (awayAttacker) {
-              if (!awayAttacker.hasBall && s.ball.mode !== "shot" && s.ball.mode !== "pass" && s.ball.lastTouchTeam !== "away") {
-                this.giveBallTo(awayAttacker);
-              }
-              awayAttacker.decisionCooldown = 6;
-              const prog = Math.min(1, Math.max(0, (s.minute - 52) / 3));
-              const targetX = 48 - prog * 24;
-              nudgeForward(awayAttacker, targetX, PITCH.GOAL_Y - 1.5, 1.35);
-              if (s.minute >= 55 && awayAttacker.pos.x <= 28 || s.minute >= 57) {
-                if (s.ball.mode !== "shot") {
-                  this.prologueAwayGoalCount = 1;
-                  this.prologueAllowAwayGoal = true;
-                  awayAttacker.decisionCooldown = 0;
-                  if (!awayAttacker.hasBall) this.giveBallTo(awayAttacker);
-                  this.executeShot(awayAttacker, 0.88, true);
-                }
-              }
-            }
-          } else if (s.minute >= 61 && this.prologueAwayGoalCount === 1 && s.awayScore === 2) {
-            if (awayAttacker) {
-              if (!awayAttacker.hasBall && s.ball.mode !== "shot" && s.ball.mode !== "pass" && s.ball.lastTouchTeam !== "away") {
-                this.giveBallTo(awayAttacker);
-              }
-              awayAttacker.decisionCooldown = 6;
-              const prog = Math.min(1, Math.max(0, (s.minute - 61) / 3));
-              const targetX = 48 - prog * 24;
-              nudgeForward(awayAttacker, targetX, PITCH.GOAL_Y + 1.5, 1.35);
-              if (s.minute >= 64 && awayAttacker.pos.x <= 28 || s.minute >= 66) {
-                if (s.ball.mode !== "shot") {
-                  this.prologueAwayGoalCount = 2;
-                  this.prologueAllowAwayGoal = true;
-                  awayAttacker.decisionCooldown = 0;
-                  if (!awayAttacker.hasBall) this.giveBallTo(awayAttacker);
-                  this.executeShot(awayAttacker, 0.88, true);
-                }
-              }
-            }
-          } else if (s.minute >= 71 && s.awayScore >= 3) {
-            guideHomeBuildUp(66);
-            if (s.minute >= 73 && this.prologueWaitingForCard === null) {
-              this.prologueWaitingForCard = 2;
-              this.pushEvent("commentary", side, "", "", { x: s.ball.pos.x, y: s.ball.pos.y }, "\u30101:3 \u7EDD\u5883\u3011\u80CC\u6C34\u4E00\u6218\uFF01\u6253\u51FA\u8FDB\u653B\u5361\u3010\u8FB9\u8DEF\u5F3A\u7A81\u9020\u89D2\u3011\uFF0C\u640F\u547D\u53CD\u6251\uFF01", void 0, "important");
-            }
-          }
-        } else if (this.prologueStage === 3) {
-          this.prologueGuaranteedGoal = true;
-          if (s.homeScore >= 2) {
-            this.prologuePendingForcedGoal = false;
-            this.prologueGuaranteedGoal = false;
-            this.prologueStage = 4;
-            const crampStriker = s.players.find((p) => p.team === side && p.id === "prologue_st_19") ?? s.players.find((p) => p.team === side && !p.redCard && p.role === "ST");
-            if (crampStriker) crampStriker.fitness = 30;
-            this.pushEvent("commentary", side, "", "", { x: PITCH.HALF_X, y: PITCH.HALF_Y }, "\u30102:3 \u770B\u5230\u5E0C\u671B\u3011#19 \u9648\u5C0F\u5B87\u6885\u5F00\u4E8C\u5EA6\uFF0C\u4F46\u843D\u5730\u65F6\u5C0F\u817F\u62BD\u7B4B\uFF01\u66FF\u8865\u5E2D\u4E0A #10 \u6885\u5229\u7EB3\u6495\u5F00\u4E86\u5DE6\u819D\u51B0\u888B\uFF01", void 0, "important");
-          } else if (this.prologuePendingForcedGoal) {
-            const attacker = s.players.find((p) => p.team === side && !p.redCard && p.id === "prologue_st_19") ?? s.players.find((p) => p.team === side && !p.redCard && ["ST", "CAM", "RW", "LW"].includes(p.role)) ?? s.players.find((p) => p.team === side && !p.redCard && p.role !== "GK");
-            if (attacker) {
-              nudgeForward(attacker, dir === 1 ? PITCH.LENGTH - 15 : 15, PITCH.GOAL_Y + 1, 1.35);
-            }
-            if (this.prologueGoalDelayTicks > 0) {
-              this.prologueGoalDelayTicks--;
-              if (this.prologueGoalDelayTicks === 10 && attacker && !attacker.hasBall && s.ball.mode === "held") {
-                const holder = s.players.find((p) => p.id === s.ball.holderId && p.team === side);
-                if (holder && holder.id !== attacker.id) {
-                  this.executePass(holder, attacker, "through");
-                }
-              }
-            } else if (s.ball.mode !== "shot" && attacker && toRelativeX(attacker.pos.x, dir) >= 72) {
-              if (!attacker.hasBall) this.giveBallTo(attacker);
-              this.executeShot(attacker, 0.78, true);
-            }
-          }
-        } else if (this.prologueStage === 4) {
-          if (s.minute >= 80 && s.homeSubs.some((sub) => sub.id === "prologue_vet_10")) {
-            if (!this.prologueWaitingForSub) {
-              this.prologueWaitingForSub = true;
-              this.pushEvent("commentary", side, "", "", { x: PITCH.HALF_X, y: PITCH.HALF_Y }, "\u301080' \u62BD\u7B4B\u8B66\u62A5\u3011#19 \u9648\u5C0F\u5B87\u62FC\u5230\u62BD\u7B4B\uFF01\u8BF7\u70B9\u51FB\u53F3\u4E0A\u3010\u6362\u4EBA/\u6218\u672F\u3011\uFF0C\u6362\u4E0A\u8001\u961F\u957F #10 \u6885\u5229\u7EB3\uFF01", void 0, "important");
-            }
-          }
-        } else if (this.prologueStage === 5 && s.homeScore < 3) {
-          const veteran = s.players.find((p) => p.team === side && (p.id === "prologue_vet_10" || p.name.includes("\u6885\u5229\u7EB3") || p.name.includes("\u6797\u950B"))) ?? s.players.find((p) => p.team === side && p.role !== "GK");
-          if (veteran && s.minute >= 80) {
-            const oppXs = s.players.filter((p) => p.team !== side && !p.redCard).map((p) => p.pos.x).sort((a, b) => dir === 1 ? b - a : a - b);
-            const offsideLineX = oppXs[1] ?? (dir === 1 ? 80 : 25);
-            const safeMaxX = dir === 1 ? Math.min(offsideLineX - 2, 76) : Math.max(offsideLineX + 2, PITCH.LENGTH - 76);
-            if (s.minute < 84) {
-              if (dir === 1 && veteran.pos.x > safeMaxX) veteran.pos.x = safeMaxX;
-              if (dir === -1 && veteran.pos.x < safeMaxX) veteran.pos.x = safeMaxX;
-            }
-            const runTargetX = s.minute >= 84 ? dir === 1 ? Math.min(PITCH.LENGTH - 18, Math.max(safeMaxX, 82)) : Math.max(18, Math.min(safeMaxX, PITCH.LENGTH - 82)) : safeMaxX;
-            nudgeForward(veteran, runTargetX, PITCH.GOAL_Y - 1, 1.25);
-          }
-          if (s.minute >= 85 && s.ball.mode !== "shot" && veteran && toRelativeX(veteran.pos.x, dir) >= 68) {
-            this.prologueGuaranteedGoal = true;
-            if (!veteran.hasBall) this.giveBallTo(veteran);
-            this.executeShot(veteran, 0.85, true);
-          }
-        } else if (this.prologueStage === 6 && s.homeScore === 3 && sk) {
-          const veteran = s.players.find((p) => p.team === side && (p.id === "prologue_vet_10" || p.name.includes("\u6885\u5229\u7EB3") || p.name.includes("\u6797\u950B"))) ?? s.players.find((p) => p.team === side && p.role !== "GK");
-          if (veteran && s.minute >= 86) {
-            const oppXs = s.players.filter((p) => p.team !== side && !p.redCard).map((p) => p.pos.x).sort((a, b) => dir === 1 ? b - a : a - b);
-            const offsideLineX = oppXs[1] ?? (dir === 1 ? 80 : 25);
-            const safeMaxX = dir === 1 ? Math.min(offsideLineX - 2, 75) : Math.max(offsideLineX + 2, PITCH.LENGTH - 75);
-            if (s.minute < 89) {
-              if (dir === 1 && veteran.pos.x > safeMaxX) veteran.pos.x = safeMaxX;
-              if (dir === -1 && veteran.pos.x < safeMaxX) veteran.pos.x = safeMaxX;
-            }
-            const runTargetX = s.minute >= 89 ? dir === 1 ? Math.min(PITCH.LENGTH - 21, Math.max(safeMaxX, 81)) : Math.max(21, Math.min(safeMaxX, PITCH.LENGTH - 81)) : safeMaxX;
-            nudgeForward(veteran, runTargetX, PITCH.GOAL_Y + 0.8, 1.25);
-          }
-          if (s.minute >= 90 && !s.activeSkillPrompt && s.ball.mode !== "shot" && veteran && toRelativeX(veteran.pos.x, dir) >= 68) {
-            if (!veteran.hasBall) this.giveBallTo(veteran);
-            s.activeSkillPrompt = {
-              skillId: sk.id,
-              name: sk.name,
-              situationLabel: `${s.minute}' 3:3 \u8865\u65F6\u6700\u540E\u4E00\u653B \xB7 \u51A0\u519B\u7EDD\u6740`,
-              powerLabel: "\u6700\u540E\u4E00\u821E \xB7 4:3 \u9006\u8F6C\u593A\u51A0",
-              expiresTick: s.tick + 9999,
-              isCardBoosted: true,
-              effectiveRank: 3,
-              instantLabel: sk.instantLabel,
-              vfxTheme: "ult"
-            };
-          }
-        }
+        this.stepPrologueMilestones();
       }
       if (!this.prologueScriptedMode && !s.activeSkillPrompt && this.userTeamSide && this.userEquippedSkills.length > 0 && s.tick % 2 === 0) {
         this.evaluateActiveSkillTriggers(this.userTeamSide);
@@ -8488,11 +8516,24 @@
       if (this.prologueScriptedMode && team === this.userTeamSide) {
         this.prologueSkillTriggered = true;
         this.prologueGuaranteedGoal = true;
+        const dir = this.getAttackDir(team);
         const veteran = s.players.find((p) => p.team === team && (p.id === "prologue_vet_10" || p.name.includes("\u6885\u5229\u7EB3") || p.name.includes("\u6797\u950B"))) ?? s.players.find((p) => p.team === team && p.role !== "GK");
         const wasStage5 = this.prologueStage === 5;
         if (veteran) {
-          if (!veteran.hasBall) this.giveBallTo(veteran);
-          this.executeShot(veteran, 0.85, true);
+          if (veteran.hasBall) {
+            this.executeShot(veteran, 0.85, true);
+          } else {
+            const holder = s.ball.holderId ? s.players.find((p) => p.id === s.ball.holderId) : void 0;
+            if (holder && holder.team === team && holder.id !== veteran.id) {
+              this.executePass(holder, veteran, "through");
+              this.guaranteeShotOnTargetTicks[team] = 90;
+            } else {
+              if (holder && holder.team !== team) holder.stunTicks = 10;
+              veteran.targetPos = { x: dir === 1 ? PITCH.LENGTH - 19 : 19, y: PITCH.GOAL_Y };
+              this.giveBallTo(veteran);
+              this.executeShot(veteran, 0.85, true);
+            }
+          }
         }
         s.activeSkillPrompt = null;
         s.skillUses = s.skillUses ?? {};
@@ -9273,9 +9314,25 @@
       const cardXgDefensePenalty = defShotMods.oppShotXgPenalty * 0.45;
       let goalProb = clamp(0.33 + b.shotXG * 0.88 + attrDiffBonus - gkSaveBonus - strainGoalPenalty - cardXgDefensePenalty, 0.12, 0.76);
       if (this.prologueScriptedMode) {
-        if (shootTeam === this.userTeamSide && (this.prologueSkillTriggered || this.prologueGuaranteedGoal)) goalProb = 1;
-        else if (shootTeam === "away" && this.prologueAllowAwayGoal) goalProb = 1;
-        else goalProb = 0;
+        const homeCap = this.prologueStage <= 0 ? 0 : this.prologueStage === 1 ? 1 : this.prologueStage === 2 ? 1 : this.prologueStage === 3 ? 2 : this.prologueStage === 4 ? 2 : this.prologueStage === 5 ? 3 : this.prologueStage === 6 ? this.prologueSkillTriggered ? 4 : 3 : 4;
+        const awayCap = this.prologueStage === 2 ? 3 : 1;
+        if (shootTeam === "home") {
+          if (this.state.homeScore >= homeCap) {
+            goalProb = 0;
+          } else if (this.prologueSkillTriggered || this.prologueGuaranteedGoal || this.prologueScriptTicks > 95) {
+            goalProb = 1;
+          } else {
+            goalProb = Math.max(goalProb, 0.55);
+          }
+        } else {
+          if (this.state.awayScore >= awayCap) {
+            goalProb = 0;
+          } else if (this.prologueAllowAwayGoal || this.state.minute >= 56 && this.state.awayScore === 1 || this.state.minute >= 65 && this.state.awayScore === 2) {
+            goalProb = 1;
+          } else {
+            goalProb = Math.max(goalProb, 0.55);
+          }
+        }
       }
       if (Math.random() < goalProb) {
         if (this.userTeamSide === defTeam && this.state.aspectStacks && this.state.aspectStacks.shieldCharges > 0) {
@@ -9301,9 +9358,14 @@
             this.prologuePendingForcedGoal = false;
             this.prologueGuaranteedGoal = false;
             this.prologueSkillTriggered = false;
+            this.prologueScriptTicks = 0;
             if (this.state.homeScore === 1 && this.prologueStage < 2) this.prologueStage = 2;
-            else if (this.state.homeScore === 2 && this.prologueStage < 4) this.prologueStage = 4;
-            else if (this.state.homeScore === 3 && this.prologueStage < 6) this.prologueStage = 6;
+            else if (this.state.homeScore === 2 && this.prologueStage < 4) {
+              this.prologueStage = 4;
+              const crampStriker = this.state.players.find((p) => p.team === "home" && p.id === "prologue_st_19") ?? this.state.players.find((p) => p.team === "home" && !p.redCard && p.role === "ST");
+              if (crampStriker) crampStriker.fitness = 30;
+              this.pushEvent("commentary", "home", "", "", { x: PITCH.HALF_X, y: PITCH.HALF_Y }, "\u30102:3 \u770B\u5230\u5E0C\u671B\u3011#19 \u9648\u5C0F\u5B87\u6885\u5F00\u4E8C\u5EA6\uFF0C\u4F46\u843D\u5730\u65F6\u5C0F\u817F\u62BD\u7B4B\uFF01\u66FF\u8865\u5E2D\u4E0A #10 \u6885\u5229\u7EB3\u6495\u5F00\u4E86\u5DE6\u819D\u51B0\u888B\uFF01", void 0, "important");
+            } else if (this.state.homeScore === 3 && this.prologueStage < 6) this.prologueStage = 6;
             else if (this.state.homeScore >= 4 && this.prologueStage < 7) this.prologueStage = 7;
           }
         } else {
@@ -31867,7 +31929,7 @@
         }
       } else if (!this.isPaused && st.phase !== "full_time" && this.hitStopTimer <= 0) {
         const tutState = this.isPrologueMode ? this.engine.getPrologueTutorialState() : null;
-        const effSpeed = tutState?.waitingForSub ? 0 : st.activeSkillPrompt ? 0.15 : tutState?.waitingForCard ? 0.08 : this.v6HoveringCard ? 0.25 : this.speed;
+        const effSpeed = st.activeSkillPrompt ? 0.25 : tutState?.waitingForSub || tutState?.waitingForCard ? 0.55 : this.v6HoveringCard ? 0.25 : this.speed;
         this.tickAcc += dtSec * 10 * effSpeed;
         let steps = 0;
         while (this.tickAcc >= 1 && steps < 20) {
@@ -33868,8 +33930,6 @@
         const pulse = 0.55 + 0.45 * Math.sin(this.elapsedSec * 7);
         const subsUsedNow = this.userSide === "home" ? st.homeSubsUsed : st.awaySubsUsed;
         ctx2.save();
-        ctx2.fillStyle = "rgba(4, 8, 18, 0.58)";
-        ctx2.fillRect(0, 0, THEME.W, THEME.H);
         drawRoundRect(ctx2, 1036, 90, 222, 44, 8, "rgba(14, 22, 40, 0.98)", THEME.GOLD_LIGHT, 2.4);
         drawButton(ctx2, hits, 1042, 96, 210, 32, `\u6362\u4EBA / \u6218\u672F (${subsUsedNow}/5)`, () => {
           if (st.phase !== "full_time") this.openTacticalModal(st);
@@ -33877,7 +33937,7 @@
         ctx2.strokeStyle = `rgba(250, 204, 21, ${pulse.toFixed(2)})`;
         ctx2.lineWidth = 3;
         ctx2.strokeRect(1036, 90, 222, 44);
-        drawChamferPanel(ctx2, 666, 84, 358, 54, 10, "rgba(8, 15, 32, 0.98)", THEME.GOLD_LIGHT, 2.2);
+        drawChamferPanel(ctx2, 666, 84, 358, 54, 10, "rgba(8, 15, 32, 0.96)", THEME.GOLD_LIGHT, 2.2);
         drawBadge(ctx2, 678, 100, 72, 22, "80' \u6362\u4EBA", "#78350F", THEME.GOLD_LIGHT);
         drawText(ctx2, "\u9648\u5C0F\u5B87\u62BD\u7B4B\uFF01\u70B9\u53F3\u4FA7\u6309\u94AE\u6362\u4E0A\u8001\u961F\u957F \u25B6", 758, 111, { size: 12, bold: true, color: "#FEF08A" });
         ctx2.restore();
