@@ -392,6 +392,7 @@ export class MatchEngine {
         this.v6PassiveHooks = { home: [], away: [] };
         this.aiSegmentCards = { home: [], away: [] };
         this.teamAttrCap = { home: 99, away: 99 };
+        this.baseTeamStyle = { home: 'balanced', away: 'balanced' };
         this.v6ImmunityFlags = { home: {}, away: {} };
         this.v6PreventPenRedUsed = { home: false, away: false };
         this.v6TotalFootballMaster = { home: false, away: false };
@@ -417,6 +418,10 @@ export class MatchEngine {
         this.teamAttrCap = {
             home: home.hiddenAttrCap ?? 99,
             away: away.hiddenAttrCap ?? 99,
+        };
+        this.baseTeamStyle = {
+            home: home.style,
+            away: away.style,
         };
         this.v6ImmunityFlags = {
             home: home.v6ImmunityFlags ? { ...home.v6ImmunityFlags } : {},
@@ -743,11 +748,13 @@ export class MatchEngine {
         s.teamStance = s.teamStance ?? { home: s.homeStyle, away: s.awayStyle };
         s.stanceSwitchCount = s.stanceSwitchCount ?? { home: 0, away: 0 };
         const curStance = s.teamStance[team];
-        const comboActivated = !!(card.comboRule && (card.comboRule.anyStance ||
+        const isBalancedBase = this.baseTeamStyle[team] === 'balanced';
+        const comboActivated = !!(card.comboRule && (isBalancedBase ||
+            card.comboRule.anyStance ||
             card.affix?.anyStanceCombo ||
             (card.comboRule.requiresStance && curStance === card.comboRule.requiresStance)));
         if (card.stance) {
-            if (s.teamStance[team] !== card.stance) {
+            if (s.teamStance[team] !== card.stance && !isBalancedBase) {
                 s.stanceSwitchCount[team] = (s.stanceSwitchCount[team] ?? 0) + 1;
             }
             s.teamStance[team] = card.stance;

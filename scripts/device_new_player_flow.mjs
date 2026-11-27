@@ -79,20 +79,44 @@ export default async function run(client, ctx) {
     await snap('np_02_prologue_match');
     if (r.after.route !== 'match') throw new Error(`未进入序章比赛，route=${r.after.route}`);
 
-    // 序章比赛是 2x 教学实况，没有「快速完赛」按钮，只能等自然结束。
-    // 期间每 2 秒读一次 phase，不注入任何作弊状态。
-    const deadline = Date.now() + 180000;
-    let phase = '';
+    // 序章比赛不是「等就能结束」：它是强制教程，waitingForCard=1 必须打出
+    // 「拉开宽度」、=2 打出「边路突前鲨角」，waitingForSub 要换人，
+    // 否则引擎把比赛速度压到 0.08~0.15 倍，傻等只会超时。
+    // 教程推进属于剧情必需操作，用精确坐标（不计入拟人误触统计）。
+    const rawTap = (x, y) => client.evalJs(`window.__FM_TEST__.tap(${x}, ${y})`);
+    const deadline = Date.now() + 240000;
+    let matchPhase = '';
     let poll = 0;
+    const tutIds = { 1: 'prologue_card_wing_stance', 2: 'prologue_card_wing_combo' };
     while (Date.now() < deadline) {
-      const s = await snapshot(client);
-      phase = s.phase;
-      if (phase === 'full_time') break;
-      if (poll % 10 === 0) log(`序章比赛进行中 phase=${phase} 剩余 ${Math.round((deadline - Date.now()) / 1000)}s`);
+      const dbg = await client.evalJs(`window.__FM_TEST__.getMatchDebug()`);
+      if (!dbg) throw new Error('getMatchDebug 不可用，真机 bundle 未包含新测试桥接');
+      matchPhase = dbg.phase;
+      if (matchPhase === 'full_time') break;
+      const tut = dbg.tutorial ?? {};
+
+      if (tut.waitingForSub) {
+        // 「换下 #19 陈小宇 → 老队长」按钮 (416,338,240,36) → 中心 (536,356)
+        await rawTap(536, 356);
+        log(`教程换人 @${dbg.minute}'`);
+      } else if (tut.waitingForCard) {
+        const targetId = tutIds[tut.waitingForCard];
+        const card = (dbg.hand ?? []).find(c => c.id === targetId && !c.used);
+        if (card) {
+          await rawTap(card.x, card.y);
+          log(`教程出牌【${card.name}】@${dbg.minute}' score=${dbg.score}`);
+        } else {
+          log(`等待目标牌 ${targetId} 出现（手牌 ${(dbg.hand ?? []).map(c => c.id).join(',')}）`);
+        }
+      }
+
+      if (poll % 12 === 0) {
+        log(`序章 ${dbg.minute}' ${dbg.score} phase=${matchPhase} tut=${JSON.stringify(tut)} 剩余 ${Math.round((deadline - Date.now()) / 1000)}s`);
+      }
       poll++;
-      await sleep(2000);
+      await sleep(1200);
     }
-    if (phase !== 'full_time') throw new Error(`序章比赛 180s 未结束，phase=${phase}`);
+    if (matchPhase !== 'full_time') throw new Error(`序章比赛 240s 未结束，phase=${matchPhase}`);
     await snap('np_03_prologue_fulltime');
 
     // 顶部「捧起超级联赛冠军奖杯」(1020,24,230,36) → 中心 (1135,42)
@@ -204,14 +228,31 @@ export default async function run(client, ctx) {
     await tap(640, 360, { label: '跳过开球动画', jitter: 0, waitMs: 700 });
     await snap('np_09_matchday_kickoff');
 
+    const dbgBefore = await client.evalJs(`window.__FM_TEST__.getMatchDebug()`);
+    if (!dbgBefore || dbgBefore.isPrologue) {
+      throw new Error(`未进入常规赛首战（debug=${JSON.stringify(dbgBefore)}）`);
+    }
+
     // s1 指令卡 (668,644)
     r = await tap(668, 644, { label: '打出 s1 指令卡', waitMs: 450 });
     log(`出牌: hit=${r.hit} sigChanged=${r.changed}`);
     await snap('np_10_matchday_card');
+    const dbgAfterCard = await client.evalJs(`window.__FM_TEST__.getMatchDebug()`);
+    const usedBefore = (dbgBefore.hand ?? []).filter(c => c.used).length;
+    const usedAfter = (dbgAfterCard.hand ?? []).filter(c => c.used).length;
+    if (usedAfter <= usedBefore) throw new Error(`首战出牌未生效（已用卡 ${usedBefore} → ${usedAfter}）`);
 
     // 快速完赛 (1054,24,196,36) → 中心 (1152,42)
     r = await tap(1152, 42, { label: '快速完赛', waitMs: 900 });
     log(`快速完赛: hit=${r.hit}`);
+    let dbgEnd = await client.evalJs(`window.__FM_TEST__.getMatchDebug()`);
+    if (dbgEnd && dbgEnd.phase !== 'full_time') {
+      await sleep(900);
+      dbgEnd = await client.evalJs(`window.__FM_TEST__.getMatchDebug()`);
+    }
+    if (!dbgEnd || dbgEnd.phase !== 'full_time') {
+      throw new Error(`快速完赛未进入 full_time（phase=${dbgEnd?.phase}）`);
+    }
 
     // 赛后「查看完整复盘与开箱领奖」(mx+304, my+mh-74, mw-340, 48) → 中心约 (774,573)
     r = await tap(774, 573, { label: '查看完整复盘与开箱领奖', waitMs: 600 });
@@ -224,7 +265,7 @@ export default async function run(client, ctx) {
     await snap('np_12_postmatch_reward');
 
     s = await snapshot(client);
-    return `phase=${s.phase} route=${s.route}`;
+    return `phase=${s.phase} route=${s.route} score=${dbgEnd.score}`;
   });
 
   console.log(`\n[新玩家流程] 截图目录: ${ctx.SCREENSHOT_DIR}`);

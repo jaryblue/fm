@@ -1430,9 +1430,12 @@ export class LeagueManager {
     }
     if (this.state.phase === 'REGULAR_SEASON') {
       const ucNow = this.getUserClub();
+      this.markPreSeasonRetiringNotices(ucNow);
       this.state.interMatchPrep = createInterMatchPrep(this.state, ucNow);
       const startChr = triggerSeasonStartChronicle(this.state, ucNow);
       if (startChr) this.state.pendingStoryEvent = startChr;
+    } else {
+      this.markPreSeasonRetiringNotices(this.getUserClub());
     }
     if (prevSkillWeb && prevSkillWeb.length > 0) {
       const seasonStyleOrigin = getOriginForStyle(opts.style ?? 'tiki_taka');
@@ -6226,6 +6229,28 @@ export class LeagueManager {
     }
     const perfBonus = goodPerf ? 1 : 0;
     return Math.min(gap, 2 + Math.min(3, Math.floor(gap / 6)) + perfBonus);
+  }
+
+  public getRetiringNoticePlayers(): DraftPlayer[] {
+    const uc = this.getUserClub();
+    const roster = this.getClubRoster();
+    const map = new Map<string, DraftPlayer>();
+    for (const p of [...uc.squad, ...roster]) {
+      if (p.retiringAfterSeason) map.set(p.id, p);
+    }
+    return Array.from(map.values());
+  }
+
+  private markPreSeasonRetiringNotices(club: LeagueClub): void {
+    const checkList = [...club.squad, ...this.getClubRoster()];
+    for (const p of checkList) {
+      if (p.isPrologueCaptain || p.id === 'captain_lin_feng') {
+        p.retiringAfterSeason = true;
+        continue;
+      }
+      const prof = this.resolvePlayerAgingProfile(p);
+      p.retiringAfterSeason = ((p.age ?? 24) + 1) >= prof.retireAge;
+    }
   }
 
   private resolvePlayerAgingProfile(p: DraftPlayer): {

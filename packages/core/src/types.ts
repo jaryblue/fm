@@ -59,6 +59,7 @@ export interface DraftPlayer extends Omit<PlayerInput, 'formationFamiliarity'> {
   coreTag?: 'veteran' | 'balanced' | 'wonderkid'; // 开局三核开包原型标签
   agingArchetype?: 'prodigy_early' | 'standard' | 'late_bloomer' | 'gk_longevity'; // 差异化巅峰/衰老曲线模板
   careerInjuries?: number; // 生涯累计伤病次数（伤病越多断崖与退役越早）
+  retiringAfterSeason?: boolean; // 新赛季开局标记：本赛季结束后正式退役（给玩家一整个赛季的换血预期）
   formationFamiliarity?: Partial<Record<FormationName, number>>; // 0-100 各阵型个人熟练度
   careerStats?: {
     seasons: number;

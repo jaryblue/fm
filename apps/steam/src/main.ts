@@ -287,6 +287,35 @@ function boot(): void {
       },
       getRoute: () => (app as unknown as { route: string }).route,
       getState: () => (app as unknown as { league: { getState: () => unknown } }).league.getState(),
+      // 比赛内部调试状态：Canvas 游戏没有 DOM 定位器，序章强制教程（“打出某张卡/换人”）
+      // 只能靠这个接口让自动化脚本知道该点哪张牌，否则只能盲等 180s 超时。
+      getMatchDebug: () => {
+        const ms = (app as unknown as {
+          matchScreen?: {
+            engine?: { getState: () => Record<string, unknown>; getPrologueTutorialState: () => Record<string, unknown> };
+            handCards?: Array<{ id: string; name: string }>;
+            usedCardIds?: Set<string>;
+            isPrologueMode?: boolean;
+          };
+        }).matchScreen;
+        if (!ms || !ms.engine) return null;
+        const st = ms.engine.getState();
+        return {
+          isPrologue: !!ms.isPrologueMode,
+          phase: String(st.phase ?? ''),
+          minute: st.minute ?? st.currentMinute ?? null,
+          score: `${st.homeScore ?? 0}:${st.awayScore ?? 0}`,
+          tutorial: ms.isPrologueMode ? ms.engine.getPrologueTutorialState() : null,
+          hand: (ms.handCards ?? []).slice(0, 4).map((c, i) => ({
+            index: i,
+            id: c.id,
+            name: c.name,
+            x: 625 + i * 97 + 45,
+            y: 596 + 50,
+            used: !!ms.usedCardIds?.has(c.id),
+          })),
+        };
+      },
       getRunningVersion: () => (window as unknown as { __FM_NATIVE_VERSION__?: string }).__FM_NATIVE_VERSION__ ?? null,
       getCanvasSize: () => ({ width: canvas.width, height: canvas.height }),
       screenshot: () => canvas.toDataURL('image/png'),

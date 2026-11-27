@@ -676,8 +676,12 @@ export function compileDirectiveToEffect(
       effect.tacticalMod.staminaDrainMul = 1 + (effect.tacticalMod.staminaDrainMul! - 1) * 0.8;
     }
   } else if (!isGreenSynergy) {
-    // 跨流派强行混搭惩罚：正面属性加成打 55 折，且额外增加体能消耗与防线渗透风险
-    const scalePos = (v?: number) => (v && v > 0 ? Math.round(v * 0.55) : v);
+    // 跨流派强行混搭惩罚：balanced（均衡）享受跨流派手牌惩罚减半（正面属性 78 折、副作用减半）
+    const isBalanced = currentStyle === 'balanced';
+    const posMul = isBalanced ? 0.78 : 0.55;
+    const drainMul = isBalanced ? 1.07 : 1.15;
+    const throughRisk = isBalanced ? 0.02 : 0.04;
+    const scalePos = (v?: number) => (v && v > 0 ? Math.round(v * posMul) : v);
     effect.passingDelta = scalePos(effect.passingDelta);
     effect.shootingDelta = scalePos(effect.shootingDelta);
     effect.defendingDelta = scalePos(effect.defendingDelta);
@@ -685,8 +689,8 @@ export function compileDirectiveToEffect(
     effect.composureDelta = scalePos(effect.composureDelta);
     effect.goalkeepingDelta = scalePos(effect.goalkeepingDelta);
     if (effect.tacticalMod) {
-      effect.tacticalMod.staminaDrainMul = Math.round(((effect.tacticalMod.staminaDrainMul ?? 1) * 1.15) * 100) / 100;
-      effect.tacticalMod.oppThroughPassBonus = Math.round(((effect.tacticalMod.oppThroughPassBonus ?? 0) + 0.04) * 100) / 100;
+      effect.tacticalMod.staminaDrainMul = Math.round(((effect.tacticalMod.staminaDrainMul ?? 1) * drainMul) * 100) / 100;
+      effect.tacticalMod.oppThroughPassBonus = Math.round(((effect.tacticalMod.oppThroughPassBonus ?? 0) + throughRisk) * 100) / 100;
     }
   }
 
@@ -963,8 +967,10 @@ export function compileAstrolabeToMatchSetup(
     if (primary.extraEffect) mergeCardEffect(eff, primary.extraEffect);
     if (dualActive && secondary.extraEffect) mergeCardEffect(eff, secondary.extraEffect);
     const isOffStyleSkill = !!(def.style && def.style !== currentStyle);
+    const isBalancedStyle = currentStyle === 'balanced';
     if (isOffStyleSkill) {
-      const scalePos = (v?: number) => (v && v > 0 ? Math.round(v * 0.6) : v);
+      const skillPosMul = isBalancedStyle ? 0.80 : 0.60;
+      const scalePos = (v?: number) => (v && v > 0 ? Math.round(v * skillPosMul) : v);
       eff.passingDelta = scalePos(eff.passingDelta);
       eff.shootingDelta = scalePos(eff.shootingDelta);
       eff.defendingDelta = scalePos(eff.defendingDelta);
@@ -979,8 +985,8 @@ export function compileAstrolabeToMatchSetup(
       situationLabel: def.situationLabel,
       minFamiliarity: 20,
       minChemistry: 15,
-      cooldownMinutes: Math.max(4, def.cooldownMinutes + 3 + (isOffStyleSkill ? 6 : 0) - (isOverloaded ? 3 : 0)),
-      maxPerMatch: Math.max(1, def.maxPerMatch + (isOverloaded ? 1 : 0) - (isOffStyleSkill ? 1 : 0)),
+      cooldownMinutes: Math.max(4, def.cooldownMinutes + 3 + (isOffStyleSkill ? (isBalancedStyle ? 2 : 6) : 0) - (isOverloaded ? 3 : 0)),
+      maxPerMatch: Math.max(1, def.maxPerMatch + (isOverloaded ? 1 : 0) - (isOffStyleSkill && !isBalancedStyle ? 1 : 0)),
       durationMinutes: eff.durationMinutes,
       powerLabel: def.powerLabel,
       effect: eff,

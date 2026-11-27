@@ -6798,6 +6798,7 @@
       this.v6PassiveHooks = { home: [], away: [] };
       this.aiSegmentCards = { home: [], away: [] };
       this.teamAttrCap = { home: 99, away: 99 };
+      this.baseTeamStyle = { home: "balanced", away: "balanced" };
       this.v6ImmunityFlags = { home: {}, away: {} };
       this.v6PreventPenRedUsed = { home: false, away: false };
       this.v6TotalFootballMaster = { home: false, away: false };
@@ -6823,6 +6824,10 @@
       this.teamAttrCap = {
         home: home.hiddenAttrCap ?? 99,
         away: away.hiddenAttrCap ?? 99
+      };
+      this.baseTeamStyle = {
+        home: home.style,
+        away: away.style
       };
       this.v6ImmunityFlags = {
         home: home.v6ImmunityFlags ? { ...home.v6ImmunityFlags } : {},
@@ -7373,9 +7378,10 @@
       s.teamStance = s.teamStance ?? { home: s.homeStyle, away: s.awayStyle };
       s.stanceSwitchCount = s.stanceSwitchCount ?? { home: 0, away: 0 };
       const curStance = s.teamStance[team];
-      const comboActivated = !!(card.comboRule && (card.comboRule.anyStance || card.affix?.anyStanceCombo || card.comboRule.requiresStance && curStance === card.comboRule.requiresStance));
+      const isBalancedBase = this.baseTeamStyle[team] === "balanced";
+      const comboActivated = !!(card.comboRule && (isBalancedBase || card.comboRule.anyStance || card.affix?.anyStanceCombo || card.comboRule.requiresStance && curStance === card.comboRule.requiresStance));
       if (card.stance) {
-        if (s.teamStance[team] !== card.stance) {
+        if (s.teamStance[team] !== card.stance && !isBalancedBase) {
           s.stanceSwitchCount[team] = (s.stanceSwitchCount[team] ?? 0) + 1;
         }
         s.teamStance[team] = card.stance;
@@ -13051,7 +13057,11 @@
         effect.tacticalMod.staminaDrainMul = 1 + (effect.tacticalMod.staminaDrainMul - 1) * 0.8;
       }
     } else if (!isGreenSynergy) {
-      const scalePos = (v) => v && v > 0 ? Math.round(v * 0.55) : v;
+      const isBalanced = currentStyle === "balanced";
+      const posMul = isBalanced ? 0.78 : 0.55;
+      const drainMul = isBalanced ? 1.07 : 1.15;
+      const throughRisk = isBalanced ? 0.02 : 0.04;
+      const scalePos = (v) => v && v > 0 ? Math.round(v * posMul) : v;
       effect.passingDelta = scalePos(effect.passingDelta);
       effect.shootingDelta = scalePos(effect.shootingDelta);
       effect.defendingDelta = scalePos(effect.defendingDelta);
@@ -13059,8 +13069,8 @@
       effect.composureDelta = scalePos(effect.composureDelta);
       effect.goalkeepingDelta = scalePos(effect.goalkeepingDelta);
       if (effect.tacticalMod) {
-        effect.tacticalMod.staminaDrainMul = Math.round((effect.tacticalMod.staminaDrainMul ?? 1) * 1.15 * 100) / 100;
-        effect.tacticalMod.oppThroughPassBonus = Math.round(((effect.tacticalMod.oppThroughPassBonus ?? 0) + 0.04) * 100) / 100;
+        effect.tacticalMod.staminaDrainMul = Math.round((effect.tacticalMod.staminaDrainMul ?? 1) * drainMul * 100) / 100;
+        effect.tacticalMod.oppThroughPassBonus = Math.round(((effect.tacticalMod.oppThroughPassBonus ?? 0) + throughRisk) * 100) / 100;
       }
     }
     if (sats.has("A")) {
@@ -13282,8 +13292,10 @@
       if (primary.extraEffect) mergeCardEffect(eff, primary.extraEffect);
       if (dualActive && secondary.extraEffect) mergeCardEffect(eff, secondary.extraEffect);
       const isOffStyleSkill = !!(def.style && def.style !== currentStyle);
+      const isBalancedStyle = currentStyle === "balanced";
       if (isOffStyleSkill) {
-        const scalePos = (v) => v && v > 0 ? Math.round(v * 0.6) : v;
+        const skillPosMul = isBalancedStyle ? 0.8 : 0.6;
+        const scalePos = (v) => v && v > 0 ? Math.round(v * skillPosMul) : v;
         eff.passingDelta = scalePos(eff.passingDelta);
         eff.shootingDelta = scalePos(eff.shootingDelta);
         eff.defendingDelta = scalePos(eff.defendingDelta);
@@ -13298,8 +13310,8 @@
         situationLabel: def.situationLabel,
         minFamiliarity: 20,
         minChemistry: 15,
-        cooldownMinutes: Math.max(4, def.cooldownMinutes + 3 + (isOffStyleSkill ? 6 : 0) - (isOverloaded ? 3 : 0)),
-        maxPerMatch: Math.max(1, def.maxPerMatch + (isOverloaded ? 1 : 0) - (isOffStyleSkill ? 1 : 0)),
+        cooldownMinutes: Math.max(4, def.cooldownMinutes + 3 + (isOffStyleSkill ? isBalancedStyle ? 2 : 6 : 0) - (isOverloaded ? 3 : 0)),
+        maxPerMatch: Math.max(1, def.maxPerMatch + (isOverloaded ? 1 : 0) - (isOffStyleSkill && !isBalancedStyle ? 1 : 0)),
         durationMinutes: eff.durationMinutes,
         powerLabel: def.powerLabel,
         effect: eff,
@@ -20275,9 +20287,12 @@
       }
       if (this.state.phase === "REGULAR_SEASON") {
         const ucNow = this.getUserClub();
+        this.markPreSeasonRetiringNotices(ucNow);
         this.state.interMatchPrep = createInterMatchPrep(this.state, ucNow);
         const startChr = triggerSeasonStartChronicle(this.state, ucNow);
         if (startChr) this.state.pendingStoryEvent = startChr;
+      } else {
+        this.markPreSeasonRetiringNotices(this.getUserClub());
       }
       if (prevSkillWeb && prevSkillWeb.length > 0) {
         const seasonStyleOrigin = getOriginForStyle(opts.style ?? "tiki_taka");
@@ -24622,6 +24637,26 @@
       }
       const perfBonus = goodPerf ? 1 : 0;
       return Math.min(gap, 2 + Math.min(3, Math.floor(gap / 6)) + perfBonus);
+    }
+    getRetiringNoticePlayers() {
+      const uc = this.getUserClub();
+      const roster = this.getClubRoster();
+      const map = /* @__PURE__ */ new Map();
+      for (const p of [...uc.squad, ...roster]) {
+        if (p.retiringAfterSeason) map.set(p.id, p);
+      }
+      return Array.from(map.values());
+    }
+    markPreSeasonRetiringNotices(club) {
+      const checkList = [...club.squad, ...this.getClubRoster()];
+      for (const p of checkList) {
+        if (p.isPrologueCaptain || p.id === "captain_lin_feng") {
+          p.retiringAfterSeason = true;
+          continue;
+        }
+        const prof = this.resolvePlayerAgingProfile(p);
+        p.retiringAfterSeason = (p.age ?? 24) + 1 >= prof.retireAge;
+      }
     }
     resolvePlayerAgingProfile(p) {
       let archetype = p.agingArchetype;
@@ -43690,6 +43725,28 @@
         },
         getRoute: () => app.route,
         getState: () => app.league.getState(),
+        // 比赛内部调试状态：Canvas 游戏没有 DOM 定位器，序章强制教程（“打出某张卡/换人”）
+        // 只能靠这个接口让自动化脚本知道该点哪张牌，否则只能盲等 180s 超时。
+        getMatchDebug: () => {
+          const ms = app.matchScreen;
+          if (!ms || !ms.engine) return null;
+          const st = ms.engine.getState();
+          return {
+            isPrologue: !!ms.isPrologueMode,
+            phase: String(st.phase ?? ""),
+            minute: st.minute ?? st.currentMinute ?? null,
+            score: `${st.homeScore ?? 0}:${st.awayScore ?? 0}`,
+            tutorial: ms.isPrologueMode ? ms.engine.getPrologueTutorialState() : null,
+            hand: (ms.handCards ?? []).slice(0, 4).map((c, i) => ({
+              index: i,
+              id: c.id,
+              name: c.name,
+              x: 625 + i * 97 + 45,
+              y: 596 + 50,
+              used: !!ms.usedCardIds?.has(c.id)
+            }))
+          };
+        },
         getRunningVersion: () => window.__FM_NATIVE_VERSION__ ?? null,
         getCanvasSize: () => ({ width: canvas.width, height: canvas.height }),
         screenshot: () => canvas.toDataURL("image/png")

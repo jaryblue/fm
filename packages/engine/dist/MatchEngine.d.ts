@@ -60,6 +60,7 @@ export declare class MatchEngine {
     private v6PassiveHooks;
     private aiSegmentCards;
     private teamAttrCap;
+    private baseTeamStyle;
     private v6ImmunityFlags;
     private v6PreventPenRedUsed;
     private v6TotalFootballMaster;
