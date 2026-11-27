@@ -21,6 +21,7 @@
     "sim:100": "npm run sim:100 --workspace=@fm-league/engine",
     "cli:play": "node scripts/cli_playtest.mjs",
     "cli:e2e": "node scripts/cli_ui_e2e.mjs",
+    "cli:device": "node scripts/cli_device.mjs",
     "audit:quick": "node scripts/audit_balance.mjs --quick",
     "audit:balance": "node scripts/audit_balance.mjs"
   },

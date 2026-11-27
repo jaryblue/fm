@@ -257,6 +257,43 @@ function toDesignCoord(clientX: number, clientY: number): { x: number; y: number
 function boot(): void {
   const app = new GameApp(steamPlatform);
 
+  // 真机自动化测试桥接：默认不挂载。
+  // 通过 URL ?e2e=1 或 localStorage.fm_e2e=1 开启，仅供开发/CI 使用。
+  let e2eEnabled = false;
+  try {
+    e2eEnabled =
+      new URLSearchParams(window.location.search).get('e2e') === '1' ||
+      window.localStorage.getItem('fm_e2e') === '1';
+  } catch {
+    e2eEnabled = false;
+  }
+  if (e2eEnabled) {
+    const g = globalThis as unknown as Record<string, unknown>;
+    g.__FM_TEST__ = {
+      version: '1.0',
+      // 设计坐标（1280×720）点击，走真实 GameApp 事件链，等价于玩家触摸
+      tap: (x: number, y: number) => {
+        app.onPointerDown(x, y);
+        app.onPointerUp(x, y);
+        return true;
+      },
+      move: (x: number, y: number) => {
+        app.onPointerMove(x, y);
+        return true;
+      },
+      key: (code: string, key: string) => {
+        app.onKeyDown(code, key);
+        return true;
+      },
+      getRoute: () => (app as unknown as { route: string }).route,
+      getState: () => (app as unknown as { league: { getState: () => unknown } }).league.getState(),
+      getRunningVersion: () => (window as unknown as { __FM_NATIVE_VERSION__?: string }).__FM_NATIVE_VERSION__ ?? null,
+      getCanvasSize: () => ({ width: canvas.width, height: canvas.height }),
+      screenshot: () => canvas.toDataURL('image/png'),
+    };
+    console.log('[FM-TEST] bridge ready');
+  }
+
   let lastInteractionMs = performance.now();
   const markActive = () => {
     lastInteractionMs = performance.now();
