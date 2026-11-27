@@ -75,7 +75,7 @@ export class MatchDayScreen {
   private selectedOutId: string | null = null;
   private selectedBenchId: string | null = null;
   private halftimeNotified = false;
-  private goalBanner: { text: string; timer: number; team: TeamSide } | null = null;
+  private goalBanner: { text: string; timer: number; maxTimer: number; team: TeamSide; accent: string; subTag?: string } | null = null;
   private cardBanner: { text: string; color: string; timer: number } | null = null;
   private lastEventCount = 0;
   private lastHiddenCount = 0;
@@ -1093,25 +1093,34 @@ export class MatchDayScreen {
             ev.narrativeTag === 'HATTRICK' ? '帽子戏法 · ' :
             ev.narrativeTag === 'LATE_WINNER' ? '读秒绝杀 · ' :
             ev.narrativeTag === 'BRACE' ? '梅开二度 · ' : 'GOAL · ';
+          const isMem =
+            ev.narrativeTag === 'LATE_WINNER' ||
+            ev.narrativeTag === 'HATTRICK' ||
+            (ev.minute >= 85 && Math.abs(st.homeScore - st.awayScore) <= 1);
+          if (isMem) {
+            this.memoryHighlightTimer = 2.8;
+          }
+          const hasExploit = ev.team === this.userSide && !!this.scoutExploitLabel;
+          if (hasExploit) {
+            this.exploitBannerTimer = 2.6;
+          }
+          const subTag = isMem
+            ? '载入赛季记忆'
+            : hasExploit
+            ? `破绽击穿·${this.scoutExploitLabel}`
+            : undefined;
           this.goalBanner = {
             text: `${prefix}${ev.playerName} (${ev.minute}')`,
-            timer: 3.2,
+            timer: 2.8,
+            maxTimer: 2.8,
             team: ev.team,
+            accent: '#FACC15',
+            subTag,
           };
           this.goalFlashTimer = 1.4;
           this.goalScorePopTimer = 0.65;
-          if (
-            ev.narrativeTag === 'LATE_WINNER' ||
-            ev.narrativeTag === 'HATTRICK' ||
-            (ev.minute >= 85 && Math.abs(st.homeScore - st.awayScore) <= 1)
-          ) {
-            this.memoryHighlightTimer = 2.8;
-          }
           this.goalFlashSide = ev.pos.x > PITCH.HALF_X ? 'right' : 'left';
           this.pitchRipples.push({ x: ev.pos.x, y: ev.pos.y, color: '#FACC15', timer: 0.9, maxTimer: 0.9, maxR: 38 });
-          if (ev.team === this.userSide && this.scoutExploitLabel) {
-            this.exploitBannerTimer = 2.6;
-          }
           if (!this.isPrologueMode && ev.team !== this.userSide && this.v6Relics.has('comeback_gene')) {
             const myNow = this.userSide === 'home' ? st.homeScore : st.awayScore;
             const oppNow = this.userSide === 'home' ? st.awayScore : st.homeScore;
@@ -1211,10 +1220,33 @@ export class MatchDayScreen {
         } else if (ev.type === 'shot') {
           this.pitchRipples.push({ x: ev.pos.x, y: ev.pos.y, color: '#FDE047', timer: 0.45, maxTimer: 0.45, maxR: 16 });
           this.onImpactCallback?.(2.0, 0.10);
+        } else if (ev.type === 'miss' && (ev.text.includes('门柱') || ev.text.includes('横梁') || ev.text.includes('门框'))) {
+          this.cardBanner = {
+            text: `击中门框！${ev.playerName} (${ev.minute}') 险些破门`,
+            color: '#FBBF24',
+            timer: 2.0,
+          };
         } else if (ev.type === 'save') {
           // V6 由引擎原子总线钩子统一处理门将扑救事件
           this.pitchRipples.push({ x: ev.pos.x, y: ev.pos.y, color: '#38BDF8', timer: 0.55, maxTimer: 0.55, maxR: 22 });
           this.onImpactCallback?.(3.2, 0.14);
+          if (ev.level === 'important' || ev.level === 'critical' || (ev.xG ?? 0) >= 0.25 || ev.text.includes('神扑') || ev.text.includes('点球')) {
+            this.goalBanner = {
+              text: `神扑救险 · ${ev.playerName} (${ev.minute}')`,
+              timer: 2.3,
+              maxTimer: 2.3,
+              team: ev.team,
+              accent: '#38BDF8',
+            };
+          }
+        } else if (ev.type === 'injury') {
+          this.goalBanner = {
+            text: `伤退离场 · ${ev.playerName} (${ev.minute}')`,
+            timer: 2.5,
+            maxTimer: 2.5,
+            team: ev.team,
+            accent: '#FBBF24',
+          };
         } else if (ev.type === 'foul' || ev.type === 'yellow_card' || ev.type === 'red_card') {
           this.pitchRipples.push({
             x: ev.pos.x,
@@ -1224,7 +1256,16 @@ export class MatchDayScreen {
             maxTimer: 0.55,
             maxR: 18,
           });
-          if (ev.type === 'red_card') this.onImpactCallback?.(4.5, 0.22);
+          if (ev.type === 'red_card') {
+            this.onImpactCallback?.(4.5, 0.22);
+            this.goalBanner = {
+              text: `红牌罚下 · ${ev.playerName} (${ev.minute}')`,
+              timer: 2.8,
+              maxTimer: 2.8,
+              team: ev.team,
+              accent: '#F87171',
+            };
+          }
         }
         if (delta <= 6) {
           if (ev.type === 'goal') {
@@ -2231,70 +2272,86 @@ export class MatchDayScreen {
     }
     ctx.restore();
 
-    // 进球高光横幅（goal_banner.webp）& 指挥卡广播条
-    if (this.goalBanner) {
-      const bx = 350, by = 96, bw = 580, bh = 74;
-      const age = 3.2 - this.goalBanner.timer;
-      const pop = age < 0.28 ? easeOutBack(age / 0.28) : 1;
-      const fade = Math.min(1, this.goalBanner.timer / 0.4);
-      const sc = 0.88 + 0.12 * pop;
-      const scorerClub = this.goalBanner.team === 'home' ? homeClub : awayClub;
+    // 重要事件贴顶半透明转播条（S级：进球/红牌/神扑/伤退；A级：指挥卡/门框/特质觉醒/主动技结算）
+    const drawTranslucentBroadcastBar = (x: number, y: number, w: number, h: number, accent: string, alpha: number) => {
       ctx.save();
-      ctx.globalAlpha = fade;
-      ctx.translate(640, by + bh / 2);
-      ctx.scale(sc, sc);
-      ctx.translate(-640, -(by + bh / 2));
-      drawChamferPanel(ctx, bx, by, bw, bh, 12, 'rgba(14, 22, 40, 0.94)', THEME.GOLD_LIGHT, 2.2, THEME.GOLD_LIGHT);
-      const gImg = AssetLoader.get('goal_banner');
-      if (gImg && typeof ctx.drawImage === 'function') {
-        ctx.save();
-        ctx.beginPath();
-        ctx.rect(bx + 2, by + 2, bw - 4, bh - 4);
-        ctx.clip();
-        ctx.globalAlpha = fade * 0.72;
-        ctx.drawImage(gImg, bx + 2, by + 2, bw - 4, bh - 4);
-        const scrim = ctx.createLinearGradient(bx, by, bx + bw, by);
-        scrim.addColorStop(0, 'rgba(8, 12, 20, 0.62)');
-        scrim.addColorStop(0.5, 'rgba(8, 12, 20, 0.42)');
-        scrim.addColorStop(1, 'rgba(8, 12, 20, 0.62)');
-        ctx.fillStyle = scrim;
-        ctx.fillRect(bx + 2, by + 2, bw - 4, bh - 4);
-        ctx.restore();
-      }
-      drawClubCrest(ctx, bx + 48, by + bh / 2, 20, scorerClub);
-      drawText(ctx, this.goalBanner.text, 646, by + bh / 2, {
-        size: 20,
-        bold: true,
-        italic: true,
-        color: '#FEF08A',
-        align: 'center',
-      });
+      ctx.globalAlpha = alpha;
+      const bgGrad = ctx.createLinearGradient(x, y, x + w, y);
+      bgGrad.addColorStop(0, 'rgba(8, 13, 24, 0.12)');
+      bgGrad.addColorStop(0.18, 'rgba(8, 13, 24, 0.72)');
+      bgGrad.addColorStop(0.82, 'rgba(8, 13, 24, 0.72)');
+      bgGrad.addColorStop(1, 'rgba(8, 13, 24, 0.12)');
+      ctx.fillStyle = bgGrad;
+      ctx.fillRect(x, y, w, h);
+
+      const lineGrad = ctx.createLinearGradient(x, y, x + w, y);
+      lineGrad.addColorStop(0, 'rgba(255,255,255,0)');
+      lineGrad.addColorStop(0.15, accent);
+      lineGrad.addColorStop(0.85, accent);
+      lineGrad.addColorStop(1, 'rgba(255,255,255,0)');
+      ctx.strokeStyle = lineGrad;
+      ctx.lineWidth = 1.6;
+      ctx.beginPath();
+      ctx.moveTo(x, y);
+      ctx.lineTo(x + w, y);
+      ctx.moveTo(x, y + h);
+      ctx.lineTo(x + w, y + h);
+      ctx.stroke();
       ctx.restore();
-      if (this.memoryHighlightTimer > 0) {
-        drawBadge(ctx, 560, by + bh + 6, 160, 22, '载入赛季记忆', '#78350F', '#FEF08A');
+    };
+
+    if (!this.tacticalModalOpen && st.phase !== 'full_time') {
+      if (this.goalBanner) {
+        const gb = this.goalBanner;
+        const age = gb.maxTimer - gb.timer;
+        const slide = age < 0.20 ? (1 - Math.pow(1 - age / 0.20, 3)) : 1;
+        const fade = Math.min(1, gb.timer / 0.35, age / 0.15);
+        const bx = 370;
+        const by = 78 - (1 - slide) * 12;
+        const bw = 540;
+        const bh = 40;
+        const actorClub = gb.team === 'home' ? homeClub : awayClub;
+
+        drawTranslucentBroadcastBar(bx, by, bw, bh, gb.accent, fade);
+        ctx.save();
+        ctx.globalAlpha = fade;
+        drawClubCrest(ctx, bx + 42, by + bh / 2, 13, actorClub);
+        const hasSubTag = !!gb.subTag;
+        const textX = hasSubTag ? bx + bw / 2 - 42 : 646;
+        drawText(ctx, gb.text, textX, by + bh / 2, {
+          size: 16,
+          bold: true,
+          italic: true,
+          color: gb.accent === '#FACC15' ? '#FEF08A' : gb.accent,
+          align: 'center',
+        });
+        if (gb.subTag) {
+          const tagBg = gb.subTag.includes('破绽') ? '#14532D' : '#78350F';
+          const tagCol = gb.subTag.includes('破绽') ? '#4ADE80' : '#FEF08A';
+          drawBadge(ctx, bx + bw - 148, by + 9, 128, 22, gb.subTag, tagBg, tagCol);
+        }
+        ctx.restore();
+      } else if (this.cardBanner) {
+        const fade = Math.min(1, this.cardBanner.timer / 0.3);
+        drawTranslucentBroadcastBar(380, 80, 520, 32, this.cardBanner.color, fade);
+        ctx.save();
+        ctx.globalAlpha = fade;
+        drawText(ctx, this.cardBanner.text, 640, 96, {
+          size: 12.5,
+          bold: true,
+          color: this.cardBanner.color,
+          align: 'center',
+        });
+        ctx.restore();
+      } else if (st.skillResolution) {
+        const sr = st.skillResolution;
+        const col = sr.isPositive ? THEME.GREEN : THEME.GOLD_LIGHT;
+        drawTranslucentBroadcastBar(340, 80, 600, 32, col, 0.95);
+        drawText(ctx, `⚡ 【${sr.skillName}】${sr.outcomeText}`, 640, 96, { size: 12.5, bold: true, color: col, align: 'center' });
       }
-      if (this.exploitBannerTimer > 0 && this.scoutExploitLabel) {
-        const ey = this.memoryHighlightTimer > 0 ? by + bh + 34 : by + bh + 6;
-        drawBadge(ctx, 470, ey, 340, 24, `EXPLOITED · 破绽击穿：${this.scoutExploitLabel}`, '#14532D', '#4ADE80');
-      }
-    } else if (this.cardBanner) {
-      drawRoundRect(ctx, 390, 122, 500, 36, 10, 'rgba(14,22,40,0.92)', this.cardBanner.color, 1.8);
-      drawText(ctx, this.cardBanner.text, 640, 140, {
-        size: 13.5,
-        bold: true,
-        color: this.cardBanner.color,
-        align: 'center',
-      });
     }
 
-    if (st.skillResolution && !this.cardBanner && st.phase !== 'full_time') {
-      const sr = st.skillResolution;
-      const col = sr.isPositive ? THEME.GREEN : THEME.GOLD_LIGHT;
-      drawRoundRect(ctx, 320, 122, 640, 38, 10, 'rgba(10, 18, 36, 0.94)', col, 2.0);
-      drawText(ctx, `⚡ 【${sr.skillName}】${sr.outcomeText}`, 640, 141, { size: 13, bold: true, color: col, align: 'center' });
-    }
-
-    // 序章 0.25x 子弹时间英雄聚光灯（暗角聚焦 #10 林锋）
+    // 序章 0.25x 子弹时间英雄聚光灯（暗角聚焦 #10 梅利纳）
     if (this.isPrologueMode && st.activeSkillPrompt && st.phase !== 'full_time') {
       const vet = st.players.find(p => p.team === this.userSide && p.shirtNumber === 10)
         ?? st.players.find(p => p.team === this.userSide && p.hasBall);
@@ -2320,7 +2377,7 @@ export class MatchDayScreen {
       const sbData = this.storyBeatBanner;
       const age = sbData.maxTimer - sbData.timer;
       const alpha = Math.min(1, age / 0.25, sbData.timer / 0.35);
-      const by = 96;
+      const by = 80;
       const bx = 294;
       const bw = 692;
       const bh = 48;

@@ -5921,7 +5921,7 @@
       p.pos.x = clamp(p.pos.x + p.vel.x * dt, 0.8, PITCH.LENGTH - 0.8);
       p.pos.y = clamp(p.pos.y + p.vel.y * dt, 0.8, PITCH.WIDTH - 0.8);
       const moved = dist2D({ x: oldX, y: oldY }, p.pos);
-      p.matchStats.distanceM += moved;
+      p.matchStats.distanceM += moved * 7;
       if (p.hasBall && ball.mode === "held" && ball.holderId === p.id) {
         const speed = Math.sqrt(p.vel.x * p.vel.x + p.vel.y * p.vel.y);
         const leadX = speed > 0.5 ? p.vel.x / speed * 0.45 : 0;
@@ -6044,8 +6044,10 @@
         });
         if (safeLong) return { type: "pass", target: safeLong, passType: "long" };
       }
-      const nearWideFBs = mates.filter((m) => (m.role === "LB" || m.role === "RB" || m.role === "LWB" || m.role === "RWB") && dist2D(holder.pos, m.pos) <= 30);
-      const orderedMates = [...nearWideFBs, ...mates.filter((m) => !nearWideFBs.includes(m))];
+      const nearBuildup = mates.filter(
+        (m) => (m.role === "CB" || m.role === "LB" || m.role === "RB" || m.role === "LWB" || m.role === "RWB") && dist2D(holder.pos, m.pos) <= 30
+      );
+      const orderedMates = [...nearBuildup, ...mates.filter((m) => !nearBuildup.includes(m))];
       for (const m of orderedMates) {
         const d = dist2D(holder.pos, m.pos);
         if (d < 10) continue;
@@ -6073,14 +6075,15 @@
       const isAttacker = holder.role === "ST" || holder.role === "CAM" || isWideAttacker || isMidCrasher && relX > 66;
       const roleShootMul = holder.role === "CB" ? distToGoal < 12 ? 0.95 : 0.42 : isAttacker ? 1.24 : 0.85;
       const boxBonus = distToGoal < 12 ? 0.46 : distToGoal < 17 ? 0.34 : distToGoal < 21 ? 0.06 : -0.18;
-      const inCentralOrHalfSpace = Math.abs(holder.pos.y - PITCH.HALF_Y) < 16;
-      const wingCutInBonus = isWideAttacker && relX >= 70 && inCentralOrHalfSpace ? style === "tiki_taka" ? 0.34 : style === "gegenpress" ? 0.32 : style === "counter" ? 0.28 : style === "wing_play" ? 0.24 : 0.28 : isWideAttacker && relX >= 74 && !inCentralOrHalfSpace ? -0.14 : 0;
+      const inCentralOrHalfSpace = Math.abs(holder.pos.y - PITCH.HALF_Y) < 20;
+      const wingCutInBonus = isWideAttacker && relX >= 68 && inCentralOrHalfSpace ? style === "tiki_taka" ? 0.34 : style === "gegenpress" ? 0.32 : style === "counter" ? 0.28 : style === "wing_play" ? 0.3 : 0.28 : isWideAttacker && relX >= 74 && !inCentralOrHalfSpace && style !== "wing_play" && holder.role !== "LM" && holder.role !== "RM" ? -0.1 : 0;
+      const stBoxFinishBonus = holder.role === "ST" && distToGoal < 19 ? 0.12 : 0;
       const midCrashBonus = (holder.role === "CAM" || isMidCrasher) && relX >= 68 ? style === "tiki_taka" || style === "gegenpress" ? 0.34 : 0.26 : 0;
       const stSoloTrim = holder.role === "ST" && distToGoal > 14 ? -0.1 : 0;
       const styleLongShotTrim = longShotDelta <= 0.04 ? style === "tiki_taka" && distToGoal >= 17.5 ? -0.24 : style === "gegenpress" && distToGoal >= 18.5 ? -0.18 : 0 : 0;
       const longShotMod = (distToGoal >= 18 ? longShotDelta : 0) + styleLongShotTrim;
       const dutyShootBonus = holder.duty === "poacher" ? 0.2 : holder.duty === "inside_forward" ? 0.22 : holder.duty === "target_man" ? 0.1 : holder.duty === "false_nine" || holder.duty === "regista" ? -0.1 : 0;
-      const shootScore = (0.2 + xG * 3.8 + boxBonus) * preset.shootBias * roleShootMul + longShotMod + wingCutInBonus + midCrashBonus + stSoloTrim + dutyShootBonus;
+      const shootScore = (0.2 + xG * 3.8 + boxBonus) * preset.shootBias * roleShootMul + longShotMod + wingCutInBonus + midCrashBonus + stSoloTrim + stBoxFinishBonus + dutyShootBonus;
       if (xG >= minShootXG && shootScore > bestScore) {
         bestScore = shootScore;
         bestAction = { type: "shoot", xG };
@@ -6143,7 +6146,7 @@
       const avoidGK = mate.role === "GK" ? style === "tiki_taka" ? -0.06 : -0.16 : 0;
       const isFBTarget = mate.role === "LB" || mate.role === "RB" || mate.role === "LWB" || mate.role === "RWB";
       const isBackBuildupHolder = holder.role === "CB" || holder.role === "CDM" || holder.role === "CM";
-      const fbOutletBonus = isFBTarget && relX < 62 && mateRelX >= relX - 6 && pComp > 0.6 ? isBackBuildupHolder ? 0.38 : 0.24 : 0;
+      const fbOutletBonus = isFBTarget && relX < 62 && mateRelX >= relX - 6 && pComp > 0.6 ? isBackBuildupHolder ? 0.34 : 0.22 : (mate.role === "CB" && relX < 56 && pComp > 0.68 ? 0.22 : 0) + ((mate.role === "CM" || mate.role === "CDM") && relX < 64 && mateRelX >= relX - 4 && pComp > 0.65 ? 0.14 : 0);
       const skipLinePenalty = (holder.role === "CB" || holder.role === "CDM") && relX < 44 && mate.role === "ST" && mateRelX > 66 && style !== "counter" && style !== "park_bus" ? -0.22 : 0;
       let finalThirdMod = 0;
       if (isCutback) {
@@ -8788,7 +8791,7 @@
           const attPower = holder.attributes.dribbling * 0.7 + holder.attributes.strength * 0.3 + frenzyHolderEdge;
           const tackleGoldMul = def.goldTraits?.includes("\u7CBE\u51C6\u94F2\u65AD") ? 2 : 1;
           const traitTackleBonus = def.traits?.includes("\u7CBE\u51C6\u94F2\u65AD") ? 0.1 * tackleGoldMul : 0;
-          const styleTackleBonus = oppStyle === "gegenpress" ? 0.06 : oppStyle === "park_bus" && toRelativeX(holder.pos.x, this.getAttackDir(holder.team)) >= 68 ? 0.05 : 0;
+          const styleTackleBonus = oppStyle === "gegenpress" ? 0.06 : oppStyle === "park_bus" && toRelativeX(holder.pos.x, this.getAttackDir(holder.team)) >= 68 ? 0.03 : 0;
           const defFatigueTacklePenalty = def.fitness < 75 ? -((75 - def.fitness) / 55) * 0.08 : 0;
           const holderStyle = holder.team === "home" ? this.state.homeStyle : this.state.awayStyle;
           const holderForm = holder.team === "home" ? this.state.homeFormation : this.state.awayFormation;
@@ -8939,25 +8942,25 @@
       const oppFormShot = shooter.team === "home" ? this.state.awayFormation : this.state.homeFormation;
       const oppIs5Back = getDefenseSystem(oppFormShot) === "5-back";
       if ((myStyleShot === "counter" || myStyleShot === "park_bus") && (oppStyleShot === "gegenpress" || oppStyleShot === "wing_play")) {
-        xG = Math.min(0.68, xG + (myStyleShot === "counter" ? 0.05 : 0.04));
+        xG = Math.min(0.68, xG + (myStyleShot === "counter" ? 0.05 : 0.02));
         this.pushTacticalCallout(shooter, "\u6218\u672F\u514B\u5236 +xG", "tactic");
-      } else if (myStyleShot === "park_bus" && oppStyleShot !== "park_bus") {
-        xG = Math.min(0.68, xG + 0.02);
       } else if (oppStyleShot === "gegenpress" && dist >= 18 && dist < 24) {
         xG = Math.min(0.68, xG + 0.02);
       } else if (myStyleShot === "tiki_taka" && oppStyleShot === "park_bus") {
         xG = Math.min(0.68, xG + 0.04);
         this.pushTacticalCallout(shooter, "\u4F20\u63A7\u7834\u94C1\u6876", "tactic");
+      } else if (myStyleShot === "balanced" && dist < 18) {
+        xG = Math.min(0.68, xG + 0.02);
       }
       if (myStyleShot === "tiki_taka" && (this.v6PassStreak[shooter.team] ?? 0) >= 4) {
         xG = Math.min(0.68, xG + 0.035);
         this.pushTacticalCallout(shooter, "\u4F20\u63A7\u6E17\u900F\u6495\u9632", "tactic");
       }
       if ((myStyleShot === "wing_play" || getDefenseSystem(myFormShot) === "3-back") && toRelativeX(shooter.pos.x, dir) > 72) {
-        xG = Math.min(0.68, xG + 0.025);
+        xG = Math.min(0.68, xG + 0.03);
       }
       if (getDefenseSystem(myFormShot) === "4-back" && toRelativeX(shooter.pos.x, dir) > 70) {
-        xG = Math.min(0.68, xG + 0.02);
+        xG = Math.min(0.68, xG + 0.035);
       }
       shooter.hasBall = false;
       shooter.matchStats.shots++;
@@ -9103,10 +9106,10 @@
         const tStyle = target.team === "home" ? this.state.homeStyle : this.state.awayStyle;
         const tMods = target.team === "home" ? this.homeMods : this.awayMods;
         const isCornerCross = this.lastPassPattern[target.team] === "set_piece";
-        const baseCrossFinish = isCornerCross ? 0.68 : tStyle === "wing_play" || (tMods.crossBias ?? 0) > 0.03 ? 0.67 : 0.56;
+        const baseCrossFinish = isCornerCross ? 0.68 : tStyle === "wing_play" || (tMods.crossBias ?? 0) > 0.03 ? 0.71 : 0.56;
         const defFormCross = target.team === "home" ? this.state.awayFormation : this.state.homeFormation;
         const defStyleCross = target.team === "home" ? this.state.awayStyle : this.state.homeStyle;
-        const antiCrossPenalty = (getDefenseSystem(defFormCross) === "5-back" ? 0.12 : 0) + (defStyleCross === "park_bus" ? 0.1 : 0);
+        const antiCrossPenalty = (getDefenseSystem(defFormCross) === "5-back" ? 0.07 : 0) + (defStyleCross === "park_bus" ? 0.06 : 0);
         const crossFinishProb = clamp(
           baseCrossFinish + (this.hasActiveMechanic(target.team, "wing_overload") ? 0.26 : 0) - antiCrossPenalty,
           0.25,
@@ -9116,7 +9119,7 @@
           const dir = this.getAttackDir(target.team);
           const relX = toRelativeX(target.pos.x, dir);
           if (relX > 76) {
-            const headXg = isCornerCross ? 0.22 : this.hasActiveMechanic(target.team, "wing_overload") ? 0.24 : tStyle === "wing_play" ? 0.21 : 0.19;
+            const headXg = isCornerCross ? 0.22 : this.hasActiveMechanic(target.team, "wing_overload") ? 0.24 : tStyle === "wing_play" ? 0.23 : 0.19;
             this.executeShot(target, headXg, false, "header");
           }
         }
@@ -9140,7 +9143,7 @@
       const shootEffMods = this.getEffectiveMods(shootTeam);
       const shootForm = shootTeam === "home" ? this.state.homeFormation : this.state.awayFormation;
       const shootStyle = shootTeam === "home" ? this.state.homeStyle : this.state.awayStyle;
-      const fiveVsCounterTarget = isFiveBack && (getDefenseSystem(shootForm) === "3-back" || shootStyle === "wing_play") ? 0.06 : 0;
+      const fiveVsCounterTarget = isFiveBack && (getDefenseSystem(shootForm) === "3-back" || shootStyle === "wing_play") ? 0.03 : 0;
       const busVsCounterTarget = defStyle === "park_bus" && (shootStyle === "wing_play" || shootStyle === "gegenpress") ? 0.09 : 0;
       const blockDist = (defStyle === "park_bus" || isFiveBack ? 1.36 : 1.08) + (hasIronWall ? 0.25 : 0);
       const blockProb = clamp((defStyle === "park_bus" || isFiveBack ? 0.22 : 0.18) + fiveVsCounterTarget + busVsCounterTarget + (hasIronWall ? 0.16 : 0) + defShotMods.blockBonus, 0.05, 0.78);
@@ -9545,13 +9548,13 @@
         CAM: 0.48,
         LB: 0.46,
         RB: 0.46,
-        CM: 0.51,
-        LW: 0.51,
-        RW: 0.51,
-        LM: 0.51,
-        RM: 0.51,
-        LWB: 0.51,
-        RWB: 0.51
+        CM: 0.5,
+        LW: 0.46,
+        RW: 0.46,
+        LM: 0.47,
+        RM: 0.47,
+        LWB: 0.5,
+        RWB: 0.5
       };
       for (const p of this.state.players) {
         if (p.redCard) continue;
@@ -31819,21 +31822,27 @@
           }
           if (ev.type === "goal") {
             const prefix = ev.narrativeTag === "HATTRICK" ? "\u5E3D\u5B50\u620F\u6CD5 \xB7 " : ev.narrativeTag === "LATE_WINNER" ? "\u8BFB\u79D2\u7EDD\u6740 \xB7 " : ev.narrativeTag === "BRACE" ? "\u6885\u5F00\u4E8C\u5EA6 \xB7 " : "GOAL \xB7 ";
+            const isMem = ev.narrativeTag === "LATE_WINNER" || ev.narrativeTag === "HATTRICK" || ev.minute >= 85 && Math.abs(st.homeScore - st.awayScore) <= 1;
+            if (isMem) {
+              this.memoryHighlightTimer = 2.8;
+            }
+            const hasExploit = ev.team === this.userSide && !!this.scoutExploitLabel;
+            if (hasExploit) {
+              this.exploitBannerTimer = 2.6;
+            }
+            const subTag = isMem ? "\u8F7D\u5165\u8D5B\u5B63\u8BB0\u5FC6" : hasExploit ? `\u7834\u7EFD\u51FB\u7A7F\xB7${this.scoutExploitLabel}` : void 0;
             this.goalBanner = {
               text: `${prefix}${ev.playerName} (${ev.minute}')`,
-              timer: 3.2,
-              team: ev.team
+              timer: 2.8,
+              maxTimer: 2.8,
+              team: ev.team,
+              accent: "#FACC15",
+              subTag
             };
             this.goalFlashTimer = 1.4;
             this.goalScorePopTimer = 0.65;
-            if (ev.narrativeTag === "LATE_WINNER" || ev.narrativeTag === "HATTRICK" || ev.minute >= 85 && Math.abs(st.homeScore - st.awayScore) <= 1) {
-              this.memoryHighlightTimer = 2.8;
-            }
             this.goalFlashSide = ev.pos.x > PITCH.HALF_X ? "right" : "left";
             this.pitchRipples.push({ x: ev.pos.x, y: ev.pos.y, color: "#FACC15", timer: 0.9, maxTimer: 0.9, maxR: 38 });
-            if (ev.team === this.userSide && this.scoutExploitLabel) {
-              this.exploitBannerTimer = 2.6;
-            }
             if (!this.isPrologueMode && ev.team !== this.userSide && this.v6Relics.has("comeback_gene")) {
               const myNow = this.userSide === "home" ? st.homeScore : st.awayScore;
               const oppNow = this.userSide === "home" ? st.awayScore : st.homeScore;
@@ -31933,9 +31942,32 @@
           } else if (ev.type === "shot") {
             this.pitchRipples.push({ x: ev.pos.x, y: ev.pos.y, color: "#FDE047", timer: 0.45, maxTimer: 0.45, maxR: 16 });
             this.onImpactCallback?.(2, 0.1);
+          } else if (ev.type === "miss" && (ev.text.includes("\u95E8\u67F1") || ev.text.includes("\u6A2A\u6881") || ev.text.includes("\u95E8\u6846"))) {
+            this.cardBanner = {
+              text: `\u51FB\u4E2D\u95E8\u6846\uFF01${ev.playerName} (${ev.minute}') \u9669\u4E9B\u7834\u95E8`,
+              color: "#FBBF24",
+              timer: 2
+            };
           } else if (ev.type === "save") {
             this.pitchRipples.push({ x: ev.pos.x, y: ev.pos.y, color: "#38BDF8", timer: 0.55, maxTimer: 0.55, maxR: 22 });
             this.onImpactCallback?.(3.2, 0.14);
+            if (ev.level === "important" || ev.level === "critical" || (ev.xG ?? 0) >= 0.25 || ev.text.includes("\u795E\u6251") || ev.text.includes("\u70B9\u7403")) {
+              this.goalBanner = {
+                text: `\u795E\u6251\u6551\u9669 \xB7 ${ev.playerName} (${ev.minute}')`,
+                timer: 2.3,
+                maxTimer: 2.3,
+                team: ev.team,
+                accent: "#38BDF8"
+              };
+            }
+          } else if (ev.type === "injury") {
+            this.goalBanner = {
+              text: `\u4F24\u9000\u79BB\u573A \xB7 ${ev.playerName} (${ev.minute}')`,
+              timer: 2.5,
+              maxTimer: 2.5,
+              team: ev.team,
+              accent: "#FBBF24"
+            };
           } else if (ev.type === "foul" || ev.type === "yellow_card" || ev.type === "red_card") {
             this.pitchRipples.push({
               x: ev.pos.x,
@@ -31945,7 +31977,16 @@
               maxTimer: 0.55,
               maxR: 18
             });
-            if (ev.type === "red_card") this.onImpactCallback?.(4.5, 0.22);
+            if (ev.type === "red_card") {
+              this.onImpactCallback?.(4.5, 0.22);
+              this.goalBanner = {
+                text: `\u7EA2\u724C\u7F5A\u4E0B \xB7 ${ev.playerName} (${ev.minute}')`,
+                timer: 2.8,
+                maxTimer: 2.8,
+                team: ev.team,
+                accent: "#F87171"
+              };
+            }
           }
           if (delta <= 6) {
             if (ev.type === "goal") {
@@ -32837,65 +32878,79 @@
         ctx2.fillRect(PITCH_RECT.x, PITCH_RECT.y, PITCH_RECT.w, PITCH_RECT.h);
       }
       ctx2.restore();
-      if (this.goalBanner) {
-        const bx = 350, by = 96, bw = 580, bh = 74;
-        const age = 3.2 - this.goalBanner.timer;
-        const pop = age < 0.28 ? easeOutBack(age / 0.28) : 1;
-        const fade = Math.min(1, this.goalBanner.timer / 0.4);
-        const sc = 0.88 + 0.12 * pop;
-        const scorerClub = this.goalBanner.team === "home" ? homeClub : awayClub;
+      const drawTranslucentBroadcastBar = (x, y, w, h, accent, alpha) => {
         ctx2.save();
-        ctx2.globalAlpha = fade;
-        ctx2.translate(640, by + bh / 2);
-        ctx2.scale(sc, sc);
-        ctx2.translate(-640, -(by + bh / 2));
-        drawChamferPanel(ctx2, bx, by, bw, bh, 12, "rgba(14, 22, 40, 0.94)", THEME.GOLD_LIGHT, 2.2, THEME.GOLD_LIGHT);
-        const gImg = AssetLoader.get("goal_banner");
-        if (gImg && typeof ctx2.drawImage === "function") {
-          ctx2.save();
-          ctx2.beginPath();
-          ctx2.rect(bx + 2, by + 2, bw - 4, bh - 4);
-          ctx2.clip();
-          ctx2.globalAlpha = fade * 0.72;
-          ctx2.drawImage(gImg, bx + 2, by + 2, bw - 4, bh - 4);
-          const scrim = ctx2.createLinearGradient(bx, by, bx + bw, by);
-          scrim.addColorStop(0, "rgba(8, 12, 20, 0.62)");
-          scrim.addColorStop(0.5, "rgba(8, 12, 20, 0.42)");
-          scrim.addColorStop(1, "rgba(8, 12, 20, 0.62)");
-          ctx2.fillStyle = scrim;
-          ctx2.fillRect(bx + 2, by + 2, bw - 4, bh - 4);
-          ctx2.restore();
-        }
-        drawClubCrest(ctx2, bx + 48, by + bh / 2, 20, scorerClub);
-        drawText(ctx2, this.goalBanner.text, 646, by + bh / 2, {
-          size: 20,
-          bold: true,
-          italic: true,
-          color: "#FEF08A",
-          align: "center"
-        });
+        ctx2.globalAlpha = alpha;
+        const bgGrad = ctx2.createLinearGradient(x, y, x + w, y);
+        bgGrad.addColorStop(0, "rgba(8, 13, 24, 0.12)");
+        bgGrad.addColorStop(0.18, "rgba(8, 13, 24, 0.72)");
+        bgGrad.addColorStop(0.82, "rgba(8, 13, 24, 0.72)");
+        bgGrad.addColorStop(1, "rgba(8, 13, 24, 0.12)");
+        ctx2.fillStyle = bgGrad;
+        ctx2.fillRect(x, y, w, h);
+        const lineGrad = ctx2.createLinearGradient(x, y, x + w, y);
+        lineGrad.addColorStop(0, "rgba(255,255,255,0)");
+        lineGrad.addColorStop(0.15, accent);
+        lineGrad.addColorStop(0.85, accent);
+        lineGrad.addColorStop(1, "rgba(255,255,255,0)");
+        ctx2.strokeStyle = lineGrad;
+        ctx2.lineWidth = 1.6;
+        ctx2.beginPath();
+        ctx2.moveTo(x, y);
+        ctx2.lineTo(x + w, y);
+        ctx2.moveTo(x, y + h);
+        ctx2.lineTo(x + w, y + h);
+        ctx2.stroke();
         ctx2.restore();
-        if (this.memoryHighlightTimer > 0) {
-          drawBadge(ctx2, 560, by + bh + 6, 160, 22, "\u8F7D\u5165\u8D5B\u5B63\u8BB0\u5FC6", "#78350F", "#FEF08A");
+      };
+      if (!this.tacticalModalOpen && st.phase !== "full_time") {
+        if (this.goalBanner) {
+          const gb = this.goalBanner;
+          const age = gb.maxTimer - gb.timer;
+          const slide = age < 0.2 ? 1 - Math.pow(1 - age / 0.2, 3) : 1;
+          const fade = Math.min(1, gb.timer / 0.35, age / 0.15);
+          const bx = 370;
+          const by = 78 - (1 - slide) * 12;
+          const bw = 540;
+          const bh = 40;
+          const actorClub = gb.team === "home" ? homeClub : awayClub;
+          drawTranslucentBroadcastBar(bx, by, bw, bh, gb.accent, fade);
+          ctx2.save();
+          ctx2.globalAlpha = fade;
+          drawClubCrest(ctx2, bx + 42, by + bh / 2, 13, actorClub);
+          const hasSubTag = !!gb.subTag;
+          const textX = hasSubTag ? bx + bw / 2 - 42 : 646;
+          drawText(ctx2, gb.text, textX, by + bh / 2, {
+            size: 16,
+            bold: true,
+            italic: true,
+            color: gb.accent === "#FACC15" ? "#FEF08A" : gb.accent,
+            align: "center"
+          });
+          if (gb.subTag) {
+            const tagBg = gb.subTag.includes("\u7834\u7EFD") ? "#14532D" : "#78350F";
+            const tagCol = gb.subTag.includes("\u7834\u7EFD") ? "#4ADE80" : "#FEF08A";
+            drawBadge(ctx2, bx + bw - 148, by + 9, 128, 22, gb.subTag, tagBg, tagCol);
+          }
+          ctx2.restore();
+        } else if (this.cardBanner) {
+          const fade = Math.min(1, this.cardBanner.timer / 0.3);
+          drawTranslucentBroadcastBar(380, 80, 520, 32, this.cardBanner.color, fade);
+          ctx2.save();
+          ctx2.globalAlpha = fade;
+          drawText(ctx2, this.cardBanner.text, 640, 96, {
+            size: 12.5,
+            bold: true,
+            color: this.cardBanner.color,
+            align: "center"
+          });
+          ctx2.restore();
+        } else if (st.skillResolution) {
+          const sr = st.skillResolution;
+          const col = sr.isPositive ? THEME.GREEN : THEME.GOLD_LIGHT;
+          drawTranslucentBroadcastBar(340, 80, 600, 32, col, 0.95);
+          drawText(ctx2, `\u26A1 \u3010${sr.skillName}\u3011${sr.outcomeText}`, 640, 96, { size: 12.5, bold: true, color: col, align: "center" });
         }
-        if (this.exploitBannerTimer > 0 && this.scoutExploitLabel) {
-          const ey = this.memoryHighlightTimer > 0 ? by + bh + 34 : by + bh + 6;
-          drawBadge(ctx2, 470, ey, 340, 24, `EXPLOITED \xB7 \u7834\u7EFD\u51FB\u7A7F\uFF1A${this.scoutExploitLabel}`, "#14532D", "#4ADE80");
-        }
-      } else if (this.cardBanner) {
-        drawRoundRect(ctx2, 390, 122, 500, 36, 10, "rgba(14,22,40,0.92)", this.cardBanner.color, 1.8);
-        drawText(ctx2, this.cardBanner.text, 640, 140, {
-          size: 13.5,
-          bold: true,
-          color: this.cardBanner.color,
-          align: "center"
-        });
-      }
-      if (st.skillResolution && !this.cardBanner && st.phase !== "full_time") {
-        const sr = st.skillResolution;
-        const col = sr.isPositive ? THEME.GREEN : THEME.GOLD_LIGHT;
-        drawRoundRect(ctx2, 320, 122, 640, 38, 10, "rgba(10, 18, 36, 0.94)", col, 2);
-        drawText(ctx2, `\u26A1 \u3010${sr.skillName}\u3011${sr.outcomeText}`, 640, 141, { size: 13, bold: true, color: col, align: "center" });
       }
       if (this.isPrologueMode && st.activeSkillPrompt && st.phase !== "full_time") {
         const vet = st.players.find((p) => p.team === this.userSide && p.shirtNumber === 10) ?? st.players.find((p) => p.team === this.userSide && p.hasBall);
@@ -32919,7 +32974,7 @@
         const sbData = this.storyBeatBanner;
         const age = sbData.maxTimer - sbData.timer;
         const alpha = Math.min(1, age / 0.25, sbData.timer / 0.35);
-        const by = 96;
+        const by = 80;
         const bx = 294;
         const bw = 692;
         const bh = 48;
