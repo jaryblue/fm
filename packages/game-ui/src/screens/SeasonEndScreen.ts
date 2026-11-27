@@ -10,12 +10,17 @@ import {
   drawBadge,
   drawButton,
   drawChamferPanel,
+  drawDeltaBadge,
   drawFoilShimmer,
   drawRoundRect,
+  drawStatBar,
   drawText,
   drawWrappedText,
+  fitText,
+  FONT,
   HitRegistry,
   tierColor,
+  wrapTextLines,
 } from '../CanvasKit';
 import { drawClubCrest, drawTrophyIcon } from '../ClubVisuals';
 import { easeOutBack } from '../Motion';
@@ -131,14 +136,19 @@ export class SeasonEndScreen {
       const bannerText = cs?.chosenPlayerName
         ? `游子归家 · 传奇挂靴：#10 ${rl.name} 转任主教练 · 衣钵传人【${cs.chosenPlayerName}】已觉醒金标【${cs.grantedTrait}】！`
         : `游子归家 · 传奇挂靴转教练：#10 ${rl.name} (${rl.age}岁 · 本季 ${rl.appearances}场 ${rl.goals}球${rl.assists}助) 正式退役接过教鞭，传承【老队长的怒吼】+50 Meta！`;
-      drawRoundRect(ctx, 64, 108, 1152, 26, 6, 'rgba(120, 53, 15, 0.45)', THEME.GOLD, 1);
-      drawText(
-        ctx,
-        bannerText,
-        640,
-        121,
-        { size: 11.5, bold: true, color: THEME.GOLD_LIGHT, align: 'center' }
-      );
+      const bannerLines = wrapTextLines(ctx, bannerText, 1124, FONT.LABEL, true, 2, true);
+      const bannerH = bannerLines.length > 1 ? 38 : 26;
+      drawRoundRect(ctx, 64, 106, 1152, bannerH, 6, 'rgba(120, 53, 15, 0.45)', THEME.GOLD, 1);
+      if (bannerLines.length <= 1) {
+        drawText(ctx, bannerText, 640, 119, { token: 'LABEL', bold: true, color: THEME.GOLD_LIGHT, align: 'center' });
+      } else {
+        drawWrappedText(ctx, bannerText, 78, 110, 1124, 16, {
+          token: 'LABEL',
+          bold: true,
+          color: THEME.GOLD_LIGHT,
+          maxLines: 2,
+        });
+      }
     }
 
     if (this.viewMode === 'ceremony') {
@@ -313,8 +323,10 @@ export class SeasonEndScreen {
       if (topMem.oppPlayerName) metaChips.push(`敌方焦点:${topMem.oppPlayerName}`);
       if (topMem.assistPlayerName) metaChips.push(`助攻:${topMem.assistPlayerName}`);
       if (metaChips.length > 0) {
-        drawText(ctx, metaChips.slice(0, 4).join('  ·  '), 564, 358, {
-          size: 10,
+        const shownChips = metaChips.slice(0, 3);
+        const extra = metaChips.length > 3 ? ` · +${metaChips.length - 3}` : '';
+        drawText(ctx, fitText(ctx, shownChips.join('  ·  ') + extra, 632, FONT.MICRO, false, true), 564, 358, {
+          token: 'MICRO',
           color: '#7DD3FC',
         });
       }
@@ -391,8 +403,8 @@ export class SeasonEndScreen {
           }
         }
         drawBadge(ctx, bx + 14, by + 14, 114, 20, opt.badge, '#1E293B', col);
-        drawText(ctx, opt.title, bx + 14, by + 50, { size: 13, bold: true, color: THEME.TX1 });
-        drawWrappedText(ctx, opt.subtitle, bx + 14, by + 74, bw - 28, 16, { size: 10.5, color: THEME.TX2, maxLines: 3 });
+        drawText(ctx, fitText(ctx, opt.title, bw - 28, FONT.BODY, true, true), bx + 14, by + 50, { token: 'BODY', bold: true, color: THEME.TX1 });
+        drawWrappedText(ctx, opt.subtitle, bx + 14, by + 74, bw - 28, 17, { token: 'MICRO', color: THEME.TX2, maxLines: 3 });
 
         const claim = () => {
           const res = league.pickSeasonBonusReward(opt.id);
@@ -620,30 +632,25 @@ export class SeasonEndScreen {
         }
       });
       drawBadge(ctx, px + 8, py + 13, 34, 18, p.role, tierColor(p.tier));
-      drawText(ctx, p.name, px + 48, py + 15, { size: 12, bold: true });
+      drawText(ctx, fitText(ctx, p.name, 94, FONT.LABEL, true, true), px + 48, py + 14, { token: 'LABEL', bold: true });
       drawText(
         ctx,
         `进${p.seasonStats.goals} 助${p.seasonStats.assists}`,
         px + 48,
-        py + 32,
-        { size: 10, color: THEME.TX3 }
+        py + 31,
+        { token: 'MICRO', color: THEME.TX3 }
       );
-      drawText(ctx, `CA ${p.ca}/${paCap}`, px + 244, py + 22, {
-        size: 12,
+      if (p.lastCaDelta && p.lastCaDelta !== 0) {
+        drawDeltaBadge(ctx, p.lastCaDelta, px + 146, py + 22);
+      }
+      drawText(ctx, `${p.ca}/${paCap}`, px + 244, py + 15, {
+        token: 'LABEL',
         bold: true,
         color: p.ca >= paCap ? THEME.GOLD_LIGHT : '#7DD3FC',
         align: 'right',
         mono: true,
       });
-      if (p.lastCaDelta && p.lastCaDelta !== 0) {
-        drawText(
-          ctx,
-          p.lastCaDelta > 0 ? `▲+${p.lastCaDelta}` : `▼${p.lastCaDelta}`,
-          px + 194,
-          py + 22,
-          { size: 11, bold: true, color: p.lastCaDelta > 0 ? THEME.GREEN : THEME.RED_LIGHT, align: 'right', mono: true }
-        );
-      }
+      drawStatBar(ctx, p.ca, Math.max(1, paCap), px + 196, py + 28, 48, 4, p.ca >= paCap ? THEME.GOLD_LIGHT : '#7DD3FC');
 
       if (canSwap) {
         drawButton(ctx, hits, px + 252, py + 10, 76, 24, '替换 ▶', () => {

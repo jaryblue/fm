@@ -11,8 +11,11 @@ import {
   drawButton,
   drawChamferPanel,
   drawNavRail,
+  drawRankTile,
   drawRoundRect,
   drawText,
+  fitText,
+  FONT,
   HitRegistry,
   NavRailTab,
 } from '../CanvasKit';
@@ -237,16 +240,14 @@ export class LeagueScreen {
 
     const hy = 148;
     drawRoundRect(ctx, 588, hy - 14, 660, 28, 5, '#111A2E');
-    drawText(ctx, '排名', 612, hy, { size: 11.5, color: THEME.TX3, align: 'center' });
-    drawText(ctx, '球队', 654, hy, { size: 11.5, color: THEME.TX3 });
-    drawText(ctx, '赛', 838, hy, { size: 11.5, color: THEME.TX3, align: 'center' });
-    drawText(ctx, '胜', 880, hy, { size: 11.5, color: THEME.TX3, align: 'center' });
-    drawText(ctx, '平', 922, hy, { size: 11.5, color: THEME.TX3, align: 'center' });
-    drawText(ctx, '负', 964, hy, { size: 11.5, color: THEME.TX3, align: 'center' });
-    drawText(ctx, '进/失', 1020, hy, { size: 11.5, color: THEME.TX3, align: 'center' });
-    drawText(ctx, '净胜', 1078, hy, { size: 11.5, color: THEME.TX3, align: 'center' });
-    drawText(ctx, '积分', 1132, hy, { size: 11.5, color: THEME.TX3, align: 'center' });
-    drawText(ctx, '近期', 1202, hy, { size: 11.5, color: THEME.TX3, align: 'center' });
+    drawText(ctx, '排名', 612, hy, { token: 'MICRO', color: THEME.TX3, align: 'center' });
+    drawText(ctx, '球队', 654, hy, { token: 'MICRO', color: THEME.TX3 });
+    drawText(ctx, '赛', 842, hy, { token: 'MICRO', color: THEME.TX3, align: 'center' });
+    drawText(ctx, '胜-平-负', 910, hy, { token: 'MICRO', color: THEME.TX3, align: 'center' });
+    drawText(ctx, '进/失', 992, hy, { token: 'MICRO', color: THEME.TX3, align: 'center' });
+    drawText(ctx, '净', 1060, hy, { token: 'MICRO', color: THEME.TX3, align: 'center' });
+    drawText(ctx, '积分', 1118, hy, { token: 'MICRO', color: THEME.TX3, align: 'center' });
+    drawText(ctx, '近期', 1196, hy, { token: 'MICRO', color: THEME.TX3, align: 'center' });
 
     const visibleRows = 10;
     const maxStart = Math.max(0, standings.length - visibleRows);
@@ -260,6 +261,7 @@ export class LeagueScreen {
       const isChampionSpot = tierInfo.tier === 1 && idx === 0;
       const isRelegate = tierInfo.relegateCount > 0 && idx >= standings.length - tierInfo.relegateCount;
       const barCol = isChampionSpot ? THEME.GOLD_LIGHT : isPromote ? THEME.GREEN : isRelegate ? THEME.RED_LIGHT : '#334155';
+      const rankTier = isChampionSpot ? 'gold' : isPromote ? 'green' : isRelegate ? 'red' : 'neutral';
 
       drawRoundRect(
         ctx,
@@ -273,34 +275,27 @@ export class LeagueScreen {
         row.isUser ? 1.6 : 1
       );
       drawRoundRect(ctx, 588, ry - 18, 5, 41, 2, barCol);
-      drawText(ctx, String(idx + 1), 612, ry + 2, {
-        size: 13,
-        bold: true,
-        color: isChampionSpot ? THEME.GOLD_LIGHT : isPromote ? THEME.GREEN : isRelegate ? THEME.RED_LIGHT : THEME.TX2,
-        align: 'center',
-        mono: true,
-      });
+      drawRankTile(ctx, idx + 1, rankTier, 600, ry + 2, 24);
       const rowClub = st.clubs.find(c => c.id === row.clubId);
-      if (rowClub) drawClubCrest(ctx, 642, ry + 2, 10, rowClub);
-      drawText(ctx, row.isUser ? `${row.clubName} (我)` : row.clubName, 662, ry + 2, {
-        size: 13,
+      if (rowClub) drawClubCrest(ctx, 640, ry + 2, 10, rowClub);
+      const clubLabel = row.isUser ? `${row.clubName} (我)` : row.clubName;
+      drawText(ctx, fitText(ctx, clubLabel, 166, FONT.BODY, row.isUser, true), 658, ry + 2, {
+        token: 'BODY',
         bold: row.isUser,
         color: row.isUser ? THEME.GOLD_LIGHT : THEME.TX1,
       });
 
-      drawText(ctx, String(row.played), 838, ry + 2, { size: 12.5, align: 'center', mono: true });
-      drawText(ctx, String(row.won), 880, ry + 2, { size: 12.5, align: 'center', mono: true });
-      drawText(ctx, String(row.drawn), 922, ry + 2, { size: 12.5, align: 'center', mono: true });
-      drawText(ctx, String(row.lost), 964, ry + 2, { size: 12.5, align: 'center', mono: true });
-      drawText(ctx, `${row.gf}/${row.ga}`, 1020, ry + 2, { size: 11.5, align: 'center', mono: true, color: THEME.TX2 });
-      drawText(ctx, row.gd >= 0 ? `+${row.gd}` : `${row.gd}`, 1078, ry + 2, {
-        size: 12.5,
+      drawText(ctx, String(row.played), 842, ry + 2, { token: 'LABEL', align: 'center', mono: true });
+      drawText(ctx, `${row.won}-${row.drawn}-${row.lost}`, 910, ry + 2, { token: 'LABEL', align: 'center', mono: true });
+      drawText(ctx, `${row.gf}/${row.ga}`, 992, ry + 2, { token: 'LABEL', align: 'center', mono: true, color: THEME.TX2 });
+      drawText(ctx, row.gd >= 0 ? `+${row.gd}` : `${row.gd}`, 1060, ry + 2, {
+        token: 'LABEL',
         align: 'center',
         mono: true,
         color: row.gd > 0 ? THEME.GREEN : row.gd < 0 ? THEME.RED_LIGHT : THEME.TX2,
       });
-      drawText(ctx, String(row.points), 1132, ry + 2, {
-        size: 14,
+      drawText(ctx, String(row.points), 1118, ry + 2, {
+        token: 'TITLE',
         bold: true,
         align: 'center',
         mono: true,
@@ -308,7 +303,7 @@ export class LeagueScreen {
       });
 
       row.form.slice(-4).forEach((f, fi) => {
-        const fx = 1170 + fi * 18;
+        const fx = 1164 + fi * 18;
         const col = f === 'W' ? THEME.GREEN : f === 'D' ? THEME.GOLD : THEME.RED_LIGHT;
         drawBadge(ctx, fx, ry - 7, 15, 17, f, col, '#080C14');
       });
@@ -329,17 +324,17 @@ export class LeagueScreen {
 
     drawText(ctx, '本赛季球队综合战绩与预期表现', 590, 148, { size: 13, bold: true, color: THEME.GOLD_LIGHT });
     const kpis: Array<{ label: string; val: string; sub: string; col: string }> = [
-      { label: '战绩与胜率', val: `${ts.won}胜 ${ts.drawn}平 ${ts.lost}负`, sub: `胜率 ${winRate}% · 已赛 ${ts.played} 轮`, col: THEME.GOLD_LIGHT },
-      { label: '攻防净胜球', val: `${ts.gf} 进 / ${ts.ga} 失`, sub: `净胜 ${ts.gf - ts.ga >= 0 ? '+' : ''}${ts.gf - ts.ga}`, col: ts.gf >= ts.ga ? THEME.GREEN : THEME.RED_LIGHT },
-      { label: '预期进球 xG', val: `${ts.xgFor.toFixed(1)} : ${ts.xgAgainst.toFixed(1)}`, sub: `场均 ${(ts.xgFor / Math.max(1, ts.played)).toFixed(2)} xG`, col: '#38BDF8' },
-      { label: '零封与纪律', val: `${ts.cleanSheets} 次零封`, sub: `黄牌 ${ts.yellows} · 红牌 ${ts.reds}`, col: '#C084FC' },
+      { label: '战绩与胜率', val: `${ts.won}-${ts.drawn}-${ts.lost}`, sub: `胜率 ${winRate}% · ${ts.played}轮`, col: THEME.GOLD_LIGHT },
+      { label: '攻防净胜球', val: `${ts.gf}/${ts.ga}`, sub: `净胜 ${ts.gf - ts.ga >= 0 ? '+' : ''}${ts.gf - ts.ga}`, col: ts.gf >= ts.ga ? THEME.GREEN : THEME.RED_LIGHT },
+      { label: '预期进球 xG', val: `${ts.xgFor.toFixed(1)}:${ts.xgAgainst.toFixed(1)}`, sub: `场均 ${(ts.xgFor / Math.max(1, ts.played)).toFixed(2)}`, col: '#38BDF8' },
+      { label: '零封与纪律', val: `${ts.cleanSheets} 零封`, sub: `黄${ts.yellows} · 红${ts.reds}`, col: '#C084FC' },
     ];
     kpis.forEach((k, i) => {
       const kx = 590 + i * 166;
       drawRoundRect(ctx, kx, 164, 158, 76, 8, THEME.BG_CARD, THEME.BORDER);
-      drawText(ctx, k.label, kx + 12, 182, { size: 11, color: THEME.TX2 });
-      drawText(ctx, k.val, kx + 12, 204, { size: 13.5, bold: true, color: k.col, mono: true });
-      drawText(ctx, k.sub, kx + 12, 226, { size: 10.5, color: THEME.TX3 });
+      drawText(ctx, k.label, kx + 12, 180, { token: 'MICRO', color: THEME.TX2 });
+      drawText(ctx, fitText(ctx, k.val, 134, FONT.TITLE, true, true), kx + 12, 203, { token: 'TITLE', bold: true, color: k.col, mono: true });
+      drawText(ctx, k.sub, kx + 12, 226, { token: 'MICRO', color: THEME.TX3 });
     });
 
     drawRoundRect(ctx, 590, 256, 322, 240, 10, THEME.BG_CARD, THEME.BORDER);

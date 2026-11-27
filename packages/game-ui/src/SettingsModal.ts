@@ -109,7 +109,7 @@ export class SettingsModal {
     }
     const bgmKnobX = barX + barW * bgmVol;
     drawRoundRect(ctx, bgmKnobX - 9, my + 144, 18, 20, 6, '#FEF08A', '#090D16', 1.5);
-    hits.add(barX - 10, my + 138, barW + 20, 32, () => {
+    hits.addTouchTarget(barX - 10, my + 138, barW + 20, 32, () => {
       this.draggingSlider = 'bgm';
       this.applySliderAt('bgm', hits.hoverX, barX, barW, cb.onPersistSettings);
     });
@@ -129,7 +129,7 @@ export class SettingsModal {
     }
     const sfxKnobX = barX + barW * sfxVol;
     drawRoundRect(ctx, sfxKnobX - 9, my + 206, 18, 20, 6, '#7DD3FC', '#090D16', 1.5);
-    hits.add(barX - 10, my + 200, barW + 20, 32, () => {
+    hits.addTouchTarget(barX - 10, my + 200, barW + 20, 32, () => {
       this.draggingSlider = 'sfx';
       this.applySliderAt('sfx', hits.hoverX, barX, barW, cb.onPersistSettings);
       SoundEngine.playClick();
@@ -147,10 +147,10 @@ export class SettingsModal {
     }
 
     // 5. 快捷键速查
-    drawRoundRect(ctx, mx + 28, my + 298, mw - 56, 68, 8, 'rgba(11, 17, 30, 0.85)', THEME.BORDER);
-    drawText(ctx, '桌面端快捷键', mx + 44, my + 318, { size: 12, bold: true, color: THEME.GOLD_LIGHT });
-    drawText(ctx, 'Space：比赛暂停/继续   |   1-4：切换 1x-8x 倍速   |   F：释放主动技', mx + 44, my + 344, {
-      size: 11.5,
+    drawRoundRect(ctx, mx + 28, my + 298, mw - 56, 72, 8, 'rgba(11, 17, 30, 0.85)', THEME.BORDER);
+    drawText(ctx, '桌面端快捷键', mx + 44, my + 314, { size: 12, bold: true, color: THEME.GOLD_LIGHT });
+    drawText(ctx, 'Space：暂停/继续   |   1-4：1x-8x 倍速   |   F：主动技', mx + 44, my + 340, {
+      size: 11,
       color: THEME.TX2,
     });
 

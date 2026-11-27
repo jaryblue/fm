@@ -12,6 +12,8 @@
  *   node scripts/cli_device.mjs --smoke                   只跑冒烟测试（app 已安装）
  *   node scripts/cli_device.mjs --script ./my-test.mjs    跑自定义测试脚本
  *   node scripts/cli_device.mjs --wifi 192.168.1.23:5555  通过 WiFi 连接设备
+ *   node scripts/cli_device.mjs --script ./scripts/device_new_player_flow.mjs --human --jitter 10
+ *                                                        拟人点击：坐标加抖动，统计误触率
  */
 import fs from 'node:fs';
 import path from 'node:path';
@@ -35,6 +37,8 @@ function parseArgs(argv) {
     script: null,
     serial: null,
     cdpPort: CDP_PORT,
+    human: false,
+    jitter: 10,
   };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
@@ -42,12 +46,15 @@ function parseArgs(argv) {
     else if (a === '--devices') o.devices = true;
     else if (a === '--install') o.install = true;
     else if (a === '--smoke') o.smoke = true;
+    else if (a === '--human') o.human = true;
+    else if (a === '--jitter' && argv[i + 1]) o.jitter = Number(argv[++i]);
     else if (a === '--apk' && argv[i + 1]) o.apk = path.resolve(argv[++i]);
     else if (a === '--wifi' && argv[i + 1]) o.wifi = argv[++i];
     else if (a === '--script' && argv[i + 1]) o.script = path.resolve(argv[++i]);
     else if (a === '--serial' && argv[i + 1]) o.serial = argv[++i];
     else if (a === '--cdp-port' && argv[i + 1]) o.cdpPort = Number(argv[++i]);
   }
+  if (!Number.isFinite(o.jitter) || o.jitter < 0) o.jitter = 10;
   return o;
 }
 
@@ -72,6 +79,7 @@ function findAdb() {
 }
 
 let ADB = findAdb();
+let SLEEP_RESTORE = null;
 
 async function setupAdbTool() {
   const toolsDir = path.join(ROOT, 'tools');
@@ -113,6 +121,62 @@ function adb(args, opts = {}) {
 
 function adbFor(serial, args, opts = {}) {
   return adb(['-s', serial, ...args], opts);
+}
+
+/**
+ * 屏幕休眠会让 WebView 的 requestAnimationFrame 暂停。
+ * 游戏的 setRoute 走 transition.trigger()，必须靠 rAF 推进 update 才会真正切换路由。
+ * 因此真机测试必须先唤醒屏幕并把自动锁屏超时调到最大，否则点击生效但路由不变，
+ * 表现为「命中率 0%」的假故障。测试结束后恢复原设置。
+ */
+function keepDeviceAwake(serial) {
+  let original = null;
+  try {
+    original = adbFor(serial, ['shell', 'settings', 'get', 'system', 'screen_off_timeout']).trim();
+    adbFor(serial, ['shell', 'settings', 'put', 'system', 'screen_off_timeout', '2147483647']);
+  } catch {
+    original = null;
+  }
+  try {
+    adbFor(serial, ['shell', 'input', 'keyevent', 'KEYCODE_WAKEUP']);
+  } catch {
+    // 部分设备 keyevent 权限受限，忽略
+  }
+  console.log(`屏幕保持唤醒（原超时 ${original || '未知'}ms）`);
+  return original;
+}
+
+/**
+ * 锁屏 / 通知栏展开时 WebView 不可见，requestAnimationFrame 暂停，
+ * 游戏里所有走 transition 的路由切换都不会推进，点击看起来「全部失效」。
+ * 这里提前识别并给出可操作的提示，避免误判成按钮热区问题。
+ */
+function ensureAppVisible(serial) {
+  try {
+    const dump = adbFor(serial, ['shell', 'dumpsys', 'window']);
+    const line = dump.split('\n').find(l => l.includes('mCurrentFocus=')) ?? '';
+    const focus = line.split('mCurrentFocus=')[1] ?? '';
+    if (focus.includes('NotificationShade') || focus.includes('Keyguard')) {
+      throw new Error(
+        '设备当前停在锁屏 / 通知栏（mCurrentFocus=NotificationShade）。\n' +
+        'WebView 不可见时 rAF 暂停，路由切换不会推进，测试会假性 0% 命中。\n' +
+        '请在手机上解锁屏幕、留在游戏画面后重新运行本命令。'
+      );
+    }
+  } catch (e) {
+    if (e instanceof Error && e.message.includes('NotificationShade')) throw e;
+    // dumpsys 不可用时不阻断
+  }
+}
+
+function restoreDeviceSleep(serial, original) {
+  if (!original) return;
+  try {
+    adbFor(serial, ['shell', 'settings', 'put', 'system', 'screen_off_timeout', original]);
+    console.log(`已恢复锁屏超时 ${original}ms`);
+  } catch {
+    // ignore
+  }
 }
 
 function listDevices() {
@@ -282,12 +346,142 @@ async function screenshot(client, serial, name) {
   return file;
 }
 
+// ---------- 拟人点击与状态取证 ----------
+// 精确 tap 只能证明「坐标对得上」；拟人 tap 在坐标上加抖动，
+// 用来暴露「按钮热区太小 / 字太小导致手指点偏」这类真人体验问题。
+const sleep = (ms) => new Promise(r => setTimeout(r, ms));
+
+async function snapshot(client) {
+  // 只回传小摘要，避免整份存档经 CDP 序列化拖慢每一次点击
+  return await client.evalJs(`(() => {
+    const t = window.__FM_TEST__;
+    const s = t.getState();
+    const parts = [];
+    for (const k of ['phase', 'seasonNumber', 'currentRound', 'day', 'week', 'activeSlot']) {
+      if (s && k in s) parts.push(k + '=' + JSON.stringify(s[k]));
+    }
+    for (const k of ['squad', 'starterIds', 'hand', 'clubs', 'drafts', 'seasonRewardDrafts']) {
+      if (s && Array.isArray(s[k])) parts.push(k + '.len=' + s[k].length);
+    }
+    if (s && s.corePackDraft) {
+      parts.push('pickedCores=' + (s.corePackDraft.pickedCores?.length ?? 0));
+      parts.push('choices=' + (s.corePackDraft.currentChoices?.length ?? 0));
+    }
+    if (s && s.draft && Array.isArray(s.draft.currentPool)) {
+      parts.push('draftPool=' + s.draft.currentPool.length);
+    }
+    return { route: String(t.getRoute() || ''), phase: s ? String(s.phase || '') : '', sig: parts.join('|') };
+  })()`);
+}
+
+async function tapHuman(client, x, y, opts = {}) {
+  const jitter = opts.jitter ?? 0;
+  const waitMs = opts.waitMs ?? 220;
+  const rand = opts.rand ?? Math.random;
+  const dx = jitter ? (rand() * 2 - 1) * jitter : 0;
+  const dy = jitter ? (rand() * 2 - 1) * jitter : 0;
+  const px = Math.max(4, Math.min(1276, Math.round(x + dx)));
+  const py = Math.max(4, Math.min(716, Math.round(y + dy)));
+  const before = await snapshot(client);
+  await client.evalJs(`window.__FM_TEST__.tap(${px}, ${py})`);
+  await sleep(waitMs);
+  const after = await snapshot(client);
+
+  let hit = true;
+  if (opts.expectRoute && after.route !== opts.expectRoute) hit = false;
+  if (opts.expectPhase && after.phase !== opts.expectPhase) hit = false;
+  if (!opts.expectRoute && !opts.expectPhase && before.sig === after.sig) hit = false;
+
+  return {
+    label: opts.label ?? '',
+    target: { x, y },
+    actual: { x: px, y: py },
+    jitter,
+    before,
+    after,
+    changed: before.sig !== after.sig,
+    hit,
+  };
+}
+
+class HumanTapTracker {
+  constructor(jitter = 0) {
+    this.jitter = jitter;
+    this.taps = [];
+  }
+
+  async tap(client, x, y, opts = {}) {
+    const r = await tapHuman(client, x, y, { ...opts, jitter: opts.jitter ?? this.jitter });
+    this.taps.push(r);
+    return r;
+  }
+
+  stats() {
+    const total = this.taps.length;
+    const misses = this.taps.filter(t => !t.hit);
+    const offsets = this.taps.map(t => Math.hypot(t.actual.x - t.target.x, t.actual.y - t.target.y));
+    return {
+      total,
+      hits: total - misses.length,
+      misses: misses.length,
+      hitRate: total ? Number(((total - misses.length) / total).toFixed(3)) : 0,
+      avgOffset: offsets.length ? Number((offsets.reduce((a, b) => a + b, 0) / offsets.length).toFixed(1)) : 0,
+      maxOffset: offsets.length ? Number(Math.max(...offsets).toFixed(1)) : 0,
+      missedLabels: misses.map(m => m.label),
+    };
+  }
+}
+
+async function waitForRoute(client, expected, timeoutMs = 30000, label = '') {
+  const start = Date.now();
+  let last = '';
+  while (Date.now() - start < timeoutMs) {
+    last = String(await client.evalJs(`window.__FM_TEST__.getRoute()`) ?? '');
+    if (Array.isArray(expected) ? expected.includes(last) : last === expected) return last;
+    await sleep(400);
+  }
+  throw new Error(`等待路由超时：期望 ${JSON.stringify(expected)}，当前 ${last}${label ? ` (${label})` : ''}`);
+}
+
+async function waitForPhase(client, expected, timeoutMs = 30000, label = '') {
+  const start = Date.now();
+  let last = '';
+  while (Date.now() - start < timeoutMs) {
+    const s = await snapshot(client);
+    last = s.phase;
+    if (Array.isArray(expected) ? expected.includes(last) : last === expected) return last;
+    await sleep(400);
+  }
+  throw new Error(`等待阶段超时：期望 ${JSON.stringify(expected)}，当前 ${last}${label ? ` (${label})` : ''}`);
+}
+
+async function clearSaveAndReload(client) {
+  await client.evalJs(`(() => {
+    try {
+      for (let i = localStorage.length - 1; i >= 0; i--) {
+        const k = localStorage.key(i);
+        if (k && (k.startsWith('fm_league_save_v1') || k === 'fm_league_active_slot')) {
+          localStorage.removeItem(k);
+        }
+      }
+      localStorage.setItem('fm_e2e', '1');
+    } catch (e) {}
+    return true;
+  })()`);
+  await client.send('Page.enable');
+  await client.send('Page.reload', { ignoreCache: true });
+  await waitFor(async () => {
+    const v = await client.evalJs(`typeof window.__FM_TEST__ !== 'undefined'`);
+    return v === true;
+  }, 12000, '清档后测试桥接就绪');
+}
+
 function checks(results, name, ok, detail = '') {
   results.push({ name, ok, detail });
   console.log(`${ok ? '[PASS]' : '[FAIL]'} ${name}${detail ? ` (${detail})` : ''}`);
 }
 
-async function runSmoke(client, serial) {
+async function runSmoke(client, serial, tracker) {
   const results = [];
   console.log('\n=== 真机冒烟测试 ===');
 
@@ -305,12 +499,11 @@ async function runSmoke(client, serial) {
 
   // OTA 更新弹窗可能挡住点击：先点「取消」（设计坐标约 536,428）关掉。
   // ConfirmModal 渲染时会 hits.clear()，不关弹窗的话后续 tap 会被吞掉。
-  await client.evalJs(`window.__FM_TEST__.tap(536, 428)`);
-  await new Promise(r => setTimeout(r, 300));
+  // 关弹窗属于环境准备，不参与拟人误触统计
+  await tracker.tap(client, 536, 428, { label: '关闭更新弹窗', jitter: 0, waitMs: 300 });
 
   // 点击「开启新赛季」（设计坐标 640,446）
-  await client.evalJs(`window.__FM_TEST__.tap(640, 446)`);
-  await new Promise(r => setTimeout(r, 1200));
+  await tracker.tap(client, 640, 446, { label: '开始新赛季', waitMs: 1200 });
   const route2 = await client.evalJs(`window.__FM_TEST__.getRoute()`);
   checks(results, '点击开局后路由变化', route2 !== route, `${route} -> ${route2}`);
 
@@ -350,6 +543,8 @@ async function main() {
   }
 
   const serial = pickDevice(cfg);
+  const originalSleepTimeout = keepDeviceAwake(serial);
+  SLEEP_RESTORE = { serial, original: originalSleepTimeout };
 
   if (cfg.install) {
     if (!cfg.apk || !fs.existsSync(cfg.apk)) throw new Error('--install 需要 --apk 指向存在的文件');
@@ -376,20 +571,47 @@ async function main() {
   adbFor(serial, ['shell', 'am', 'force-stop', PACKAGE]);
   adbFor(serial, ['shell', 'am', 'start', '-n', ACTIVITY]);
   await new Promise(r => setTimeout(r, 2500));
+  ensureAppVisible(serial);
 
   const client = await connectCdp(serial, cfg);
   console.log('CDP 已连接');
   await enableBridge(client);
   console.log('测试桥接已启用');
 
+  const tracker = new HumanTapTracker(cfg.human ? cfg.jitter : 0);
   let results = [];
   if (cfg.script) {
     if (!fs.existsSync(cfg.script)) throw new Error(`脚本不存在: ${cfg.script}`);
     const mod = await import(`file://${cfg.script}`);
     if (typeof mod.default !== 'function') throw new Error('自定义脚本需 default export 一个 (client, ctx) => void 的函数');
-    results = await mod.default(client, { serial, adb, adbFor, screenshot }) ?? [];
+    results = await mod.default(client, {
+      serial,
+      adb,
+      adbFor,
+      screenshot,
+      sleep,
+      snapshot,
+      tracker,
+      check: checks,
+      tap: (x, y, opts) => tracker.tap(client, x, y, opts),
+      waitForRoute: (expected, timeoutMs, label) => waitForRoute(client, expected, timeoutMs, label),
+      waitForPhase: (expected, timeoutMs, label) => waitForPhase(client, expected, timeoutMs, label),
+      clearSaveAndReload: () => clearSaveAndReload(client),
+      human: cfg.human,
+      jitter: tracker.jitter,
+      ROOT,
+      SCREENSHOT_DIR,
+    }) ?? [];
   } else {
-    results = await runSmoke(client, serial);
+    results = await runSmoke(client, serial, tracker);
+  }
+
+  const tapStats = tracker.stats();
+  console.log(`\n=== 拟人点击统计 (jitter=${tracker.jitter}px) ===`);
+  console.log(`总点击 ${tapStats.total} / 命中 ${tapStats.hits} / 误触 ${tapStats.misses} / 命中率 ${(tapStats.hitRate * 100).toFixed(1)}%`);
+  console.log(`平均偏移 ${tapStats.avgOffset}px / 最大偏移 ${tapStats.maxOffset}px`);
+  if (tapStats.missedLabels.length > 0) {
+    console.log(`误触步骤: ${tapStats.missedLabels.join('、')}`);
   }
 
   client.close();
@@ -404,9 +626,18 @@ async function main() {
     for (const f of failed) console.log(`  - ${f.name} ${f.detail}`);
     process.exitCode = 1;
   }
+
+  if (SLEEP_RESTORE) {
+    restoreDeviceSleep(SLEEP_RESTORE.serial, SLEEP_RESTORE.original);
+    SLEEP_RESTORE = null;
+  }
 }
 
 main().catch(e => {
   console.error(`\n[真机测试失败] ${e.message}`);
+  if (SLEEP_RESTORE) {
+    restoreDeviceSleep(SLEEP_RESTORE.serial, SLEEP_RESTORE.original);
+    SLEEP_RESTORE = null;
+  }
   process.exitCode = 1;
 });

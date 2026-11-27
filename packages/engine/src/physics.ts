@@ -199,7 +199,8 @@ export function stepPlayersPhysics(players: PlayerState[], ball: BallState): voi
     p.pos.y = clamp(p.pos.y + p.vel.y * dt, 0.8, PITCH.WIDTH - 0.8);
 
     const moved = dist2D({ x: oldX, y: oldY }, p.pos);
-    p.matchStats.distanceM += moved;
+    // 引擎每分钟约 4~5 tick，按 7.0 倍折算为真实足球全场 9~11km 跑动量级
+    p.matchStats.distanceM += moved * 7.0;
 
     // 持球时球紧贴脚下（略微在运动方向前方 0.45m）
     if (p.hasBall && ball.mode === 'held' && ball.holderId === p.id) {

@@ -16,6 +16,7 @@ import {
   drawText,
   drawWrappedText,
   fitText,
+  FONT,
   HitRegistry,
   NavRailTab,
 } from '../CanvasKit';
@@ -153,20 +154,20 @@ export class HallOfFameScreen {
           rec.isChampion ? '#080C14' : THEME.TX1
         );
         if (rec.isChampion) drawIcon(ctx, 'trophy', lx + 86, ry + 16, 13, THEME.GOLD_LIGHT);
-        drawText(ctx, rec.clubName, rec.isChampion ? lx + 100 : lx + 86, ry + 16, {
-          size: 13,
+        drawText(ctx, fitText(ctx, rec.clubName, lw - 165, FONT.BODY, true, true), rec.isChampion ? lx + 100 : lx + 86, ry + 16, {
+          token: 'BODY',
           bold: true,
           color: rec.isChampion ? THEME.GOLD_LIGHT : THEME.TX1,
         });
-        drawText(ctx, `${rec.storylineTitle || '常规赛季'} · ${rec.points}分 · ${rec.gf}/${rec.ga}`, lx + 86, ry + 34, {
-          size: 11,
+        drawText(ctx, fitText(ctx, `${rec.storylineTitle || '常规赛季'} · ${rec.points}分 · ${rec.gf}/${rec.ga}`, lw - 120, FONT.MICRO, false, true), lx + 86, ry + 34, {
+          token: 'MICRO',
           color: THEME.TX2,
         });
         if (rec.topMemory) {
           const mem = rec.topMemory;
           const oppExtra = mem.oppPlayerName ? ` · 敌方:${mem.oppPlayerName}` : '';
-          drawText(ctx, `★ ${mem.badge} · ${mem.title} (${mem.scoreText}${oppExtra})`, lx + 32, ry + 51, {
-            size: 10,
+          drawText(ctx, fitText(ctx, `★ ${mem.badge} · ${mem.title} (${mem.scoreText}${oppExtra})`, lw - 60, FONT.MICRO, false, true), lx + 32, ry + 51, {
+            token: 'MICRO',
             color: mem.isPainful ? '#FCA5A5' : THEME.GOLD_LIGHT,
           });
         }
@@ -260,8 +261,8 @@ export class HallOfFameScreen {
           drawRoundRect(ctx, ax + 12, ay + 20, 36, 36, 8, unlocked ? 'rgba(34,197,94,0.2)' : '#1E293B', unlocked ? THEME.GOLD : undefined, unlocked ? 1.2 : 0);
           drawIcon(ctx, vis.icon, ax + 30, ay + 38, 18, unlocked ? THEME.GREEN : THEME.TX3);
         }
-        drawText(ctx, ach.title, ax + 64, ay + 26, {
-          size: 14,
+        drawText(ctx, fitText(ctx, ach.title, achW - 154, FONT.BODY, true, true), ax + 64, ay + 26, {
+          token: 'BODY',
           bold: true,
           color: unlocked ? THEME.GOLD_LIGHT : THEME.TX2,
         });
@@ -380,12 +381,12 @@ export class HallOfFameScreen {
             ? `跨度：S${c.startSeason}(第${c.startTier ?? 7}级)${c.endSeason ? ` → S${c.endSeason}(第${c.endTier ?? 7}级)` : ' → 进行中'}`
             : '';
           const peopleText = c.keyPeople.length > 0 ? `关键人物：${c.keyPeople.join(' · ')}` : '';
-          drawText(ctx, [spanText, peopleText].filter(Boolean).join('  |  '), tx, cy + 96, {
-            size: 11,
+          drawText(ctx, fitText(ctx, [spanText, peopleText].filter(Boolean).join('  |  '), 456, FONT.MICRO, false, true), tx, cy + 96, {
+            token: 'MICRO',
             color: '#93C5FD',
           });
-          drawText(ctx, `进度快照：${c.statSnapshot}`, tx, cy + 116, {
-            size: 11,
+          drawText(ctx, fitText(ctx, `进度快照：${c.statSnapshot}`, 456, FONT.MICRO, false, true), tx, cy + 116, {
+            token: 'MICRO',
             color: THEME.TX1,
           });
           const lastChoice = c.choicesMade[c.choicesMade.length - 1];
@@ -394,8 +395,8 @@ export class HallOfFameScreen {
             : lastChoice
               ? `关键抉择：${lastChoice}`
               : '等待下一章节触发...';
-          drawText(ctx, footText, tx, cy + 140, {
-            size: 11,
+          drawText(ctx, fitText(ctx, footText, 456, FONT.MICRO, false, true), tx, cy + 140, {
+            token: 'MICRO',
             bold: !!c.memorableMoment,
             color: c.memorableMoment ? THEME.GOLD_LIGHT : THEME.GREEN,
           });

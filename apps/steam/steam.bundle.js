@@ -4710,6 +4710,18 @@
     add(x, y, w, h, onClick) {
       this.regions.push({ x, y, w, h, onClick });
     }
+    /**
+     * 移动端自动将手动热区中心扩展至至少 minSize×minSize（默认 44px），桌面端保持原尺寸
+     */
+    addTouchTarget(x, y, w, h, onClick, minSize = 44) {
+      if (!IS_MOBILE) {
+        this.add(x, y, w, h, onClick);
+        return;
+      }
+      const padX = w < minSize ? Math.ceil((minSize - w) / 2) : 0;
+      const padY = h < minSize ? Math.ceil((minSize - h) / 2) : 0;
+      this.add(x - padX, y - padY, w + padX * 2, h + padY * 2, onClick);
+    }
     isHovered(x, y, w, h) {
       return this.hoverX >= x && this.hoverX <= x + w && this.hoverY >= y && this.hoverY <= y + h;
     }
@@ -4814,6 +4826,14 @@
     ctx2.restore();
     ctx2.restore();
   }
+  var FONT = {
+    DISPLAY: 30,
+    HEADLINE: IS_MOBILE ? 22 : 20,
+    TITLE: IS_MOBILE ? 16.5 : 15,
+    BODY: IS_MOBILE ? 14 : 13,
+    LABEL: IS_MOBILE ? 12 : 11,
+    MICRO: IS_MOBILE ? 11 : 10
+  };
   function mobileFontSize(size) {
     if (!IS_MOBILE) return size;
     if (size <= 9) return 11.5;
@@ -4825,8 +4845,8 @@
     return size;
   }
   function drawText(ctx2, text, x, y, opts = {}) {
-    const raw = opts.size ?? 13;
-    const size = opts.rawSize ? raw : mobileFontSize(raw);
+    const raw = opts.token ? FONT[opts.token] : opts.size ?? 13;
+    const size = opts.rawSize || opts.token ? raw : mobileFontSize(raw);
     const italic = opts.italic ? "italic " : "";
     const weight = opts.bold ? "bold " : "";
     const family = opts.mono ? THEME.NUM_FONT_FAMILY : THEME.FONT_FAMILY;
@@ -4836,8 +4856,8 @@
     ctx2.textBaseline = opts.baseline ?? "middle";
     ctx2.fillText(text, x, y);
   }
-  function wrapTextLines(ctx2, text, maxWidth, size = 11, bold = false, maxLines = 3) {
-    const effSize = mobileFontSize(size);
+  function wrapTextLines(ctx2, text, maxWidth, size = 11, bold = false, maxLines = 3, rawSize = false) {
+    const effSize = rawSize ? size : mobileFontSize(size);
     const weight = bold ? "bold " : "";
     ctx2.font = `${weight}${effSize}px ${THEME.FONT_FAMILY}`;
     const tokens = text.match(/[A-Za-z0-9._%+-]+|\s+|[^\sA-Za-z0-9._%+-]/g) ?? [];
@@ -4866,10 +4886,11 @@
     return lines;
   }
   function drawWrappedText(ctx2, text, x, y, maxWidth, lineHeight, opts = {}) {
-    const size = opts.size ?? 11;
-    const effSize = mobileFontSize(size);
+    const raw = opts.token ? FONT[opts.token] : opts.size ?? 11;
+    const useRaw = !!(opts.rawSize || opts.token);
+    const effSize = useRaw ? raw : mobileFontSize(raw);
     const effLineHeight = IS_MOBILE ? Math.max(lineHeight, Math.round(effSize * 1.28)) : lineHeight;
-    const lines = wrapTextLines(ctx2, text, maxWidth, size, !!opts.bold, opts.maxLines ?? 3);
+    const lines = wrapTextLines(ctx2, text, maxWidth, raw, !!opts.bold, opts.maxLines ?? 3, useRaw);
     ctx2.fillStyle = opts.color ?? THEME.TX1;
     ctx2.textAlign = "left";
     ctx2.textBaseline = "top";
@@ -4901,6 +4922,49 @@
     if (r > 0) {
       drawRoundRect(ctx2, x, y, Math.max(h, Math.round(w * r)), h, h / 2, fillColor);
     }
+  }
+  function drawStatBar(ctx2, value, max, x, y, w, h, color, bgColor = "rgba(255,255,255,0.08)") {
+    const safeMax = Math.max(1, max);
+    const ratio = Math.max(0, Math.min(1, value / safeMax));
+    const fillColor = color ?? (ratio >= 0.82 ? THEME.GOLD_LIGHT : ratio >= 0.7 ? THEME.GREEN : ratio >= 0.52 ? THEME.BLUE_LIGHT : "#64748B");
+    drawMiniBar(ctx2, x, y, w, h, ratio, fillColor, bgColor);
+  }
+  function drawDeltaBadge(ctx2, delta, x, y, opts = {}) {
+    const h = opts.h ?? (IS_MOBILE ? 20 : 18);
+    const text = delta > 0 ? `\u25B2+${delta}` : delta < 0 ? `\u25BC${delta}` : "\u2014";
+    const bg = delta > 0 ? "rgba(34, 197, 94, 0.18)" : delta < 0 ? "rgba(220, 38, 38, 0.18)" : "rgba(100, 116, 139, 0.16)";
+    const fg = delta > 0 ? "#4ADE80" : delta < 0 ? "#F87171" : THEME.TX3;
+    const border = delta > 0 ? "rgba(74, 222, 128, 0.35)" : delta < 0 ? "rgba(248, 113, 113, 0.35)" : "rgba(148, 163, 184, 0.2)";
+    ctx2.font = `bold ${FONT.MICRO}px ${THEME.NUM_FONT_FAMILY}`;
+    const w = Math.max(opts.minW ?? 34, Math.ceil(ctx2.measureText(text).width) + 10);
+    drawRoundRect(ctx2, x, y - h / 2, w, h, 4, bg, border, 1);
+    drawText(ctx2, text, x + w / 2, y, {
+      token: "MICRO",
+      bold: true,
+      color: fg,
+      align: "center",
+      mono: true
+    });
+    return w;
+  }
+  function drawRankTile(ctx2, rank, tier, x, y, size = IS_MOBILE ? 24 : 22) {
+    const palette = {
+      gold: { bg: "rgba(212, 168, 67, 0.22)", fg: THEME.GOLD_LIGHT, border: "rgba(250, 204, 21, 0.45)" },
+      blue: { bg: "rgba(37, 99, 235, 0.22)", fg: "#7DD3FC", border: "rgba(96, 165, 250, 0.45)" },
+      green: { bg: "rgba(34, 197, 94, 0.20)", fg: "#4ADE80", border: "rgba(74, 222, 128, 0.40)" },
+      red: { bg: "rgba(220, 38, 38, 0.22)", fg: "#F87171", border: "rgba(248, 113, 113, 0.45)" },
+      neutral: { bg: "rgba(30, 41, 59, 0.85)", fg: THEME.TX2, border: "rgba(255, 255, 255, 0.08)" }
+    };
+    const pal = palette[tier];
+    drawRoundRect(ctx2, x, y - size / 2, size, size, 5, pal.bg, pal.border, 1);
+    drawText(ctx2, String(rank), x + size / 2, y, {
+      token: "LABEL",
+      bold: true,
+      color: pal.fg,
+      align: "center",
+      mono: true
+    });
+    return size;
   }
   function drawButton(ctx2, hits, x, y, w, h, label, onClick, opts = {}) {
     const variant = opts.variant ?? "ghost";
@@ -5361,10 +5425,10 @@
       lineHeight: 0,
       widthScale: 1,
       directness: 0.5,
-      tempo: 0.94,
+      tempo: 1.01,
       pressDistance: 12,
-      pressIntensity: 0.93,
-      shootBias: 0.92
+      pressIntensity: 1,
+      shootBias: 1.02
     },
     tiki_taka: {
       name: "\u4F20\u63A7\u6E17\u900F",
@@ -9566,7 +9630,7 @@
         const mods = this.getEffectiveMods(p.team);
         const drainMul = clamp(mods.staminaDrainMul ?? 1, 0.65, 1.45);
         const rawPress = TACTICAL_PRESETS[style].pressIntensity;
-        const styleDrain = style === "gegenpress" ? p.role === "CB" ? 1.06 : p.role === "GK" ? 1 : 1.18 : style === "balanced" ? p.role === "GK" ? 1 : 1.04 : style === "counter" ? p.role === "GK" ? 1 : 0.98 : p.role === "GK" ? 1 : 0.82 + rawPress * 0.25;
+        const styleDrain = style === "gegenpress" ? p.role === "CB" ? 1.06 : p.role === "GK" ? 1 : 1.18 : style === "balanced" ? p.role === "GK" ? 1 : 0.96 : style === "counter" ? p.role === "GK" ? 1 : 0.98 : p.role === "GK" ? 1 : 0.82 + rawPress * 0.25;
         let formFactor = 1;
         if (defSys === "3-back" && (p.role === "LWB" || p.role === "RWB" || p.role === "CB")) {
           formFactor = 1.1;
@@ -27676,7 +27740,8 @@
       const revealedSet = this.scoutFog ? this.getRevealedKeys(p, this.revealCount) : null;
       drawBadge(ctx2, mx + 92, my + 24, 30, 22, this.scoutFog ? "?" : p.tier, this.scoutFog ? "#334155" : tierColor(p.tier), this.scoutFog ? THEME.GOLD_LIGHT : void 0);
       drawBadge(ctx2, mx + 130, my + 24, 44, 22, p.role, "#1E293B", THEME.TX1);
-      drawText(ctx2, p.name, mx + 186, my + 35, { size: 22, bold: true });
+      const nameStr = fitText(ctx2, p.name, 165, FONT.HEADLINE, true, true);
+      drawText(ctx2, nameStr, mx + 186, my + 35, { token: "HEADLINE", bold: true });
       if (this.scoutFog) {
         drawBadge(
           ctx2,
@@ -27698,7 +27763,16 @@
       const secText = p.secondaryRoles && p.secondaryRoles.length > 0 ? ` \xB7 \u517C ${p.secondaryRoles.join("/")}` : "";
       const mVal = p.marketValue ?? p.cost;
       const paSub = this.scoutFog ? fogLv === 1 ? `${p.age}\u5C81${secText} \xB7 \u4F30\u6D4B CA ~${Math.round(p.ca / 5) * 5} \xB7 \u6F5C\u529B PA ${Math.max(45, pa - 7)}~${Math.min(99, pa + 7)}` : `${p.age}\u5C81${secText} \xB7 CA ??? \xB7 \u6F5C\u529B PA ??? \xB7 \u7403\u63A2\u6DF1\u5EA6\u63A2\u67E5\u6216\u7B7E\u5165\u540E\u63ED\u6653` : `${p.age}\u5C81${secText} \xB7 CA ${p.ca} / PA ${pa} \xB7 \u8EAB\u4EF7 \xA5${mVal}\u4E07`;
-      drawText(ctx2, paSub, mx + 92, my + 60, { size: 12.5, color: this.scoutFog ? "#38BDF8" : THEME.TX2 });
+      if (this.scoutFog) {
+        drawWrappedText(ctx2, paSub, mx + 92, my + 52, 360, 16, {
+          token: "LABEL",
+          color: "#38BDF8",
+          maxLines: 2
+        });
+      } else {
+        const fittedSub = fitText(ctx2, paSub, 365, FONT.LABEL, false, true);
+        drawText(ctx2, fittedSub, mx + 92, my + 60, { token: "LABEL", color: THEME.TX2 });
+      }
       if (!this.scoutFog) {
         const ratio = Math.max(0.08, Math.min(1, p.ca / Math.max(1, pa)));
         const gap = Math.max(0, pa - p.ca);
@@ -27765,19 +27839,19 @@
         const isShown = !revealedSet || revealedSet.has(key);
         const val = p.attributes[key];
         const barColor = val >= 82 ? THEME.GOLD : val >= 70 ? THEME.GREEN : val >= 55 ? THEME.BLUE_LIGHT : "#64748B";
-        drawText(ctx2, label, ax, ay + 8, { size: 12, color: isShown ? THEME.TX1 : THEME.TX3 });
+        drawText(ctx2, label, ax, ay + 8, { token: "BODY", color: isShown ? THEME.TX1 : THEME.TX3 });
         drawText(ctx2, isShown ? String(val) : "??", ax + 336, ay + 8, {
-          size: 13,
+          token: "BODY",
           bold: true,
           color: isShown ? barColor : "#475569",
           align: "right",
           mono: true
         });
-        drawRoundRect(ctx2, ax, ay + 20, 336, 7, 3, "#1E293B");
         if (isShown) {
-          drawRoundRect(ctx2, ax, ay + 20, Math.max(8, val / 99 * 336), 7, 3, barColor);
+          drawStatBar(ctx2, val, 99, ax, ay + 20, 336, 10, barColor, "#1E293B");
         } else {
-          drawRoundRect(ctx2, ax, ay + 20, 96, 7, 3, "#334155");
+          drawRoundRect(ctx2, ax, ay + 20, 336, 10, 5, "#1E293B");
+          drawRoundRect(ctx2, ax, ay + 20, 96, 10, 5, "#334155");
         }
       });
       drawText(ctx2, "\u5B9E\u88C5\u7279\u8D28\u4E0E\u8BCD\u6761\uFF08\u2605\u91D1\u68072x\u5F15\u64CE\u52A0\u6210 / \u25C6\u94F6\u68071x\uFF09", mx + 24, my + 366, {
@@ -27814,14 +27888,15 @@
             item.isGold ? "#78350F" : "#1E293B",
             item.isGold ? "#FACC15" : "#CBD5E1"
           );
-          drawText(ctx2, item.name, tx + 60, my + 400, {
-            size: 12,
+          const nameFitted = fitText(ctx2, item.name, cardW - 68, FONT.LABEL, true, true);
+          drawText(ctx2, nameFitted, tx + 60, my + 400, {
+            token: "LABEL",
             bold: true,
             color: item.isGold ? "#FDE047" : "#E2E8F0"
           });
-          const maxDesc = count >= 4 ? 12 : count === 3 ? 16 : 26;
-          drawText(ctx2, (TRAIT_DESCRIPTIONS[item.name] || "\u6BD4\u8D5B\u51B3\u7B56\u4E0E\u6267\u884C\u52A0\u6210").slice(0, maxDesc), tx + 10, my + 429, {
-            size: 10.5,
+          const descFitted = fitText(ctx2, TRAIT_DESCRIPTIONS[item.name] || "\u6BD4\u8D5B\u51B3\u7B56\u4E0E\u6267\u884C\u52A0\u6210", cardW - 20, FONT.MICRO, false, true);
+          drawText(ctx2, descFitted, tx + 10, my + 429, {
+            token: "MICRO",
             color: THEME.TX2
           });
         });
@@ -27855,45 +27930,45 @@
       if (this.numberPickerOpen && isOwnPlayer && clubCtx && userClub) {
         const npx = mx + mw - 388;
         const npy = my + 92;
-        const npw = 364;
-        const nph = 166;
+        const npw = 376;
+        const nph = 338;
         drawRoundRect(ctx2, npx, npy, npw, nph, 10, "rgba(9, 15, 28, 0.98)", THEME.GOLD_LIGHT, 1.4);
         hits.add(npx, npy, npw, nph, () => {
         });
-        drawText(ctx2, "\u9009\u62E9\u7403\u8863\u53F7\u7801 (1-99 \xB7 \u5DF2\u6709\u53F7\u7801\u5C06\u81EA\u52A8\u4E92\u6362)", npx + 12, npy + 16, { size: 11, bold: true, color: THEME.GOLD_LIGHT });
-        drawButton(ctx2, hits, npx + npw - 52, npy + 6, 42, 22, "\u6536\u8D77", () => {
+        drawText(ctx2, "\u9009\u62E9\u7403\u8863\u53F7\u7801 (1-99 \xB7 \u5DF2\u6709\u53F7\u7801\u81EA\u52A8\u4E92\u6362)", npx + 14, npy + 18, { token: "LABEL", bold: true, color: THEME.GOLD_LIGHT });
+        drawButton(ctx2, hits, npx + npw - 58, npy + 6, 46, 24, "\u6536\u8D77", () => {
           this.numberPickerOpen = false;
-        }, { variant: "ghost", fontSize: 10 });
+        }, { variant: "ghost", fontSize: 11 });
         const takenSet = new Set(userClub.squad.filter((x) => x.id !== p.id && x.shirtNumber).map((x) => x.shirtNumber));
         const startNum = this.numberPage * 33 + 1;
         for (let i = 0; i < 33; i++) {
           const num = startNum + i;
           if (num > 99) break;
-          const col = i % 11;
-          const row = Math.floor(i / 11);
-          const bx = npx + 12 + col * 31;
-          const by = npy + 34 + row * 30;
+          const col = i % 7;
+          const row = Math.floor(i / 7);
+          const bx = npx + 16 + col * 50;
+          const by = npy + 38 + row * 50;
           const isCur = p.shirtNumber === num;
           const isTaken = takenSet.has(num);
           drawRoundRect(
             ctx2,
             bx,
             by,
-            28,
-            25,
-            5,
+            44,
+            44,
+            6,
             isCur ? "#78350F" : isTaken ? "#0F172A" : "#1E293B",
             isCur ? THEME.GOLD_LIGHT : isTaken ? "#334155" : "#475569",
             isCur ? 1.5 : 1
           );
-          drawText(ctx2, String(num), bx + 14, by + 13, {
-            size: 11,
+          drawText(ctx2, String(num), bx + 22, by + 22, {
+            token: "BODY",
             bold: isCur,
             color: isCur ? "#FEF08A" : isTaken ? "#64748B" : THEME.TX1,
             align: "center",
             mono: true
           });
-          hits.add(bx, by, 28, 25, () => {
+          hits.addTouchTarget(bx, by, 44, 44, () => {
             const res = clubCtx.league.setPlayerShirtNumber(p.id, num);
             if (res.ok) clubCtx.onSave();
             clubCtx.onToast?.(res.msg, THEME.GOLD_LIGHT);
@@ -27902,9 +27977,9 @@
         }
         const pageRanges = ["1-33", "34-66", "67-99"];
         pageRanges.forEach((lbl, pg) => {
-          drawButton(ctx2, hits, npx + 12 + pg * 66, npy + 132, 60, 24, lbl, () => {
+          drawButton(ctx2, hits, npx + 16 + pg * 82, npy + 294, 74, 28, lbl, () => {
             this.numberPage = pg;
-          }, { active: this.numberPage === pg, fontSize: 10.5 });
+          }, { active: this.numberPage === pg, fontSize: 11 });
         });
       }
     }
@@ -28060,16 +28135,16 @@
           drawBadge(ctx2, cx + 98, cy + 14, 72, 22, "\u5F53\u524D\u4F7F\u7528", "#14532D", THEME.GREEN);
         }
         if (info.isEmpty) {
-          drawText(ctx2, info.clubName, cx + 16, cy + 58, { size: 16, bold: true, color: THEME.TX2 });
-          drawText(ctx2, info.phaseText, cx + 120, cy + 58, { size: 12, color: THEME.TX3 });
+          drawText(ctx2, info.clubName, cx + 16, cy + 56, { size: 15, bold: true, color: THEME.TX2 });
+          drawText(ctx2, info.phaseText, cx + 120, cy + 56, { size: 12, color: THEME.TX3 });
         } else {
-          drawText(ctx2, `S${info.seasonNumber} \xB7 ${info.clubName}`, cx + 16, cy + 58, {
-            size: 16,
+          drawText(ctx2, `S${info.seasonNumber} \xB7 ${info.clubName}`, cx + 16, cy + 50, {
+            size: 15,
             bold: true,
             color: isActive ? THEME.GOLD_LIGHT : THEME.TX1
           });
-          drawText(ctx2, `${info.phaseText} \xB7 \u9635\u5BB9 ${info.squadCount}\u4EBA \xB7 \u5929\u8D4B ${info.metaPoints}pt`, cx + 220, cy + 58, {
-            size: 12,
+          drawText(ctx2, `${info.phaseText} \xB7 \u9635\u5BB9 ${info.squadCount}\u4EBA \xB7 \u5929\u8D4B ${info.metaPoints}pt`, cx + 16, cy + 72, {
+            size: 11.5,
             color: "#7DD3FC"
           });
         }
@@ -28173,7 +28248,7 @@
       }
       const bgmKnobX = barX + barW * bgmVol;
       drawRoundRect(ctx2, bgmKnobX - 9, my + 144, 18, 20, 6, "#FEF08A", "#090D16", 1.5);
-      hits.add(barX - 10, my + 138, barW + 20, 32, () => {
+      hits.addTouchTarget(barX - 10, my + 138, barW + 20, 32, () => {
         this.draggingSlider = "bgm";
         this.applySliderAt("bgm", hits.hoverX, barX, barW, cb.onPersistSettings);
       });
@@ -28191,7 +28266,7 @@
       }
       const sfxKnobX = barX + barW * sfxVol;
       drawRoundRect(ctx2, sfxKnobX - 9, my + 206, 18, 20, 6, "#7DD3FC", "#090D16", 1.5);
-      hits.add(barX - 10, my + 200, barW + 20, 32, () => {
+      hits.addTouchTarget(barX - 10, my + 200, barW + 20, 32, () => {
         this.draggingSlider = "sfx";
         this.applySliderAt("sfx", hits.hoverX, barX, barW, cb.onPersistSettings);
         SoundEngine.playClick();
@@ -28205,10 +28280,10 @@
           SoundEngine.playClick();
         }, { variant: "primary", fontSize: 12 });
       }
-      drawRoundRect(ctx2, mx + 28, my + 298, mw - 56, 68, 8, "rgba(11, 17, 30, 0.85)", THEME.BORDER);
-      drawText(ctx2, "\u684C\u9762\u7AEF\u5FEB\u6377\u952E", mx + 44, my + 318, { size: 12, bold: true, color: THEME.GOLD_LIGHT });
-      drawText(ctx2, "Space\uFF1A\u6BD4\u8D5B\u6682\u505C/\u7EE7\u7EED   |   1-4\uFF1A\u5207\u6362 1x-8x \u500D\u901F   |   F\uFF1A\u91CA\u653E\u4E3B\u52A8\u6280", mx + 44, my + 344, {
-        size: 11.5,
+      drawRoundRect(ctx2, mx + 28, my + 298, mw - 56, 72, 8, "rgba(11, 17, 30, 0.85)", THEME.BORDER);
+      drawText(ctx2, "\u684C\u9762\u7AEF\u5FEB\u6377\u952E", mx + 44, my + 314, { size: 12, bold: true, color: THEME.GOLD_LIGHT });
+      drawText(ctx2, "Space\uFF1A\u6682\u505C/\u7EE7\u7EED   |   1-4\uFF1A1x-8x \u500D\u901F   |   F\uFF1A\u4E3B\u52A8\u6280", mx + 44, my + 340, {
+        size: 11,
         color: THEME.TX2
       });
       if (cb.platform.quitApp && cb.onRequestQuit) {
@@ -28279,7 +28354,7 @@
       drawWrappedText(ctx2, ev.body, bx + 18, iy + 18, bw - 36, 22, {
         size: 14,
         color: THEME.TX1,
-        maxLines: 5
+        maxLines: 4
       });
       if (ev.kind === "briefing") {
         const opt = ev.options[0];
@@ -28419,8 +28494,8 @@
         bold: true,
         color: THEME.GOLD_LIGHT
       });
-      drawText(ctx2, "\u76F4\u63A5\u952E\u76D8\u8F93\u5165\uFF08\u652F\u6301\u4E2D\u6587\u8F93\u5165\u6CD5\uFF09\uFF0C\u56DE\u8F66\u786E\u8BA4\u6216 ESC \u53D6\u6D88", mx + 24, my + 58, {
-        size: 11.5,
+      drawText(ctx2, "\u76F4\u63A5\u952E\u76D8\u8F93\u5165\uFF08\u652F\u6301\u4E2D\u6587\uFF09\uFF0C\u56DE\u8F66\u786E\u8BA4 / ESC \u53D6\u6D88", mx + 24, my + 58, {
+        size: 11,
         color: THEME.TX2
       });
       const ix = mx + 24;
@@ -28802,12 +28877,14 @@
           ready ? THEME.GREEN : THEME.GOLD_LIGHT,
           1.2
         );
+        const bannerMaxW = ready ? totalW - 210 : totalW - 424;
+        const bannerMsg = ready ? `\u590F\u5B63\u8F6C\u4F1A\u7A97\u5F00\u653E \xB7 \u5DF2\u51D1\u9F50 ${displayRoster.length} \u4EBA\uFF08\u8FBE\u6807 ${SEASON_SQUAD_SIZE} \u4EBA\uFF09\uFF0C\u53EF\u7EE7\u7EED\u5FAE\u8C03\u6216\u7ACB\u5373\u5F00\u542F\u65B0\u8D5B\u5B63` : `\u590F\u5B63\u8F6C\u4F1A\u7A97\u5F00\u653E \xB7 \u5F53\u524D ${displayRoster.length}/${SEASON_SQUAD_SIZE} \u4EBA\uFF08\u8FD8\u5DEE ${needCount} \u4EBA\uFF09\uFF0C\u53EF\u4ECE\u9752\u8BAD/\u8F6C\u4F1A/\u5BC6\u8350\u5F15\u63F4\u6216\u514D\u7B7E\u8865\u9F50`;
         drawText(
           ctx2,
-          ready ? `\u590F\u5B63\u8F6C\u4F1A\u7A97\u5F00\u653E \xB7 \u5DF2\u51D1\u9F50 ${displayRoster.length} \u4EBA\uFF08\u8FBE\u6807 ${SEASON_SQUAD_SIZE} \u4EBA\uFF09\uFF0C\u53EF\u7EE7\u7EED\u5FAE\u8C03\u6216\u7ACB\u5373\u5F00\u542F\u65B0\u8D5B\u5B63` : `\u590F\u5B63\u8F6C\u4F1A\u7A97\u5F00\u653E \xB7 \u5F53\u524D ${displayRoster.length}/${SEASON_SQUAD_SIZE} \u4EBA\uFF08\u8FD8\u5DEE ${needCount} \u4EBA\uFF09\uFF0C\u53EF\u4ECE\u9752\u8BAD/\u8F6C\u4F1A/\u5BC6\u8350\u5F15\u63F4\u6216\u514D\u7B7E\u9752\u8BAD\u8865\u9F50`,
+          fitText(ctx2, bannerMsg, bannerMaxW, FONT.LABEL, true, true),
           baseX + 16,
           bannerY + 18,
-          { size: 12, bold: true, color: ready ? THEME.GREEN : THEME.GOLD_LIGHT }
+          { token: "LABEL", bold: true, color: ready ? THEME.GREEN : THEME.GOLD_LIGHT }
         );
         if (!ready) {
           drawButton(ctx2, hits, baseX + totalW - 398, bannerY + 4, 210, 28, `\u514D\u7B7E\u9752\u5E74\u961F\u8865\u9F50 (${needCount}\u4EBA \xB7 \xA50\u4E07)`, () => {
@@ -28846,10 +28923,10 @@
         drawRoundRect(ctx2, baseX, bannerY, totalW, bannerH, 8, "rgba(12, 74, 110, 0.36)", "#38BDF8", 1.2);
         drawText(
           ctx2,
-          "\u51AC\u5B63\u8F6C\u4F1A\u7A97\u5F00\u653E \xB7 \u53EF\u8FDB\u884C\u7403\u5458\u4E70\u5356\u3001\u9752\u8BAD\u63D0\u62D4\u6216\u7ECF\u7EAA\u4EBA\u5BC6\u8350",
+          fitText(ctx2, "\u51AC\u5B63\u8F6C\u4F1A\u7A97\u5F00\u653E \xB7 \u53EF\u8FDB\u884C\u7403\u5458\u4E70\u5356\u3001\u9752\u8BAD\u63D0\u62D4\u6216\u7ECF\u7EAA\u4EBA\u5BC6\u8350", totalW - 224, FONT.LABEL, true, true),
           baseX + 16,
           bannerY + 18,
-          { size: 12, bold: true, color: "#7DD3FC" }
+          { token: "LABEL", bold: true, color: "#7DD3FC" }
         );
         drawButton(ctx2, hits, baseX + totalW - 196, bannerY + 4, 186, 28, "\u5173\u95ED\u51AC\u7A97 \xB7 \u7EE7\u7EED\u4E0B\u534A\u7A0B \u25B6", () => {
           const res = league.closeWinterWindow();
@@ -28867,10 +28944,10 @@
         const nextHint = winState.roundsToNextWindow > 0 ? `\u8DDD\u51AC\u5B63\u8F6C\u4F1A\u7A97\u8FD8\u6709 ${winState.roundsToNextWindow} \u8F6E` : "\u51AC\u7A97\u5DF2\u8FC7\uFF0C\u4E0B\u4E2A\u7A97\u53E3\u4E3A\u8D5B\u5B63\u672B\u590F\u7A97";
         drawText(
           ctx2,
-          `\u8F6C\u4F1A\u7A97\u5DF2\u5173\u95ED\uFF08${nextHint}\uFF09\xB7 \u4EA4\u6613/\u7B7E\u7EA6/\u5BC6\u8350\u5DF2\u9501\u6B7B\uFF0C\u4F46\u4ECD\u53EF\u968F\u65F6\u6D4F\u89C8\u5E76\u4ED8\u8D39\u7403\u63A2\u8003\u5BDF\u8FF7\u96FE\u7403\u5458`,
+          fitText(ctx2, `\u8F6C\u4F1A\u7A97\u5DF2\u5173\u95ED\uFF08${nextHint}\uFF09\xB7 \u4EA4\u6613/\u7B7E\u7EA6/\u5BC6\u8350\u5DF2\u9501\u6B7B\uFF0C\u4ECD\u53EF\u7403\u63A2\u8003\u5BDF\u8FF7\u96FE\u7403\u5458`, totalW - 54, FONT.LABEL, false, true),
           baseX + 38,
           bannerY + 18,
-          { size: 11.5, color: "#FECACA" }
+          { token: "LABEL", color: "#FECACA" }
         );
       }
       const panelY = 150;
@@ -28917,23 +28994,23 @@
           baseX + 12,
           ry,
           lbW - 24,
-          36,
+          40,
           6,
           idx === 0 ? "rgba(212, 168, 67, 0.12)" : THEME.BG_CARD,
           idx === 0 ? THEME.BORDER_GOLD : THEME.BORDER
         );
-        drawText(ctx2, `${idx + 1}`, baseX + 24, ry + 18, { size: 12.5, bold: true, color: rankCol, align: "center", mono: true });
-        drawBadge(ctx2, baseX + 38, ry + 9, 32, 18, p.role, tierColor(p.tier));
-        drawText(ctx2, p.name, baseX + 76, ry + 12, { size: 11.5, bold: true, color: THEME.TX1 });
-        drawText(ctx2, `${p.age}\u5C81 \xB7 CA ${p.ca} / PA ${p.pa ?? p.ca}`, baseX + 76, ry + 27, { size: 9.5, color: THEME.TX2 });
-        drawText(ctx2, val.text, baseX + lbW - 18, ry + 18, {
-          size: 11,
+        drawText(ctx2, `${idx + 1}`, baseX + 24, ry + 20, { token: "LABEL", bold: true, color: rankCol, align: "center", mono: true });
+        drawBadge(ctx2, baseX + 38, ry + 11, 32, 18, p.role, tierColor(p.tier));
+        drawText(ctx2, fitText(ctx2, p.name, lbW - 154, FONT.LABEL, true, true), baseX + 76, ry + 13, { token: "LABEL", bold: true, color: THEME.TX1 });
+        drawText(ctx2, `${p.age}\u5C81 \xB7 ${p.ca}/${p.pa ?? p.ca}`, baseX + 76, ry + 29, { token: "MICRO", color: THEME.TX2, mono: true });
+        drawText(ctx2, val.text, baseX + lbW - 18, ry + 20, {
+          token: "LABEL",
           bold: true,
           color: idx < 3 ? rankCol : "#7DD3FC",
           align: "right",
           mono: true
         });
-        hits.add(baseX + 12, ry, lbW - 24, 36, () => {
+        hits.addTouchTarget(baseX + 12, ry, lbW - 24, 40, () => {
           SoundEngine.playClick();
           actions.onInspectPlayer(p);
         });
@@ -28959,7 +29036,7 @@
           color: active ? THEME.GOLD_LIGHT : hov ? "#FFFFFF" : THEME.TX2,
           align: "center"
         });
-        hits.add(fx, panelY + 10, 54, 24, () => {
+        hits.addTouchTarget(fx, panelY + 10, 54, 24, () => {
           this.filter = fk;
           this.page = 0;
         });
@@ -28976,7 +29053,7 @@
         const active = this.sortMode === sk;
         const hov = hits.isHovered(sx, panelY + 10, 42, 24);
         drawText(ctx2, sl, sx + 21, panelY + 22, {
-          size: 10,
+          token: "MICRO",
           bold: active || hov,
           color: active ? "#38BDF8" : hov ? "#E2E8F0" : THEME.TX3,
           align: "center"
@@ -28985,7 +29062,7 @@
           ctx2.fillStyle = "#38BDF8";
           ctx2.fillRect(sx + 8, panelY + 32, 26, 2);
         }
-        hits.add(sx, panelY + 10, 42, 24, () => {
+        hits.addTouchTarget(sx, panelY + 10, 42, 24, () => {
           this.sortMode = sk;
           this.page = 0;
         });
@@ -29072,14 +29149,15 @@
         drawBadge(ctx2, px + 76, py + 7, 30, 15, p.role, "#1E293B", THEME.TX1);
         drawBadge(ctx2, px + 110, py + 7, 34, 15, `${p.age}\u5C81`, "#1E3A5F", "#7DD3FC");
         if (isSuspended) drawBadge(ctx2, px + 148, py + 7, 28, 15, "\u505C\u8D5B", "#991B1B", "#FECACA");
-        drawText(ctx2, p.name, px + 52, py + 33, { size: 12.5, bold: true, color: THEME.TX1 });
+        drawText(ctx2, fitText(ctx2, p.name, cw - 122, FONT.BODY, true, true), px + 52, py + 32, { token: "BODY", bold: true, color: THEME.TX1 });
         const secText = p.secondaryRoles && p.secondaryRoles.length > 0 ? `\u517C:${p.secondaryRoles.join("/")}` : "\u4E13\u804C";
-        drawText(ctx2, `${secText} \xB7 \u8EAB\u4EF7 ${formatFunds(p.marketValue ?? p.cost)}`, px + 52, py + 47, {
-          size: 9,
+        drawText(ctx2, fitText(ctx2, `${secText} \xB7 ${formatFunds(p.marketValue ?? p.cost)}`, cw - 122, FONT.MICRO, false, true), px + 52, py + 47, {
+          token: "MICRO",
           color: "#7DD3FC"
         });
-        drawText(ctx2, `CA ${p.ca}`, px + cw - 10, py + 16, { size: 12.5, bold: true, color: THEME.GOLD_LIGHT, align: "right", mono: true });
-        drawText(ctx2, `PA ${paVal}`, px + cw - 10, py + 32, { size: 9.5, bold: true, color: paVal >= 85 ? THEME.GOLD_LIGHT : "#38BDF8", align: "right", mono: true });
+        drawText(ctx2, `${p.ca}`, px + cw - 10, py + 15, { token: "TITLE", bold: true, color: THEME.GOLD_LIGHT, align: "right", mono: true });
+        drawStatBar(ctx2, p.ca, 99, px + cw - 52, py + 25, 42, 3, THEME.GOLD_LIGHT);
+        drawText(ctx2, `PA ${paVal}`, px + cw - 10, py + 36, { token: "MICRO", bold: true, color: paVal >= 85 ? THEME.GOLD_LIGHT : "#38BDF8", align: "right", mono: true });
         const attrPairs = p.role === "GK" ? [
           ["stat_gk", p.attributes.goalkeeping],
           ["stat_pos", p.attributes.positioning],
@@ -29106,7 +29184,7 @@
           drawText(ctx2, `${val}`, ax + boxW - 6, ay + 8.5, { size: 10.5, bold: true, color: this.statColor(val), align: "right", mono: true });
         });
         const traitText = p.traits && p.traits.length > 0 ? p.traits.slice(0, 2).join(" \xB7 ") : "\u5747\u8861\u578B\u7403\u5458";
-        drawText(ctx2, fitText(ctx2, traitText, cw - 60, 9.5), px + 12, py + 103, { size: 9.5, color: "#A5B4FC" });
+        drawText(ctx2, fitText(ctx2, traitText, cw - 60, FONT.MICRO, false, true), px + 12, py + 103, { token: "MICRO", color: "#A5B4FC" });
         drawButton(ctx2, hits, px + cw - 42, py + 93, 34, 18, p.isStarred ? "\u2605" : "\u2606", () => {
           const next = league.toggleStarPlayer(p.id);
           actions.onSave();
@@ -29115,20 +29193,20 @@
         const apps = p.seasonStats.appearances ?? 0;
         const botY = py + 120;
         let lx = px + 12;
-        drawText(ctx2, `${apps}\u573A`, lx, botY, { size: 9.5, color: THEME.TX2, mono: true });
-        lx += 28;
+        drawText(ctx2, `${apps}\u573A`, lx, botY, { token: "MICRO", color: THEME.TX2, mono: true });
+        lx += 32;
         if (p.role === "GK") {
-          lx += drawStatMicro(ctx2, "stat_gk", `${p.seasonStats.saves ?? 0}`, lx, botY, { iconSize: 9.5, fontSize: 9.5, iconColor: THEME.TX3, valueColor: THEME.TX1, gap: 2 });
+          lx += drawStatMicro(ctx2, "stat_gk", `${p.seasonStats.saves ?? 0}`, lx, botY, { iconSize: 10, fontSize: 10, iconColor: THEME.TX3, valueColor: THEME.TX1, gap: 2 });
           lx += 7;
-          drawStatMicro(ctx2, "shield", `${p.seasonStats.cleanSheets ?? 0}`, lx, botY, { iconSize: 9.5, fontSize: 9.5, iconColor: THEME.TX3, valueColor: THEME.GREEN, gap: 2 });
+          drawStatMicro(ctx2, "shield", `${p.seasonStats.cleanSheets ?? 0}`, lx, botY, { iconSize: 10, fontSize: 10, iconColor: THEME.TX3, valueColor: THEME.GREEN, gap: 2 });
         } else {
-          lx += drawStatMicro(ctx2, "ball", `${p.seasonStats.goals ?? 0}`, lx, botY, { iconSize: 9.5, fontSize: 9.5, iconColor: THEME.TX3, valueColor: THEME.TX1, gap: 2 });
+          lx += drawStatMicro(ctx2, "ball", `${p.seasonStats.goals ?? 0}`, lx, botY, { iconSize: 10, fontSize: 10, iconColor: THEME.TX3, valueColor: THEME.TX1, gap: 2 });
           lx += 7;
-          drawStatMicro(ctx2, "stat_assist", `${p.seasonStats.assists ?? 0}`, lx, botY, { iconSize: 9.5, fontSize: 9.5, iconColor: THEME.TX3, valueColor: THEME.TX1, gap: 2 });
+          drawStatMicro(ctx2, "stat_assist", `${p.seasonStats.assists ?? 0}`, lx, botY, { iconSize: 10, fontSize: 10, iconColor: THEME.TX3, valueColor: THEME.TX1, gap: 2 });
         }
         const fitPct = Math.round(p.fitness ?? 100);
-        drawMiniBar(ctx2, px + cw - 64, botY - 2, 26, 4, fitPct / 100, fitPct < 60 ? "#FBBF24" : THEME.GREEN);
-        drawText(ctx2, `${fitPct}%`, px + cw - 10, botY, { size: 9.5, color: fitPct < 60 ? "#FBBF24" : THEME.TX2, align: "right", mono: true });
+        drawMiniBar(ctx2, px + cw - 68, botY - 2, 26, 4, fitPct / 100, fitPct < 60 ? "#FBBF24" : THEME.GREEN);
+        drawText(ctx2, `${fitPct}%`, px + cw - 10, botY, { token: "MICRO", color: fitPct < 60 ? "#FBBF24" : THEME.TX2, align: "right", mono: true });
         hits.add(px, py, cw, ch, () => {
           SoundEngine.playClick();
           actions.onInspectPlayer(p);
@@ -30023,26 +30101,26 @@
           mono: true
         });
         drawPlayerAvatar(ctx2, cx + cw / 2 - 30, cy + 62, 60, 74, p, club, { radius: 8 });
-        drawText(ctx2, p.name, cx + cw / 2, cy + 150, { size: 16, bold: true, color: THEME.TX1, align: "center" });
-        drawText(ctx2, fitText(ctx2, p.traits?.slice(0, 2).join(" \xB7 ") || "\u5EFA\u961F\u6838\u5FC3", cw - 24, 10.5), cx + cw / 2, cy + 170, {
-          size: 10.5,
+        drawText(ctx2, fitText(ctx2, p.name, cw - 20, FONT.TITLE, true, true), cx + cw / 2, cy + 150, { token: "TITLE", bold: true, color: THEME.TX1, align: "center" });
+        drawText(ctx2, fitText(ctx2, p.traits?.slice(0, 2).join(" \xB7 ") || "\u5EFA\u961F\u6838\u5FC3", cw - 24, FONT.MICRO, false, true), cx + cw / 2, cy + 170, {
+          token: "MICRO",
           color: "#C4B5FD",
           align: "center"
         });
         const pairs = p.role === "GK" ? [
-          ["\u6251\u6551", p.attributes.goalkeeping],
-          ["\u7AD9\u4F4D", p.attributes.positioning],
-          ["\u51B7\u9759", p.attributes.composure],
-          ["\u4F20\u7403", p.attributes.passing],
-          ["\u529B\u91CF", p.attributes.strength],
-          ["\u4F53\u80FD", p.attributes.stamina]
+          ["\u6251", p.attributes.goalkeeping],
+          ["\u7AD9", p.attributes.positioning],
+          ["\u51B7", p.attributes.composure],
+          ["\u4F20", p.attributes.passing],
+          ["\u529B", p.attributes.strength],
+          ["\u4F53", p.attributes.stamina]
         ] : [
-          ["\u901F\u5EA6", p.attributes.pace],
-          ["\u5C04\u95E8", p.attributes.shooting],
-          ["\u4F20\u7403", p.attributes.passing],
-          ["\u76D8\u5E26", p.attributes.dribbling],
-          ["\u9632\u5B88", p.attributes.defending],
-          ["\u4F53\u80FD", p.attributes.stamina]
+          ["\u901F", p.attributes.pace],
+          ["\u5C04", p.attributes.shooting],
+          ["\u4F20", p.attributes.passing],
+          ["\u76D8", p.attributes.dribbling],
+          ["\u9632", p.attributes.defending],
+          ["\u4F53", p.attributes.stamina]
         ];
         pairs.forEach(([lbl, val], pi) => {
           const col = pi % 2;
@@ -30050,17 +30128,18 @@
           const ax = cx + 12 + col * 102;
           const ay = cy + 186 + row * 26;
           drawRoundRect(ctx2, ax, ay, 98, 22, 4, "rgba(11, 17, 30, 0.86)", THEME.BORDER);
-          drawText(ctx2, lbl, ax + 8, ay + 11, { size: 10, color: THEME.TX2 });
-          drawText(ctx2, `${val}`, ax + 90, ay + 11, { size: 11.5, bold: true, color: THEME.GOLD_LIGHT, align: "right", mono: true });
+          drawText(ctx2, lbl, ax + 8, ay + 11, { token: "MICRO", color: THEME.TX2 });
+          drawText(ctx2, `${val}`, ax + 90, ay + 11, { token: "LABEL", bold: true, color: THEME.GOLD_LIGHT, align: "right", mono: true });
         });
-        drawText(ctx2, fitText(ctx2, arch.hint, cw - 20, 10), cx + cw / 2, cy + 274, {
-          size: 10,
+        drawText(ctx2, fitText(ctx2, arch.hint, cw - 20, FONT.MICRO, true, true), cx + cw / 2, cy + 274, {
+          token: "MICRO",
           bold: true,
           color: arch.color,
           align: "center"
         });
-        drawText(ctx2, `\u517C\u804C:${p.secondaryRoles?.join("/") || "\u4E13\u804C"} \xB7 \xA5${p.marketValue ?? p.cost}\u4E07`, cx + cw / 2, cy + 292, {
-          size: 10,
+        const roleValLine = `\u517C:${p.secondaryRoles?.join("/") || "\u4E13\u804C"} \xB7 \xA5${p.marketValue ?? p.cost}\u4E07`;
+        drawText(ctx2, fitText(ctx2, roleValLine, cw - 20, FONT.MICRO, false, true), cx + cw / 2, cy + 292, {
+          token: "MICRO",
           color: THEME.TX2,
           align: "center"
         });
@@ -30096,12 +30175,12 @@
             1
           );
           drawText(ctx2, "i \u6863\u6848", infoX + 23, infoY + 10, {
-            size: 9.5,
+            token: "MICRO",
             bold: infoHover,
             color: infoHover ? "#BAE6FD" : THEME.TX2,
             align: "center"
           });
-          hits.add(infoX, infoY, 46, 20, () => {
+          hits.addTouchTarget(infoX, infoY, 46, 20, () => {
             SoundEngine.playClick();
             actions.onInspectPlayer(p);
           });
@@ -30333,20 +30412,20 @@
             rec.isChampion ? "#080C14" : THEME.TX1
           );
           if (rec.isChampion) drawIcon(ctx2, "trophy", lx + 86, ry + 16, 13, THEME.GOLD_LIGHT);
-          drawText(ctx2, rec.clubName, rec.isChampion ? lx + 100 : lx + 86, ry + 16, {
-            size: 13,
+          drawText(ctx2, fitText(ctx2, rec.clubName, lw - 165, FONT.BODY, true, true), rec.isChampion ? lx + 100 : lx + 86, ry + 16, {
+            token: "BODY",
             bold: true,
             color: rec.isChampion ? THEME.GOLD_LIGHT : THEME.TX1
           });
-          drawText(ctx2, `${rec.storylineTitle || "\u5E38\u89C4\u8D5B\u5B63"} \xB7 ${rec.points}\u5206 \xB7 ${rec.gf}/${rec.ga}`, lx + 86, ry + 34, {
-            size: 11,
+          drawText(ctx2, fitText(ctx2, `${rec.storylineTitle || "\u5E38\u89C4\u8D5B\u5B63"} \xB7 ${rec.points}\u5206 \xB7 ${rec.gf}/${rec.ga}`, lw - 120, FONT.MICRO, false, true), lx + 86, ry + 34, {
+            token: "MICRO",
             color: THEME.TX2
           });
           if (rec.topMemory) {
             const mem = rec.topMemory;
             const oppExtra = mem.oppPlayerName ? ` \xB7 \u654C\u65B9:${mem.oppPlayerName}` : "";
-            drawText(ctx2, `\u2605 ${mem.badge} \xB7 ${mem.title} (${mem.scoreText}${oppExtra})`, lx + 32, ry + 51, {
-              size: 10,
+            drawText(ctx2, fitText(ctx2, `\u2605 ${mem.badge} \xB7 ${mem.title} (${mem.scoreText}${oppExtra})`, lw - 60, FONT.MICRO, false, true), lx + 32, ry + 51, {
+              token: "MICRO",
               color: mem.isPainful ? "#FCA5A5" : THEME.GOLD_LIGHT
             });
           }
@@ -30433,8 +30512,8 @@
             drawRoundRect(ctx2, ax + 12, ay + 20, 36, 36, 8, unlocked ? "rgba(34,197,94,0.2)" : "#1E293B", unlocked ? THEME.GOLD : void 0, unlocked ? 1.2 : 0);
             drawIcon(ctx2, vis.icon, ax + 30, ay + 38, 18, unlocked ? THEME.GREEN : THEME.TX3);
           }
-          drawText(ctx2, ach.title, ax + 64, ay + 26, {
-            size: 14,
+          drawText(ctx2, fitText(ctx2, ach.title, achW - 154, FONT.BODY, true, true), ax + 64, ay + 26, {
+            token: "BODY",
             bold: true,
             color: unlocked ? THEME.GOLD_LIGHT : THEME.TX2
           });
@@ -30544,18 +30623,18 @@
           if (c.status !== "locked") {
             const spanText = c.startSeason ? `\u8DE8\u5EA6\uFF1AS${c.startSeason}(\u7B2C${c.startTier ?? 7}\u7EA7)${c.endSeason ? ` \u2192 S${c.endSeason}(\u7B2C${c.endTier ?? 7}\u7EA7)` : " \u2192 \u8FDB\u884C\u4E2D"}` : "";
             const peopleText = c.keyPeople.length > 0 ? `\u5173\u952E\u4EBA\u7269\uFF1A${c.keyPeople.join(" \xB7 ")}` : "";
-            drawText(ctx2, [spanText, peopleText].filter(Boolean).join("  |  "), tx, cy + 96, {
-              size: 11,
+            drawText(ctx2, fitText(ctx2, [spanText, peopleText].filter(Boolean).join("  |  "), 456, FONT.MICRO, false, true), tx, cy + 96, {
+              token: "MICRO",
               color: "#93C5FD"
             });
-            drawText(ctx2, `\u8FDB\u5EA6\u5FEB\u7167\uFF1A${c.statSnapshot}`, tx, cy + 116, {
-              size: 11,
+            drawText(ctx2, fitText(ctx2, `\u8FDB\u5EA6\u5FEB\u7167\uFF1A${c.statSnapshot}`, 456, FONT.MICRO, false, true), tx, cy + 116, {
+              token: "MICRO",
               color: THEME.TX1
             });
             const lastChoice = c.choicesMade[c.choicesMade.length - 1];
             const footText = c.memorableMoment ? `\u94ED\u8BB0\u65F6\u523B\uFF1A${c.memorableMoment}` : lastChoice ? `\u5173\u952E\u6289\u62E9\uFF1A${lastChoice}` : "\u7B49\u5F85\u4E0B\u4E00\u7AE0\u8282\u89E6\u53D1...";
-            drawText(ctx2, footText, tx, cy + 140, {
-              size: 11,
+            drawText(ctx2, fitText(ctx2, footText, 456, FONT.MICRO, false, true), tx, cy + 140, {
+              token: "MICRO",
               bold: !!c.memorableMoment,
               color: c.memorableMoment ? THEME.GOLD_LIGHT : THEME.GREEN
             });
@@ -30746,16 +30825,14 @@
       }, { variant: "ghost", fontSize: 12 });
       const hy = 148;
       drawRoundRect(ctx2, 588, hy - 14, 660, 28, 5, "#111A2E");
-      drawText(ctx2, "\u6392\u540D", 612, hy, { size: 11.5, color: THEME.TX3, align: "center" });
-      drawText(ctx2, "\u7403\u961F", 654, hy, { size: 11.5, color: THEME.TX3 });
-      drawText(ctx2, "\u8D5B", 838, hy, { size: 11.5, color: THEME.TX3, align: "center" });
-      drawText(ctx2, "\u80DC", 880, hy, { size: 11.5, color: THEME.TX3, align: "center" });
-      drawText(ctx2, "\u5E73", 922, hy, { size: 11.5, color: THEME.TX3, align: "center" });
-      drawText(ctx2, "\u8D1F", 964, hy, { size: 11.5, color: THEME.TX3, align: "center" });
-      drawText(ctx2, "\u8FDB/\u5931", 1020, hy, { size: 11.5, color: THEME.TX3, align: "center" });
-      drawText(ctx2, "\u51C0\u80DC", 1078, hy, { size: 11.5, color: THEME.TX3, align: "center" });
-      drawText(ctx2, "\u79EF\u5206", 1132, hy, { size: 11.5, color: THEME.TX3, align: "center" });
-      drawText(ctx2, "\u8FD1\u671F", 1202, hy, { size: 11.5, color: THEME.TX3, align: "center" });
+      drawText(ctx2, "\u6392\u540D", 612, hy, { token: "MICRO", color: THEME.TX3, align: "center" });
+      drawText(ctx2, "\u7403\u961F", 654, hy, { token: "MICRO", color: THEME.TX3 });
+      drawText(ctx2, "\u8D5B", 842, hy, { token: "MICRO", color: THEME.TX3, align: "center" });
+      drawText(ctx2, "\u80DC-\u5E73-\u8D1F", 910, hy, { token: "MICRO", color: THEME.TX3, align: "center" });
+      drawText(ctx2, "\u8FDB/\u5931", 992, hy, { token: "MICRO", color: THEME.TX3, align: "center" });
+      drawText(ctx2, "\u51C0", 1060, hy, { token: "MICRO", color: THEME.TX3, align: "center" });
+      drawText(ctx2, "\u79EF\u5206", 1118, hy, { token: "MICRO", color: THEME.TX3, align: "center" });
+      drawText(ctx2, "\u8FD1\u671F", 1196, hy, { token: "MICRO", color: THEME.TX3, align: "center" });
       const visibleRows = 10;
       const maxStart = Math.max(0, standings.length - visibleRows);
       const startIdx = Math.max(0, Math.min(maxStart, this.standingsScroll));
@@ -30767,6 +30844,7 @@
         const isChampionSpot = tierInfo.tier === 1 && idx === 0;
         const isRelegate = tierInfo.relegateCount > 0 && idx >= standings.length - tierInfo.relegateCount;
         const barCol = isChampionSpot ? THEME.GOLD_LIGHT : isPromote ? THEME.GREEN : isRelegate ? THEME.RED_LIGHT : "#334155";
+        const rankTier = isChampionSpot ? "gold" : isPromote ? "green" : isRelegate ? "red" : "neutral";
         drawRoundRect(
           ctx2,
           588,
@@ -30779,40 +30857,33 @@
           row.isUser ? 1.6 : 1
         );
         drawRoundRect(ctx2, 588, ry - 18, 5, 41, 2, barCol);
-        drawText(ctx2, String(idx + 1), 612, ry + 2, {
-          size: 13,
-          bold: true,
-          color: isChampionSpot ? THEME.GOLD_LIGHT : isPromote ? THEME.GREEN : isRelegate ? THEME.RED_LIGHT : THEME.TX2,
-          align: "center",
-          mono: true
-        });
+        drawRankTile(ctx2, idx + 1, rankTier, 600, ry + 2, 24);
         const rowClub = st.clubs.find((c) => c.id === row.clubId);
-        if (rowClub) drawClubCrest(ctx2, 642, ry + 2, 10, rowClub);
-        drawText(ctx2, row.isUser ? `${row.clubName} (\u6211)` : row.clubName, 662, ry + 2, {
-          size: 13,
+        if (rowClub) drawClubCrest(ctx2, 640, ry + 2, 10, rowClub);
+        const clubLabel = row.isUser ? `${row.clubName} (\u6211)` : row.clubName;
+        drawText(ctx2, fitText(ctx2, clubLabel, 166, FONT.BODY, row.isUser, true), 658, ry + 2, {
+          token: "BODY",
           bold: row.isUser,
           color: row.isUser ? THEME.GOLD_LIGHT : THEME.TX1
         });
-        drawText(ctx2, String(row.played), 838, ry + 2, { size: 12.5, align: "center", mono: true });
-        drawText(ctx2, String(row.won), 880, ry + 2, { size: 12.5, align: "center", mono: true });
-        drawText(ctx2, String(row.drawn), 922, ry + 2, { size: 12.5, align: "center", mono: true });
-        drawText(ctx2, String(row.lost), 964, ry + 2, { size: 12.5, align: "center", mono: true });
-        drawText(ctx2, `${row.gf}/${row.ga}`, 1020, ry + 2, { size: 11.5, align: "center", mono: true, color: THEME.TX2 });
-        drawText(ctx2, row.gd >= 0 ? `+${row.gd}` : `${row.gd}`, 1078, ry + 2, {
-          size: 12.5,
+        drawText(ctx2, String(row.played), 842, ry + 2, { token: "LABEL", align: "center", mono: true });
+        drawText(ctx2, `${row.won}-${row.drawn}-${row.lost}`, 910, ry + 2, { token: "LABEL", align: "center", mono: true });
+        drawText(ctx2, `${row.gf}/${row.ga}`, 992, ry + 2, { token: "LABEL", align: "center", mono: true, color: THEME.TX2 });
+        drawText(ctx2, row.gd >= 0 ? `+${row.gd}` : `${row.gd}`, 1060, ry + 2, {
+          token: "LABEL",
           align: "center",
           mono: true,
           color: row.gd > 0 ? THEME.GREEN : row.gd < 0 ? THEME.RED_LIGHT : THEME.TX2
         });
-        drawText(ctx2, String(row.points), 1132, ry + 2, {
-          size: 14,
+        drawText(ctx2, String(row.points), 1118, ry + 2, {
+          token: "TITLE",
           bold: true,
           align: "center",
           mono: true,
           color: THEME.GOLD_LIGHT
         });
         row.form.slice(-4).forEach((f, fi) => {
-          const fx = 1170 + fi * 18;
+          const fx = 1164 + fi * 18;
           const col = f === "W" ? THEME.GREEN : f === "D" ? THEME.GOLD : THEME.RED_LIGHT;
           drawBadge(ctx2, fx, ry - 7, 15, 17, f, col, "#080C14");
         });
@@ -30830,17 +30901,17 @@
       const winRate = ts.played > 0 ? Math.round(ts.won / ts.played * 100) : 0;
       drawText(ctx2, "\u672C\u8D5B\u5B63\u7403\u961F\u7EFC\u5408\u6218\u7EE9\u4E0E\u9884\u671F\u8868\u73B0", 590, 148, { size: 13, bold: true, color: THEME.GOLD_LIGHT });
       const kpis = [
-        { label: "\u6218\u7EE9\u4E0E\u80DC\u7387", val: `${ts.won}\u80DC ${ts.drawn}\u5E73 ${ts.lost}\u8D1F`, sub: `\u80DC\u7387 ${winRate}% \xB7 \u5DF2\u8D5B ${ts.played} \u8F6E`, col: THEME.GOLD_LIGHT },
-        { label: "\u653B\u9632\u51C0\u80DC\u7403", val: `${ts.gf} \u8FDB / ${ts.ga} \u5931`, sub: `\u51C0\u80DC ${ts.gf - ts.ga >= 0 ? "+" : ""}${ts.gf - ts.ga}`, col: ts.gf >= ts.ga ? THEME.GREEN : THEME.RED_LIGHT },
-        { label: "\u9884\u671F\u8FDB\u7403 xG", val: `${ts.xgFor.toFixed(1)} : ${ts.xgAgainst.toFixed(1)}`, sub: `\u573A\u5747 ${(ts.xgFor / Math.max(1, ts.played)).toFixed(2)} xG`, col: "#38BDF8" },
-        { label: "\u96F6\u5C01\u4E0E\u7EAA\u5F8B", val: `${ts.cleanSheets} \u6B21\u96F6\u5C01`, sub: `\u9EC4\u724C ${ts.yellows} \xB7 \u7EA2\u724C ${ts.reds}`, col: "#C084FC" }
+        { label: "\u6218\u7EE9\u4E0E\u80DC\u7387", val: `${ts.won}-${ts.drawn}-${ts.lost}`, sub: `\u80DC\u7387 ${winRate}% \xB7 ${ts.played}\u8F6E`, col: THEME.GOLD_LIGHT },
+        { label: "\u653B\u9632\u51C0\u80DC\u7403", val: `${ts.gf}/${ts.ga}`, sub: `\u51C0\u80DC ${ts.gf - ts.ga >= 0 ? "+" : ""}${ts.gf - ts.ga}`, col: ts.gf >= ts.ga ? THEME.GREEN : THEME.RED_LIGHT },
+        { label: "\u9884\u671F\u8FDB\u7403 xG", val: `${ts.xgFor.toFixed(1)}:${ts.xgAgainst.toFixed(1)}`, sub: `\u573A\u5747 ${(ts.xgFor / Math.max(1, ts.played)).toFixed(2)}`, col: "#38BDF8" },
+        { label: "\u96F6\u5C01\u4E0E\u7EAA\u5F8B", val: `${ts.cleanSheets} \u96F6\u5C01`, sub: `\u9EC4${ts.yellows} \xB7 \u7EA2${ts.reds}`, col: "#C084FC" }
       ];
       kpis.forEach((k, i) => {
         const kx = 590 + i * 166;
         drawRoundRect(ctx2, kx, 164, 158, 76, 8, THEME.BG_CARD, THEME.BORDER);
-        drawText(ctx2, k.label, kx + 12, 182, { size: 11, color: THEME.TX2 });
-        drawText(ctx2, k.val, kx + 12, 204, { size: 13.5, bold: true, color: k.col, mono: true });
-        drawText(ctx2, k.sub, kx + 12, 226, { size: 10.5, color: THEME.TX3 });
+        drawText(ctx2, k.label, kx + 12, 180, { token: "MICRO", color: THEME.TX2 });
+        drawText(ctx2, fitText(ctx2, k.val, 134, FONT.TITLE, true, true), kx + 12, 203, { token: "TITLE", bold: true, color: k.col, mono: true });
+        drawText(ctx2, k.sub, kx + 12, 226, { token: "MICRO", color: THEME.TX3 });
       });
       drawRoundRect(ctx2, 590, 256, 322, 240, 10, THEME.BG_CARD, THEME.BORDER);
       drawIcon(ctx2, "ball", 610, 278, 14, THEME.GOLD_LIGHT);
@@ -32150,11 +32221,11 @@
             align: "center",
             mono: true
           });
-          hits.add(capX, capY, 82, capH, () => {
+          hits.addTouchTarget(capX, capY, 82, capH, () => {
             SoundEngine.playClick();
             this.isPaused = !this.isPaused;
           });
-          hits.add(capX + 84, capY, 82, capH, () => {
+          hits.addTouchTarget(capX + 84, capY, 82, capH, () => {
             SoundEngine.playClick();
             const speeds = [1, 2, 4, 8];
             const curIdx = speeds.indexOf(this.speed);
@@ -32174,7 +32245,8 @@
       ctx2.fill();
       ctx2.restore();
       drawText(ctx2, "\u5B9E\u65F6\u6587\u5B57\u76F4\u64AD", 42, 107, { size: 13.5, bold: true, color: THEME.GOLD_LIGHT });
-      const events = st.events.filter((e) => e.type !== "pass").slice(-18).reverse();
+      const events = st.events.filter((e) => e.type !== "pass").slice(-12).reverse();
+      const commLineH = IS_MOBILE ? Math.max(18, Math.round(FONT.MICRO * 1.45)) : 14;
       let cy = 128;
       for (const ev of events) {
         const isGoal = ev.type === "goal";
@@ -32190,8 +32262,8 @@
         const accentCol = isGoal ? THEME.GOLD_LIGHT : isRed ? "#EF4444" : isYellow ? "#FACC15" : isSub ? THEME.GREEN : isMomentum ? "#38BDF8" : isShot ? "#FDE047" : isSave ? "#38BDF8" : isLull ? THEME.TX3 : ev.team === "home" ? homeKit.primary : awayKit.primary;
         const wrapX = isHighlighted ? 68 : 54;
         const wrapW = isHighlighted ? 170 : 186;
-        const lines = wrapTextLines(ctx2, ev.text, wrapW, 11, isGoal || isMomentum, 3);
-        const boxH2 = Math.max(24, lines.length * 14 + 10);
+        const lines = wrapTextLines(ctx2, ev.text, wrapW, FONT.MICRO, isGoal || isMomentum, 3, true);
+        const boxH2 = Math.max(26, lines.length * commLineH + 10);
         if (cy + boxH2 > 696) break;
         if (isGoal) {
           drawRoundRect(ctx2, 22, cy, 222, boxH2, 6, "rgba(212,168,67,0.16)", "rgba(250,204,21,0.52)", 1.2);
@@ -32225,12 +32297,12 @@
         } else if (isMomentum) {
           drawIcon(ctx2, "bolt", 58, cy + 12, 11, "#38BDF8");
         }
-        ctx2.font = `${isGoal || isMomentum ? "bold " : ""}11px ${THEME.FONT_FAMILY}`;
+        ctx2.font = `${isGoal || isMomentum ? "bold " : ""}${FONT.MICRO}px ${THEME.FONT_FAMILY}`;
         ctx2.fillStyle = textCol;
         ctx2.textAlign = "left";
         ctx2.textBaseline = "top";
         for (let li = 0; li < lines.length; li++) {
-          ctx2.fillText(lines[li], wrapX, cy + 5 + li * 14);
+          ctx2.fillText(lines[li], wrapX, cy + 5 + li * commLineH);
         }
         cy += boxH2 + 5;
       }
@@ -32592,7 +32664,7 @@
         const kitColor = p.role === "GK" ? p.team === "home" ? homeGkColor : awayGkColor : teamKit.primary;
         const trimColor = p.role === "GK" ? teamKit.primary : teamKit.secondary;
         const isLightKit = isLightHex(kitColor);
-        const dotR = p.role === "GK" ? 11 : 10.5;
+        const dotR = IS_MOBILE ? p.role === "GK" ? 13 : 12.5 : p.role === "GK" ? 11 : 10.5;
         ctx2.fillStyle = "rgba(0, 0, 0, 0.38)";
         ctx2.beginPath();
         ctx2.ellipse(sp.x, sp.y + 8.5, 9, 3.8, 0, 0, Math.PI * 2);
@@ -32636,7 +32708,7 @@
         ctx2.fill();
         ctx2.restore();
         drawText(ctx2, String(p.shirtNumber), sp.x, sp.y + 0.5, {
-          size: 9.5,
+          token: "MICRO",
           bold: true,
           align: "center",
           color: isLightKit ? "#0F172A" : "#FFFFFF"
@@ -32653,12 +32725,15 @@
         }
         const fitRatio = Math.max(0, Math.min(1, p.fitness / 100));
         const fitColor = fitRatio > 0.65 ? THEME.GREEN : fitRatio > 0.42 ? THEME.GOLD_LIGHT : THEME.RED_LIGHT;
+        const barW = IS_MOBILE ? 24 : 20;
+        const barH = IS_MOBILE ? 4 : 3;
+        const barY = IS_MOBILE ? sp.y - 19 : sp.y - 16;
         ctx2.fillStyle = "rgba(0,0,0,0.65)";
-        ctx2.fillRect(sp.x - 10, sp.y - 16, 20, 3);
+        ctx2.fillRect(sp.x - barW / 2, barY, barW, barH);
         ctx2.fillStyle = fitColor;
-        ctx2.fillRect(sp.x - 10, sp.y - 16, 20 * fitRatio, 3);
+        ctx2.fillRect(sp.x - barW / 2, barY, barW * fitRatio, barH);
         if (p.team === this.userSide && st.phase !== "full_time") {
-          hits.add(sp.x - 14, sp.y - 14, 28, 28, () => {
+          hits.addTouchTarget(sp.x - 14, sp.y - 14, 28, 28, () => {
             SoundEngine.playClick();
             if (!this.selectedPitchPlayerId) {
               this.selectedPitchPlayerId = p.id;
@@ -32679,11 +32754,12 @@
         }
       }
       const rectsOverlap = (a, b) => a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y;
+      const occHalfW = IS_MOBILE ? 16 : 13;
       const occupiedRects = pitchEntries.map(({ sp }) => ({
-        x: sp.x - 13,
-        y: sp.y - 16,
-        w: 26,
-        h: 28
+        x: sp.x - occHalfW,
+        y: sp.y - 20,
+        w: occHalfW * 2,
+        h: 34
       }));
       const labelOrder = [...pitchEntries].sort((a, b) => {
         const rank = (pl) => this.selectedPitchPlayerId === pl.id ? 3 : pl.hasBall ? 2 : pl.team === this.userSide ? 1 : 0;
@@ -32694,13 +32770,13 @@
       const minLY = PITCH_RECT.y + 2;
       const maxLY = PITCH_RECT.y + PITCH_RECT.h - 2;
       for (const { p, sp } of labelOrder) {
-        const lw = Math.max(20, p.role.length * 6 + 6);
-        const lh = 11;
+        const lw = Math.max(IS_MOBILE ? 26 : 20, p.role.length * (IS_MOBILE ? 7.5 : 6) + 8);
+        const lh = IS_MOBILE ? 14 : 11;
         const candidates = [
-          { cx: sp.x, cy: sp.y + 18 },
-          { cx: sp.x, cy: sp.y - 23 },
-          { cx: sp.x + 14 + lw / 2, cy: sp.y + 1 },
-          { cx: sp.x - 14 - lw / 2, cy: sp.y + 1 }
+          { cx: sp.x, cy: sp.y + (IS_MOBILE ? 21 : 18) },
+          { cx: sp.x, cy: sp.y - (IS_MOBILE ? 26 : 23) },
+          { cx: sp.x + (IS_MOBILE ? 17 : 14) + lw / 2, cy: sp.y + 1 },
+          { cx: sp.x - (IS_MOBILE ? 17 : 14) - lw / 2, cy: sp.y + 1 }
         ];
         let chosen = null;
         let chosenCenter = null;
@@ -32724,7 +32800,8 @@
           occupiedRects.push(chosen);
           drawRoundRect(ctx2, chosen.x, chosen.y, chosen.w, chosen.h, 3, "rgba(8, 12, 20, 0.72)");
           drawText(ctx2, p.role, chosenCenter.cx, chosenCenter.cy, {
-            size: 8.5,
+            size: IS_MOBILE ? 10.5 : 8.5,
+            rawSize: true,
             bold: isPriority,
             color: p.customOffset ? "#38BDF8" : p.hasBall ? "#FEF08A" : "rgba(241,245,249,0.92)",
             align: "center"
@@ -33334,8 +33411,8 @@
             used ? "#1E293B" : isDisc ? "#065F46" : canPlay ? "#78350F" : "#1E293B",
             used ? THEME.TX3 : isDisc ? "#6EE7B7" : canPlay ? "#FEF08A" : THEME.TX3
           );
-          drawWrappedText(ctx2, def.name, cx + 7, cyL + 26, cw - 14, 13, {
-            size: 11,
+          drawWrappedText(ctx2, def.name, cx + 7, cyL + 26, cw - 14, 15, {
+            token: "MICRO",
             bold: true,
             color: used ? THEME.TX3 : THEME.TX1,
             maxLines: 2
@@ -33348,17 +33425,17 @@
             drawBadge(ctx2, cx + 10, cyL + 65, cw - 20, 16, `${"\u2605".repeat(satCount)}${entry.isOverclocked ? "\u8D85\u9891" : "\u6539\u9020"}`, "#1E293B", THEME.GOLD_LIGHT);
           } else {
             const routeTag = def.source === "fusion" ? "\u878D\u5408\u738B\u724C" : def.source === "formation" ? "\u9635\u578B\u4E13\u5C5E" : def.route === "gamble" ? "\u9AD8\u8D54\u8C6A\u8D4C" : "\u7A33\u5065\u62FC\u56FE";
-            drawText(ctx2, routeTag, cx + cw / 2, cyL + 73, { size: 9.5, color: used ? THEME.TX3 : "#94A3B8", align: "center" });
+            drawText(ctx2, routeTag, cx + cw / 2, cyL + 73, { token: "MICRO", color: used ? THEME.TX3 : "#94A3B8", align: "center" });
           }
           const statusTxt = used ? "\u672C\u6BB5\u5DF2\u62CD \u2713" : playCapFull ? "\u672C\u6BB5\u6EE1\u989D" : canPlay ? "\u26A1 \u70B9\u51FB\u62CD\u677F" : `\u9700 ${effCost} TP`;
           drawText(ctx2, statusTxt, cx + cw / 2, cyL + 93, {
-            size: 10,
+            token: "MICRO",
             bold: true,
             color: used ? "#64748B" : canPlay ? THEME.GOLD_LIGHT : THEME.TX3,
             align: "center"
           });
           if (canPlay) {
-            hits.add(cx, cy2 - 6, cw, ch + 6, () => {
+            hits.addTouchTarget(cx, cy2 - 6, cw, ch + 6, () => {
               this.playV6Directive(entry);
             });
           }
@@ -33702,14 +33779,14 @@
           ];
           let ry = 152;
           for (const [label, hv, av, ratio] of rows) {
-            drawText(ctx2, hv, 1046, ry, { size: 12, bold: true, mono: true });
-            drawText(ctx2, av, 1248, ry, { size: 12, bold: true, align: "right", mono: true });
-            drawText(ctx2, label, 1147, ry, { size: 11, color: THEME.TX2, align: "center" });
-            drawRoundRect(ctx2, 1046, ry + 11, 202, 5, 2, "#1E293B");
+            drawText(ctx2, hv, 1046, ry, { token: "TITLE", bold: true, mono: true });
+            drawText(ctx2, av, 1248, ry, { token: "TITLE", bold: true, align: "right", mono: true });
+            drawText(ctx2, label, 1147, ry, { token: "LABEL", color: THEME.TX2, align: "center" });
+            drawRoundRect(ctx2, 1046, ry + 13, 202, 5, 2, "#1E293B");
             const r = Math.max(0.05, Math.min(0.95, isNaN(ratio) ? 0.5 : ratio));
-            drawRoundRect(ctx2, 1046, ry + 11, 202 * r, 5, 2, homeKit.primary);
-            drawRoundRect(ctx2, 1046 + 202 * r, ry + 11, 202 * (1 - r), 5, 2, awayKit.primary);
-            ry += 58;
+            drawRoundRect(ctx2, 1046, ry + 13, 202 * r, 5, 2, homeKit.primary);
+            drawRoundRect(ctx2, 1046 + 202 * r, ry + 13, 202 * (1 - r), 5, 2, awayKit.primary);
+            ry += 62;
           }
         } else {
           drawText(ctx2, "1. \u70B9\u9009\u573A\u4E0A\u7403\u5458\u6362\u4E0B", 1044, 142, { size: 11, color: THEME.GOLD_LIGHT });
@@ -33727,7 +33804,7 @@
               align: "right",
               mono: true
             });
-            hits.add(1040, py, 214, 24, () => {
+            hits.addTouchTarget(1040, py, 214, 24, () => {
               this.selectedOutId = p.id;
             });
           });
@@ -33744,7 +33821,7 @@
             drawText(ctx2, sub.name.slice(0, 6), 1082, sy + 16, { size: 11, bold: true });
             drawText(ctx2, `${sub.traits?.[0] || ""}`, 1246, sy + 16, { size: 10, color: "#60A5FA", align: "right" });
             if (canSub) {
-              hits.add(1040, sy, 214, 32, () => {
+              hits.addTouchTarget(1040, sy, 214, 32, () => {
                 this.engine.substitute(this.userSide, this.selectedOutId, sub.id);
                 this.selectedOutId = null;
               });
@@ -34440,12 +34517,13 @@
       const totTicks = hs.possessionTicks + as.possessionTicks || 1;
       const hp = Math.round(hs.possessionTicks / totTicks * 100);
       drawRoundRect(ctx2, mx + 56, my + 196, mw - 112, 24, 6, "rgba(7, 11, 20, 0.78)", THEME.BORDER);
+      const ftSummary = `\u63A7\u7403 ${hp}% : ${100 - hp}%   |   \u5C04\u95E8(\u6B63) ${hs.shots}(${hs.shotsOnTarget}) : ${as.shots}(${as.shotsOnTarget})   |   xG ${hs.xG.toFixed(2)} : ${as.xG.toFixed(2)}`;
       drawText(
         ctx2,
-        `\u63A7\u7403 ${hp}% : ${100 - hp}%   |   \u5C04\u95E8(\u6B63) ${hs.shots}(${hs.shotsOnTarget}) : ${as.shots}(${as.shotsOnTarget})   |   xG ${hs.xG.toFixed(2)} : ${as.xG.toFixed(2)}`,
+        fitText(ctx2, ftSummary, mw - 128, FONT.MICRO, false, true),
         cx,
         my + 208,
-        { size: 11, color: "#7DD3FC", align: "center", mono: true }
+        { token: "MICRO", color: "#7DD3FC", align: "center", mono: true }
       );
       const ts = st.tacticalStats;
       if (ts && ts.traitTriggers + ts.chemPasses + ts.scoutCounters > 0) {
@@ -34771,27 +34849,47 @@
       this.renderSideRotateDials(ctx2, hits, league, mapX, mapY, mapW, mapH, actions.onSave);
       const defaultNotice = "\u5B8F\u89C2\u7F57\u76D8\u53EF\u7528\u4E24\u4FA7\u661F\u8F68\u62E8\u76D8\u65CB\u8F6C\u53CC\u73AF\u78B0\u649E 6 \u5927\u878D\u5408\u5947\u70B9 \xB7 \u70B9\u51FB\u6D41\u6D3E\u7EB9\u7AE0\u6216\u6EDA\u8F6E\u653E\u5927\u8FDB\u5165\u661F\u5BBF\u7279\u5199";
       const displayNotice = isBeginnerMode && this.notice === defaultNotice ? `\u65B0\u624B\u5F15\u5BFC\uFF1A\u70B9\u51FB\u3010${STYLE_LABELS[club.style].name}\u3011\u7EB9\u7AE0\u5C55\u5F00\u661F\u5BBF\uFF0C\u6216\u70B9\u53F3\u4E0A\u300C\u5C55\u5F00\u5168\u76D8\u300D\u89E3\u9501\u5168\u56FE` : this.notice;
-      drawBadge(
-        ctx2,
-        mapX + 12,
-        mapY + 12,
-        Math.min(490, mapW - 360),
-        24,
-        displayNotice,
-        "rgba(11, 17, 32, 0.90)",
-        ast.locked ? THEME.GOLD_LIGHT : "#7DD3FC"
-      );
+      const noticeW = Math.min(490, mapW - 360);
+      const noticeH = IS_MOBILE ? 36 : 24;
+      drawRoundRect(ctx2, mapX + 12, mapY + 12, noticeW, noticeH, 6, "rgba(11, 17, 32, 0.90)", THEME.BORDER);
+      if (IS_MOBILE) {
+        drawWrappedText(ctx2, displayNotice, mapX + 20, mapY + 16, noticeW - 16, 15, {
+          token: "MICRO",
+          color: ast.locked ? THEME.GOLD_LIGHT : "#7DD3FC",
+          maxLines: 2
+        });
+      } else {
+        drawText(ctx2, fitText(ctx2, displayNotice, noticeW - 16, 11, false), mapX + 20, mapY + 24, {
+          size: 11,
+          color: ast.locked ? THEME.GOLD_LIGHT : "#7DD3FC"
+        });
+      }
       const tpBase = league.getV6MatchRuntimeConfig().checkpointTpBase;
-      drawBadge(
-        ctx2,
-        mapX + mapW - 352,
-        mapY + 12,
-        340,
-        24,
-        `\u88AB\u52A8${ast.unlockedPassives.length}/92 \xB7 \u724C${ast.unlockedDirectives.length}/122 \xB7 \u6280${ast.unlockedSkills.length}/59 \xB7 \u5370${ast.unlockedMasterySeals.length}/6 \xB7 \u6BCF\u6BB5${tpBase}TP`,
-        "rgba(11, 17, 32, 0.92)",
-        "#CBD5E1"
-      );
+      drawRoundRect(ctx2, mapX + mapW - 352, mapY + 12, 340, IS_MOBILE ? 36 : 24, 6, "rgba(11, 17, 32, 0.92)", THEME.BORDER);
+      if (IS_MOBILE) {
+        drawText(
+          ctx2,
+          `\u88AB\u52A8${ast.unlockedPassives.length}/92 \xB7 \u724C${ast.unlockedDirectives.length}/122 \xB7 \u6280${ast.unlockedSkills.length}/59`,
+          mapX + mapW - 182,
+          mapY + 22,
+          { token: "MICRO", color: "#CBD5E1", align: "center", mono: true }
+        );
+        drawText(
+          ctx2,
+          `\u5370${ast.unlockedMasterySeals.length}/6 \xB7 \u6BCF\u6BB5${tpBase}TP`,
+          mapX + mapW - 182,
+          mapY + 37,
+          { token: "MICRO", color: THEME.GOLD_LIGHT, align: "center", mono: true }
+        );
+      } else {
+        drawText(
+          ctx2,
+          `\u88AB\u52A8${ast.unlockedPassives.length}/92 \xB7 \u724C${ast.unlockedDirectives.length}/122 \xB7 \u6280${ast.unlockedSkills.length}/59 \xB7 \u5370${ast.unlockedMasterySeals.length}/6 \xB7 \u6BCF\u6BB5${tpBase}TP`,
+          mapX + mapW - 182,
+          mapY + 24,
+          { size: 10.5, color: "#CBD5E1", align: "center", mono: true }
+        );
+      }
       const isMacroNow = this.zoom < 1.32;
       const pillX = mapX + 14;
       const pillY = mapY + mapH - 38;
@@ -35459,7 +35557,7 @@
             { dim: !pos.unlocked && !pos.reachable }
           );
           ctx2.restore();
-          if (this.zoom >= 1.5 || isOrigin || isSel) {
+          if (isOrigin || isSel || !IS_MOBILE && this.zoom >= 1.5) {
             drawText(ctx2, isOrigin ? `${info.short}\u539F\u70B9` : p.name.slice(0, 4), pos.x, pos.y + nr + 8, {
               size: isOrigin ? 9 : 8.5,
               bold: isOrigin || isSel,
@@ -35513,7 +35611,7 @@
             dim: !pos.unlocked && !pos.reachable
           });
           ctx2.restore();
-          if (this.zoom >= 1.28 || isSel || isEq) {
+          if (isSel || isEq || !IS_MOBILE && this.zoom >= 1.28) {
             drawText(ctx2, sk.name.slice(0, 4), pos.x, pos.y + dr + 8, {
               size: 9,
               bold: isEq || isSel,
@@ -35570,7 +35668,7 @@
             ctx2.fill();
           });
           ctx2.restore();
-          if (this.zoom >= 1.55 || isSel) {
+          if (isSel || !IS_MOBILE && this.zoom >= 1.55) {
             drawText(ctx2, dir.name.slice(0, 4), pos.x, pos.y + nr + 8, {
               size: 8.5,
               bold: isSel || isEq,
@@ -35666,7 +35764,7 @@
           dim: !pos.unlocked && !pos.reachable
         });
         ctx2.restore();
-        if (isOrigin || this.zoom >= 1.45 || isSel) {
+        if (isOrigin || isSel || !IS_MOBILE && this.zoom >= 1.45) {
           drawText(ctx2, isOrigin ? SYSTEM_LABELS[sp.system].name.slice(0, 3) : sp.name.slice(0, 4), pos.x, pos.y + r + 8, {
             size: 8.5,
             bold: isOrigin || isSel,
@@ -36510,8 +36608,8 @@
             unlocked ? THEME.GREEN : isLvLocked ? "#1E293B" : "#334155",
             unlocked ? "#080C14" : isLvLocked ? "#FCA5A5" : THEME.TX2
           );
-          drawWrappedText(ctx2, branch.levelDescriptions[li], bx + 64, ly + 11, cardW - 134, 14, {
-            size: 10,
+          drawWrappedText(ctx2, branch.levelDescriptions[li], bx + 64, ly + 9, cardW - 134, 15, {
+            token: "MICRO",
             color: unlocked ? THEME.TX1 : THEME.TX2,
             maxLines: 2
           });
@@ -37042,13 +37140,13 @@
           const gKind = sk.styleTag ? STYLE_GLYPH2[sk.styleTag] ?? "master" : "master";
           drawRoundRect(ctx2, sx, sy, 72, 34, 6, "rgba(12, 42, 68, 0.85)", "rgba(56, 189, 248, 0.45)", 1);
           drawSkillGlyph(ctx2, gKind, sx + 15, sy + 17, 19, "#38BDF8", THEME.GOLD_LIGHT);
-          drawText(ctx2, fitText(ctx2, sk.name, 42, 9.5, true), sx + 28, sy + 17, { size: 9.5, bold: true, color: THEME.TX1 });
+          drawText(ctx2, fitText(ctx2, sk.name, 42, FONT.MICRO, true, true), sx + 28, sy + 17, { token: "MICRO", bold: true, color: THEME.TX1 });
         } else {
           ctx2.save();
           ctx2.setLineDash([3, 2]);
           drawRoundRect(ctx2, sx, sy, 72, 34, 6, "rgba(15, 23, 42, 0.55)", "rgba(148, 163, 184, 0.28)", 1);
           ctx2.restore();
-          drawText(ctx2, `F${si + 1} \u7A7A`, sx + 36, sy + 17, { size: 9.5, color: THEME.TX3, align: "center" });
+          drawText(ctx2, `F${si + 1} \u7A7A`, sx + 36, sy + 17, { token: "MICRO", color: THEME.TX3, align: "center" });
         }
       }
       for (let ri = 0; ri < 5; ri++) {
@@ -37335,14 +37433,14 @@
         }
         ctx2.fillStyle = weakLit ? "#EF4444" : scannedNormal ? "#38BDF8" : "#334155";
         ctx2.beginPath();
-        ctx2.arc(dx, dy, 8.5, 0, Math.PI * 2);
+        ctx2.arc(dx, dy, IS_MOBILE ? 11 : 8.5, 0, Math.PI * 2);
         ctx2.fill();
         ctx2.strokeStyle = weakLit ? "#FDE047" : "#CBD5E1";
         ctx2.lineWidth = 1.2;
         ctx2.stroke();
-        drawText(ctx2, sl.role.slice(0, 3), dx, dy + 0.5, { size: 7.5, bold: true, color: "#FFFFFF", align: "center" });
+        drawText(ctx2, sl.role.slice(0, 3), dx, dy + 0.5, { size: IS_MOBILE ? 9.5 : 7.5, rawSize: true, bold: true, color: "#FFFFFF", align: "center" });
         if (zObj) {
-          hits.add(dx - 19, dy - 19, 38, 38, () => {
+          hits.addTouchTarget(dx - 19, dy - 19, 38, 38, () => {
             if (this.selectedZoneId === zId && !zObj.scanned && !isRevealed) {
               const res = league.scanOpponentZone(zId);
               if (res.msg) this.scoutNotice = res.msg;
@@ -38011,9 +38109,9 @@
           const col = idx < 6 ? 0 : 1;
           const row = idx < 6 ? idx : idx - 6;
           const rx = xgX + 6 + col * 300;
-          const ry = xgY + 3 + row * 33;
+          const ry = xgY + 3 + row * 35;
           const rw2 = 294;
-          const rh = 31;
+          const rh = 33;
           const isMvp = idx === 0;
           const rColor = item.rating >= 8 ? THEME.GREEN : item.rating >= 7 ? THEME.GOLD_LIGHT : THEME.TX1;
           drawRoundRect(
@@ -38028,31 +38126,31 @@
             isMvp || item.isUnlocked ? 1.2 : 0.8
           );
           if (isMvp) {
-            drawBadge(ctx2, rx + 4, ry + 6, 30, 18, "MVP", "#78350F", THEME.GOLD_LIGHT);
+            drawBadge(ctx2, rx + 4, ry + 7, 30, 18, "MVP", "#78350F", THEME.GOLD_LIGHT);
           } else {
-            drawText(ctx2, `${idx + 1}`, rx + 13, ry + 15, { size: 9.5, bold: true, color: THEME.TX3, align: "center", mono: true });
+            drawText(ctx2, `${idx + 1}`, rx + 13, ry + 16.5, { token: "MICRO", bold: true, color: THEME.TX3, align: "center", mono: true });
           }
           const nameX = isMvp ? rx + 38 : rx + 24;
-          drawBadge(ctx2, nameX, ry + 7, 28, 16, item.player.role, "#1E293B", THEME.TX2);
-          drawText(ctx2, item.player.name.slice(0, 5), nameX + 32, ry + 10, {
-            size: 10.5,
+          drawBadge(ctx2, nameX, ry + 8, 28, 16, item.player.role, "#1E293B", THEME.TX2);
+          drawText(ctx2, fitText(ctx2, item.player.name, 84, FONT.MICRO, true, true), nameX + 32, ry + 10, {
+            token: "MICRO",
             bold: true,
             color: isMvp ? THEME.GOLD_LIGHT : THEME.TX1
           });
           let sx = nameX + 32;
           item.statIcons.forEach((si) => {
-            sx += drawStatMicro(ctx2, si.ic, `${si.val}`, sx, ry + 23, {
-              iconSize: 9,
-              fontSize: 9,
+            sx += drawStatMicro(ctx2, si.ic, `${si.val}`, sx, ry + 24, {
+              iconSize: 10,
+              fontSize: 10,
               iconColor: THEME.TX3,
               valueColor: THEME.TX2,
               gap: 2
             });
-            sx += 7;
+            sx += 6;
           });
           if (item.gainText) {
-            drawText(ctx2, item.gainText, rx + rw2 - 42, ry + 23, {
-              size: 8.8,
+            drawText(ctx2, item.gainText, rx + rw2 - 42, ry + 24, {
+              token: "MICRO",
               bold: item.isUnlocked,
               color: item.isUnlocked ? "#38BDF8" : THEME.GREEN,
               align: "right",
@@ -38061,20 +38159,20 @@
           }
           if (item.keyTrait) {
             drawText(ctx2, `[${item.keyTrait.slice(0, 4)}]`, rx + rw2 - 42, ry + 10, {
-              size: 8.5,
+              token: "MICRO",
               color: "#C4B5FD",
               align: "right"
             });
           } else if (item.bestPartner && isMvp) {
             drawText(ctx2, `\u8FDE\u7EBF:${item.bestPartner.slice(0, 3)}`, rx + rw2 - 42, ry + 10, {
-              size: 8.5,
+              token: "MICRO",
               color: THEME.GOLD_LIGHT,
               align: "right"
             });
           }
-          drawRoundRect(ctx2, rx + rw2 - 36, ry + 5, 32, 21, 4, "#0F172A", rColor, 1);
-          drawText(ctx2, item.rating.toFixed(1), rx + rw2 - 20, ry + 15.5, {
-            size: 10.5,
+          drawRoundRect(ctx2, rx + rw2 - 36, ry + 5, 32, 23, 4, "#0F172A", rColor, 1);
+          drawText(ctx2, item.rating.toFixed(1), rx + rw2 - 20, ry + 16.5, {
+            token: "LABEL",
             bold: true,
             color: rColor,
             align: "center",
@@ -38082,10 +38180,10 @@
           });
         });
         const sumX = xgX + 306;
-        const sumY = xgY + 3 + 5 * 33;
-        drawRoundRect(ctx2, sumX, sumY, 294, 31, 5, "rgba(30, 58, 95, 0.35)", THEME.BORDER_GOLD, 0.9);
-        drawText(ctx2, `\u9996\u53D1\u5747\u5206 ${avgRating} \xB7 \u9ED8\u5951\u603B\u5347\u6E29 +${totalChemGain.toFixed(0)}`, sumX + 147, sumY + 15.5, {
-          size: 10,
+        const sumY = xgY + 3 + 5 * 35;
+        drawRoundRect(ctx2, sumX, sumY, 294, 33, 5, "rgba(30, 58, 95, 0.35)", THEME.BORDER_GOLD, 0.9);
+        drawText(ctx2, `\u9996\u53D1\u5747\u5206 ${avgRating} \xB7 \u9ED8\u5951\u603B\u5347\u6E29 +${totalChemGain.toFixed(0)}`, sumX + 147, sumY + 16.5, {
+          token: "MICRO",
           bold: true,
           color: THEME.GOLD_LIGHT,
           align: "center"
@@ -38879,7 +38977,7 @@
           drawBadge(ctx2, cx + cw - 126, cy + 24, 102, 24, `${opt.v6RogueReward.badge} +${opt.v6RogueReward.metaBonus}pt`, "#3B1F6E", "#E9D5FF");
         }
         drawText(ctx2, fitText(ctx2, opt.title, cw - 48, 16.5, true), cx + 24, cy + 78, { size: 16.5, bold: true, color: THEME.TX1 });
-        drawWrappedText(ctx2, opt.subtitle, cx + 24, cy + 112, cw - 48, 22, { size: 13, color: THEME.TX2, maxLines: 5 });
+        drawWrappedText(ctx2, opt.subtitle, cx + 24, cy + 112, cw - 48, 20, { token: "BODY", color: THEME.TX2, maxLines: 4 });
         if (opt.v6RogueReward) {
           drawRoundRect(ctx2, cx + 24, cy + 236, cw - 48, 56, 8, "rgba(30, 20, 56, 0.72)", "#C084FC", 1.2);
           drawText(ctx2, `\u2605 \u672C\u5B63\u5E38\u9A7B\u751F\u6548 \xB7 \u53E6\u8D60\u6C38\u4E45\u661F\u76D8\u70B9 +${opt.v6RogueReward.metaBonus}pt`, cx + cw / 2, cy + 255, {
@@ -39123,14 +39221,15 @@
         drawPlayerAvatar(ctx2, 40, cy + 6, 48, 60, c, club, { radius: 6 });
         drawBadge(ctx2, 98, cy + 12, 24, 18, c.tier, tierColor(c.tier));
         drawBadge(ctx2, 128, cy + 12, 38, 18, c.role, "#1E293B", THEME.TX2);
-        drawText(ctx2, c.name, 176, cy + 21, { size: 15, bold: true });
-        drawText(ctx2, `CA ${c.ca}`, 510, cy + 21, { size: 15, bold: true, color: THEME.GOLD_LIGHT, align: "right", mono: true });
+        drawText(ctx2, fitText(ctx2, c.name, 220, FONT.TITLE, true, true), 176, cy + 21, { token: "TITLE", bold: true });
+        drawText(ctx2, `CA ${c.ca}`, 488, cy + 21, { token: "TITLE", bold: true, color: THEME.GOLD_LIGHT, align: "right", mono: true });
+        const traitStatsLine = `${c.traits?.[0] || "\u5747\u8861"} \xB7 \u901F${c.attributes.pace} \u5C04${c.attributes.shooting} \u4F20${c.attributes.passing} \u9632${c.attributes.defending}`;
         drawText(
           ctx2,
-          `${c.traits?.[0] || "\u5747\u8861"}  |  \u901F${c.attributes.pace} \u5C04${c.attributes.shooting} \u4F20${c.attributes.passing} \u9632${c.attributes.defending}`,
+          fitText(ctx2, traitStatsLine, 390, FONT.MICRO, false, true),
           98,
           cy + 48,
-          { size: 11, color: THEME.TX2 }
+          { token: "MICRO", color: THEME.TX2 }
         );
         drawButton(ctx2, hits, 496, cy + 24, 110, 24, "\u4E00\u952E\u66FF\u6700\u4F4E\u5206", () => {
           if (canClick && sortedSquad.length > 0) {
@@ -39161,8 +39260,8 @@
         bold: true,
         color: THEME.TX1
       });
-      sortedSquad.forEach((p, idx) => {
-        const ry = 190 + idx * 31;
+      sortedSquad.slice(0, 14).forEach((p, idx) => {
+        const ry = 190 + idx * 34;
         const isSel = this.selectedDropId === p.id;
         const isSuggest = idx < 3;
         const isStarter = starterSet.has(p.id);
@@ -39171,33 +39270,34 @@
           664,
           ry,
           584,
-          27,
+          30,
           5,
           isSel ? "#3B1E24" : THEME.BG_CARD,
           isSel ? THEME.RED_LIGHT : THEME.BORDER,
           isSel ? 1.5 : 1
         );
         if (isSuggest) {
-          drawBadge(ctx2, 670, ry + 5, 40, 17, "\u5EFA\u8BAE\u6362", "#7C2D12", "#FDBA74");
+          drawBadge(ctx2, 670, ry + 6, 40, 18, "\u5EFA\u8BAE\u6362", "#7C2D12", "#FDBA74");
         } else {
-          drawBadge(ctx2, 670, ry + 5, 40, 17, p.tier, tierColor(p.tier));
+          drawBadge(ctx2, 670, ry + 6, 40, 18, p.tier, tierColor(p.tier));
         }
-        drawBadge(ctx2, 714, ry + 5, 34, 17, isStarter ? "\u9996\u53D1" : "\u66FF\u8865", isStarter ? "#14532D" : "#334155", isStarter ? THEME.GREEN : THEME.TX2);
-        drawBadge(ctx2, 752, ry + 5, 36, 17, p.role, "#1E293B", THEME.TX2);
-        drawText(ctx2, p.name, 796, ry + 13, { size: 12, bold: true });
-        drawText(ctx2, `CA ${p.ca}`, 1140, ry + 13, { size: 12, bold: true, color: THEME.GOLD_LIGHT, align: "right", mono: true });
+        drawBadge(ctx2, 714, ry + 6, 34, 18, isStarter ? "\u9996\u53D1" : "\u66FF\u8865", isStarter ? "#14532D" : "#334155", isStarter ? THEME.GREEN : THEME.TX2);
+        drawBadge(ctx2, 752, ry + 6, 36, 18, p.role, "#1E293B", THEME.TX2);
+        drawText(ctx2, fitText(ctx2, p.name, 220, FONT.LABEL, true, true), 796, ry + 15, { token: "LABEL", bold: true });
+        drawStatBar(ctx2, p.ca, 99, 1036, ry + 13, 46, 4, THEME.GOLD_LIGHT);
+        drawText(ctx2, `CA ${p.ca}`, 1140, ry + 15, { token: "LABEL", bold: true, color: THEME.GOLD_LIGHT, align: "right", mono: true });
         drawBadge(
           ctx2,
           1154,
-          ry + 4,
+          ry + 5,
           84,
-          19,
+          20,
           this.selectedCandidateId ? "\u70B9\u51FB\u6362\u4E0B \u25B6" : isSel ? "\u5DF2\u9009\u4E2D" : "\u9009\u4E3A\u6362\u4E0B",
           this.selectedCandidateId ? "#14532D" : isSel ? "#991B1B" : "#1E293B",
           this.selectedCandidateId ? THEME.GREEN : THEME.TX2
         );
         if (rd.swapsUsed < rd.maxSwaps) {
-          hits.add(664, ry, 584, 27, () => {
+          hits.addTouchTarget(664, ry, 584, 30, () => {
             if (this.selectedCandidateId) {
               league.swapPlayerInReDraft(p.id, this.selectedCandidateId);
               this.selectedDropId = null;
@@ -39926,14 +40026,19 @@
         const rl = summary.retiredLegend;
         const cs = summary.captainSuccessor;
         const bannerText = cs?.chosenPlayerName ? `\u6E38\u5B50\u5F52\u5BB6 \xB7 \u4F20\u5947\u6302\u9774\uFF1A#10 ${rl.name} \u8F6C\u4EFB\u4E3B\u6559\u7EC3 \xB7 \u8863\u94B5\u4F20\u4EBA\u3010${cs.chosenPlayerName}\u3011\u5DF2\u89C9\u9192\u91D1\u6807\u3010${cs.grantedTrait}\u3011\uFF01` : `\u6E38\u5B50\u5F52\u5BB6 \xB7 \u4F20\u5947\u6302\u9774\u8F6C\u6559\u7EC3\uFF1A#10 ${rl.name} (${rl.age}\u5C81 \xB7 \u672C\u5B63 ${rl.appearances}\u573A ${rl.goals}\u7403${rl.assists}\u52A9) \u6B63\u5F0F\u9000\u5F79\u63A5\u8FC7\u6559\u97AD\uFF0C\u4F20\u627F\u3010\u8001\u961F\u957F\u7684\u6012\u543C\u3011+50 Meta\uFF01`;
-        drawRoundRect(ctx2, 64, 108, 1152, 26, 6, "rgba(120, 53, 15, 0.45)", THEME.GOLD, 1);
-        drawText(
-          ctx2,
-          bannerText,
-          640,
-          121,
-          { size: 11.5, bold: true, color: THEME.GOLD_LIGHT, align: "center" }
-        );
+        const bannerLines = wrapTextLines(ctx2, bannerText, 1124, FONT.LABEL, true, 2, true);
+        const bannerH = bannerLines.length > 1 ? 38 : 26;
+        drawRoundRect(ctx2, 64, 106, 1152, bannerH, 6, "rgba(120, 53, 15, 0.45)", THEME.GOLD, 1);
+        if (bannerLines.length <= 1) {
+          drawText(ctx2, bannerText, 640, 119, { token: "LABEL", bold: true, color: THEME.GOLD_LIGHT, align: "center" });
+        } else {
+          drawWrappedText(ctx2, bannerText, 78, 110, 1124, 16, {
+            token: "LABEL",
+            bold: true,
+            color: THEME.GOLD_LIGHT,
+            maxLines: 2
+          });
+        }
       }
       if (this.viewMode === "ceremony") {
         this.renderCeremonyView(ctx2, hits, league, actions);
@@ -40084,8 +40189,10 @@
         if (topMem.oppPlayerName) metaChips.push(`\u654C\u65B9\u7126\u70B9:${topMem.oppPlayerName}`);
         if (topMem.assistPlayerName) metaChips.push(`\u52A9\u653B:${topMem.assistPlayerName}`);
         if (metaChips.length > 0) {
-          drawText(ctx2, metaChips.slice(0, 4).join("  \xB7  "), 564, 358, {
-            size: 10,
+          const shownChips = metaChips.slice(0, 3);
+          const extra = metaChips.length > 3 ? ` \xB7 +${metaChips.length - 3}` : "";
+          drawText(ctx2, fitText(ctx2, shownChips.join("  \xB7  ") + extra, 632, FONT.MICRO, false, true), 564, 358, {
+            token: "MICRO",
             color: "#7DD3FC"
           });
         }
@@ -40157,8 +40264,8 @@
             }
           }
           drawBadge(ctx2, bx + 14, by + 14, 114, 20, opt.badge, "#1E293B", col);
-          drawText(ctx2, opt.title, bx + 14, by + 50, { size: 13, bold: true, color: THEME.TX1 });
-          drawWrappedText(ctx2, opt.subtitle, bx + 14, by + 74, bw - 28, 16, { size: 10.5, color: THEME.TX2, maxLines: 3 });
+          drawText(ctx2, fitText(ctx2, opt.title, bw - 28, FONT.BODY, true, true), bx + 14, by + 50, { token: "BODY", bold: true, color: THEME.TX1 });
+          drawWrappedText(ctx2, opt.subtitle, bx + 14, by + 74, bw - 28, 17, { token: "MICRO", color: THEME.TX2, maxLines: 3 });
           const claim = () => {
             const res = league.pickSeasonBonusReward(opt.id);
             if (res.ok) {
@@ -40357,30 +40464,25 @@
           }
         });
         drawBadge(ctx2, px + 8, py + 13, 34, 18, p.role, tierColor(p.tier));
-        drawText(ctx2, p.name, px + 48, py + 15, { size: 12, bold: true });
+        drawText(ctx2, fitText(ctx2, p.name, 94, FONT.LABEL, true, true), px + 48, py + 14, { token: "LABEL", bold: true });
         drawText(
           ctx2,
           `\u8FDB${p.seasonStats.goals} \u52A9${p.seasonStats.assists}`,
           px + 48,
-          py + 32,
-          { size: 10, color: THEME.TX3 }
+          py + 31,
+          { token: "MICRO", color: THEME.TX3 }
         );
-        drawText(ctx2, `CA ${p.ca}/${paCap}`, px + 244, py + 22, {
-          size: 12,
+        if (p.lastCaDelta && p.lastCaDelta !== 0) {
+          drawDeltaBadge(ctx2, p.lastCaDelta, px + 146, py + 22);
+        }
+        drawText(ctx2, `${p.ca}/${paCap}`, px + 244, py + 15, {
+          token: "LABEL",
           bold: true,
           color: p.ca >= paCap ? THEME.GOLD_LIGHT : "#7DD3FC",
           align: "right",
           mono: true
         });
-        if (p.lastCaDelta && p.lastCaDelta !== 0) {
-          drawText(
-            ctx2,
-            p.lastCaDelta > 0 ? `\u25B2+${p.lastCaDelta}` : `\u25BC${p.lastCaDelta}`,
-            px + 194,
-            py + 22,
-            { size: 11, bold: true, color: p.lastCaDelta > 0 ? THEME.GREEN : THEME.RED_LIGHT, align: "right", mono: true }
-          );
-        }
+        drawStatBar(ctx2, p.ca, Math.max(1, paCap), px + 196, py + 28, 48, 4, p.ca >= paCap ? THEME.GOLD_LIGHT : "#7DD3FC");
         if (canSwap) {
           drawButton(ctx2, hits, px + 252, py + 10, 76, 24, "\u66FF\u6362 \u25B6", () => {
             const res = league.recruitSeasonRewardToRoster(this.selectedRewardId, p.id);
@@ -40736,6 +40838,7 @@
         });
       });
       const botY = y + h - 12;
+      const maxLx = x + w - 72;
       const g = player.seasonStats.goals;
       const ast = player.seasonStats.assists;
       let lx = x + 8;
@@ -40746,17 +40849,17 @@
         valueColor: famCol,
         gap: 3
       });
-      if (g > 0) {
-        lx += 6;
+      if (g > 0 && lx + 26 < maxLx) {
+        lx += 5;
         lx += drawStatMicro(ctx2, "ball", `${g}`, lx, botY, { iconSize: 10, fontSize: 10, iconColor: THEME.TX3, valueColor: THEME.TX1, gap: 2 });
       }
-      if (ast > 0) {
-        lx += 5;
+      if (ast > 0 && lx + 24 < maxLx) {
+        lx += 4;
         drawStatMicro(ctx2, "stat_assist", `${ast}`, lx, botY, { iconSize: 10, fontSize: 10, iconColor: THEME.TX3, valueColor: THEME.TX1, gap: 2 });
       }
-      drawMiniBar(ctx2, x + w - 62, botY - 2, 26, 4, fit / 100, fit < 60 ? "#FBBF24" : THEME.GREEN);
+      drawMiniBar(ctx2, x + w - 64, botY - 2, 24, 4, fit / 100, fit < 60 ? "#FBBF24" : THEME.GREEN);
       drawText(ctx2, `${fit}%`, x + w - 8, botY, {
-        size: 10,
+        token: "MICRO",
         color: fit < 60 ? "#FBBF24" : THEME.TX2,
         align: "right",
         mono: true
@@ -40956,7 +41059,7 @@
               ctx2.fillStyle = isCur ? "rgba(250, 204, 21, 0.16)" : "rgba(56, 189, 248, 0.12)";
               ctx2.fillRect(gx + 1, gy + 1, cellW - 2, cellH - 2);
             }
-            hits.add(gx, gy, cellW, cellH, () => {
+            hits.addTouchTarget(gx, gy, cellW, cellH, () => {
               SoundEngine.playClick();
               league.setClubGridSlot(sIdx, c, r);
               actions.onSave();
@@ -40998,7 +41101,7 @@
       let hoveredLink = null;
       let hoveredMidX = 0;
       let hoveredMidY = 0;
-      let minHoverDist = 12;
+      let minHoverDist = IS_MOBILE ? 22 : 12;
       ctx2.save();
       for (const sp of chemSummary.specs) {
         const a = slotCoords[sp.slotA];
@@ -41181,7 +41284,7 @@
             ctx2.fill();
             ctx2.restore();
             const shirtTxt = selectedStarter.shirtNumber ? `#${selectedStarter.shirtNumber} ` : "";
-            drawText(ctx2, `${shirtTxt}${selectedStarter.name.slice(0, 6)}`, popX + 12, popY + 18, { size: 12.5, bold: true, color: THEME.TX1 });
+            drawText(ctx2, fitText(ctx2, `${shirtTxt}${selectedStarter.name}`, popW - 24, FONT.LABEL, true, true), popX + 12, popY + 18, { token: "LABEL", bold: true, color: THEME.TX1 });
             drawText(ctx2, `${slotRole} \xB7 CA ${selectedStarter.ca}`, popX + popW - 38, popY + 18, { size: 10.5, bold: true, color: THEME.GOLD_LIGHT, align: "right", mono: true });
             drawButton(ctx2, hits, popX + popW - 30, popY + 7, 22, 22, "\xD7", () => {
               this.selectedStarterIdx = null;
@@ -41549,21 +41652,19 @@
             SoundEngine.playClick();
             actions.onSave();
           }, { variant: "ghost", fontSize: 10 });
-          drawText(ctx2, fitText(ctx2, def.name, sw - 16, 12.5, true), sx + 10, sy + 37, {
-            size: 12.5,
+          drawText(ctx2, fitText(ctx2, def.name, sw - 16, FONT.LABEL, true, true), sx + 10, sy + 37, {
+            token: "LABEL",
             bold: true,
             color: THEME.TX1
           });
-          drawWrappedText(ctx2, `+ ${def.benefitSummary}`, sx + 10, sy + 55, sw - 18, 13, {
-            size: 10,
-            color: "#4ADE80",
-            maxLines: 2
+          drawText(ctx2, fitText(ctx2, `+ ${def.benefitSummary}`, sw - 18, FONT.MICRO, false, true), sx + 10, sy + 62, {
+            token: "MICRO",
+            color: "#4ADE80"
           });
           const enchOrSat = enchant ? `\u2726\u9644\u9B54\uFF1A${V6_DIRECTIVE_ENCHANTS[enchant].name}` : satellites.length > 0 ? `\u2605\u536B\u661F ${satellites.join("+")}${isOverclocked ? "(\u8D85\u9891)" : ""}` : `- ${def.riskSummary}`;
-          drawWrappedText(ctx2, enchOrSat, sx + 10, sy + 84, sw - 18, 12.5, {
-            size: 9.5,
-            color: enchant ? "#E9D5FF" : satellites.length > 0 ? THEME.GOLD_LIGHT : "#FCA5A5",
-            maxLines: 2
+          drawText(ctx2, fitText(ctx2, enchOrSat, sw - 18, FONT.MICRO, false, true), sx + 10, sy + 88, {
+            token: "MICRO",
+            color: enchant ? "#E9D5FF" : satellites.length > 0 ? THEME.GOLD_LIGHT : "#FCA5A5"
           });
           hits.add(sx, sy + 28, sw, sh - 28, () => {
             this.libMode = "directives";
@@ -42314,19 +42415,19 @@
         color: THEME.TX1,
         align: "center"
       });
-      drawText(ctx2, `EST. 2026 \xB7 ${this.formation} \xB7 ${TACTICAL_PRESETS[this.style].name}`, sx + sw / 2, sy + 340, {
-        size: 11.5,
+      drawText(ctx2, fitText(ctx2, `EST. 2026 \xB7 ${this.formation} \xB7 ${TACTICAL_PRESETS[this.style].name}`, sw - 28, FONT.LABEL, false, true), sx + sw / 2, sy + 340, {
+        token: "LABEL",
         color: THEME.GOLD_LIGHT,
         align: "center"
       });
       drawRoundRect(ctx2, sx + 18, sy + 368, sw - 36, 106, 8, "rgba(15, 23, 42, 0.86)", THEME.BORDER);
       const startFunds = 900 + (metaLv.finance || 0) * 150;
-      drawText(ctx2, "\u521D\u59CB\u8FD0\u8425\u8D44\u91D1", sx + 30, sy + 392, { size: 11, color: THEME.TX2 });
-      drawText(ctx2, formatFunds(startFunds), sx + sw - 30, sy + 392, { size: 13.5, bold: true, color: THEME.GREEN, align: "right", mono: true });
-      drawText(ctx2, "\u5F00\u5C40\u5EFA\u961F\u6D41\u7A0B", sx + 30, sy + 422, { size: 11, color: THEME.TX2 });
-      drawText(ctx2, "3 \u6838\u5FC3\u5305 \u2192 \u590F\u7A97\u8865\u9F5026\u4EBA", sx + sw - 30, sy + 422, { size: 11.5, bold: true, color: THEME.GOLD_LIGHT, align: "right" });
-      drawText(ctx2, "\u7403\u8863\u9632\u649E\u8272\u7CFB\u7EDF", sx + 30, sy + 452, { size: 11, color: THEME.TX2 });
-      drawText(ctx2, "\u5DF2\u542F\u7528 \xB7 \u5BA2\u573A\u81EA\u52A8\u5207\u6362", sx + sw - 30, sy + 452, { size: 11, color: "#38BDF8", align: "right" });
+      drawText(ctx2, "\u521D\u59CB\u8D44\u91D1", sx + 30, sy + 392, { token: "MICRO", color: THEME.TX2 });
+      drawText(ctx2, formatFunds(startFunds), sx + sw - 30, sy + 392, { token: "BODY", bold: true, color: THEME.GREEN, align: "right", mono: true });
+      drawText(ctx2, "\u5EFA\u961F\u6D41\u7A0B", sx + 30, sy + 422, { token: "MICRO", color: THEME.TX2 });
+      drawText(ctx2, "3\u6838\u5FC3\u5305 \u2192 \u590F\u7A9726\u4EBA", sx + sw - 30, sy + 422, { token: "LABEL", bold: true, color: THEME.GOLD_LIGHT, align: "right" });
+      drawText(ctx2, "\u9632\u649E\u8272", sx + 30, sy + 452, { token: "MICRO", color: THEME.TX2 });
+      drawText(ctx2, "\u5DF2\u542F\u7528 \xB7 \u5BA2\u573A\u81EA\u52A8\u5207\u6362", sx + sw - 30, sy + 452, { token: "MICRO", color: "#38BDF8", align: "right" });
       const rx = sx + sw + 22;
       const ry = my + 70;
       const rw = mx + mw - rx - 26;
@@ -42392,7 +42493,7 @@
             const chk = col === "#F8FAFC" || col === "#FACC15" ? "#090D16" : "#FFFFFF";
             drawIcon(ctx2, "check", px + 16, palY + 61, 12, chk);
           }
-          hits.add(px, palY + 46, 32, 30, () => {
+          hits.addTouchTarget(px, palY + 46, 32, 30, () => {
             SoundEngine.playClick();
             if (isHome) this.primaryColor = col;
             else this.awayPrimaryColor = col;
@@ -42407,7 +42508,7 @@
             const chk = col === "#F8FAFC" || col === "#FACC15" ? "#090D16" : "#FFFFFF";
             drawIcon(ctx2, "check", px + 16, palY + 61, 12, chk);
           }
-          hits.add(px, palY + 46, 32, 30, () => {
+          hits.addTouchTarget(px, palY + 46, 32, 30, () => {
             SoundEngine.playClick();
             if (isHome) this.secondaryColor = col;
             else this.awaySecondaryColor = col;

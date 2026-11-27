@@ -27,6 +27,7 @@ import {
   drawText,
   drawWrappedText,
   fitText,
+  FONT,
   HitRegistry,
   NavRailTab,
   tierColor,
@@ -44,7 +45,7 @@ import {
 } from '../../../core/src/v6';
 import { drawPlayerAvatar } from '../AvatarRenderer';
 import { SoundEngine } from '../SoundEngine';
-import { THEME } from '../Theme';
+import { IS_MOBILE, THEME } from '../Theme';
 import { drawIcon } from '../VectorIcons';
 
 const SYS_LIST: DefenseSystem[] = ['4-back', '3-back', '5-back'];
@@ -297,8 +298,9 @@ export class TacticsScreen {
       });
     });
 
-    // 底部行：熟悉度微图标 + 进度条 + 体能
+    // 底部行：熟悉度微图标 + 进度条 + 体能（右侧留出 70px 避免顶到体能条）
     const botY = y + h - 12;
+    const maxLx = x + w - 72;
     const g = player.seasonStats.goals;
     const ast = player.seasonStats.assists;
     let lx = x + 8;
@@ -309,17 +311,17 @@ export class TacticsScreen {
       valueColor: famCol,
       gap: 3,
     });
-    if (g > 0) {
-      lx += 6;
+    if (g > 0 && lx + 26 < maxLx) {
+      lx += 5;
       lx += drawStatMicro(ctx, 'ball', `${g}`, lx, botY, { iconSize: 10, fontSize: 10, iconColor: THEME.TX3, valueColor: THEME.TX1, gap: 2 });
     }
-    if (ast > 0) {
-      lx += 5;
+    if (ast > 0 && lx + 24 < maxLx) {
+      lx += 4;
       drawStatMicro(ctx, 'stat_assist', `${ast}`, lx, botY, { iconSize: 10, fontSize: 10, iconColor: THEME.TX3, valueColor: THEME.TX1, gap: 2 });
     }
-    drawMiniBar(ctx, x + w - 62, botY - 2, 26, 4, fit / 100, fit < 60 ? '#FBBF24' : THEME.GREEN);
+    drawMiniBar(ctx, x + w - 64, botY - 2, 24, 4, fit / 100, fit < 60 ? '#FBBF24' : THEME.GREEN);
     drawText(ctx, `${fit}%`, x + w - 8, botY, {
-      size: 10,
+      token: 'MICRO',
       color: fit < 60 ? '#FBBF24' : THEME.TX2,
       align: 'right',
       mono: true,
@@ -560,7 +562,7 @@ export class TacticsScreen {
             ctx.fillStyle = isCur ? 'rgba(250, 204, 21, 0.16)' : 'rgba(56, 189, 248, 0.12)';
             ctx.fillRect(gx + 1, gy + 1, cellW - 2, cellH - 2);
           }
-          hits.add(gx, gy, cellW, cellH, () => {
+          hits.addTouchTarget(gx, gy, cellW, cellH, () => {
             SoundEngine.playClick();
             league.setClubGridSlot(sIdx, c, r);
             actions.onSave();
@@ -614,7 +616,7 @@ export class TacticsScreen {
     let hoveredLink: (typeof chemSummary.specs)[number] | null = null;
     let hoveredMidX = 0;
     let hoveredMidY = 0;
-    let minHoverDist = 12;
+    let minHoverDist = IS_MOBILE ? 22 : 12;
 
     ctx.save();
     for (const sp of chemSummary.specs) {
@@ -831,7 +833,7 @@ export class TacticsScreen {
 
           // 头部：球衣号 + 姓名 + 位置/CA + 关闭
           const shirtTxt = selectedStarter.shirtNumber ? `#${selectedStarter.shirtNumber} ` : '';
-          drawText(ctx, `${shirtTxt}${selectedStarter.name.slice(0, 6)}`, popX + 12, popY + 18, { size: 12.5, bold: true, color: THEME.TX1 });
+          drawText(ctx, fitText(ctx, `${shirtTxt}${selectedStarter.name}`, popW - 24, FONT.LABEL, true, true), popX + 12, popY + 18, { token: 'LABEL', bold: true, color: THEME.TX1 });
           drawText(ctx, `${slotRole} · CA ${selectedStarter.ca}`, popX + popW - 38, popY + 18, { size: 10.5, bold: true, color: THEME.GOLD_LIGHT, align: 'right', mono: true });
           drawButton(ctx, hits, popX + popW - 30, popY + 7, 22, 22, '×', () => {
             this.selectedStarterIdx = null;
@@ -1264,25 +1266,23 @@ export class TacticsScreen {
           actions.onSave();
         }, { variant: 'ghost', fontSize: 10 });
 
-        drawText(ctx, fitText(ctx, def.name, sw - 16, 12.5, true), sx + 10, sy + 37, {
-          size: 12.5,
+        drawText(ctx, fitText(ctx, def.name, sw - 16, FONT.LABEL, true, true), sx + 10, sy + 37, {
+          token: 'LABEL',
           bold: true,
           color: THEME.TX1,
         });
-        drawWrappedText(ctx, `+ ${def.benefitSummary}`, sx + 10, sy + 55, sw - 18, 13, {
-          size: 10,
+        drawText(ctx, fitText(ctx, `+ ${def.benefitSummary}`, sw - 18, FONT.MICRO, false, true), sx + 10, sy + 62, {
+          token: 'MICRO',
           color: '#4ADE80',
-          maxLines: 2,
         });
         const enchOrSat = enchant
           ? `✦附魔：${V6_DIRECTIVE_ENCHANTS[enchant].name}`
           : satellites.length > 0
           ? `★卫星 ${satellites.join('+')}${isOverclocked ? '(超频)' : ''}`
           : `- ${def.riskSummary}`;
-        drawWrappedText(ctx, enchOrSat, sx + 10, sy + 84, sw - 18, 12.5, {
-          size: 9.5,
+        drawText(ctx, fitText(ctx, enchOrSat, sw - 18, FONT.MICRO, false, true), sx + 10, sy + 88, {
+          token: 'MICRO',
           color: enchant ? '#E9D5FF' : satellites.length > 0 ? THEME.GOLD_LIGHT : '#FCA5A5',
-          maxLines: 2,
         });
 
         hits.add(sx, sy + 28, sw, sh - 28, () => {

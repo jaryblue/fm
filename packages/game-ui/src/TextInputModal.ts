@@ -113,8 +113,8 @@ export class TextInputModal {
       bold: true,
       color: THEME.GOLD_LIGHT,
     });
-    drawText(ctx, '直接键盘输入（支持中文输入法），回车确认或 ESC 取消', mx + 24, my + 58, {
-      size: 11.5,
+    drawText(ctx, '直接键盘输入（支持中文），回车确认 / ESC 取消', mx + 24, my + 58, {
+      size: 11,
       color: THEME.TX2,
     });
 

@@ -18,10 +18,12 @@ import {
   drawMiniBar,
   drawNavRail,
   drawRoundRect,
+  drawStatBar,
   drawStatMicro,
   drawText,
   drawWrappedText,
   fitText,
+  FONT,
   formatFunds,
   HitRegistry,
   NavRailTab,
@@ -202,14 +204,16 @@ export class ClubRosterScreen {
         ready ? THEME.GREEN : THEME.GOLD_LIGHT,
         1.2
       );
+      const bannerMaxW = ready ? totalW - 210 : totalW - 424;
+      const bannerMsg = ready
+        ? `夏季转会窗开放 · 已凑齐 ${displayRoster.length} 人（达标 ${SEASON_SQUAD_SIZE} 人），可继续微调或立即开启新赛季`
+        : `夏季转会窗开放 · 当前 ${displayRoster.length}/${SEASON_SQUAD_SIZE} 人（还差 ${needCount} 人），可从青训/转会/密荐引援或免签补齐`;
       drawText(
         ctx,
-        ready
-          ? `夏季转会窗开放 · 已凑齐 ${displayRoster.length} 人（达标 ${SEASON_SQUAD_SIZE} 人），可继续微调或立即开启新赛季`
-          : `夏季转会窗开放 · 当前 ${displayRoster.length}/${SEASON_SQUAD_SIZE} 人（还差 ${needCount} 人），可从青训/转会/密荐引援或免签青训补齐`,
+        fitText(ctx, bannerMsg, bannerMaxW, FONT.LABEL, true, true),
         baseX + 16,
         bannerY + 18,
-        { size: 12, bold: true, color: ready ? THEME.GREEN : THEME.GOLD_LIGHT }
+        { token: 'LABEL', bold: true, color: ready ? THEME.GREEN : THEME.GOLD_LIGHT }
       );
       if (!ready) {
         drawButton(ctx, hits, baseX + totalW - 398, bannerY + 4, 210, 28, `免签青年队补齐 (${needCount}人 · ¥0万)`, () => {
@@ -248,10 +252,10 @@ export class ClubRosterScreen {
       drawRoundRect(ctx, baseX, bannerY, totalW, bannerH, 8, 'rgba(12, 74, 110, 0.36)', '#38BDF8', 1.2);
       drawText(
         ctx,
-        '冬季转会窗开放 · 可进行球员买卖、青训提拔或经纪人密荐',
+        fitText(ctx, '冬季转会窗开放 · 可进行球员买卖、青训提拔或经纪人密荐', totalW - 224, FONT.LABEL, true, true),
         baseX + 16,
         bannerY + 18,
-        { size: 12, bold: true, color: '#7DD3FC' }
+        { token: 'LABEL', bold: true, color: '#7DD3FC' }
       );
       drawButton(ctx, hits, baseX + totalW - 196, bannerY + 4, 186, 28, '关闭冬窗 · 继续下半程 ▶', () => {
         const res = league.closeWinterWindow();
@@ -269,10 +273,10 @@ export class ClubRosterScreen {
       const nextHint = winState.roundsToNextWindow > 0 ? `距冬季转会窗还有 ${winState.roundsToNextWindow} 轮` : '冬窗已过，下个窗口为赛季末夏窗';
       drawText(
         ctx,
-        `转会窗已关闭（${nextHint}）· 交易/签约/密荐已锁死，但仍可随时浏览并付费球探考察迷雾球员`,
+        fitText(ctx, `转会窗已关闭（${nextHint}）· 交易/签约/密荐已锁死，仍可球探考察迷雾球员`, totalW - 54, FONT.LABEL, false, true),
         baseX + 38,
         bannerY + 18,
-        { size: 11.5, color: '#FECACA' }
+        { token: 'LABEL', color: '#FECACA' }
       );
     }
 
@@ -346,23 +350,23 @@ export class ClubRosterScreen {
         baseX + 12,
         ry,
         lbW - 24,
-        36,
+        40,
         6,
         idx === 0 ? 'rgba(212, 168, 67, 0.12)' : THEME.BG_CARD,
         idx === 0 ? THEME.BORDER_GOLD : THEME.BORDER
       );
-      drawText(ctx, `${idx + 1}`, baseX + 24, ry + 18, { size: 12.5, bold: true, color: rankCol, align: 'center', mono: true });
-      drawBadge(ctx, baseX + 38, ry + 9, 32, 18, p.role, tierColor(p.tier));
-      drawText(ctx, p.name, baseX + 76, ry + 12, { size: 11.5, bold: true, color: THEME.TX1 });
-      drawText(ctx, `${p.age}岁 · CA ${p.ca} / PA ${p.pa ?? p.ca}`, baseX + 76, ry + 27, { size: 9.5, color: THEME.TX2 });
-      drawText(ctx, val.text, baseX + lbW - 18, ry + 18, {
-        size: 11,
+      drawText(ctx, `${idx + 1}`, baseX + 24, ry + 20, { token: 'LABEL', bold: true, color: rankCol, align: 'center', mono: true });
+      drawBadge(ctx, baseX + 38, ry + 11, 32, 18, p.role, tierColor(p.tier));
+      drawText(ctx, fitText(ctx, p.name, lbW - 154, FONT.LABEL, true, true), baseX + 76, ry + 13, { token: 'LABEL', bold: true, color: THEME.TX1 });
+      drawText(ctx, `${p.age}岁 · ${p.ca}/${p.pa ?? p.ca}`, baseX + 76, ry + 29, { token: 'MICRO', color: THEME.TX2, mono: true });
+      drawText(ctx, val.text, baseX + lbW - 18, ry + 20, {
+        token: 'LABEL',
         bold: true,
         color: idx < 3 ? rankCol : '#7DD3FC',
         align: 'right',
         mono: true,
       });
-      hits.add(baseX + 12, ry, lbW - 24, 36, () => {
+      hits.addTouchTarget(baseX + 12, ry, lbW - 24, 40, () => {
         SoundEngine.playClick();
         actions.onInspectPlayer(p);
       });
@@ -391,7 +395,7 @@ export class ClubRosterScreen {
         color: active ? THEME.GOLD_LIGHT : hov ? '#FFFFFF' : THEME.TX2,
         align: 'center',
       });
-      hits.add(fx, panelY + 10, 54, 24, () => {
+      hits.addTouchTarget(fx, panelY + 10, 54, 24, () => {
         this.filter = fk;
         this.page = 0;
       });
@@ -409,7 +413,7 @@ export class ClubRosterScreen {
       const active = this.sortMode === sk;
       const hov = hits.isHovered(sx, panelY + 10, 42, 24);
       drawText(ctx, sl, sx + 21, panelY + 22, {
-        size: 10,
+        token: 'MICRO',
         bold: active || hov,
         color: active ? '#38BDF8' : hov ? '#E2E8F0' : THEME.TX3,
         align: 'center',
@@ -418,7 +422,7 @@ export class ClubRosterScreen {
         ctx.fillStyle = '#38BDF8';
         ctx.fillRect(sx + 8, panelY + 32, 26, 2);
       }
-      hits.add(sx, panelY + 10, 42, 24, () => {
+      hits.addTouchTarget(sx, panelY + 10, 42, 24, () => {
         this.sortMode = sk;
         this.page = 0;
       });
@@ -517,15 +521,16 @@ export class ClubRosterScreen {
       drawBadge(ctx, px + 110, py + 7, 34, 15, `${p.age}岁`, '#1E3A5F', '#7DD3FC');
       if (isSuspended) drawBadge(ctx, px + 148, py + 7, 28, 15, '停赛', '#991B1B', '#FECACA');
 
-      drawText(ctx, p.name, px + 52, py + 33, { size: 12.5, bold: true, color: THEME.TX1 });
+      drawText(ctx, fitText(ctx, p.name, cw - 122, FONT.BODY, true, true), px + 52, py + 32, { token: 'BODY', bold: true, color: THEME.TX1 });
       const secText = p.secondaryRoles && p.secondaryRoles.length > 0 ? `兼:${p.secondaryRoles.join('/')}` : '专职';
-      drawText(ctx, `${secText} · 身价 ${formatFunds(p.marketValue ?? p.cost)}`, px + 52, py + 47, {
-        size: 9,
+      drawText(ctx, fitText(ctx, `${secText} · ${formatFunds(p.marketValue ?? p.cost)}`, cw - 122, FONT.MICRO, false, true), px + 52, py + 47, {
+        token: 'MICRO',
         color: '#7DD3FC',
       });
 
-      drawText(ctx, `CA ${p.ca}`, px + cw - 10, py + 16, { size: 12.5, bold: true, color: THEME.GOLD_LIGHT, align: 'right', mono: true });
-      drawText(ctx, `PA ${paVal}`, px + cw - 10, py + 32, { size: 9.5, bold: true, color: paVal >= 85 ? THEME.GOLD_LIGHT : '#38BDF8', align: 'right', mono: true });
+      drawText(ctx, `${p.ca}`, px + cw - 10, py + 15, { token: 'TITLE', bold: true, color: THEME.GOLD_LIGHT, align: 'right', mono: true });
+      drawStatBar(ctx, p.ca, 99, px + cw - 52, py + 25, 42, 3, THEME.GOLD_LIGHT);
+      drawText(ctx, `PA ${paVal}`, px + cw - 10, py + 36, { token: 'MICRO', bold: true, color: paVal >= 85 ? THEME.GOLD_LIGHT : '#38BDF8', align: 'right', mono: true });
 
       const attrPairs: Array<[IconName, number]> = p.role === 'GK'
         ? [
@@ -557,7 +562,7 @@ export class ClubRosterScreen {
       });
 
       const traitText = p.traits && p.traits.length > 0 ? p.traits.slice(0, 2).join(' · ') : '均衡型球员';
-      drawText(ctx, fitText(ctx, traitText, cw - 60, 9.5), px + 12, py + 103, { size: 9.5, color: '#A5B4FC' });
+      drawText(ctx, fitText(ctx, traitText, cw - 60, FONT.MICRO, false, true), px + 12, py + 103, { token: 'MICRO', color: '#A5B4FC' });
       drawButton(ctx, hits, px + cw - 42, py + 93, 34, 18, p.isStarred ? '★' : '☆', () => {
         const next = league.toggleStarPlayer(p.id);
         actions.onSave();
@@ -567,20 +572,20 @@ export class ClubRosterScreen {
       const apps = p.seasonStats.appearances ?? 0;
       const botY = py + 120;
       let lx = px + 12;
-      drawText(ctx, `${apps}场`, lx, botY, { size: 9.5, color: THEME.TX2, mono: true });
-      lx += 28;
+      drawText(ctx, `${apps}场`, lx, botY, { token: 'MICRO', color: THEME.TX2, mono: true });
+      lx += 32;
       if (p.role === 'GK') {
-        lx += drawStatMicro(ctx, 'stat_gk', `${p.seasonStats.saves ?? 0}`, lx, botY, { iconSize: 9.5, fontSize: 9.5, iconColor: THEME.TX3, valueColor: THEME.TX1, gap: 2 });
+        lx += drawStatMicro(ctx, 'stat_gk', `${p.seasonStats.saves ?? 0}`, lx, botY, { iconSize: 10, fontSize: 10, iconColor: THEME.TX3, valueColor: THEME.TX1, gap: 2 });
         lx += 7;
-        drawStatMicro(ctx, 'shield', `${p.seasonStats.cleanSheets ?? 0}`, lx, botY, { iconSize: 9.5, fontSize: 9.5, iconColor: THEME.TX3, valueColor: THEME.GREEN, gap: 2 });
+        drawStatMicro(ctx, 'shield', `${p.seasonStats.cleanSheets ?? 0}`, lx, botY, { iconSize: 10, fontSize: 10, iconColor: THEME.TX3, valueColor: THEME.GREEN, gap: 2 });
       } else {
-        lx += drawStatMicro(ctx, 'ball', `${p.seasonStats.goals ?? 0}`, lx, botY, { iconSize: 9.5, fontSize: 9.5, iconColor: THEME.TX3, valueColor: THEME.TX1, gap: 2 });
+        lx += drawStatMicro(ctx, 'ball', `${p.seasonStats.goals ?? 0}`, lx, botY, { iconSize: 10, fontSize: 10, iconColor: THEME.TX3, valueColor: THEME.TX1, gap: 2 });
         lx += 7;
-        drawStatMicro(ctx, 'stat_assist', `${p.seasonStats.assists ?? 0}`, lx, botY, { iconSize: 9.5, fontSize: 9.5, iconColor: THEME.TX3, valueColor: THEME.TX1, gap: 2 });
+        drawStatMicro(ctx, 'stat_assist', `${p.seasonStats.assists ?? 0}`, lx, botY, { iconSize: 10, fontSize: 10, iconColor: THEME.TX3, valueColor: THEME.TX1, gap: 2 });
       }
       const fitPct = Math.round(p.fitness ?? 100);
-      drawMiniBar(ctx, px + cw - 64, botY - 2, 26, 4, fitPct / 100, fitPct < 60 ? '#FBBF24' : THEME.GREEN);
-      drawText(ctx, `${fitPct}%`, px + cw - 10, botY, { size: 9.5, color: fitPct < 60 ? '#FBBF24' : THEME.TX2, align: 'right', mono: true });
+      drawMiniBar(ctx, px + cw - 68, botY - 2, 26, 4, fitPct / 100, fitPct < 60 ? '#FBBF24' : THEME.GREEN);
+      drawText(ctx, `${fitPct}%`, px + cw - 10, botY, { token: 'MICRO', color: fitPct < 60 ? '#FBBF24' : THEME.TX2, align: 'right', mono: true });
 
       hits.add(px, py, cw, ch, () => {
         SoundEngine.playClick();

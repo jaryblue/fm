@@ -17,6 +17,7 @@ import {
   drawRoundRect,
   drawText,
   fitText,
+  FONT,
   HitRegistry,
   tierColor,
 } from '../CanvasKit';
@@ -425,29 +426,29 @@ export class DraftScreen {
       });
 
       drawPlayerAvatar(ctx, cx + cw / 2 - 30, cy + 62, 60, 74, p, club, { radius: 8 });
-      drawText(ctx, p.name, cx + cw / 2, cy + 150, { size: 16, bold: true, color: THEME.TX1, align: 'center' });
-      drawText(ctx, fitText(ctx, p.traits?.slice(0, 2).join(' · ') || '建队核心', cw - 24, 10.5), cx + cw / 2, cy + 170, {
-        size: 10.5,
+      drawText(ctx, fitText(ctx, p.name, cw - 20, FONT.TITLE, true, true), cx + cw / 2, cy + 150, { token: 'TITLE', bold: true, color: THEME.TX1, align: 'center' });
+      drawText(ctx, fitText(ctx, p.traits?.slice(0, 2).join(' · ') || '建队核心', cw - 24, FONT.MICRO, false, true), cx + cw / 2, cy + 170, {
+        token: 'MICRO',
         color: '#C4B5FD',
         align: 'center',
       });
 
       const pairs: Array<[string, number]> = p.role === 'GK'
         ? [
-            ['扑救', p.attributes.goalkeeping],
-            ['站位', p.attributes.positioning],
-            ['冷静', p.attributes.composure],
-            ['传球', p.attributes.passing],
-            ['力量', p.attributes.strength],
-            ['体能', p.attributes.stamina],
+            ['扑', p.attributes.goalkeeping],
+            ['站', p.attributes.positioning],
+            ['冷', p.attributes.composure],
+            ['传', p.attributes.passing],
+            ['力', p.attributes.strength],
+            ['体', p.attributes.stamina],
           ]
         : [
-            ['速度', p.attributes.pace],
-            ['射门', p.attributes.shooting],
-            ['传球', p.attributes.passing],
-            ['盘带', p.attributes.dribbling],
-            ['防守', p.attributes.defending],
-            ['体能', p.attributes.stamina],
+            ['速', p.attributes.pace],
+            ['射', p.attributes.shooting],
+            ['传', p.attributes.passing],
+            ['盘', p.attributes.dribbling],
+            ['防', p.attributes.defending],
+            ['体', p.attributes.stamina],
           ];
       pairs.forEach(([lbl, val], pi) => {
         const col = pi % 2;
@@ -455,18 +456,19 @@ export class DraftScreen {
         const ax = cx + 12 + col * 102;
         const ay = cy + 186 + row * 26;
         drawRoundRect(ctx, ax, ay, 98, 22, 4, 'rgba(11, 17, 30, 0.86)', THEME.BORDER);
-        drawText(ctx, lbl, ax + 8, ay + 11, { size: 10, color: THEME.TX2 });
-        drawText(ctx, `${val}`, ax + 90, ay + 11, { size: 11.5, bold: true, color: THEME.GOLD_LIGHT, align: 'right', mono: true });
+        drawText(ctx, lbl, ax + 8, ay + 11, { token: 'MICRO', color: THEME.TX2 });
+        drawText(ctx, `${val}`, ax + 90, ay + 11, { token: 'LABEL', bold: true, color: THEME.GOLD_LIGHT, align: 'right', mono: true });
       });
 
-      drawText(ctx, fitText(ctx, arch.hint, cw - 20, 10), cx + cw / 2, cy + 274, {
-        size: 10,
+      drawText(ctx, fitText(ctx, arch.hint, cw - 20, FONT.MICRO, true, true), cx + cw / 2, cy + 274, {
+        token: 'MICRO',
         bold: true,
         color: arch.color,
         align: 'center',
       });
-      drawText(ctx, `兼职:${p.secondaryRoles?.join('/') || '专职'} · ¥${p.marketValue ?? p.cost}万`, cx + cw / 2, cy + 292, {
-        size: 10,
+      const roleValLine = `兼:${p.secondaryRoles?.join('/') || '专职'} · ¥${p.marketValue ?? p.cost}万`;
+      drawText(ctx, fitText(ctx, roleValLine, cw - 20, FONT.MICRO, false, true), cx + cw / 2, cy + 292, {
+        token: 'MICRO',
         color: THEME.TX2,
         align: 'center',
       });
@@ -506,12 +508,12 @@ export class DraftScreen {
           1
         );
         drawText(ctx, 'i 档案', infoX + 23, infoY + 10, {
-          size: 9.5,
+          token: 'MICRO',
           bold: infoHover,
           color: infoHover ? '#BAE6FD' : THEME.TX2,
           align: 'center',
         });
-        hits.add(infoX, infoY, 46, 20, () => {
+        hits.addTouchTarget(infoX, infoY, 46, 20, () => {
           SoundEngine.playClick();
           actions.onInspectPlayer(p);
         });

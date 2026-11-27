@@ -33,6 +33,26 @@ export class HitRegistry {
     this.regions.push({ x, y, w, h, onClick });
   }
 
+  /**
+   * 移动端自动将手动热区中心扩展至至少 minSize×minSize（默认 44px），桌面端保持原尺寸
+   */
+  public addTouchTarget(
+    x: number,
+    y: number,
+    w: number,
+    h: number,
+    onClick: () => void,
+    minSize = 44
+  ): void {
+    if (!IS_MOBILE) {
+      this.add(x, y, w, h, onClick);
+      return;
+    }
+    const padX = w < minSize ? Math.ceil((minSize - w) / 2) : 0;
+    const padY = h < minSize ? Math.ceil((minSize - h) / 2) : 0;
+    this.add(x - padX, y - padY, w + padX * 2, h + padY * 2, onClick);
+  }
+
   public isHovered(x: number, y: number, w: number, h: number): boolean {
     return (
       this.hoverX >= x &&
@@ -172,7 +192,22 @@ export function drawChamferPanel(
 }
 
 /**
- * 移动端小字阶梯放大（保持大标题不溢出，显著提升 8~16px 可读性）
+/**
+ * 语义化字号 Token（按移动端/桌面端分别给定目标字号，配合 rawSize/token 避免二次阶梯放大）
+ */
+export const FONT = {
+  DISPLAY: 30,
+  HEADLINE: IS_MOBILE ? 22 : 20,
+  TITLE: IS_MOBILE ? 16.5 : 15,
+  BODY: IS_MOBILE ? 14 : 13,
+  LABEL: IS_MOBILE ? 12 : 11,
+  MICRO: IS_MOBILE ? 11 : 10,
+} as const;
+
+export type FontToken = keyof typeof FONT;
+
+/**
+ * 移动端小字阶梯放大（保留为旧代码兜底；新代码请使用 FONT token）
  */
 export function mobileFontSize(size: number): number {
   if (!IS_MOBILE) return size;
@@ -192,6 +227,7 @@ export function drawText(
   y: number,
   opts: {
     size?: number;
+    token?: FontToken;
     bold?: boolean;
     italic?: boolean;
     color?: string;
@@ -201,8 +237,8 @@ export function drawText(
     rawSize?: boolean;
   } = {}
 ): void {
-  const raw = opts.size ?? 13;
-  const size = opts.rawSize ? raw : mobileFontSize(raw);
+  const raw = opts.token ? FONT[opts.token] : (opts.size ?? 13);
+  const size = opts.rawSize || opts.token ? raw : mobileFontSize(raw);
   const italic = opts.italic ? 'italic ' : '';
   const weight = opts.bold ? 'bold ' : '';
   const family = opts.mono ? THEME.NUM_FONT_FAMILY : THEME.FONT_FAMILY;
@@ -222,9 +258,10 @@ export function wrapTextLines(
   maxWidth: number,
   size = 11,
   bold = false,
-  maxLines = 3
+  maxLines = 3,
+  rawSize = false
 ): string[] {
-  const effSize = mobileFontSize(size);
+  const effSize = rawSize ? size : mobileFontSize(size);
   const weight = bold ? 'bold ' : '';
   ctx.font = `${weight}${effSize}px ${THEME.FONT_FAMILY}`;
   const tokens = text.match(/[A-Za-z0-9._%+-]+|\s+|[^\sA-Za-z0-9._%+-]/g) ?? [];
@@ -266,15 +303,18 @@ export function drawWrappedText(
   lineHeight: number,
   opts: {
     size?: number;
+    token?: FontToken;
     bold?: boolean;
     color?: string;
     maxLines?: number;
+    rawSize?: boolean;
   } = {}
 ): number {
-  const size = opts.size ?? 11;
-  const effSize = mobileFontSize(size);
+  const raw = opts.token ? FONT[opts.token] : (opts.size ?? 11);
+  const useRaw = !!(opts.rawSize || opts.token);
+  const effSize = useRaw ? raw : mobileFontSize(raw);
   const effLineHeight = IS_MOBILE ? Math.max(lineHeight, Math.round(effSize * 1.28)) : lineHeight;
-  const lines = wrapTextLines(ctx, text, maxWidth, size, !!opts.bold, opts.maxLines ?? 3);
+  const lines = wrapTextLines(ctx, text, maxWidth, raw, !!opts.bold, opts.maxLines ?? 3, useRaw);
   ctx.fillStyle = opts.color ?? THEME.TX1;
   ctx.textAlign = 'left';
   ctx.textBaseline = 'top';
@@ -338,6 +378,132 @@ export function drawMiniBar(
   if (r > 0) {
     drawRoundRect(ctx, x, y, Math.max(h, Math.round(w * r)), h, h / 2, fillColor);
   }
+}
+
+/**
+ * 数值色条编码（替代纯数字对比；未指定颜色时按比例自动分级染色）
+ */
+export function drawStatBar(
+  ctx: CanvasRenderingContext2D,
+  value: number,
+  max: number,
+  x: number,
+  y: number,
+  w: number,
+  h: number,
+  color?: string,
+  bgColor = 'rgba(255,255,255,0.08)'
+): void {
+  const safeMax = Math.max(1, max);
+  const ratio = Math.max(0, Math.min(1, value / safeMax));
+  const fillColor =
+    color ??
+    (ratio >= 0.82 ? THEME.GOLD_LIGHT : ratio >= 0.7 ? THEME.GREEN : ratio >= 0.52 ? THEME.BLUE_LIGHT : '#64748B');
+  drawMiniBar(ctx, x, y, w, h, ratio, fillColor, bgColor);
+}
+
+/**
+ * 紧凑缩写标签 + 等宽数字组合（如 "射71"），返回实际占用宽度
+ */
+export function drawCompactStat(
+  ctx: CanvasRenderingContext2D,
+  label: string,
+  value: string | number,
+  x: number,
+  y: number,
+  opts: {
+    labelColor?: string;
+    valueColor?: string;
+    labelToken?: FontToken;
+    valueToken?: FontToken;
+    gap?: number;
+    bold?: boolean;
+  } = {}
+): number {
+  const lToken = opts.labelToken ?? 'MICRO';
+  const vToken = opts.valueToken ?? 'LABEL';
+  const gap = opts.gap ?? 2;
+  const valStr = String(value);
+
+  drawText(ctx, label, x, y, {
+    token: lToken,
+    color: opts.labelColor ?? THEME.TX3,
+  });
+  ctx.font = `${FONT[lToken]}px ${THEME.FONT_FAMILY}`;
+  const lw = ctx.measureText(label).width;
+
+  const vx = x + lw + gap;
+  drawText(ctx, valStr, vx, y, {
+    token: vToken,
+    bold: opts.bold ?? true,
+    color: opts.valueColor ?? THEME.TX1,
+    mono: true,
+  });
+  ctx.font = `${(opts.bold ?? true) ? 'bold ' : ''}${FONT[vToken]}px ${THEME.NUM_FONT_FAMILY}`;
+  const vw = ctx.measureText(valStr).width;
+  return lw + gap + vw;
+}
+
+/**
+ * 升降箭头色块（替代 "+3/-2" 纯文本），返回实际占用宽度
+ */
+export function drawDeltaBadge(
+  ctx: CanvasRenderingContext2D,
+  delta: number,
+  x: number,
+  y: number,
+  opts: {
+    h?: number;
+    minW?: number;
+  } = {}
+): number {
+  const h = opts.h ?? (IS_MOBILE ? 20 : 18);
+  const text = delta > 0 ? `▲+${delta}` : delta < 0 ? `▼${delta}` : '—';
+  const bg = delta > 0 ? 'rgba(34, 197, 94, 0.18)' : delta < 0 ? 'rgba(220, 38, 38, 0.18)' : 'rgba(100, 116, 139, 0.16)';
+  const fg = delta > 0 ? '#4ADE80' : delta < 0 ? '#F87171' : THEME.TX3;
+  const border = delta > 0 ? 'rgba(74, 222, 128, 0.35)' : delta < 0 ? 'rgba(248, 113, 113, 0.35)' : 'rgba(148, 163, 184, 0.2)';
+
+  ctx.font = `bold ${FONT.MICRO}px ${THEME.NUM_FONT_FAMILY}`;
+  const w = Math.max(opts.minW ?? 34, Math.ceil(ctx.measureText(text).width) + 10);
+  drawRoundRect(ctx, x, y - h / 2, w, h, 4, bg, border, 1);
+  drawText(ctx, text, x + w / 2, y, {
+    token: 'MICRO',
+    bold: true,
+    color: fg,
+    align: 'center',
+    mono: true,
+  });
+  return w;
+}
+
+/**
+ * 排名分级色块（如冠军/欧战/降级区），返回占用宽度
+ */
+export function drawRankTile(
+  ctx: CanvasRenderingContext2D,
+  rank: number,
+  tier: 'gold' | 'blue' | 'green' | 'red' | 'neutral',
+  x: number,
+  y: number,
+  size = IS_MOBILE ? 24 : 22
+): number {
+  const palette: Record<typeof tier, { bg: string; fg: string; border: string }> = {
+    gold: { bg: 'rgba(212, 168, 67, 0.22)', fg: THEME.GOLD_LIGHT, border: 'rgba(250, 204, 21, 0.45)' },
+    blue: { bg: 'rgba(37, 99, 235, 0.22)', fg: '#7DD3FC', border: 'rgba(96, 165, 250, 0.45)' },
+    green: { bg: 'rgba(34, 197, 94, 0.20)', fg: '#4ADE80', border: 'rgba(74, 222, 128, 0.40)' },
+    red: { bg: 'rgba(220, 38, 38, 0.22)', fg: '#F87171', border: 'rgba(248, 113, 113, 0.45)' },
+    neutral: { bg: 'rgba(30, 41, 59, 0.85)', fg: THEME.TX2, border: 'rgba(255, 255, 255, 0.08)' },
+  };
+  const pal = palette[tier];
+  drawRoundRect(ctx, x, y - size / 2, size, size, 5, pal.bg, pal.border, 1);
+  drawText(ctx, String(rank), x + size / 2, y, {
+    token: 'LABEL',
+    bold: true,
+    color: pal.fg,
+    align: 'center',
+    mono: true,
+  });
+  return size;
 }
 
 export type ButtonVariant = 'gold' | 'primary' | 'ghost' | 'danger' | 'green';

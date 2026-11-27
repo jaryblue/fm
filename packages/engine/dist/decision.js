@@ -30,9 +30,9 @@ export function decideOnBall(holder, attackDir, style, players, ball, mods) {
             if (safeLong)
                 return { type: 'pass', target: safeLong, passType: 'long' };
         }
-        // 现代足球门将优先分边找 30m 内空当边后卫出球，其次找中后卫或安全中场（避免对 40m+ 翼卫盲目长传）
-        const nearWideFBs = mates.filter(m => (m.role === 'LB' || m.role === 'RB' || m.role === 'LWB' || m.role === 'RWB') && dist2D(holder.pos, m.pos) <= 30);
-        const orderedMates = [...nearWideFBs, ...mates.filter(m => !nearWideFBs.includes(m))];
+        // 现代足球门将优先在 10~30m 内找中卫或空当边后卫短传出球（激活 CB 后场参与度）
+        const nearBuildup = mates.filter(m => (m.role === 'CB' || m.role === 'LB' || m.role === 'RB' || m.role === 'LWB' || m.role === 'RWB') && dist2D(holder.pos, m.pos) <= 30);
+        const orderedMates = [...nearBuildup, ...mates.filter(m => !nearBuildup.includes(m))];
         for (const m of orderedMates) {
             const d = dist2D(holder.pos, m.pos);
             if (d < 10)
@@ -70,17 +70,18 @@ export function decideOnBall(holder, attackDir, style, players, ball, mods) {
         const boxBonus = distToGoal < 12 ? 0.46 :
             distToGoal < 17 ? 0.34 :
                 distToGoal < 21 ? 0.06 : -0.18;
-        // 战术驱动内切起脚与中场后插上射门（边路窄角度鼓励传中/倒三角，进肋部/中路后鼓励内切爆射）
-        const inCentralOrHalfSpace = Math.abs(holder.pos.y - PITCH.HALF_Y) < 16;
-        const wingCutInBonus = isWideAttacker && relX >= 70 && inCentralOrHalfSpace
+        // 战术驱动内切起脚与边锋/边前卫肋部抢点射门
+        const inCentralOrHalfSpace = Math.abs(holder.pos.y - PITCH.HALF_Y) < 20;
+        const wingCutInBonus = isWideAttacker && relX >= 68 && inCentralOrHalfSpace
             ? style === 'tiki_taka' ? 0.34
                 : style === 'gegenpress' ? 0.32
                     : style === 'counter' ? 0.28
-                        : style === 'wing_play' ? 0.24
+                        : style === 'wing_play' ? 0.30
                             : 0.28
-            : isWideAttacker && relX >= 74 && !inCentralOrHalfSpace
-                ? -0.14
+            : isWideAttacker && relX >= 74 && !inCentralOrHalfSpace && style !== 'wing_play' && holder.role !== 'LM' && holder.role !== 'RM'
+                ? -0.10
                 : 0;
+        const stBoxFinishBonus = holder.role === 'ST' && distToGoal < 19 ? 0.12 : 0;
         const midCrashBonus = (holder.role === 'CAM' || isMidCrasher) && relX >= 68
             ? (style === 'tiki_taka' || style === 'gegenpress' ? 0.34 : 0.26)
             : 0;
@@ -93,7 +94,7 @@ export function decideOnBall(holder, attackDir, style, players, ball, mods) {
             holder.duty === 'inside_forward' ? 0.22 :
                 holder.duty === 'target_man' ? 0.10 :
                     holder.duty === 'false_nine' || holder.duty === 'regista' ? -0.10 : 0;
-        const shootScore = (0.20 + xG * 3.8 + boxBonus) * preset.shootBias * roleShootMul + longShotMod + wingCutInBonus + midCrashBonus + stSoloTrim + dutyShootBonus;
+        const shootScore = (0.20 + xG * 3.8 + boxBonus) * preset.shootBias * roleShootMul + longShotMod + wingCutInBonus + midCrashBonus + stSoloTrim + stBoxFinishBonus + dutyShootBonus;
         if (xG >= minShootXG && shootScore > bestScore) {
             bestScore = shootScore;
             bestAction = { type: 'shoot', xG };
@@ -197,12 +198,13 @@ export function decideOnBall(holder, attackDir, style, players, ball, mods) {
                 passType === 'short' ? clamp(mods?.shortPassBias ?? 0, -0.10, 0.14) : 0);
         const antiPingPong = ball.lastPasserId === mate.id ? (relX >= 64 ? -0.26 : -0.14) : 0;
         const avoidGK = mate.role === 'GK' ? (style === 'tiki_taka' ? -0.06 : -0.16) : 0;
-        // 激活边后卫/翼卫在后场出球与中前场套边接应，抑制后卫线直接越级长找 ST
+        // 激活中卫/边卫/中场后场传导枢纽，抑制后卫线直接越级长找 ST
         const isFBTarget = mate.role === 'LB' || mate.role === 'RB' || mate.role === 'LWB' || mate.role === 'RWB';
         const isBackBuildupHolder = holder.role === 'CB' || holder.role === 'CDM' || holder.role === 'CM';
         const fbOutletBonus = isFBTarget && relX < 62 && mateRelX >= relX - 6 && pComp > 0.60
-            ? (isBackBuildupHolder ? 0.38 : 0.24)
-            : 0;
+            ? (isBackBuildupHolder ? 0.34 : 0.22)
+            : (mate.role === 'CB' && relX < 56 && pComp > 0.68 ? 0.22 : 0) +
+                ((mate.role === 'CM' || mate.role === 'CDM') && relX < 64 && mateRelX >= relX - 4 && pComp > 0.65 ? 0.14 : 0);
         const skipLinePenalty = (holder.role === 'CB' || holder.role === 'CDM') &&
             relX < 44 &&
             mate.role === 'ST' &&

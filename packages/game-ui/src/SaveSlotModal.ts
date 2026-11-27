@@ -161,16 +161,16 @@ export class SaveSlotModal {
       }
 
       if (info.isEmpty) {
-        drawText(ctx, info.clubName, cx + 16, cy + 58, { size: 16, bold: true, color: THEME.TX2 });
-        drawText(ctx, info.phaseText, cx + 120, cy + 58, { size: 12, color: THEME.TX3 });
+        drawText(ctx, info.clubName, cx + 16, cy + 56, { size: 15, bold: true, color: THEME.TX2 });
+        drawText(ctx, info.phaseText, cx + 120, cy + 56, { size: 12, color: THEME.TX3 });
       } else {
-        drawText(ctx, `S${info.seasonNumber} · ${info.clubName}`, cx + 16, cy + 58, {
-          size: 16,
+        drawText(ctx, `S${info.seasonNumber} · ${info.clubName}`, cx + 16, cy + 50, {
+          size: 15,
           bold: true,
           color: isActive ? THEME.GOLD_LIGHT : THEME.TX1,
         });
-        drawText(ctx, `${info.phaseText} · 阵容 ${info.squadCount}人 · 天赋 ${info.metaPoints}pt`, cx + 220, cy + 58, {
-          size: 12,
+        drawText(ctx, `${info.phaseText} · 阵容 ${info.squadCount}人 · 天赋 ${info.metaPoints}pt`, cx + 16, cy + 72, {
+          size: 11.5,
           color: '#7DD3FC',
         });
       }

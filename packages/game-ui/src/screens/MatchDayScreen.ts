@@ -40,6 +40,7 @@ import {
   drawText,
   drawWrappedText,
   fitText,
+  FONT,
   getCommandCardArtId,
   getCommandCardElemId,
   HitRegistry,
@@ -1458,11 +1459,11 @@ export class MatchDayScreen {
           align: 'center',
           mono: true,
         });
-        hits.add(capX, capY, 82, capH, () => {
+        hits.addTouchTarget(capX, capY, 82, capH, () => {
           SoundEngine.playClick();
           this.isPaused = !this.isPaused;
         });
-        hits.add(capX + 84, capY, 82, capH, () => {
+        hits.addTouchTarget(capX + 84, capY, 82, capH, () => {
           SoundEngine.playClick();
           const speeds = [1, 2, 4, 8];
           const curIdx = speeds.indexOf(this.speed);
@@ -1486,7 +1487,8 @@ export class MatchDayScreen {
     ctx.restore();
     drawText(ctx, '实时文字直播', 42, 107, { size: 13.5, bold: true, color: THEME.GOLD_LIGHT });
 
-    const events = st.events.filter(e => e.type !== 'pass').slice(-18).reverse();
+    const events = st.events.filter(e => e.type !== 'pass').slice(-12).reverse();
+    const commLineH = IS_MOBILE ? Math.max(18, Math.round(FONT.MICRO * 1.45)) : 14;
     let cy = 128;
     for (const ev of events) {
       const isGoal = ev.type === 'goal';
@@ -1521,8 +1523,8 @@ export class MatchDayScreen {
 
       const wrapX = isHighlighted ? 68 : 54;
       const wrapW = isHighlighted ? 170 : 186;
-      const lines = wrapTextLines(ctx, ev.text, wrapW, 11, isGoal || isMomentum, 3);
-      const boxH = Math.max(24, lines.length * 14 + 10);
+      const lines = wrapTextLines(ctx, ev.text, wrapW, FONT.MICRO, isGoal || isMomentum, 3, true);
+      const boxH = Math.max(26, lines.length * commLineH + 10);
       if (cy + boxH > 696) break;
 
       if (isGoal) {
@@ -1560,12 +1562,12 @@ export class MatchDayScreen {
         drawIcon(ctx, 'bolt', 58, cy + 12, 11, '#38BDF8');
       }
 
-      ctx.font = `${isGoal || isMomentum ? 'bold ' : ''}11px ${THEME.FONT_FAMILY}`;
+      ctx.font = `${isGoal || isMomentum ? 'bold ' : ''}${FONT.MICRO}px ${THEME.FONT_FAMILY}`;
       ctx.fillStyle = textCol;
       ctx.textAlign = 'left';
       ctx.textBaseline = 'top';
       for (let li = 0; li < lines.length; li++) {
-        ctx.fillText(lines[li], wrapX, cy + 5 + li * 14);
+        ctx.fillText(lines[li], wrapX, cy + 5 + li * commLineH);
       }
 
       cy += boxH + 5;
@@ -1955,7 +1957,7 @@ export class MatchDayScreen {
       const kitColor = p.role === 'GK' ? (p.team === 'home' ? homeGkColor : awayGkColor) : teamKit.primary;
       const trimColor = p.role === 'GK' ? teamKit.primary : teamKit.secondary;
       const isLightKit = isLightHex(kitColor);
-      const dotR = p.role === 'GK' ? 11 : 10.5;
+      const dotR = IS_MOBILE ? (p.role === 'GK' ? 13 : 12.5) : (p.role === 'GK' ? 11 : 10.5);
 
       // 地面投影
       ctx.fillStyle = 'rgba(0, 0, 0, 0.38)';
@@ -2010,7 +2012,7 @@ export class MatchDayScreen {
       ctx.restore();
 
       drawText(ctx, String(p.shirtNumber), sp.x, sp.y + 0.5, {
-        size: 9.5,
+        token: 'MICRO',
         bold: true,
         align: 'center',
         color: isLightKit ? '#0F172A' : '#FFFFFF',
@@ -2029,13 +2031,16 @@ export class MatchDayScreen {
 
       const fitRatio = Math.max(0, Math.min(1, p.fitness / 100));
       const fitColor = fitRatio > 0.65 ? THEME.GREEN : fitRatio > 0.42 ? THEME.GOLD_LIGHT : THEME.RED_LIGHT;
+      const barW = IS_MOBILE ? 24 : 20;
+      const barH = IS_MOBILE ? 4 : 3;
+      const barY = IS_MOBILE ? sp.y - 19 : sp.y - 16;
       ctx.fillStyle = 'rgba(0,0,0,0.65)';
-      ctx.fillRect(sp.x - 10, sp.y - 16, 20, 3);
+      ctx.fillRect(sp.x - barW / 2, barY, barW, barH);
       ctx.fillStyle = fitColor;
-      ctx.fillRect(sp.x - 10, sp.y - 16, 20 * fitRatio, 3);
+      ctx.fillRect(sp.x - barW / 2, barY, barW * fitRatio, barH);
 
       if (p.team === this.userSide && st.phase !== 'full_time') {
-        hits.add(sp.x - 14, sp.y - 14, 28, 28, () => {
+        hits.addTouchTarget(sp.x - 14, sp.y - 14, 28, 28, () => {
           SoundEngine.playClick();
           if (!this.selectedPitchPlayerId) {
             this.selectedPitchPlayerId = p.id;
@@ -2060,11 +2065,12 @@ export class MatchDayScreen {
     type LabelBox = { x: number; y: number; w: number; h: number };
     const rectsOverlap = (a: LabelBox, b: LabelBox) =>
       a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y;
+    const occHalfW = IS_MOBILE ? 16 : 13;
     const occupiedRects: LabelBox[] = pitchEntries.map(({ sp }) => ({
-      x: sp.x - 13,
-      y: sp.y - 16,
-      w: 26,
-      h: 28,
+      x: sp.x - occHalfW,
+      y: sp.y - 20,
+      w: occHalfW * 2,
+      h: 34,
     }));
     const labelOrder = [...pitchEntries].sort((a, b) => {
       const rank = (pl: typeof a.p) =>
@@ -2076,13 +2082,13 @@ export class MatchDayScreen {
     const minLY = PITCH_RECT.y + 2;
     const maxLY = PITCH_RECT.y + PITCH_RECT.h - 2;
     for (const { p, sp } of labelOrder) {
-      const lw = Math.max(20, p.role.length * 6 + 6);
-      const lh = 11;
+      const lw = Math.max(IS_MOBILE ? 26 : 20, p.role.length * (IS_MOBILE ? 7.5 : 6) + 8);
+      const lh = IS_MOBILE ? 14 : 11;
       const candidates = [
-        { cx: sp.x, cy: sp.y + 18 },
-        { cx: sp.x, cy: sp.y - 23 },
-        { cx: sp.x + 14 + lw / 2, cy: sp.y + 1 },
-        { cx: sp.x - 14 - lw / 2, cy: sp.y + 1 },
+        { cx: sp.x, cy: sp.y + (IS_MOBILE ? 21 : 18) },
+        { cx: sp.x, cy: sp.y - (IS_MOBILE ? 26 : 23) },
+        { cx: sp.x + (IS_MOBILE ? 17 : 14) + lw / 2, cy: sp.y + 1 },
+        { cx: sp.x - (IS_MOBILE ? 17 : 14) - lw / 2, cy: sp.y + 1 },
       ];
       let chosen: LabelBox | null = null;
       let chosenCenter: { cx: number; cy: number } | null = null;
@@ -2106,7 +2112,8 @@ export class MatchDayScreen {
         occupiedRects.push(chosen);
         drawRoundRect(ctx, chosen.x, chosen.y, chosen.w, chosen.h, 3, 'rgba(8, 12, 20, 0.72)');
         drawText(ctx, p.role, chosenCenter.cx, chosenCenter.cy, {
-          size: 8.5,
+          size: IS_MOBILE ? 10.5 : 8.5,
+          rawSize: true,
           bold: isPriority,
           color: p.customOffset ? '#38BDF8' : p.hasBall ? '#FEF08A' : 'rgba(241,245,249,0.92)',
           align: 'center',
@@ -2790,9 +2797,9 @@ export class MatchDayScreen {
           used ? THEME.TX3 : isDisc ? '#6EE7B7' : canPlay ? '#FEF08A' : THEME.TX3
         );
 
-        // 卡片主标题（11px 紧凑双行，与下方标签留出呼吸感）
-        drawWrappedText(ctx, def.name, cx + 7, cyL + 26, cw - 14, 13, {
-          size: 11,
+        // 卡片主标题（紧凑双行，与下方标签留出呼吸感）
+        drawWrappedText(ctx, def.name, cx + 7, cyL + 26, cw - 14, 15, {
+          token: 'MICRO',
           bold: true,
           color: used ? THEME.TX3 : THEME.TX1,
           maxLines: 2,
@@ -2807,7 +2814,7 @@ export class MatchDayScreen {
           drawBadge(ctx, cx + 10, cyL + 65, cw - 20, 16, `${'★'.repeat(satCount)}${entry.isOverclocked ? '超频' : '改造'}`, '#1E293B', THEME.GOLD_LIGHT);
         } else {
           const routeTag = def.source === 'fusion' ? '融合王牌' : def.source === 'formation' ? '阵型专属' : def.route === 'gamble' ? '高赔豪赌' : '稳健拼图';
-          drawText(ctx, routeTag, cx + cw / 2, cyL + 73, { size: 9.5, color: used ? THEME.TX3 : '#94A3B8', align: 'center' });
+          drawText(ctx, routeTag, cx + cw / 2, cyL + 73, { token: 'MICRO', color: used ? THEME.TX3 : '#94A3B8', align: 'center' });
         }
 
         // 底部清晰操作态提示
@@ -2819,14 +2826,14 @@ export class MatchDayScreen {
           ? '⚡ 点击拍板'
           : `需 ${effCost} TP`;
         drawText(ctx, statusTxt, cx + cw / 2, cyL + 93, {
-          size: 10,
+          token: 'MICRO',
           bold: true,
           color: used ? '#64748B' : canPlay ? THEME.GOLD_LIGHT : THEME.TX3,
           align: 'center',
         });
 
         if (canPlay) {
-          hits.add(cx, cy - 6, cw, ch + 6, () => {
+          hits.addTouchTarget(cx, cy - 6, cw, ch + 6, () => {
             this.playV6Directive(entry);
           });
         }
@@ -3208,14 +3215,14 @@ export class MatchDayScreen {
 
         let ry = 152;
         for (const [label, hv, av, ratio] of rows) {
-          drawText(ctx, hv, 1046, ry, { size: 12, bold: true, mono: true });
-          drawText(ctx, av, 1248, ry, { size: 12, bold: true, align: 'right', mono: true });
-          drawText(ctx, label, 1147, ry, { size: 11, color: THEME.TX2, align: 'center' });
-          drawRoundRect(ctx, 1046, ry + 11, 202, 5, 2, '#1E293B');
+          drawText(ctx, hv, 1046, ry, { token: 'TITLE', bold: true, mono: true });
+          drawText(ctx, av, 1248, ry, { token: 'TITLE', bold: true, align: 'right', mono: true });
+          drawText(ctx, label, 1147, ry, { token: 'LABEL', color: THEME.TX2, align: 'center' });
+          drawRoundRect(ctx, 1046, ry + 13, 202, 5, 2, '#1E293B');
           const r = Math.max(0.05, Math.min(0.95, isNaN(ratio) ? 0.5 : ratio));
-          drawRoundRect(ctx, 1046, ry + 11, 202 * r, 5, 2, homeKit.primary);
-          drawRoundRect(ctx, 1046 + 202 * r, ry + 11, 202 * (1 - r), 5, 2, awayKit.primary);
-          ry += 58;
+          drawRoundRect(ctx, 1046, ry + 13, 202 * r, 5, 2, homeKit.primary);
+          drawRoundRect(ctx, 1046 + 202 * r, ry + 13, 202 * (1 - r), 5, 2, awayKit.primary);
+          ry += 62;
         }
       } else {
         // 临场换人面板
@@ -3237,7 +3244,7 @@ export class MatchDayScreen {
             align: 'right',
             mono: true,
           });
-          hits.add(1040, py, 214, 24, () => {
+          hits.addTouchTarget(1040, py, 214, 24, () => {
             this.selectedOutId = p.id;
           });
         });
@@ -3255,7 +3262,7 @@ export class MatchDayScreen {
           drawText(ctx, sub.name.slice(0, 6), 1082, sy + 16, { size: 11, bold: true });
           drawText(ctx, `${sub.traits?.[0] || ''}`, 1246, sy + 16, { size: 10, color: '#60A5FA', align: 'right' });
           if (canSub) {
-            hits.add(1040, sy, 214, 32, () => {
+            hits.addTouchTarget(1040, sy, 214, 32, () => {
               this.engine!.substitute(this.userSide, this.selectedOutId!, sub.id);
               this.selectedOutId = null;
             });
@@ -4060,12 +4067,13 @@ export class MatchDayScreen {
     const totTicks = hs.possessionTicks + as.possessionTicks || 1;
     const hp = Math.round((hs.possessionTicks / totTicks) * 100);
     drawRoundRect(ctx, mx + 56, my + 196, mw - 112, 24, 6, 'rgba(7, 11, 20, 0.78)', THEME.BORDER);
+    const ftSummary = `控球 ${hp}% : ${100 - hp}%   |   射门(正) ${hs.shots}(${hs.shotsOnTarget}) : ${as.shots}(${as.shotsOnTarget})   |   xG ${hs.xG.toFixed(2)} : ${as.xG.toFixed(2)}`;
     drawText(
       ctx,
-      `控球 ${hp}% : ${100 - hp}%   |   射门(正) ${hs.shots}(${hs.shotsOnTarget}) : ${as.shots}(${as.shotsOnTarget})   |   xG ${hs.xG.toFixed(2)} : ${as.xG.toFixed(2)}`,
+      fitText(ctx, ftSummary, mw - 128, FONT.MICRO, false, true),
       cx,
       my + 208,
-      { size: 11, color: '#7DD3FC', align: 'center', mono: true }
+      { token: 'MICRO', color: '#7DD3FC', align: 'center', mono: true }
     );
     const ts = st.tacticalStats;
     if (ts && (ts.traitTriggers + ts.chemPasses + ts.scoutCounters) > 0) {

@@ -15,10 +15,12 @@ import {
   drawChamferPanel,
   drawFoilShimmer,
   drawRoundRect,
+  drawStatBar,
   drawStatMicro,
   drawText,
   drawWrappedText,
   fitText,
+  FONT,
   HitRegistry,
   tierColor,
 } from '../CanvasKit';
@@ -512,9 +514,9 @@ export class PostMatchReDraftScreen {
         const col = idx < 6 ? 0 : 1;
         const row = idx < 6 ? idx : idx - 6;
         const rx = xgX + 6 + col * 300;
-        const ry = xgY + 3 + row * 33;
+        const ry = xgY + 3 + row * 35;
         const rw = 294;
-        const rh = 31;
+        const rh = 33;
         const isMvp = idx === 0;
         const rColor = item.rating >= 8.0 ? THEME.GREEN : item.rating >= 7.0 ? THEME.GOLD_LIGHT : THEME.TX1;
 
@@ -531,32 +533,32 @@ export class PostMatchReDraftScreen {
         );
 
         if (isMvp) {
-          drawBadge(ctx, rx + 4, ry + 6, 30, 18, 'MVP', '#78350F', THEME.GOLD_LIGHT);
+          drawBadge(ctx, rx + 4, ry + 7, 30, 18, 'MVP', '#78350F', THEME.GOLD_LIGHT);
         } else {
-          drawText(ctx, `${idx + 1}`, rx + 13, ry + 15, { size: 9.5, bold: true, color: THEME.TX3, align: 'center', mono: true });
+          drawText(ctx, `${idx + 1}`, rx + 13, ry + 16.5, { token: 'MICRO', bold: true, color: THEME.TX3, align: 'center', mono: true });
         }
         const nameX = isMvp ? rx + 38 : rx + 24;
-        drawBadge(ctx, nameX, ry + 7, 28, 16, item.player.role, '#1E293B', THEME.TX2);
-        drawText(ctx, item.player.name.slice(0, 5), nameX + 32, ry + 10, {
-          size: 10.5,
+        drawBadge(ctx, nameX, ry + 8, 28, 16, item.player.role, '#1E293B', THEME.TX2);
+        drawText(ctx, fitText(ctx, item.player.name, 84, FONT.MICRO, true, true), nameX + 32, ry + 10, {
+          token: 'MICRO',
           bold: true,
           color: isMvp ? THEME.GOLD_LIGHT : THEME.TX1,
         });
 
         let sx = nameX + 32;
         item.statIcons.forEach(si => {
-          sx += drawStatMicro(ctx, si.ic, `${si.val}`, sx, ry + 23, {
-            iconSize: 9,
-            fontSize: 9,
+          sx += drawStatMicro(ctx, si.ic, `${si.val}`, sx, ry + 24, {
+            iconSize: 10,
+            fontSize: 10,
             iconColor: THEME.TX3,
             valueColor: THEME.TX2,
             gap: 2,
           });
-          sx += 7;
+          sx += 6;
         });
         if (item.gainText) {
-          drawText(ctx, item.gainText, rx + rw - 42, ry + 23, {
-            size: 8.8,
+          drawText(ctx, item.gainText, rx + rw - 42, ry + 24, {
+            token: 'MICRO',
             bold: item.isUnlocked,
             color: item.isUnlocked ? '#38BDF8' : THEME.GREEN,
             align: 'right',
@@ -565,21 +567,21 @@ export class PostMatchReDraftScreen {
         }
         if (item.keyTrait) {
           drawText(ctx, `[${item.keyTrait.slice(0, 4)}]`, rx + rw - 42, ry + 10, {
-            size: 8.5,
+            token: 'MICRO',
             color: '#C4B5FD',
             align: 'right',
           });
         } else if (item.bestPartner && isMvp) {
           drawText(ctx, `连线:${item.bestPartner.slice(0, 3)}`, rx + rw - 42, ry + 10, {
-            size: 8.5,
+            token: 'MICRO',
             color: THEME.GOLD_LIGHT,
             align: 'right',
           });
         }
 
-        drawRoundRect(ctx, rx + rw - 36, ry + 5, 32, 21, 4, '#0F172A', rColor, 1);
-        drawText(ctx, item.rating.toFixed(1), rx + rw - 20, ry + 15.5, {
-          size: 10.5,
+        drawRoundRect(ctx, rx + rw - 36, ry + 5, 32, 23, 4, '#0F172A', rColor, 1);
+        drawText(ctx, item.rating.toFixed(1), rx + rw - 20, ry + 16.5, {
+          token: 'LABEL',
           bold: true,
           color: rColor,
           align: 'center',
@@ -588,10 +590,10 @@ export class PostMatchReDraftScreen {
       });
 
       const sumX = xgX + 306;
-      const sumY = xgY + 3 + 5 * 33;
-      drawRoundRect(ctx, sumX, sumY, 294, 31, 5, 'rgba(30, 58, 95, 0.35)', THEME.BORDER_GOLD, 0.9);
-      drawText(ctx, `首发均分 ${avgRating} · 默契总升温 +${totalChemGain.toFixed(0)}`, sumX + 147, sumY + 15.5, {
-        size: 10,
+      const sumY = xgY + 3 + 5 * 35;
+      drawRoundRect(ctx, sumX, sumY, 294, 33, 5, 'rgba(30, 58, 95, 0.35)', THEME.BORDER_GOLD, 0.9);
+      drawText(ctx, `首发均分 ${avgRating} · 默契总升温 +${totalChemGain.toFixed(0)}`, sumX + 147, sumY + 16.5, {
+        token: 'MICRO',
         bold: true,
         color: THEME.GOLD_LIGHT,
         align: 'center',
@@ -1505,7 +1507,7 @@ export class PostMatchReDraftScreen {
         drawBadge(ctx, cx + cw - 126, cy + 24, 102, 24, `${opt.v6RogueReward.badge} +${opt.v6RogueReward.metaBonus}pt`, '#3B1F6E', '#E9D5FF');
       }
       drawText(ctx, fitText(ctx, opt.title, cw - 48, 16.5, true), cx + 24, cy + 78, { size: 16.5, bold: true, color: THEME.TX1 });
-      drawWrappedText(ctx, opt.subtitle, cx + 24, cy + 112, cw - 48, 22, { size: 13, color: THEME.TX2, maxLines: 5 });
+      drawWrappedText(ctx, opt.subtitle, cx + 24, cy + 112, cw - 48, 20, { token: 'BODY', color: THEME.TX2, maxLines: 4 });
 
       if (opt.v6RogueReward) {
         drawRoundRect(ctx, cx + 24, cy + 236, cw - 48, 56, 8, 'rgba(30, 20, 56, 0.72)', '#C084FC', 1.2);
@@ -1796,14 +1798,15 @@ export class PostMatchReDraftScreen {
 
       drawBadge(ctx, 98, cy + 12, 24, 18, c.tier, tierColor(c.tier));
       drawBadge(ctx, 128, cy + 12, 38, 18, c.role, '#1E293B', THEME.TX2);
-      drawText(ctx, c.name, 176, cy + 21, { size: 15, bold: true });
-      drawText(ctx, `CA ${c.ca}`, 510, cy + 21, { size: 15, bold: true, color: THEME.GOLD_LIGHT, align: 'right', mono: true });
+      drawText(ctx, fitText(ctx, c.name, 220, FONT.TITLE, true, true), 176, cy + 21, { token: 'TITLE', bold: true });
+      drawText(ctx, `CA ${c.ca}`, 488, cy + 21, { token: 'TITLE', bold: true, color: THEME.GOLD_LIGHT, align: 'right', mono: true });
+      const traitStatsLine = `${c.traits?.[0] || '均衡'} · 速${c.attributes.pace} 射${c.attributes.shooting} 传${c.attributes.passing} 防${c.attributes.defending}`;
       drawText(
         ctx,
-        `${c.traits?.[0] || '均衡'}  |  速${c.attributes.pace} 射${c.attributes.shooting} 传${c.attributes.passing} 防${c.attributes.defending}`,
+        fitText(ctx, traitStatsLine, 390, FONT.MICRO, false, true),
         98,
         cy + 48,
-        { size: 11, color: THEME.TX2 }
+        { token: 'MICRO', color: THEME.TX2 }
       );
       drawButton(ctx, hits, 496, cy + 24, 110, 24, '一键替最低分', () => {
         if (canClick && sortedSquad.length > 0) {
@@ -1838,8 +1841,8 @@ export class PostMatchReDraftScreen {
       color: THEME.TX1,
     });
 
-    sortedSquad.forEach((p, idx) => {
-      const ry = 190 + idx * 31;
+    sortedSquad.slice(0, 14).forEach((p, idx) => {
+      const ry = 190 + idx * 34;
       const isSel = this.selectedDropId === p.id;
       const isSuggest = idx < 3;
       const isStarter = starterSet.has(p.id);
@@ -1848,34 +1851,35 @@ export class PostMatchReDraftScreen {
         664,
         ry,
         584,
-        27,
+        30,
         5,
         isSel ? '#3B1E24' : THEME.BG_CARD,
         isSel ? THEME.RED_LIGHT : THEME.BORDER,
         isSel ? 1.5 : 1
       );
       if (isSuggest) {
-        drawBadge(ctx, 670, ry + 5, 40, 17, '建议换', '#7C2D12', '#FDBA74');
+        drawBadge(ctx, 670, ry + 6, 40, 18, '建议换', '#7C2D12', '#FDBA74');
       } else {
-        drawBadge(ctx, 670, ry + 5, 40, 17, p.tier, tierColor(p.tier));
+        drawBadge(ctx, 670, ry + 6, 40, 18, p.tier, tierColor(p.tier));
       }
-      drawBadge(ctx, 714, ry + 5, 34, 17, isStarter ? '首发' : '替补', isStarter ? '#14532D' : '#334155', isStarter ? THEME.GREEN : THEME.TX2);
-      drawBadge(ctx, 752, ry + 5, 36, 17, p.role, '#1E293B', THEME.TX2);
-      drawText(ctx, p.name, 796, ry + 13, { size: 12, bold: true });
-      drawText(ctx, `CA ${p.ca}`, 1140, ry + 13, { size: 12, bold: true, color: THEME.GOLD_LIGHT, align: 'right', mono: true });
+      drawBadge(ctx, 714, ry + 6, 34, 18, isStarter ? '首发' : '替补', isStarter ? '#14532D' : '#334155', isStarter ? THEME.GREEN : THEME.TX2);
+      drawBadge(ctx, 752, ry + 6, 36, 18, p.role, '#1E293B', THEME.TX2);
+      drawText(ctx, fitText(ctx, p.name, 220, FONT.LABEL, true, true), 796, ry + 15, { token: 'LABEL', bold: true });
+      drawStatBar(ctx, p.ca, 99, 1036, ry + 13, 46, 4, THEME.GOLD_LIGHT);
+      drawText(ctx, `CA ${p.ca}`, 1140, ry + 15, { token: 'LABEL', bold: true, color: THEME.GOLD_LIGHT, align: 'right', mono: true });
       drawBadge(
         ctx,
         1154,
-        ry + 4,
+        ry + 5,
         84,
-        19,
+        20,
         this.selectedCandidateId ? '点击换下 ▶' : isSel ? '已选中' : '选为换下',
         this.selectedCandidateId ? '#14532D' : isSel ? '#991B1B' : '#1E293B',
         this.selectedCandidateId ? THEME.GREEN : THEME.TX2
       );
 
       if (rd.swapsUsed < rd.maxSwaps) {
-        hits.add(664, ry, 584, 27, () => {
+        hits.addTouchTarget(664, ry, 584, 30, () => {
           if (this.selectedCandidateId) {
             league.swapPlayerInReDraft(p.id, this.selectedCandidateId);
             this.selectedDropId = null;

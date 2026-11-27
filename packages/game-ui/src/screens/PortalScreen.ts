@@ -23,13 +23,14 @@ import {
   drawText,
   drawWrappedText,
   fitText,
+  FONT,
   HitRegistry,
   NavRailTab,
 } from '../CanvasKit';
 import { drawClubCrest } from '../ClubVisuals';
 import { easeOutBack } from '../Motion';
 import { SoundEngine } from '../SoundEngine';
-import { THEME } from '../Theme';
+import { IS_MOBILE, THEME } from '../Theme';
 import { drawIcon, drawSkillGlyph, SkillGlyphKind } from '../VectorIcons';
 
 const STYLE_GLYPH: Record<TacticalStyle, SkillGlyphKind> = {
@@ -586,13 +587,13 @@ export class PortalScreen {
         const gKind: SkillGlyphKind = sk.styleTag ? (STYLE_GLYPH[sk.styleTag] ?? 'master') : 'master';
         drawRoundRect(ctx, sx, sy, 72, 34, 6, 'rgba(12, 42, 68, 0.85)', 'rgba(56, 189, 248, 0.45)', 1);
         drawSkillGlyph(ctx, gKind, sx + 15, sy + 17, 19, '#38BDF8', THEME.GOLD_LIGHT);
-        drawText(ctx, fitText(ctx, sk.name, 42, 9.5, true), sx + 28, sy + 17, { size: 9.5, bold: true, color: THEME.TX1 });
+        drawText(ctx, fitText(ctx, sk.name, 42, FONT.MICRO, true, true), sx + 28, sy + 17, { token: 'MICRO', bold: true, color: THEME.TX1 });
       } else {
         ctx.save();
         ctx.setLineDash([3, 2]);
         drawRoundRect(ctx, sx, sy, 72, 34, 6, 'rgba(15, 23, 42, 0.55)', 'rgba(148, 163, 184, 0.28)', 1);
         ctx.restore();
-        drawText(ctx, `F${si + 1} 空`, sx + 36, sy + 17, { size: 9.5, color: THEME.TX3, align: 'center' });
+        drawText(ctx, `F${si + 1} 空`, sx + 36, sy + 17, { token: 'MICRO', color: THEME.TX3, align: 'center' });
       }
     }
     // 底部圣物槽点 + 常驻触屏角标
@@ -926,15 +927,15 @@ export class PortalScreen {
 
       ctx.fillStyle = weakLit ? '#EF4444' : scannedNormal ? '#38BDF8' : '#334155';
       ctx.beginPath();
-      ctx.arc(dx, dy, 8.5, 0, Math.PI * 2);
+      ctx.arc(dx, dy, IS_MOBILE ? 11 : 8.5, 0, Math.PI * 2);
       ctx.fill();
       ctx.strokeStyle = weakLit ? '#FDE047' : '#CBD5E1';
       ctx.lineWidth = 1.2;
       ctx.stroke();
-      drawText(ctx, sl.role.slice(0, 3), dx, dy + 0.5, { size: 7.5, bold: true, color: '#FFFFFF', align: 'center' });
+      drawText(ctx, sl.role.slice(0, 3), dx, dy + 0.5, { size: IS_MOBILE ? 9.5 : 7.5, rawSize: true, bold: true, color: '#FFFFFF', align: 'center' });
 
       if (zObj) {
-        hits.add(dx - 19, dy - 19, 38, 38, () => {
+        hits.addTouchTarget(dx - 19, dy - 19, 38, 38, () => {
           if (this.selectedZoneId === zId && !zObj.scanned && !isRevealed) {
             const res = league.scanOpponentZone(zId);
             if (res.msg) this.scoutNotice = res.msg;

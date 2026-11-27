@@ -2449,7 +2449,7 @@ export class MatchEngine {
         const traitTackleBonus = def.traits?.includes('精准铲断') ? 0.10 * tackleGoldMul : 0;
         const styleTackleBonus =
           oppStyle === 'gegenpress' ? 0.06 :
-          oppStyle === 'park_bus' && toRelativeX(holder.pos.x, this.getAttackDir(holder.team)) >= 68 ? 0.05 : 0;
+          oppStyle === 'park_bus' && toRelativeX(holder.pos.x, this.getAttackDir(holder.team)) >= 68 ? 0.045 : 0;
         const defFatigueTacklePenalty = def.fitness < 75 ? -((75 - def.fitness) / 55) * 0.08 : 0;
         const holderStyle = holder.team === 'home' ? this.state.homeStyle : this.state.awayStyle;
         const holderForm = holder.team === 'home' ? this.state.homeFormation : this.state.awayFormation;
@@ -2642,22 +2642,24 @@ export class MatchEngine {
       xG = Math.min(0.68, xG + (myStyleShot === 'counter' ? 0.05 : 0.04));
       this.pushTacticalCallout(shooter, '战术克制 +xG', 'tactic');
     } else if (myStyleShot === 'park_bus' && oppStyleShot !== 'park_bus') {
-      xG = Math.min(0.68, xG + 0.02);
+      xG = Math.min(0.68, xG + 0.015);
     } else if (oppStyleShot === 'gegenpress' && dist >= 18 && dist < 24) {
       xG = Math.min(0.68, xG + 0.02);
     } else if (myStyleShot === 'tiki_taka' && oppStyleShot === 'park_bus') {
       xG = Math.min(0.68, xG + 0.04);
       this.pushTacticalCallout(shooter, '传控破铁桶', 'tactic');
+    } else if (myStyleShot === 'balanced' && dist < 18) {
+      xG = Math.min(0.68, xG + 0.02);
     }
     if (myStyleShot === 'tiki_taka' && (this.v6PassStreak[shooter.team] ?? 0) >= 4) {
       xG = Math.min(0.68, xG + 0.035);
       this.pushTacticalCallout(shooter, '传控渗透撕防', 'tactic');
     }
     if ((myStyleShot === 'wing_play' || getDefenseSystem(myFormShot) === '3-back') && toRelativeX(shooter.pos.x, dir) > 72) {
-      xG = Math.min(0.68, xG + 0.025);
+      xG = Math.min(0.68, xG + 0.03);
     }
     if (getDefenseSystem(myFormShot) === '4-back' && toRelativeX(shooter.pos.x, dir) > 70) {
-      xG = Math.min(0.68, xG + 0.02);
+      xG = Math.min(0.68, xG + 0.025);
     }
     shooter.hasBall = false;
     shooter.matchStats.shots++;
@@ -2844,12 +2846,12 @@ export class MatchEngine {
       const tStyle = target.team === 'home' ? this.state.homeStyle : this.state.awayStyle;
       const tMods = target.team === 'home' ? this.homeMods : this.awayMods;
       const isCornerCross = this.lastPassPattern[target.team] === 'set_piece';
-      const baseCrossFinish = isCornerCross ? 0.68 : tStyle === 'wing_play' || (tMods.crossBias ?? 0) > 0.03 ? 0.67 : 0.56;
+      const baseCrossFinish = isCornerCross ? 0.68 : tStyle === 'wing_play' || (tMods.crossBias ?? 0) > 0.03 ? 0.71 : 0.56;
       const defFormCross = target.team === 'home' ? this.state.awayFormation : this.state.homeFormation;
       const defStyleCross = target.team === 'home' ? this.state.awayStyle : this.state.homeStyle;
       const antiCrossPenalty =
-        (getDefenseSystem(defFormCross) === '5-back' ? 0.12 : 0) +
-        (defStyleCross === 'park_bus' ? 0.10 : 0);
+        (getDefenseSystem(defFormCross) === '5-back' ? 0.07 : 0) +
+        (defStyleCross === 'park_bus' ? 0.06 : 0);
       const crossFinishProb = clamp(
         baseCrossFinish + (this.hasActiveMechanic(target.team, 'wing_overload') ? 0.26 : 0) - antiCrossPenalty,
         0.25,
@@ -2859,7 +2861,7 @@ export class MatchEngine {
         const dir = this.getAttackDir(target.team);
         const relX = toRelativeX(target.pos.x, dir);
         if (relX > 76) {
-          const headXg = isCornerCross ? 0.22 : this.hasActiveMechanic(target.team, 'wing_overload') ? 0.24 : (tStyle === 'wing_play' ? 0.21 : 0.19);
+          const headXg = isCornerCross ? 0.22 : this.hasActiveMechanic(target.team, 'wing_overload') ? 0.24 : (tStyle === 'wing_play' ? 0.23 : 0.19);
           this.executeShot(target, headXg, false, 'header');
         }
       }
@@ -2888,7 +2890,7 @@ export class MatchEngine {
     const shootEffMods = this.getEffectiveMods(shootTeam);
     const shootForm = shootTeam === 'home' ? this.state.homeFormation : this.state.awayFormation;
     const shootStyle = shootTeam === 'home' ? this.state.homeStyle : this.state.awayStyle;
-    const fiveVsCounterTarget = isFiveBack && (getDefenseSystem(shootForm) === '3-back' || shootStyle === 'wing_play') ? 0.06 : 0;
+    const fiveVsCounterTarget = isFiveBack && (getDefenseSystem(shootForm) === '3-back' || shootStyle === 'wing_play') ? 0.03 : 0;
     const busVsCounterTarget = defStyle === 'park_bus' && (shootStyle === 'wing_play' || shootStyle === 'gegenpress') ? 0.09 : 0;
     const blockDist = (defStyle === 'park_bus' || isFiveBack ? 1.36 : 1.08) + (hasIronWall ? 0.25 : 0);
     const blockProb = clamp((defStyle === 'park_bus' || isFiveBack ? 0.22 : 0.18) + fiveVsCounterTarget + busVsCounterTarget + (hasIronWall ? 0.16 : 0) + defShotMods.blockBonus, 0.05, 0.78);
@@ -3369,13 +3371,13 @@ export class MatchEngine {
       CAM: 0.48,
       LB: 0.46,
       RB: 0.46,
-      CM: 0.51,
-      LW: 0.51,
-      RW: 0.51,
-      LM: 0.51,
-      RM: 0.51,
-      LWB: 0.51,
-      RWB: 0.51,
+      CM: 0.50,
+      LW: 0.46,
+      RW: 0.46,
+      LM: 0.47,
+      RM: 0.47,
+      LWB: 0.50,
+      RWB: 0.50,
     };
 
     for (const p of this.state.players) {
@@ -3392,7 +3394,7 @@ export class MatchEngine {
         style === 'gegenpress'
           ? (p.role === 'CB' ? 1.06 : p.role === 'GK' ? 1.0 : 1.18)
           : style === 'balanced'
-          ? (p.role === 'GK' ? 1.0 : 1.04)
+          ? (p.role === 'GK' ? 1.0 : 0.96)
           : style === 'counter'
           ? (p.role === 'GK' ? 1.0 : 0.98)
           : (p.role === 'GK' ? 1.0 : 0.82 + rawPress * 0.25);

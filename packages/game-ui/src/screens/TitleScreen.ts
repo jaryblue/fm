@@ -16,6 +16,8 @@ import {
   drawChamferPanel,
   drawRoundRect,
   drawText,
+  fitText,
+  FONT,
   formatFunds,
   HitRegistry,
 } from '../CanvasKit';
@@ -429,8 +431,8 @@ export class TitleScreen {
       color: THEME.TX1,
       align: 'center',
     });
-    drawText(ctx, `EST. 2026 · ${this.formation} · ${TACTICAL_PRESETS[this.style].name}`, sx + sw / 2, sy + 340, {
-      size: 11.5,
+    drawText(ctx, fitText(ctx, `EST. 2026 · ${this.formation} · ${TACTICAL_PRESETS[this.style].name}`, sw - 28, FONT.LABEL, false, true), sx + sw / 2, sy + 340, {
+      token: 'LABEL',
       color: THEME.GOLD_LIGHT,
       align: 'center',
     });
@@ -438,12 +440,12 @@ export class TitleScreen {
     // 俱乐部初始资产摘要卡
     drawRoundRect(ctx, sx + 18, sy + 368, sw - 36, 106, 8, 'rgba(15, 23, 42, 0.86)', THEME.BORDER);
     const startFunds = 900 + (metaLv.finance || 0) * 150;
-    drawText(ctx, '初始运营资金', sx + 30, sy + 392, { size: 11, color: THEME.TX2 });
-    drawText(ctx, formatFunds(startFunds), sx + sw - 30, sy + 392, { size: 13.5, bold: true, color: THEME.GREEN, align: 'right', mono: true });
-    drawText(ctx, '开局建队流程', sx + 30, sy + 422, { size: 11, color: THEME.TX2 });
-    drawText(ctx, '3 核心包 → 夏窗补齐26人', sx + sw - 30, sy + 422, { size: 11.5, bold: true, color: THEME.GOLD_LIGHT, align: 'right' });
-    drawText(ctx, '球衣防撞色系统', sx + 30, sy + 452, { size: 11, color: THEME.TX2 });
-    drawText(ctx, '已启用 · 客场自动切换', sx + sw - 30, sy + 452, { size: 11, color: '#38BDF8', align: 'right' });
+    drawText(ctx, '初始资金', sx + 30, sy + 392, { token: 'MICRO', color: THEME.TX2 });
+    drawText(ctx, formatFunds(startFunds), sx + sw - 30, sy + 392, { token: 'BODY', bold: true, color: THEME.GREEN, align: 'right', mono: true });
+    drawText(ctx, '建队流程', sx + 30, sy + 422, { token: 'MICRO', color: THEME.TX2 });
+    drawText(ctx, '3核心包 → 夏窗26人', sx + sw - 30, sy + 422, { token: 'LABEL', bold: true, color: THEME.GOLD_LIGHT, align: 'right' });
+    drawText(ctx, '防撞色', sx + 30, sy + 452, { token: 'MICRO', color: THEME.TX2 });
+    drawText(ctx, '已启用 · 客场自动切换', sx + sw - 30, sy + 452, { token: 'MICRO', color: '#38BDF8', align: 'right' });
 
     // 右侧主编辑区
     const rx = sx + sw + 22;
@@ -521,7 +523,7 @@ export class TitleScreen {
           const chk = col === '#F8FAFC' || col === '#FACC15' ? '#090D16' : '#FFFFFF';
           drawIcon(ctx, 'check', px + 16, palY + 61, 12, chk);
         }
-        hits.add(px, palY + 46, 32, 30, () => {
+        hits.addTouchTarget(px, palY + 46, 32, 30, () => {
           SoundEngine.playClick();
           if (isHome) this.primaryColor = col;
           else this.awayPrimaryColor = col;
@@ -537,7 +539,7 @@ export class TitleScreen {
           const chk = col === '#F8FAFC' || col === '#FACC15' ? '#090D16' : '#FFFFFF';
           drawIcon(ctx, 'check', px + 16, palY + 61, 12, chk);
         }
-        hits.add(px, palY + 46, 32, 30, () => {
+        hits.addTouchTarget(px, palY + 46, 32, 30, () => {
           SoundEngine.playClick();
           if (isHome) this.secondaryColor = col;
           else this.awaySecondaryColor = col;

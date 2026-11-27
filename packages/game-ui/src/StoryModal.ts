@@ -81,7 +81,7 @@ export class StoryModal {
     drawWrappedText(ctx, ev.body, bx + 18, iy + 18, bw - 36, 22, {
       size: 14,
       color: THEME.TX1,
-      maxLines: 5,
+      maxLines: 4,
     });
 
     if (ev.kind === 'briefing') {

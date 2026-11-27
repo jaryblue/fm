@@ -11,7 +11,11 @@ import {
   drawBadge,
   drawButton,
   drawRoundRect,
+  drawStatBar,
   drawText,
+  drawWrappedText,
+  fitText,
+  FONT,
   HitRegistry,
   tierColor,
 } from './CanvasKit';
@@ -113,7 +117,8 @@ export class PlayerModal {
 
     drawBadge(ctx, mx + 92, my + 24, 30, 22, this.scoutFog ? '?' : p.tier, this.scoutFog ? '#334155' : tierColor(p.tier), this.scoutFog ? THEME.GOLD_LIGHT : undefined);
     drawBadge(ctx, mx + 130, my + 24, 44, 22, p.role, '#1E293B', THEME.TX1);
-    drawText(ctx, p.name, mx + 186, my + 35, { size: 22, bold: true });
+    const nameStr = fitText(ctx, p.name, 165, FONT.HEADLINE, true, true);
+    drawText(ctx, nameStr, mx + 186, my + 35, { token: 'HEADLINE', bold: true });
     if (this.scoutFog) {
       drawBadge(
         ctx,
@@ -139,7 +144,16 @@ export class PlayerModal {
         ? `${p.age}岁${secText} · 估测 CA ~${Math.round(p.ca / 5) * 5} · 潜力 PA ${Math.max(45, pa - 7)}~${Math.min(99, pa + 7)}`
         : `${p.age}岁${secText} · CA ??? · 潜力 PA ??? · 球探深度探查或签入后揭晓`
       : `${p.age}岁${secText} · CA ${p.ca} / PA ${pa} · 身价 ¥${mVal}万`;
-    drawText(ctx, paSub, mx + 92, my + 60, { size: 12.5, color: this.scoutFog ? '#38BDF8' : THEME.TX2 });
+    if (this.scoutFog) {
+      drawWrappedText(ctx, paSub, mx + 92, my + 52, 360, 16, {
+        token: 'LABEL',
+        color: '#38BDF8',
+        maxLines: 2,
+      });
+    } else {
+      const fittedSub = fitText(ctx, paSub, 365, FONT.LABEL, false, true);
+      drawText(ctx, fittedSub, mx + 92, my + 60, { token: 'LABEL', color: THEME.TX2 });
+    }
 
     if (!this.scoutFog) {
       const ratio = Math.max(0.08, Math.min(1, p.ca / Math.max(1, pa)));
@@ -218,19 +232,19 @@ export class PlayerModal {
         val >= 70 ? THEME.GREEN :
         val >= 55 ? THEME.BLUE_LIGHT : '#64748B';
 
-      drawText(ctx, label, ax, ay + 8, { size: 12, color: isShown ? THEME.TX1 : THEME.TX3 });
+      drawText(ctx, label, ax, ay + 8, { token: 'BODY', color: isShown ? THEME.TX1 : THEME.TX3 });
       drawText(ctx, isShown ? String(val) : '??', ax + 336, ay + 8, {
-        size: 13,
+        token: 'BODY',
         bold: true,
         color: isShown ? barColor : '#475569',
         align: 'right',
         mono: true,
       });
-      drawRoundRect(ctx, ax, ay + 20, 336, 7, 3, '#1E293B');
       if (isShown) {
-        drawRoundRect(ctx, ax, ay + 20, Math.max(8, (val / 99) * 336), 7, 3, barColor);
+        drawStatBar(ctx, val, 99, ax, ay + 20, 336, 10, barColor, '#1E293B');
       } else {
-        drawRoundRect(ctx, ax, ay + 20, 96, 7, 3, '#334155');
+        drawRoundRect(ctx, ax, ay + 20, 336, 10, 5, '#1E293B');
+        drawRoundRect(ctx, ax, ay + 20, 96, 10, 5, '#334155');
       }
     });
 
@@ -273,14 +287,15 @@ export class PlayerModal {
           item.isGold ? '#78350F' : '#1E293B',
           item.isGold ? '#FACC15' : '#CBD5E1'
         );
-        drawText(ctx, item.name, tx + 60, my + 400, {
-          size: 12,
+        const nameFitted = fitText(ctx, item.name, cardW - 68, FONT.LABEL, true, true);
+        drawText(ctx, nameFitted, tx + 60, my + 400, {
+          token: 'LABEL',
           bold: true,
           color: item.isGold ? '#FDE047' : '#E2E8F0',
         });
-        const maxDesc = count >= 4 ? 12 : count === 3 ? 16 : 26;
-        drawText(ctx, (TRAIT_DESCRIPTIONS[item.name] || '比赛决策与执行加成').slice(0, maxDesc), tx + 10, my + 429, {
-          size: 10.5,
+        const descFitted = fitText(ctx, TRAIT_DESCRIPTIONS[item.name] || '比赛决策与执行加成', cardW - 20, FONT.MICRO, false, true);
+        drawText(ctx, descFitted, tx + 10, my + 429, {
+          token: 'MICRO',
           color: THEME.TX2,
         });
       });
@@ -317,45 +332,45 @@ export class PlayerModal {
     if (this.numberPickerOpen && isOwnPlayer && clubCtx && userClub) {
       const npx = mx + mw - 388;
       const npy = my + 92;
-      const npw = 364;
-      const nph = 166;
+      const npw = 376;
+      const nph = 338;
       drawRoundRect(ctx, npx, npy, npw, nph, 10, 'rgba(9, 15, 28, 0.98)', THEME.GOLD_LIGHT, 1.4);
       hits.add(npx, npy, npw, nph, () => {});
-      drawText(ctx, '选择球衣号码 (1-99 · 已有号码将自动互换)', npx + 12, npy + 16, { size: 11, bold: true, color: THEME.GOLD_LIGHT });
-      drawButton(ctx, hits, npx + npw - 52, npy + 6, 42, 22, '收起', () => {
+      drawText(ctx, '选择球衣号码 (1-99 · 已有号码自动互换)', npx + 14, npy + 18, { token: 'LABEL', bold: true, color: THEME.GOLD_LIGHT });
+      drawButton(ctx, hits, npx + npw - 58, npy + 6, 46, 24, '收起', () => {
         this.numberPickerOpen = false;
-      }, { variant: 'ghost', fontSize: 10 });
+      }, { variant: 'ghost', fontSize: 11 });
 
       const takenSet = new Set(userClub.squad.filter(x => x.id !== p.id && x.shirtNumber).map(x => x.shirtNumber!));
       const startNum = this.numberPage * 33 + 1;
       for (let i = 0; i < 33; i++) {
         const num = startNum + i;
         if (num > 99) break;
-        const col = i % 11;
-        const row = Math.floor(i / 11);
-        const bx = npx + 12 + col * 31;
-        const by = npy + 34 + row * 30;
+        const col = i % 7;
+        const row = Math.floor(i / 7);
+        const bx = npx + 16 + col * 50;
+        const by = npy + 38 + row * 50;
         const isCur = p.shirtNumber === num;
         const isTaken = takenSet.has(num);
         drawRoundRect(
           ctx,
           bx,
           by,
-          28,
-          25,
-          5,
+          44,
+          44,
+          6,
           isCur ? '#78350F' : isTaken ? '#0F172A' : '#1E293B',
           isCur ? THEME.GOLD_LIGHT : isTaken ? '#334155' : '#475569',
           isCur ? 1.5 : 1
         );
-        drawText(ctx, String(num), bx + 14, by + 13, {
-          size: 11,
+        drawText(ctx, String(num), bx + 22, by + 22, {
+          token: 'BODY',
           bold: isCur,
           color: isCur ? '#FEF08A' : isTaken ? '#64748B' : THEME.TX1,
           align: 'center',
           mono: true,
         });
-        hits.add(bx, by, 28, 25, () => {
+        hits.addTouchTarget(bx, by, 44, 44, () => {
           const res = clubCtx.league.setPlayerShirtNumber(p.id, num);
           if (res.ok) clubCtx.onSave();
           clubCtx.onToast?.(res.msg, THEME.GOLD_LIGHT);
@@ -365,9 +380,9 @@ export class PlayerModal {
 
       const pageRanges = ['1-33', '34-66', '67-99'];
       pageRanges.forEach((lbl, pg) => {
-        drawButton(ctx, hits, npx + 12 + pg * 66, npy + 132, 60, 24, lbl, () => {
+        drawButton(ctx, hits, npx + 16 + pg * 82, npy + 294, 74, 28, lbl, () => {
           this.numberPage = pg;
-        }, { active: this.numberPage === pg, fontSize: 10.5 });
+        }, { active: this.numberPage === pg, fontSize: 11 });
       });
     }
   }

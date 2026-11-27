@@ -57,6 +57,7 @@ import {
   drawText,
   drawWrappedText,
   fitText,
+  FONT,
   HitRegistry,
   NavRailTab,
 } from '../CanvasKit';
@@ -397,28 +398,48 @@ export class MetaScreen {
     const displayNotice = isBeginnerMode && this.notice === defaultNotice
       ? `新手引导：点击【${STYLE_LABELS[club.style].name}】纹章展开星宿，或点右上「展开全盘」解锁全图`
       : this.notice;
-    drawBadge(
-      ctx,
-      mapX + 12,
-      mapY + 12,
-      Math.min(490, mapW - 360),
-      24,
-      displayNotice,
-      'rgba(11, 17, 32, 0.90)',
-      ast.locked ? THEME.GOLD_LIGHT : '#7DD3FC'
-    );
+    const noticeW = Math.min(490, mapW - 360);
+    const noticeH = IS_MOBILE ? 36 : 24;
+    drawRoundRect(ctx, mapX + 12, mapY + 12, noticeW, noticeH, 6, 'rgba(11, 17, 32, 0.90)', THEME.BORDER);
+    if (IS_MOBILE) {
+      drawWrappedText(ctx, displayNotice, mapX + 20, mapY + 16, noticeW - 16, 15, {
+        token: 'MICRO',
+        color: ast.locked ? THEME.GOLD_LIGHT : '#7DD3FC',
+        maxLines: 2,
+      });
+    } else {
+      drawText(ctx, fitText(ctx, displayNotice, noticeW - 16, 11, false), mapX + 20, mapY + 24, {
+        size: 11,
+        color: ast.locked ? THEME.GOLD_LIGHT : '#7DD3FC',
+      });
+    }
 
     const tpBase = league.getV6MatchRuntimeConfig().checkpointTpBase;
-    drawBadge(
-      ctx,
-      mapX + mapW - 352,
-      mapY + 12,
-      340,
-      24,
-      `被动${ast.unlockedPassives.length}/92 · 牌${ast.unlockedDirectives.length}/122 · 技${ast.unlockedSkills.length}/59 · 印${ast.unlockedMasterySeals.length}/6 · 每段${tpBase}TP`,
-      'rgba(11, 17, 32, 0.92)',
-      '#CBD5E1'
-    );
+    drawRoundRect(ctx, mapX + mapW - 352, mapY + 12, 340, IS_MOBILE ? 36 : 24, 6, 'rgba(11, 17, 32, 0.92)', THEME.BORDER);
+    if (IS_MOBILE) {
+      drawText(
+        ctx,
+        `被动${ast.unlockedPassives.length}/92 · 牌${ast.unlockedDirectives.length}/122 · 技${ast.unlockedSkills.length}/59`,
+        mapX + mapW - 182,
+        mapY + 22,
+        { token: 'MICRO', color: '#CBD5E1', align: 'center', mono: true }
+      );
+      drawText(
+        ctx,
+        `印${ast.unlockedMasterySeals.length}/6 · 每段${tpBase}TP`,
+        mapX + mapW - 182,
+        mapY + 37,
+        { token: 'MICRO', color: THEME.GOLD_LIGHT, align: 'center', mono: true }
+      );
+    } else {
+      drawText(
+        ctx,
+        `被动${ast.unlockedPassives.length}/92 · 牌${ast.unlockedDirectives.length}/122 · 技${ast.unlockedSkills.length}/59 · 印${ast.unlockedMasterySeals.length}/6 · 每段${tpBase}TP`,
+        mapX + mapW - 182,
+        mapY + 24,
+        { size: 10.5, color: '#CBD5E1', align: 'center', mono: true }
+      );
+    }
 
     // 底部极简双态罗盘胶囊（滚轮自由缩放，点击一键切换宏观/特写）
     const isMacroNow = this.zoom < 1.32;
@@ -1241,7 +1262,7 @@ export class MetaScreen {
         );
         ctx.restore();
 
-        if (this.zoom >= 1.5 || isOrigin || isSel) {
+        if (isOrigin || isSel || (!IS_MOBILE && this.zoom >= 1.5)) {
           drawText(ctx, isOrigin ? `${info.short}原点` : p.name.slice(0, 4), pos.x, pos.y + nr + 8, {
             size: isOrigin ? 9 : 8.5,
             bold: isOrigin || isSel,
@@ -1302,7 +1323,7 @@ export class MetaScreen {
         });
         ctx.restore();
 
-        if (this.zoom >= 1.28 || isSel || isEq) {
+        if (isSel || isEq || (!IS_MOBILE && this.zoom >= 1.28)) {
           drawText(ctx, sk.name.slice(0, 4), pos.x, pos.y + dr + 8, {
             size: 9,
             bold: isEq || isSel,
@@ -1365,7 +1386,7 @@ export class MetaScreen {
         });
         ctx.restore();
 
-        if (this.zoom >= 1.55 || isSel) {
+        if (isSel || (!IS_MOBILE && this.zoom >= 1.55)) {
           drawText(ctx, dir.name.slice(0, 4), pos.x, pos.y + nr + 8, {
             size: 8.5,
             bold: isSel || isEq,
@@ -1472,7 +1493,7 @@ export class MetaScreen {
       });
       ctx.restore();
 
-      if (isOrigin || this.zoom >= 1.45 || isSel) {
+      if (isOrigin || isSel || (!IS_MOBILE && this.zoom >= 1.45)) {
         drawText(ctx, isOrigin ? SYSTEM_LABELS[sp.system].name.slice(0, 3) : sp.name.slice(0, 4), pos.x, pos.y + r + 8, {
           size: 8.5,
           bold: isOrigin || isSel,
@@ -2517,8 +2538,8 @@ export class MetaScreen {
           unlocked ? THEME.GREEN : isLvLocked ? '#1E293B' : '#334155',
           unlocked ? '#080C14' : isLvLocked ? '#FCA5A5' : THEME.TX2
         );
-        drawWrappedText(ctx, branch.levelDescriptions[li], bx + 64, ly + 11, cardW - 134, 14, {
-          size: 10,
+        drawWrappedText(ctx, branch.levelDescriptions[li], bx + 64, ly + 9, cardW - 134, 15, {
+          token: 'MICRO',
           color: unlocked ? THEME.TX1 : THEME.TX2,
           maxLines: 2,
         });

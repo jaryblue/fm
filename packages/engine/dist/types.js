@@ -25,10 +25,10 @@ export const TACTICAL_PRESETS = {
         lineHeight: 0,
         widthScale: 1.0,
         directness: 0.50,
-        tempo: 0.94,
+        tempo: 1.01,
         pressDistance: 12,
-        pressIntensity: 0.93,
-        shootBias: 0.92,
+        pressIntensity: 1.00,
+        shootBias: 1.02,
     },
     tiki_taka: {
         name: '传控渗透',
