@@ -9,3 +9,5 @@ dist-ota/
 dist-desktop/
 .tmp_cli_playtest.mjs
 server/__pycache__/
+tools/platform-tools/
+*.apk
