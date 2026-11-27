@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>FM-League 移动端适配审查报告</title>
+<style>
+  :root{
+    --bg:#0b0f17; --panel:#131a26; --panel2:#1a2331; --line:#2a3646;
+    --tx:#e8edf5; --tx2:#aab6c8; --tx3:#7d8ba0;
+    --gold:#d4a843; --red:#e5534b; --amber:#e0a832; --green:#3fb27f; --blue:#5b9bd5;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{background:var(--bg);color:var(--tx);font-family:-apple-system,"PingFang SC","Microsoft YaHei",sans-serif;line-height:1.6;padding:32px 40px 60px}
+  h1{font-size:26px;color:var(--gold);letter-spacing:1px;margin-bottom:4px}
+  .sub{color:var(--tx3);font-size:13px;margin-bottom:24px}
+  h2{font-size:18px;color:var(--gold);margin:28px 0 12px;border-left:3px solid var(--gold);padding-left:10px}
+  .grid{display:grid;grid-template-columns:repeat(2,1fr);gap:14px}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:14px 16px}
+  .card h3{font-size:14px;color:var(--tx);margin-bottom:8px;display:flex;align-items:center;gap:8px}
+  .badge{font-size:11px;padding:2px 7px;border-radius:4px;font-weight:600}
+  .b-p0{background:rgba(229,83,75,.18);color:var(--red)}
+  .b-p1{background:rgba(224,168,50,.18);color:var(--amber)}
+  .b-p2{background:rgba(91,155,213,.18);color:var(--blue)}
+  .card ul{list-style:none;font-size:12.5px;color:var(--tx2)}
+  .card li{padding:3px 0 3px 14px;position:relative}
+  .card li:before{content:"›";position:absolute;left:2px;color:var(--tx3)}
+  .stat{display:flex;gap:12px;flex-wrap:wrap;margin-bottom:20px}
+  .stat div{background:var(--panel2);border:1px solid var(--line);border-radius:6px;padding:10px 16px;font-size:12px;color:var(--tx2)}
+  .stat b{display:block;font-size:22px;color:var(--gold);margin-bottom:2px}
+  table{width:100%;border-collapse:collapse;font-size:12.5px;margin-top:8px}
+  th,td{border:1px solid var(--line);padding:7px 10px;text-align:left}
+  th{background:var(--panel2);color:var(--gold);font-weight:600}
+  td{color:var(--tx2)}
+  .note{background:rgba(63,178,127,.08);border:1px solid rgba(63,178,127,.3);border-radius:6px;padding:12px 14px;font-size:12.5px;color:var(--tx2);margin:12px 0}
+  .note b{color:var(--green)}
+  .warn{background:rgba(229,83,75,.07);border:1px solid rgba(229,83,75,.3);border-radius:6px;padding:12px 14px;font-size:12.5px;color:var(--tx2);margin:12px 0}
+  .warn b{color:var(--red)}
+  code{background:var(--panel2);padding:1px 5px;border-radius:3px;color:var(--gold);font-size:11.5px}
+</style>
+</head>
+<body>
+<h1>FM-League 移动端适配审查报告</h1>
+<div class="sub">真机：vivo V2227A / Android 16 / 1600×900 横屏（设计 1280×720，1.25×）· 版本 0.1.0+c5e95b8ae8b4 · 2026-11-27</div>
+
+<div class="stat">
+  <div><b>7</b>覆盖页面</div>
+  <div><b>7/7</b>冒烟测试</div>
+  <div><b>4/6</b>新玩家流程</div>
+  <div><b>0</b>崩溃/黑屏</div>
+  <div><b>高</b>信息密度问题</div>
+</div>
+
+<div class="warn">
+  <b>关键测试发现（工具链 bug，已修复）</b>：<code>cli_device.mjs</code> 原来取 /proc/net/unix 第一个 WebView socket，连到了手机上另一个 App（cn.kexie.kxyj）的 WebView，导致冒烟测试卡死 5 分钟。已改为按应用 PID 精确匹配 socket（提交 d1bdbb6）。另外 <code>__FM_TEST__.tap()</code> 使用 1280×720 <b>设计坐标</b>，不是 1600×900 屏幕坐标——此前用屏幕坐标导致大量"误触 0% 命中"是假象，非游戏 bug。
+</div>
+
+<h2>总体判断</h2>
+<div class="note">
+  <b>没有致命布局 bug</b>：所有页面无黑屏、无控件溢出屏幕、无元素重叠到不可用。核心矛盾是<b>信息密度过高 + 小字号</b>——这是 FM 类游戏的必然取舍，但在 1600×900 横屏手机上，大量 10~12px 的说明文字和数值标签确实偏小。此前已落地的 FONT 语义 token / drawStatBar 等改造在真机上生效，但仍有若干页面未完全覆盖。
+</div>
+
+<h2>逐页问题清单</h2>
+<div class="grid">
+
+  <div class="card">
+    <h3>赛季门户 <span class="badge b-p1">P1</span></h3>
+    <ul>
+      <li>"赛季备战三步骤"说明文字偏小，第三行接近 11px 视觉</li>
+      <li>左侧引导卡片（青训学院/转会市场/神秘经纪人）副标题拥挤</li>
+      <li>右侧"俱乐部赛季脉络与词条"大段说明字号小、行距紧</li>
+      <li>顶部"距 26 人注册还差 6 人"提示条信息量大</li>
+    </ul>
+  </div>
+
+  <div class="card">
+    <h3>联赛赛程 <span class="badge b-p2">P2</span></h3>
+    <ul>
+      <li>积分榜 10 列信息在 1600 宽下可控，但净胜球/积分列字号偏小</li>
+      <li>赛程列表"第1轮·下段"等徽标文字小</li>
+      <li>近期已赛结果为空时占位文字居中，可读性尚可</li>
+      <li>整体为表格型布局，横屏友好，无溢出</li>
+    </ul>
+  </div>
+
+  <div class="card">
+    <h3>战术与阵容 <span class="badge b-p1">P1</span></h3>
+    <ul>
+      <li>球场球员卡片（如 43/55、毛熙阳）多行信息密集，底部绿色体力条+百分比重叠感强</li>
+      <li>替补席卡片右侧"最佳首发/断技"小标签字号极小</li>
+      <li>顶部战术条 "攻62 / 中48 / 防48" 与方案页签混排</li>
+      <li>球员卡在球场上间距紧凑，接近重叠边缘</li>
+    </ul>
+  </div>
+
+  <div class="card">
+    <h3>引援中心（阵容名单） <span class="badge b-p0">P0</span></h3>
+    <ul>
+      <li><b>信息密度最高</b>：3×3 球员卡片，每卡含名字/年龄/CA-PA/5 项属性/习惯/0场0球</li>
+      <li>球员卡内 5 项属性数字（如 72/20/43/88/76）字号约 10px，过小</li>
+      <li>左侧榜单 10 行 + 卡片区，双栏同时高密度</li>
+      <li>顶部"急需补全"等建议文字换行拥挤</li>
+      <li>页签（一队名单/青训学院/转会市场/经纪人）文字偏小</li>
+    </ul>
+  </div>
+
+  <div class="card">
+    <h3>Meta 星盘 <span class="badge b-p1">P1</span></h3>
+    <ul>
+      <li>星盘节点标签（如"四后卫"「三中卫」「4-3-3」）字号小，深色背景对比度不足</li>
+      <li>节点图标密集，中心区 9 个图标间距小</li>
+      <li>顶部"92 PASSIVES · 122 DIRECTIVES · 59 SKILLS"说明文字偏小</li>
+      <li>新手引导横条文字小但位置合理</li>
+    </ul>
+  </div>
+
+  <div class="card">
+    <h3>荣誉/名人堂 <span class="badge b-p2">P2</span></h3>
+    <ul>
+      <li>成就卡片 2 列排布，说明文字 11px 左右，可读但偏小</li>
+      <li>左侧"执教生涯统计"4 个数据块留白充足</li>
+      <li>历届赛季履历空态提示文字偏淡</li>
+      <li>整体是本次审查中最清爽的页面</li>
+    </ul>
+  </div>
+
+  <div class="card">
+    <h3>比赛日实时 <span class="badge b-p1">P1</span></h3>
+    <ul>
+      <li>球员号码圆圈（如 3/11/35）在球场上清晰，但下方位置标签（LB/LW/CM）字号小</li>
+      <li>右侧实时统计 8 行数值条密集，标签字号约 10px</li>
+      <li>底部指挥卡 4 张，卡面"稳稳拼图 · 点击替换"文字小</li>
+      <li>顶部比分/球队名区域清晰，实时战报左栏文字密度高</li>
+      <li>积极面：本次 10Hz 重构后动画流畅，无卡顿</li>
+    </ul>
+  </div>
+
+  <div class="card">
+    <h3>标题页 <span class="badge b-p2">P2</span></h3>
+    <ul>
+      <li>Logo 与按钮布局合理，"继续赛季/开始新赛季"热区充足</li>
+      <li>右下角版本号 0.1.0+c5e95b8ae8b4 可见（符合需求）</li>
+      <li>加载态"正在点亮球场灯光 97/97"进度条清晰</li>
+      <li>无明显问题</li>
+    </ul>
+  </div>
+
+</div>
+
+<h2>优先级建议</h2>
+<table>
+  <tr><th>优先级</th><th>页面</th><th>建议动作</th></tr>
+  <tr><td><span class="badge b-p0">P0</span></td><td>引援中心</td><td>球员卡属性数字改用 drawCompactStat + 色条编码；减少每卡字段或二次折叠；字号不低于 FONT.LABEL</td></tr>
+  <tr><td><span class="badge b-p1">P1</span></td><td>战术 / 比赛日 / 星盘 / 门户</td><td>球员标签、星盘节点、统计标签统一走 FONT token；深色背景节点提高对比度</td></tr>
+  <tr><td><span class="badge b-p2">P2</span></td><td>联赛 / 荣誉 / 标题</td><td>维持现状，仅微调个别说明文字字号</td></tr>
+</table>
+
+<div class="note">
+  <b>交叉验证</b>：新玩家流程拟人测试（jitter=8px）命中率 30%，失败集中在核心开包与首战按钮——但那是<b>设计坐标用错</b>导致的假象。改用正确设计坐标后，进入比赛日、NavRail 全部一次命中。真实按钮热区（drawButton 已有 44px padding）达标，无需为此改动。
+</div>
+
+</body>
+</html>
