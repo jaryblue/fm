@@ -11,6 +11,7 @@ import { ConfirmModal } from './ConfirmModal';
 import { BootIntro, RouteTransition, ScreenShake } from './Motion';
 import { PlatformAdapter } from './Platform';
 import { PlayerModal } from './PlayerModal';
+import { getOtaStatus, restartAppForUpdate } from './RuntimeInfo';
 import { SaveSlotModal } from './SaveSlotModal';
 import { SettingsModal } from './SettingsModal';
 import { AudioMode, SoundEngine } from './SoundEngine';
@@ -66,6 +67,8 @@ export class GameApp {
   private textInputModal = new TextInputModal();
   private settingsModal = new SettingsModal();
   private saveSlotModal = new SaveSlotModal();
+  private otaPromptShown = false;
+  private otaCheckTimers: number[] = [];
   private tutorialOverlay = new TutorialOverlay();
 
   private knownAchievements = new Set<string>();
@@ -107,6 +110,39 @@ export class GameApp {
     this.bootIntro = new BootIntro(() => {
       this.titleScreen.resetEnterAnim();
     });
+    this.scheduleOtaChecks();
+  }
+
+  /**
+   * OTA 检查：原生层下载是异步的，启动瞬间可能还没完成。
+   * 分几次轮询，只要任一时刻发现待生效版本就提示一次；用户点「稍后」后本局不再打扰。
+   */
+  private scheduleOtaChecks(): void {
+    for (const delay of [1200, 5000, 12000]) {
+      const t = window.setTimeout(() => void this.checkOtaOnce(), delay);
+      this.otaCheckTimers.push(t);
+    }
+  }
+
+  private async checkOtaOnce(): Promise<void> {
+    if (this.otaPromptShown || this.confirmModal.isOpen()) return;
+    // 只在标题页提示，避免打断比赛/选秀流程
+    if (this.route !== 'title') return;
+    const status = await getOtaStatus();
+    if (!status?.pendingVersion || this.otaPromptShown) return;
+    this.otaPromptShown = true;
+    for (const t of this.otaCheckTimers) window.clearTimeout(t);
+    this.otaCheckTimers = [];
+    this.confirmModal.open(
+      '发现新版本',
+      `新版本 ${status.pendingVersion} 已下载完成，重启后立即生效。当前进度已自动保存，是否现在重启？`,
+      () => {
+        this.save();
+        restartAppForUpdate();
+      },
+      '立即重启',
+      'primary'
+    );
   }
 
   private loadPersistedSettings(): void {

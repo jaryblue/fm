@@ -31,4 +31,15 @@ fs.writeFileSync(
   'utf8'
 );
 
+// 同步更新 index.html 里 bundle 的破缓存版本号，避免浏览器/Electron 加载旧 bundle
+const htmlPath = path.join(STEAM_DIR, 'index.html');
+if (fs.existsSync(htmlPath)) {
+  let html = fs.readFileSync(htmlPath, 'utf8');
+  const updated = html.replace(/(steam\.bundle\.js\?v=)[^"']*/g, `$1${hash}`);
+  if (updated !== html) {
+    fs.writeFileSync(htmlPath, updated, 'utf8');
+    console.log(`Updated index.html cache-buster: v=${hash}`);
+  }
+}
+
 console.log(`Generated OTA manifest: version=${manifest.version}, hash=${hash}`);

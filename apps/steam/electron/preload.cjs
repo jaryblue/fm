@@ -13,4 +13,6 @@ contextBridge.exposeInMainWorld('electronBridge', {
   otaGet: () => ipcRenderer.invoke('fm:ota-get'),
   otaSave: (hash, code) => ipcRenderer.invoke('fm:ota-save', hash, code),
   otaClear: () => ipcRenderer.invoke('fm:ota-clear'),
+  getOtaStatus: () => ipcRenderer.invoke('fm:ota-status'),
+  restartApp: () => ipcRenderer.send('fm:restart-app'),
 });

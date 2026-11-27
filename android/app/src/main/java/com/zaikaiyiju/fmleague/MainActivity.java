@@ -4,6 +4,7 @@ import android.graphics.Color;
 import android.os.Build;
 import android.os.Bundle;
 import android.view.WindowManager;
+import android.webkit.JavascriptInterface;
 import androidx.core.view.WindowCompat;
 import androidx.core.view.WindowInsetsCompat;
 import androidx.core.view.WindowInsetsControllerCompat;
@@ -14,7 +15,38 @@ public class MainActivity extends BridgeActivity {
     public void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         applyImmersiveFullscreen();
+        // OTA 状态桥接：让 WebView 内的 JS 查询待生效更新并触发重启
+        if (getBridge() != null && getBridge().getWebView() != null) {
+            getBridge().getWebView().addJavascriptInterface(new OtaJsBridge(this), "AndroidOtaBridge");
+        }
         OtaUpdater.checkForUpdateInBackground(this);
+    }
+
+    /** 注入到 WebView 的 OTA 桥接对象 */
+    public static class OtaJsBridge {
+        private final android.content.Context ctx;
+
+        OtaJsBridge(android.content.Context context) {
+            this.ctx = context.getApplicationContext();
+        }
+
+        @JavascriptInterface
+        public String getOtaStatus() {
+            String pending = OtaUpdater.getPendingVersion(ctx);
+            android.util.Log.d("OtaJsBridge", "getOtaStatus pending=" + pending);
+            org.json.JSONObject obj = new org.json.JSONObject();
+            try {
+                obj.put("pendingVersion", pending);
+                obj.put("activeVersion", "");
+            } catch (org.json.JSONException ignored) {
+            }
+            return obj.toString();
+        }
+
+        @JavascriptInterface
+        public void restartApp() {
+            OtaUpdater.restartApp(ctx);
+        }
     }
 
     @Override

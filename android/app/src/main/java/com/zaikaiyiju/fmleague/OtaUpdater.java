@@ -29,7 +29,32 @@ public final class OtaUpdater {
     private static final ExecutorService EXECUTOR = Executors.newSingleThreadExecutor();
     private static volatile boolean started = false;
 
+    // 供 JS 桥接读取：已下载完成、等待下次启动生效的版本号
+    private static final String PREFS_OTA = "fm_ota_state";
+    private static final String KEY_PENDING_VERSION = "pending_version";
+
     private OtaUpdater() {}
+
+    /** 返回已下载待生效的版本号；无更新时返回 null */
+    public static String getPendingVersion(Context context) {
+        if (context == null) return null;
+        SharedPreferences prefs = context.getSharedPreferences(PREFS_OTA, Activity.MODE_PRIVATE);
+        String v = prefs.getString(KEY_PENDING_VERSION, null);
+        return (v == null || v.isEmpty()) ? null : v;
+    }
+
+    /** 重启应用以加载已下载的 OTA 包 */
+    public static void restartApp(Context context) {
+        if (context == null) return;
+        android.content.Intent intent = context.getPackageManager()
+            .getLaunchIntentForPackage(context.getPackageName());
+        if (intent != null) {
+            intent.addFlags(android.content.Intent.FLAG_ACTIVITY_CLEAR_TOP
+                | android.content.Intent.FLAG_ACTIVITY_NEW_TASK);
+            context.startActivity(intent);
+        }
+        java.lang.System.exit(0);
+    }
 
     public static void checkForUpdateInBackground(final Activity activity) {
         if (started || activity == null) return;
@@ -103,6 +128,10 @@ public final class OtaUpdater {
 
                 activateRelease(appContext, targetDir);
                 cleanupOldReleases(releasesDir, remoteHash);
+
+                // 记录待生效版本，供 JS 弹窗读取；Toast 保留作为 UI 未就绪时的兜底
+                appContext.getSharedPreferences(PREFS_OTA, Activity.MODE_PRIVATE)
+                    .edit().putString(KEY_PENDING_VERSION, remoteVersion).apply();
 
                 new Handler(Looper.getMainLooper()).post(() ->
                     Toast.makeText(appContext, "发现新版本 (" + remoteVersion + ")，已下载完成，下次启动生效", Toast.LENGTH_SHORT).show()

@@ -21,6 +21,7 @@ import {
 } from '../CanvasKit';
 import { drawClubCrest, drawJerseyIcon } from '../ClubVisuals';
 import { drawGameLogoEmblem, easeOutBack, easeOutCubic } from '../Motion';
+import { getRunningVersion } from '../RuntimeInfo';
 import { SoundEngine } from '../SoundEngine';
 import { THEME } from '../Theme';
 import { drawIcon } from '../VectorIcons';
@@ -313,6 +314,19 @@ export class TitleScreen {
       icon: 'trophy',
     });
     ctx.restore();
+
+    // 右下角常驻版本号：玩家可自查当前运行的是哪个热更包
+    if (!this.wizardOpen) {
+      const verText = getRunningVersion();
+      const verW = Math.max(118, verText.length * 6.2 + 20);
+      drawRoundRect(ctx, THEME.W - verW - 8, THEME.H - 30, verW, 24, 5, 'rgba(4,7,14,0.66)', THEME.BORDER);
+      drawText(ctx, verText, THEME.W - 18, THEME.H - 13, {
+        size: 10.5,
+        color: '#94A3B8',
+        align: 'right',
+        mono: true,
+      });
+    }
 
     if (this.wizardOpen) {
       this.renderWizardModal(ctx, hits, metaLv, actions);

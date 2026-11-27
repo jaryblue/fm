@@ -182,6 +182,31 @@ ipcMain.handle('fm:ota-clear', () => {
   }
 });
 
+// 给前端查询 OTA 状态：已下载完成但当前进程尚未加载的版本
+ipcMain.handle('fm:ota-status', () => {
+  try {
+    const bundledHash = getBundledOtaHash();
+    const meta = readJsonSafe(path.join(getOtaDir(), 'meta.json'));
+    const activeHash = meta && meta.bundledHash === bundledHash && meta.hash ? String(meta.hash) : bundledHash;
+    const currentHtml = resolveStartHtml();
+    const otaHtml = meta && meta.currentDir ? path.join(meta.currentDir, 'index.html') : '';
+    const runningOta = !!otaHtml && currentHtml === otaHtml;
+    return {
+      // 只有当前还没在跑 OTA 版本、且远端有更新的版本时，才提示重启
+      pendingVersion: !runningOta && meta && meta.hash && meta.hash !== activeHash ? String(meta.version || meta.hash) : null,
+      activeVersion: runningOta ? String(meta.version || meta.hash || bundledHash) : bundledHash,
+    };
+  } catch {
+    return { pendingVersion: null, activeVersion: null };
+  }
+});
+
+ipcMain.on('fm:restart-app', () => {
+  // Electron 官方推荐：重启应用以加载新版本
+  app.relaunch();
+  app.exit(0);
+});
+
 async function checkDesktopOta() {
   const baseUrl = getOtaBaseUrl();
   if (!baseUrl) return;
