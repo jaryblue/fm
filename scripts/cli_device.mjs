@@ -280,11 +280,20 @@ class CdpClient {
 }
 
 async function connectCdp(serial, cfg) {
-  // 找到 WebView 的 devtools socket 名
+  // 找到 WebView 的 devtools socket 名。
+  // 关键：设备上可能有多个 App 同时开着 WebView（如 cn.kexie.kxyj），
+  // 必须优先匹配本应用主进程 PID，否则会连到别的 App 的 WebView，
+  // 表现为 /json 无 page 目标、脚本一直等待到超时。
+  let appPid = '';
+  try {
+    appPid = adbFor(serial, ['shell', 'pidof', PACKAGE]).trim().split(/\s+/)[0] || '';
+  } catch { /* 取不到 PID 时回退到逐个尝试 */ }
   const procLines = adbFor(serial, ['shell', 'cat', '/proc/net/unix']).split('\n');
-  const sockets = procLines
-    .map(l => l.match(/@(webview_devtools_remote_[^\s]+)/)?.[1])
-    .filter(Boolean);
+  const sockets = [...new Set(
+    procLines
+      .map(l => l.match(/@(webview_devtools_remote_[^\s]+)/)?.[1])
+      .filter(Boolean)
+  )];
   if (sockets.length === 0) {
     throw new Error(
       '未发现 WebView 调试端口。请确认：\n' +
@@ -293,26 +302,39 @@ async function connectCdp(serial, cfg) {
       '  3) 开发者选项里 USB 调试已开启'
     );
   }
-  const socket = sockets[0];
+  // 优先本应用 PID 对应的 socket
+  const ownSocket = appPid ? sockets.find(s => s === `webview_devtools_remote_${appPid}`) : null;
+  const ordered = ownSocket ? [ownSocket, ...sockets.filter(s => s !== ownSocket)] : sockets;
+
   // 先清掉可能残留的旧转发（否则会连到上一次运行的 WebView 进程，拿不到页面）
   try {
     execFileSync(ADB, ['-s', serial, 'forward', '--remove', `tcp:${cfg.cdpPort}`], { stdio: 'ignore' });
   } catch { /* 旧转发不存在时忽略 */ }
-  adbFor(serial, ['forward', `tcp:${cfg.cdpPort}`, `localabstract:${socket}`]);
 
-  // 等 WebView 页面真正就绪（/json 返回非空且含 page 目标）
+  let socket = ordered[0];
   let targets = [];
-  for (let i = 0; i < 30; i++) {
+  for (const candidate of ordered) {
+    targets = [];
     try {
-      targets = await httpJson(`http://127.0.0.1:${cfg.cdpPort}/json`);
-      if (targets.some(t => t.type === 'page')) break;
-    } catch {
-      // retry
+      execFileSync(ADB, ['-s', serial, 'forward', '--remove', `tcp:${cfg.cdpPort}`], { stdio: 'ignore' });
+    } catch { /* ignore */ }
+    adbFor(serial, ['forward', `tcp:${cfg.cdpPort}`, `localabstract:${candidate}`]);
+    socket = candidate;
+    // 等 WebView 页面真正就绪（/json 返回非空且含 page 目标）
+    for (let i = 0; i < 20; i++) {
+      try {
+        targets = await httpJson(`http://127.0.0.1:${cfg.cdpPort}/json`);
+        if (targets.some(t => t.type === 'page')) break;
+      } catch {
+        // retry
+      }
+      await new Promise(r => setTimeout(r, 300));
     }
-    await new Promise(r => setTimeout(r, 400));
+    if (targets.some(t => t.type === 'page')) break;
+    if (console.debug) console.debug(`  socket ${candidate} 无页面目标，尝试下一个…`);
   }
-  if (targets.length === 0) {
-    throw new Error(`CDP 端口 ${cfg.cdpPort} 无页面目标。WebView socket=${socket}，请确认 app 已完全启动。`);
+  if (!targets.some(t => t.type === 'page')) {
+    throw new Error(`CDP 端口 ${cfg.cdpPort} 无页面目标。已尝试 socket=${ordered.join(', ')}，appPid=${appPid || 'unknown'}。`);
   }
   const page = targets.find(t => t.type === 'page' && (t.url.includes('localhost') || t.url.includes('file:') || t.url.includes('http')));
   if (!page) throw new Error('CDP 中未找到页面目标');
