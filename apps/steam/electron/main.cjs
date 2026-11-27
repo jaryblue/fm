@@ -1,8 +1,44 @@
 const { app, BrowserWindow, ipcMain } = require('electron');
+const { execFile } = require('child_process');
+const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
 
 let mainWindow = null;
+
+function readJsonSafe(filePath) {
+  try {
+    if (!fs.existsSync(filePath)) return null;
+    return JSON.parse(fs.readFileSync(filePath, 'utf8'));
+  } catch {
+    return null;
+  }
+}
+
+function getBundledOtaHash() {
+  const manifest = readJsonSafe(path.join(__dirname, '..', 'ota-manifest.json'));
+  return manifest && manifest.hash ? String(manifest.hash) : '';
+}
+
+function getOtaBaseUrl() {
+  const envUrl = String(process.env.FM_OTA_BASE_URL || '').trim();
+  if (envUrl) return envUrl.replace(/\/+$/, '');
+  const cfg = readJsonSafe(path.join(__dirname, '..', 'ota-config.json'));
+  const cfgUrl = cfg && cfg.baseUrl ? String(cfg.baseUrl).trim() : '';
+  return cfgUrl.replace(/\/+$/, '');
+}
+
+function resolveStartHtml() {
+  const bundledHtml = path.join(__dirname, '..', 'index.html');
+  const bundledHash = getBundledOtaHash();
+  const meta = readJsonSafe(path.join(getOtaDir(), 'meta.json'));
+  if (!meta || !meta.currentDir) return bundledHtml;
+  if (bundledHash && meta.bundledHash && meta.bundledHash !== bundledHash) {
+    return bundledHtml;
+  }
+  const otaHtml = path.join(meta.currentDir, 'index.html');
+  return fs.existsSync(otaHtml) ? otaHtml : bundledHtml;
+}
 
 function getSavesDir() {
   const dir = path.join(app.getPath('userData'), 'saves');
@@ -45,7 +81,7 @@ function createWindow() {
     app.dock.setIcon(iconPath);
   }
   mainWindow.setMenuBarVisibility(false);
-  mainWindow.loadFile(path.join(__dirname, '..', 'index.html'));
+  mainWindow.loadFile(resolveStartHtml());
 }
 
 ipcMain.on('fm:load-save-sync', (event, slotId) => {
@@ -146,8 +182,83 @@ ipcMain.handle('fm:ota-clear', () => {
   }
 });
 
+async function checkDesktopOta() {
+  const baseUrl = getOtaBaseUrl();
+  if (!baseUrl) return;
+  try {
+    const res = await fetch(`${baseUrl}/ota-manifest.json?t=${Date.now()}`, { cache: 'no-store' });
+    if (!res.ok) return;
+    const manifest = await res.json();
+    const remoteHash = String(manifest.hash || '').trim();
+    if (!remoteHash) return;
+
+    const bundledHash = getBundledOtaHash();
+    const metaPath = path.join(getOtaDir(), 'meta.json');
+    const currentMeta = readJsonSafe(metaPath);
+    const activeHash =
+      currentMeta && currentMeta.bundledHash === bundledHash && currentMeta.hash
+        ? String(currentMeta.hash)
+        : bundledHash;
+    if (remoteHash === activeHash) return;
+
+    const bundleZip = String(manifest.bundleZip || 'ota-bundle.zip').trim().replace(/^\/+/, '');
+    const zipUrl = bundleZip.startsWith('http://') || bundleZip.startsWith('https://')
+      ? bundleZip
+      : `${baseUrl}/${bundleZip}`;
+    const zipRes = await fetch(zipUrl, { cache: 'no-store' });
+    if (!zipRes.ok) return;
+    const zipBuf = Buffer.from(await zipRes.arrayBuffer());
+
+    const expectedSha = String(manifest.zipSha256 || '').trim().toLowerCase();
+    if (expectedSha) {
+      const actualSha = crypto.createHash('sha256').update(zipBuf).digest('hex').toLowerCase();
+      if (actualSha !== expectedSha) return;
+    }
+
+    const releasesDir = path.join(getOtaDir(), 'releases');
+    const targetDir = path.join(releasesDir, remoteHash);
+    const tmpZip = path.join(getOtaDir(), `ota_${remoteHash}.zip`);
+    fs.mkdirSync(releasesDir, { recursive: true });
+    fs.writeFileSync(tmpZip, zipBuf);
+
+    await new Promise((resolve, reject) => {
+      const cmd = process.platform === 'win32' ? 'tar' : '/usr/bin/unzip';
+      const args = process.platform === 'win32' ? ['-xf', tmpZip, '-C', targetDir] : ['-oq', tmpZip, '-d', targetDir];
+      fs.mkdirSync(targetDir, { recursive: true });
+      execFile(cmd, args, (err) => (err ? reject(err) : resolve()));
+    });
+    fs.rmSync(tmpZip, { force: true });
+
+    if (!fs.existsSync(path.join(targetDir, 'index.html'))) {
+      fs.rmSync(targetDir, { recursive: true, force: true });
+      return;
+    }
+
+    fs.writeFileSync(
+      metaPath,
+      JSON.stringify({
+        hash: remoteHash,
+        version: manifest.version || remoteHash,
+        bundledHash,
+        currentDir: targetDir,
+        updatedAt: Date.now(),
+      }),
+      'utf8'
+    );
+
+    for (const entry of fs.readdirSync(releasesDir)) {
+      if (entry !== remoteHash) {
+        fs.rmSync(path.join(releasesDir, entry), { recursive: true, force: true });
+      }
+    }
+  } catch {
+    // ignore offline/network errors
+  }
+}
+
 app.whenReady().then(() => {
   createWindow();
+  checkDesktopOta();
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();
   });

@@ -16,6 +16,7 @@
     "electron:pack": "npm run build:web && npx electron-builder --config apps/steam/electron-builder.json --dir",
     "electron:build": "npm run build:web && npx electron-builder --config apps/steam/electron-builder.json",
     "android:sync": "npm run build:web && node scripts/build_android_web.mjs && npx cap sync android",
+    "build:ota": "npm run android:sync && node scripts/build_ota_package.mjs",
     "sim:100": "npm run sim:100 --workspace=@fm-league/engine",
     "cli:play": "node scripts/cli_playtest.mjs",
     "cli:e2e": "node scripts/cli_ui_e2e.mjs",

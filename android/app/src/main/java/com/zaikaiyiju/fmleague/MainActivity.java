@@ -14,6 +14,7 @@ public class MainActivity extends BridgeActivity {
     public void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         applyImmersiveFullscreen();
+        OtaUpdater.checkForUpdateInBackground(this);
     }
 
     @Override

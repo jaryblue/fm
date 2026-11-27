@@ -2894,9 +2894,12 @@ export class LeagueManager {
     return { ok: true };
   }
 
-  public autoFillClubRoster26(): { added: number } {
+  public autoFillClubRoster26(): { added: number; reason?: string } {
+    if ((this.state.seasonNumber ?? 1) > 1) {
+      return { added: 0, reason: '仅开局第 1 赛季支持一键补齐名单，后续请通过开包奖励、转会与青训补人' };
+    }
     if (this.isSeasonInProgress()) {
-      return { added: 0 };
+      return { added: 0, reason: '赛季进行中无法一键补齐名单' };
     }
     const roster = this.getClubRoster();
     const meta = this.getMetaLevels();

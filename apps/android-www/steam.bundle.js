@@ -8772,7 +8772,7 @@
           const holderStyle = holder.team === "home" ? this.state.homeStyle : this.state.awayStyle;
           const holderForm = holder.team === "home" ? this.state.homeFormation : this.state.awayFormation;
           const holderRelX = toRelativeX(holder.pos.x, this.getAttackDir(holder.team));
-          const counterStyleTackleMod = (oppStyle === "gegenpress" && holderStyle === "tiki_taka" && holderRelX < 55 ? 0.08 : 0) + ((oppStyle === "gegenpress" || oppStyle === "wing_play") && (holderStyle === "counter" || holderStyle === "park_bus") && holderRelX < 58 ? -0.1 : 0) + (holderStyle === "balanced" && (oppStyle === "gegenpress" || oppStyle === "tiki_taka") ? 0.03 : 0) + (getDefenseSystem(holderForm) === "5-back" && holderRelX >= 52 ? -0.03 : 0) + (getDefenseSystem(holderForm) === "4-back" && holderRelX < 52 ? -0.03 : 0);
+          const counterStyleTackleMod = (oppStyle === "gegenpress" && holderStyle === "tiki_taka" && holderRelX < 55 ? 0.08 : 0) + ((oppStyle === "gegenpress" || oppStyle === "wing_play") && (holderStyle === "counter" || holderStyle === "park_bus") && holderRelX < 58 ? -0.06 : 0) + (holderStyle === "balanced" && (oppStyle === "gegenpress" || oppStyle === "tiki_taka") ? 0.03 : 0) + (getDefenseSystem(holderForm) === "4-back" && holderRelX < 52 ? -0.03 : 0);
           const immuneHighPress = this.hasImmunity(holder.team, "immuneHighPressTackle");
           const blitzBonus = !immuneHighPress && this.hasActiveMechanic(oppTeam, "high_press_blitz") ? 0.12 : 0;
           const effStyleTackleBonus = immuneHighPress && oppStyle === "gegenpress" ? 0 : styleTackleBonus;
@@ -8918,11 +8918,9 @@
       const oppFormShot = shooter.team === "home" ? this.state.awayFormation : this.state.homeFormation;
       const oppIs5Back = getDefenseSystem(oppFormShot) === "5-back";
       if ((myStyleShot === "counter" || myStyleShot === "park_bus") && (oppStyleShot === "gegenpress" || oppStyleShot === "wing_play")) {
-        xG = Math.min(0.68, xG + (myStyleShot === "counter" ? 0.08 : 0.05));
+        xG = Math.min(0.68, xG + (myStyleShot === "counter" ? 0.05 : 0.04));
         this.pushTacticalCallout(shooter, "\u6218\u672F\u514B\u5236 +xG", "tactic");
       } else if (myStyleShot === "park_bus" && oppStyleShot !== "park_bus") {
-        xG = Math.min(0.68, xG + 0.03);
-      } else if (myStyleShot === "counter" && oppStyleShot !== "park_bus") {
         xG = Math.min(0.68, xG + 0.02);
       } else if (oppStyleShot === "gegenpress" && dist >= 18 && dist < 24) {
         xG = Math.min(0.68, xG + 0.02);
@@ -8934,8 +8932,8 @@
         xG = Math.min(0.68, xG + 0.035);
         this.pushTacticalCallout(shooter, "\u4F20\u63A7\u6E17\u900F\u6495\u9632", "tactic");
       }
-      if (getDefenseSystem(myFormShot) === "5-back" && toRelativeX(shooter.pos.x, dir) > 50) {
-        xG = Math.min(0.68, xG + (myFormShot === "5-4-1" ? 0.02 : 0.01));
+      if ((myStyleShot === "wing_play" || getDefenseSystem(myFormShot) === "3-back") && toRelativeX(shooter.pos.x, dir) > 72) {
+        xG = Math.min(0.68, xG + 0.025);
       }
       if (getDefenseSystem(myFormShot) === "4-back" && toRelativeX(shooter.pos.x, dir) > 70) {
         xG = Math.min(0.68, xG + 0.02);
@@ -8946,7 +8944,7 @@
       this.state.stats[shooter.team].xG += xG;
       const fatiguePenalty = shooter.fitness < 72 ? (72 - shooter.fitness) / 52 * 0.07 : 0;
       const strainPenalty = shooter.strainWarning ? 0.035 : 0;
-      const antiAttackShotPenalty = (oppIs5Back && (myStyleShot === "wing_play" || getDefenseSystem(myFormShot) === "3-back") ? 0.08 : 0) + (oppStyleShot === "park_bus" && (myStyleShot === "wing_play" || myStyleShot === "gegenpress") ? 0.07 : 0);
+      const antiAttackShotPenalty = (oppIs5Back && (myStyleShot === "wing_play" || getDefenseSystem(myFormShot) === "3-back") ? 0.04 : 0) + (oppStyleShot === "park_bus" && (myStyleShot === "wing_play" || myStyleShot === "gegenpress") ? 0.05 : 0);
       const rawShoot = Math.min(this.teamAttrCap[shooter.team], shooter.attributes.shooting + (hasBloodFrenzy ? 8 : 0));
       const effectiveShoot = rawShoot > 80 ? 80 + (rawShoot - 80) * 1.35 : rawShoot;
       const longDistPenalty = dist >= 22 && !hasLongShotCannon ? (dist - 20) * 0.015 : 0;
@@ -9084,20 +9082,20 @@
         const tStyle = target.team === "home" ? this.state.homeStyle : this.state.awayStyle;
         const tMods = target.team === "home" ? this.homeMods : this.awayMods;
         const isCornerCross = this.lastPassPattern[target.team] === "set_piece";
-        const baseCrossFinish = isCornerCross ? 0.68 : tStyle === "wing_play" || (tMods.crossBias ?? 0) > 0.03 ? 0.62 : 0.56;
+        const baseCrossFinish = isCornerCross ? 0.68 : tStyle === "wing_play" || (tMods.crossBias ?? 0) > 0.03 ? 0.67 : 0.56;
         const defFormCross = target.team === "home" ? this.state.awayFormation : this.state.homeFormation;
         const defStyleCross = target.team === "home" ? this.state.awayStyle : this.state.homeStyle;
-        const antiCrossPenalty = (getDefenseSystem(defFormCross) === "5-back" ? 0.18 : 0) + (defStyleCross === "park_bus" ? 0.14 : 0);
+        const antiCrossPenalty = (getDefenseSystem(defFormCross) === "5-back" ? 0.12 : 0) + (defStyleCross === "park_bus" ? 0.1 : 0);
         const crossFinishProb = clamp(
           baseCrossFinish + (this.hasActiveMechanic(target.team, "wing_overload") ? 0.26 : 0) - antiCrossPenalty,
-          0.22,
+          0.25,
           0.92
         );
         if (b.passType === "cross" && target.role !== "GK" && Math.random() < crossFinishProb) {
           const dir = this.getAttackDir(target.team);
           const relX = toRelativeX(target.pos.x, dir);
           if (relX > 76) {
-            const headXg = isCornerCross ? 0.22 : this.hasActiveMechanic(target.team, "wing_overload") ? 0.23 : 0.19;
+            const headXg = isCornerCross ? 0.22 : this.hasActiveMechanic(target.team, "wing_overload") ? 0.24 : tStyle === "wing_play" ? 0.21 : 0.19;
             this.executeShot(target, headXg, false, "header");
           }
         }
@@ -9121,7 +9119,7 @@
       const shootEffMods = this.getEffectiveMods(shootTeam);
       const shootForm = shootTeam === "home" ? this.state.homeFormation : this.state.awayFormation;
       const shootStyle = shootTeam === "home" ? this.state.homeStyle : this.state.awayStyle;
-      const fiveVsCounterTarget = isFiveBack && (getDefenseSystem(shootForm) === "3-back" || shootStyle === "wing_play") ? 0.1 : 0;
+      const fiveVsCounterTarget = isFiveBack && (getDefenseSystem(shootForm) === "3-back" || shootStyle === "wing_play") ? 0.06 : 0;
       const busVsCounterTarget = defStyle === "park_bus" && (shootStyle === "wing_play" || shootStyle === "gegenpress") ? 0.09 : 0;
       const blockDist = (defStyle === "park_bus" || isFiveBack ? 1.36 : 1.08) + (hasIronWall ? 0.25 : 0);
       const blockProb = clamp((defStyle === "park_bus" || isFiveBack ? 0.22 : 0.18) + fiveVsCounterTarget + busVsCounterTarget + (hasIronWall ? 0.16 : 0) + defShotMods.blockBonus, 0.05, 0.78);
@@ -21463,8 +21461,11 @@
       return { ok: true };
     }
     autoFillClubRoster26() {
+      if ((this.state.seasonNumber ?? 1) > 1) {
+        return { added: 0, reason: "\u4EC5\u5F00\u5C40\u7B2C 1 \u8D5B\u5B63\u652F\u6301\u4E00\u952E\u8865\u9F50\u540D\u5355\uFF0C\u540E\u7EED\u8BF7\u901A\u8FC7\u5F00\u5305\u5956\u52B1\u3001\u8F6C\u4F1A\u4E0E\u9752\u8BAD\u8865\u4EBA" };
+      }
       if (this.isSeasonInProgress()) {
-        return { added: 0 };
+        return { added: 0, reason: "\u8D5B\u5B63\u8FDB\u884C\u4E2D\u65E0\u6CD5\u4E00\u952E\u8865\u9F50\u540D\u5355" };
       }
       const roster = this.getClubRoster();
       const meta = this.getMetaLevels();
