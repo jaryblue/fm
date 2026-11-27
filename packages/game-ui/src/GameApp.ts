@@ -309,6 +309,15 @@ export class GameApp {
     return false;
   }
 
+  public onPinchZoom(factor: number, x: number, y: number): void {
+    if (this.settingsModal.isOpen() || this.saveSlotModal.isOpen() || this.textInputModal.isOpen()) {
+      return;
+    }
+    if (this.route === 'meta') {
+      this.metaScreen.onPinchZoom(factor, x, y);
+    }
+  }
+
   public onKeyDown(code: string, key?: string): void {
     if (this.bootIntro.isBlocking()) {
       if (code === 'Space' || code === 'Enter' || code === 'Escape') {

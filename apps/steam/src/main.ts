@@ -28,7 +28,7 @@ const ctx = canvas.getContext('2d')!;
 
 let currentDpr = 1;
 function applyHiDPI(): void {
-  const dprCap = IS_MOBILE ? 1.5 : 2.0;
+  const dprCap = IS_MOBILE ? 1.25 : 2.0;
   const dpr = Math.min(dprCap, Math.max(1, window.devicePixelRatio || 1));
   if (dpr !== currentDpr || canvas.width !== Math.round(THEME.W * dpr)) {
     currentDpr = dpr;
@@ -262,23 +262,68 @@ function boot(): void {
     lastInteractionMs = performance.now();
   };
 
-  canvas.addEventListener('pointermove', (e) => {
-    markActive();
-    const pt = toDesignCoord(e.clientX, e.clientY);
-    app.onPointerMove(pt.x, pt.y);
-  });
+  const activePointers = new Map<number, { x: number; y: number }>();
+  let lastPinchDist = 0;
+
+  const getPinchMetrics = () => {
+    const pts = Array.from(activePointers.values());
+    if (pts.length < 2) return null;
+    const dx = pts[1].x - pts[0].x;
+    const dy = pts[1].y - pts[0].y;
+    return {
+      dist: Math.hypot(dx, dy),
+      cx: (pts[0].x + pts[1].x) * 0.5,
+      cy: (pts[0].y + pts[1].y) * 0.5,
+    };
+  };
 
   canvas.addEventListener('pointerdown', (e) => {
     markActive();
     const pt = toDesignCoord(e.clientX, e.clientY);
-    app.onPointerDown(pt.x, pt.y);
+    activePointers.set(e.pointerId, pt);
+    if (activePointers.size === 2) {
+      const m = getPinchMetrics();
+      lastPinchDist = m ? m.dist : 0;
+      app.onPointerUp?.(pt.x, pt.y);
+      return;
+    }
+    if (activePointers.size === 1) {
+      app.onPointerDown(pt.x, pt.y);
+    }
   });
 
-  canvas.addEventListener('pointerup', (e) => {
+  canvas.addEventListener('pointermove', (e) => {
     markActive();
     const pt = toDesignCoord(e.clientX, e.clientY);
-    app.onPointerUp?.(pt.x, pt.y);
+    if (activePointers.has(e.pointerId)) {
+      activePointers.set(e.pointerId, pt);
+    }
+    if (activePointers.size >= 2) {
+      const m = getPinchMetrics();
+      if (m && lastPinchDist > 4 && m.dist > 4) {
+        const factor = m.dist / lastPinchDist;
+        if (Math.abs(factor - 1) > 0.005) {
+          app.onPinchZoom?.(factor, m.cx, m.cy);
+          lastPinchDist = m.dist;
+        }
+      }
+      return;
+    }
+    app.onPointerMove(pt.x, pt.y);
   });
+
+  const handlePointerEnd = (e: PointerEvent) => {
+    markActive();
+    activePointers.delete(e.pointerId);
+    if (activePointers.size < 2) {
+      lastPinchDist = 0;
+    }
+    const pt = toDesignCoord(e.clientX, e.clientY);
+    app.onPointerUp?.(pt.x, pt.y);
+  };
+
+  canvas.addEventListener('pointerup', handlePointerEnd);
+  canvas.addEventListener('pointercancel', handlePointerEnd);
 
   canvas.addEventListener('wheel', (e) => {
     markActive();

@@ -3364,9 +3364,62 @@ export class LeagueManager {
       ? { ...computeSkillWebMods(this.getSkillWebUnlocked(), club.formation, club.style), ...(v6Payload?.tacticalMods ?? {}) }
       : undefined;
 
-    const spineBonus = club.isUser ? computeCentralSpineInfo(club, this.getChemistryLinks()).bonus : 0;
-    let teamFamAvg = 50;
-    let teamChemAvg = 30;
+    const curTier = this.state.currentTier ?? 7;
+    const aiTierLv = !club.isUser && curTier <= 4 ? 5 - curTier : 0;
+    const aiSquadAvgCA = club.squad.length > 0 ? club.squad.reduce((s, p) => s + p.ca, 0) / club.squad.length : 60;
+    const aiIsContender = aiTierLv > 0 && aiSquadAvgCA >= getLeagueTierInfo(curTier).baseCA + 7;
+
+    if (aiTierLv > 0) {
+      // 隐藏对阵增幅（仅作用于 MatchEngine 计算，不改写 club.squad，UI 面板不可见且可突破 99 上限）
+      const hiddenCap = 118;
+      const clampHidden = (v: number) => Math.max(25, Math.min(hiddenCap, v));
+      const hiddenBonus = aiTierLv * 2 + (aiIsContender ? (aiTierLv >= 4 ? 3 : aiTierLv >= 3 ? 2 : 1) : 0);
+      for (const pl of players) {
+        if (pl.role === 'GK') {
+          pl.attributes.goalkeeping = clampHidden(pl.attributes.goalkeeping + hiddenBonus);
+          pl.attributes.composure = clampHidden(pl.attributes.composure + Math.ceil(hiddenBonus * 0.8));
+          pl.attributes.positioning = clampHidden(pl.attributes.positioning + Math.ceil(hiddenBonus * 0.8));
+        } else {
+          pl.attributes.passing = clampHidden(pl.attributes.passing + hiddenBonus);
+          pl.attributes.shooting = clampHidden(pl.attributes.shooting + hiddenBonus);
+          pl.attributes.dribbling = clampHidden(pl.attributes.dribbling + hiddenBonus);
+          pl.attributes.pace = clampHidden(pl.attributes.pace + hiddenBonus);
+          pl.attributes.defending = clampHidden(pl.attributes.defending + hiddenBonus);
+          pl.attributes.positioning = clampHidden(pl.attributes.positioning + hiddenBonus);
+          pl.attributes.composure = clampHidden(pl.attributes.composure + hiddenBonus);
+          pl.attributes.strength = clampHidden(pl.attributes.strength + Math.ceil(hiddenBonus * 0.7));
+        }
+      }
+    }
+
+    const aiSegmentCards: TeamSetup['aiSegmentCards'] = [];
+    if (aiTierLv > 0) {
+      const styleDirs = Object.values(V6_DIRECTIVE_MAP).filter(
+        d => d.source === 'style' && d.style === club.style && d.route === 'steady'
+      );
+      if (styleDirs.length > 0) {
+        const cardCount = aiTierLv + (aiIsContender ? 2 : 0);
+        const mins = [2, 24, 48, 72, 12, 60].slice(0, cardCount).sort((a, b) => a - b);
+        for (let i = 0; i < mins.length; i++) {
+          const dirDef = styleDirs[i % styleDirs.length];
+          aiSegmentCards.push({
+            minute: mins[i],
+            effect: {
+              id: `ai_${dirDef.id}_${i}`,
+              name: dirDef.name,
+              durationMinutes: dirDef.durationMinutes,
+              ...dirDef.baseEffect,
+            },
+          });
+        }
+      }
+    }
+
+    const spineBonus = club.isUser
+      ? computeCentralSpineInfo(club, this.getChemistryLinks()).bonus
+      : aiTierLv >= 4 ? 3 : aiTierLv >= 2 ? 2 : aiTierLv >= 1 ? 1 : 0;
+    let teamFamAvg = aiTierLv > 0 ? Math.min(95, 62 + aiTierLv * 6 + (aiIsContender ? 4 : 0)) : 50;
+    let teamChemAvg = aiTierLv > 0 ? Math.min(90, 44 + aiTierLv * 8 + (aiIsContender ? 6 : 0)) : 30;
     if (club.isUser) {
       teamFamAvg = players.length > 0
         ? Math.round(players.reduce((s, pl) => s + (pl.formationFamiliarity ?? 40), 0) / players.length)
@@ -3422,8 +3475,8 @@ export class LeagueManager {
       equippedSkills: userEquippedSkills,
       activeAspects: club.isUser ? this.getActiveLegendaryAspects() : undefined,
       perkSynergies: club.isUser ? this.getUserPerkSynergyFlags() : undefined,
-      teamFamiliarityAvg: club.isUser ? teamFamAvg : undefined,
-      teamChemistryAvg: club.isUser ? teamChemAvg : undefined,
+      teamFamiliarityAvg: club.isUser || aiTierLv > 0 ? teamFamAvg : undefined,
+      teamChemistryAvg: club.isUser || aiTierLv > 0 ? teamChemAvg : undefined,
       scoutCounterLabel:
         club.isUser && this.state.interMatchPrep?.matchupIntel?.spotCorrect
           ? '破绽压制'
@@ -3437,8 +3490,10 @@ export class LeagueManager {
       v6TotalFootballMaster: v6Payload?.v6TotalFootballMaster,
       v6SkillTempRankBonus: v6Payload?.v6SkillTempRankBonus,
       v6SkillDualBranch: v6Payload?.v6SkillDualBranch,
-      v6StartingShields: v6Payload?.v6StartingShields,
+      v6StartingShields: v6Payload?.v6StartingShields ?? (aiTierLv >= 3 ? 1 : undefined),
       v6MaxCounterStacks: v6Payload?.v6MaxCounterStacks,
+      aiSegmentCards: aiSegmentCards.length > 0 ? aiSegmentCards : undefined,
+      hiddenAttrCap: aiTierLv > 0 ? 118 : undefined,
     };
   }
 

@@ -34481,10 +34481,19 @@
         return false;
       }
       if (!this.inMap(x, y)) return false;
-      const oldZoom = this.zoom;
       const factor = deltaY < 0 ? 1.15 : 0.87;
+      this.applyZoomAt(factor, x, y);
+      return true;
+    }
+    onPinchZoom(factor, x, y) {
+      if (this.tab !== "astrolabe" || this.inDrawer(x, y)) return;
+      this.dragging = false;
+      this.applyZoomAt(factor, x, y);
+    }
+    applyZoomAt(factor, x, y) {
+      const oldZoom = this.zoom;
       const nextZoom = Math.max(0.75, Math.min(2.6, Math.round(oldZoom * factor * 100) / 100));
-      if (nextZoom === oldZoom) return true;
+      if (nextZoom === oldZoom) return;
       const r = this.lastMapRect;
       const cx = r.x + r.w / 2;
       const cy = r.y + r.h / 2;
@@ -34492,7 +34501,6 @@
       this.panX = Math.max(-560, Math.min(560, x - cx - (x - cx - this.panX) * ratio));
       this.panY = Math.max(-560, Math.min(560, y - cy - (y - cy - this.panY) * ratio));
       this.zoom = nextZoom;
-      return true;
     }
     render(ctx2, hits, league, actions) {
       const st = league.getState();
@@ -34642,8 +34650,14 @@
         const unitR = Math.min(mapW, mapH) * 0.48 * this.zoom;
         this.panX = Math.round(-Math.cos(focusAng) * unitR * 0.62);
         this.panY = Math.round(-Math.sin(focusAng) * unitR * 0.62);
-        this.notice = `\u661F\u5BBF\u7279\u5199\u89C6\u56FE\uFF1A\u5DF2\u805A\u7126\u3010${STYLE_LABELS[club.style].name}\u3011\u6247\u533A\uFF0C\u6EDA\u8F6E\u7F29\u653E/\u6309\u4F4F\u62D6\u62FD`;
+        this.notice = `\u661F\u5BBF\u7279\u5199\u89C6\u56FE\uFF1A\u5DF2\u805A\u7126\u3010${STYLE_LABELS[club.style].name}\u3011\u6247\u533A\uFF0C\u53CC\u6307\u634F\u5408/\u6EDA\u8F6E\u7F29\u653E`;
       });
+      drawButton(ctx2, hits, pillX + pillW + 8, pillY, 28, pillH, "\uFF0D", () => {
+        this.applyZoomAt(0.82, mapX + mapW / 2, mapY + mapH / 2);
+      }, { variant: "ghost", fontSize: 12 });
+      drawButton(ctx2, hits, pillX + pillW + 40, pillY, 28, pillH, "\uFF0B", () => {
+        this.applyZoomAt(1.22, mapX + mapW / 2, mapY + mapH / 2);
+      }, { variant: "ghost", fontSize: 12 });
       if (this.drawerOpen) {
         this.renderInspectorDrawer(ctx2, hits, league, mapX, mapY, mapW, mapH, actions);
       }
@@ -34735,12 +34749,18 @@
       }
     }
     drawEdgeLine(ctx2, ax, ay, bx, by, bothUnlocked, reachable, color, isBridge = false) {
+      const mr = this.lastMapRect;
+      if (Math.max(ax, bx) < mr.x - 20 || Math.min(ax, bx) > mr.x + mr.w + 20 || Math.max(ay, by) < mr.y - 20 || Math.min(ay, by) > mr.y + mr.h + 20) {
+        return;
+      }
       ctx2.save();
       if (bothUnlocked) {
         ctx2.strokeStyle = color;
         ctx2.lineWidth = isBridge ? 2.6 : 1.9;
-        ctx2.shadowColor = color;
-        ctx2.shadowBlur = isBridge ? 10 : 6;
+        if (!IS_MOBILE) {
+          ctx2.shadowColor = color;
+          ctx2.shadowBlur = isBridge ? 10 : 6;
+        }
         ctx2.beginPath();
         ctx2.moveTo(ax, ay);
         ctx2.lineTo(bx, by);
@@ -34749,7 +34769,7 @@
         const sx = ax + (bx - ax) * t;
         const sy = ay + (by - ay) * t;
         ctx2.fillStyle = "#FEF08A";
-        ctx2.shadowBlur = 4;
+        if (!IS_MOBILE) ctx2.shadowBlur = 4;
         ctx2.beginPath();
         ctx2.arc(sx, sy, isBridge ? 2.4 : 1.7, 0, Math.PI * 2);
         ctx2.fill();
@@ -34894,8 +34914,10 @@
         ctx2.save();
         ctx2.strokeStyle = `rgba(250, 204, 21, ${alpha.toFixed(3)})`;
         ctx2.lineWidth = 3.5 * (1 - p * 0.6);
-        ctx2.shadowColor = THEME.GOLD_LIGHT;
-        ctx2.shadowBlur = 16;
+        if (!IS_MOBILE) {
+          ctx2.shadowColor = THEME.GOLD_LIGHT;
+          ctx2.shadowBlur = 16;
+        }
         ctx2.beginPath();
         ctx2.arc(cx, cy, baseR * (0.48 + p * 0.14), 0, Math.PI * 2);
         ctx2.stroke();
@@ -35157,8 +35179,10 @@
           const unlCount = V6_STYLE_PASSIVES.filter((p) => p.style === style && unlockedPassiveSet.has(p.id)).length + V6_ACTIVE_SKILLS.filter((s) => s.source === "style" && s.style === style && unlockedSkillSet.has(s.id)).length + V6_DIRECTIVES.filter((d) => d.source === "style" && d.style === style && unlockedDirSet.has(d.id)).length;
           const isClubStyle = club.style === style;
           ctx2.save();
-          ctx2.shadowColor = info.color;
-          ctx2.shadowBlur = isClubStyle ? 18 : 10;
+          if (!IS_MOBILE) {
+            ctx2.shadowColor = info.color;
+            ctx2.shadowBlur = isClubStyle ? 18 : 10;
+          }
           ctx2.fillStyle = isClubStyle ? "#162A48" : "#0F1B33";
           ctx2.beginPath();
           ctx2.arc(mx, my, mr, 0, Math.PI * 2);
@@ -35207,7 +35231,7 @@
           const isSel = this.selected.kind === "passive" && this.selected.id === p.id;
           const nr = isOrigin ? Math.max(8, 10.5 * Math.min(1.3, this.zoom)) : isRare ? Math.max(6, 7.6 * Math.min(1.3, this.zoom)) : Math.max(4.8, 6 * Math.min(1.3, this.zoom));
           ctx2.save();
-          if (pos.unlocked || pos.reachable || isSel) {
+          if (!IS_MOBILE && (pos.unlocked || pos.reachable || isSel)) {
             ctx2.shadowColor = isSel ? "#FFFFFF" : pos.unlocked ? info.color : "#38BDF8";
             ctx2.shadowBlur = isSel ? 12 : pos.unlocked ? 8 : 5;
           }
@@ -35262,7 +35286,7 @@
           const isSel = this.selected.kind === "skill" && this.selected.id === sk.id;
           const dr = Math.max(7.2, 9.2 * Math.min(1.35, this.zoom));
           ctx2.save();
-          if (isSel || isEq || pos.unlocked) {
+          if (!IS_MOBILE && (isSel || isEq || pos.unlocked)) {
             ctx2.shadowColor = isSel ? "#FFFFFF" : isEq ? "#4ADE80" : "#38BDF8";
             ctx2.shadowBlur = isSel ? 14 : 10;
           }
@@ -35317,7 +35341,7 @@
           const nr = Math.max(5.2, 6.8 * Math.min(1.38, this.zoom));
           const subAngle = Math.atan2(pos.y - cy, pos.x - cx);
           ctx2.save();
-          if (isSel || isEq || pos.unlocked) {
+          if (!IS_MOBILE && (isSel || isEq || pos.unlocked)) {
             ctx2.shadowColor = isSel ? "#FFFFFF" : isEq ? "#4ADE80" : ZONE_COLOR[dir.zone];
             ctx2.shadowBlur = isSel ? 12 : isEq ? 9 : 5;
           }
@@ -35370,7 +35394,7 @@
         const isSel = this.selected.kind === "fusion" && this.selected.id === al.fusion.id;
         const r = Math.max(9.5, 12.2 * Math.min(1.3, this.zoom));
         ctx2.save();
-        if (pos.unlocked || pos.reachable || isSel) {
+        if (!IS_MOBILE && (pos.unlocked || pos.reachable || isSel)) {
           ctx2.shadowColor = isSel ? "#FFFFFF" : THEME.GOLD_LIGHT;
           ctx2.shadowBlur = pos.unlocked ? 16 : 10;
         }
@@ -35424,7 +35448,7 @@
         const sysCol = SYSTEM_LABELS[sp.system].color;
         const r = isOrigin ? isMacro ? 14 : Math.max(8, 10.2 * Math.min(1.28, this.zoom)) : Math.max(5.2, 6.4 * Math.min(1.28, this.zoom));
         ctx2.save();
-        if (pos.unlocked || pos.reachable || isSel) {
+        if (!IS_MOBILE && (pos.unlocked || pos.reachable || isSel)) {
           ctx2.shadowColor = isSel ? "#FFFFFF" : pos.unlocked ? sysCol : "#38BDF8";
           ctx2.shadowBlur = isSel ? 12 : 7;
         }
@@ -35465,7 +35489,7 @@
           const isSel = this.selected.kind === "formation" && this.selected.formation === fm;
           const r = Math.max(6.2, 7.8 * Math.min(1.28, this.zoom));
           ctx2.save();
-          if (isCurFm || isSel) {
+          if (!IS_MOBILE && (isCurFm || isSel)) {
             ctx2.shadowColor = isSel ? "#FFFFFF" : THEME.GREEN;
             ctx2.shadowBlur = 10;
           }
@@ -35502,7 +35526,7 @@
         const sCol = STYLE_LABELS[seal.style].color;
         const r = Math.max(9.5, 11.8 * Math.min(1.25, this.zoom));
         ctx2.save();
-        if (pos.unlocked || pos.reachable || isSel) {
+        if (!IS_MOBILE && (pos.unlocked || pos.reachable || isSel)) {
           ctx2.shadowColor = isSel ? "#FFFFFF" : pos.unlocked ? THEME.GOLD_LIGHT : sCol;
           ctx2.shadowBlur = 14;
         }
@@ -35530,8 +35554,10 @@
       const coreSel = this.selected.kind === "core";
       const pulse = 0.5 + 0.5 * Math.sin(this.animTime * 2.8);
       ctx2.save();
-      ctx2.shadowColor = ast.coreUnlocked ? "#FACC15" : coreCheck.ok ? "#38BDF8" : "#475569";
-      ctx2.shadowBlur = ast.coreUnlocked ? 22 + pulse * 8 : coreCheck.ok ? 14 : 6;
+      if (!IS_MOBILE) {
+        ctx2.shadowColor = ast.coreUnlocked ? "#FACC15" : coreCheck.ok ? "#38BDF8" : "#475569";
+        ctx2.shadowBlur = ast.coreUnlocked ? 22 + pulse * 8 : coreCheck.ok ? 14 : 6;
+      }
       ctx2.fillStyle = ast.coreUnlocked ? "#78350F" : "#0F172A";
       ctx2.beginPath();
       ctx2.arc(cx, cy, coreR, 0, Math.PI * 2);
@@ -42381,6 +42407,14 @@
       }
       return false;
     }
+    onPinchZoom(factor, x, y) {
+      if (this.settingsModal.isOpen() || this.saveSlotModal.isOpen() || this.textInputModal.isOpen()) {
+        return;
+      }
+      if (this.route === "meta") {
+        this.metaScreen.onPinchZoom(factor, x, y);
+      }
+    }
     onKeyDown(code, key) {
       if (this.bootIntro.isBlocking()) {
         if (code === "Space" || code === "Enter" || code === "Escape") {
@@ -42967,7 +43001,7 @@
   var ctx = canvas.getContext("2d");
   var currentDpr = 1;
   function applyHiDPI() {
-    const dprCap = IS_MOBILE ? 1.5 : 2;
+    const dprCap = IS_MOBILE ? 1.25 : 2;
     const dpr = Math.min(dprCap, Math.max(1, window.devicePixelRatio || 1));
     if (dpr !== currentDpr || canvas.width !== Math.round(THEME.W * dpr)) {
       currentDpr = dpr;
@@ -43177,21 +43211,63 @@
     const markActive = () => {
       lastInteractionMs = performance.now();
     };
-    canvas.addEventListener("pointermove", (e) => {
-      markActive();
-      const pt = toDesignCoord(e.clientX, e.clientY);
-      app.onPointerMove(pt.x, pt.y);
-    });
+    const activePointers = /* @__PURE__ */ new Map();
+    let lastPinchDist = 0;
+    const getPinchMetrics = () => {
+      const pts = Array.from(activePointers.values());
+      if (pts.length < 2) return null;
+      const dx = pts[1].x - pts[0].x;
+      const dy = pts[1].y - pts[0].y;
+      return {
+        dist: Math.hypot(dx, dy),
+        cx: (pts[0].x + pts[1].x) * 0.5,
+        cy: (pts[0].y + pts[1].y) * 0.5
+      };
+    };
     canvas.addEventListener("pointerdown", (e) => {
       markActive();
       const pt = toDesignCoord(e.clientX, e.clientY);
-      app.onPointerDown(pt.x, pt.y);
+      activePointers.set(e.pointerId, pt);
+      if (activePointers.size === 2) {
+        const m = getPinchMetrics();
+        lastPinchDist = m ? m.dist : 0;
+        app.onPointerUp?.(pt.x, pt.y);
+        return;
+      }
+      if (activePointers.size === 1) {
+        app.onPointerDown(pt.x, pt.y);
+      }
     });
-    canvas.addEventListener("pointerup", (e) => {
+    canvas.addEventListener("pointermove", (e) => {
       markActive();
       const pt = toDesignCoord(e.clientX, e.clientY);
-      app.onPointerUp?.(pt.x, pt.y);
+      if (activePointers.has(e.pointerId)) {
+        activePointers.set(e.pointerId, pt);
+      }
+      if (activePointers.size >= 2) {
+        const m = getPinchMetrics();
+        if (m && lastPinchDist > 4 && m.dist > 4) {
+          const factor = m.dist / lastPinchDist;
+          if (Math.abs(factor - 1) > 5e-3) {
+            app.onPinchZoom?.(factor, m.cx, m.cy);
+            lastPinchDist = m.dist;
+          }
+        }
+        return;
+      }
+      app.onPointerMove(pt.x, pt.y);
     });
+    const handlePointerEnd = (e) => {
+      markActive();
+      activePointers.delete(e.pointerId);
+      if (activePointers.size < 2) {
+        lastPinchDist = 0;
+      }
+      const pt = toDesignCoord(e.clientX, e.clientY);
+      app.onPointerUp?.(pt.x, pt.y);
+    };
+    canvas.addEventListener("pointerup", handlePointerEnd);
+    canvas.addEventListener("pointercancel", handlePointerEnd);
     canvas.addEventListener("wheel", (e) => {
       markActive();
       const pt = toDesignCoord(e.clientX, e.clientY);

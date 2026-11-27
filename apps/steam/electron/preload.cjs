@@ -10,4 +10,7 @@ contextBridge.exposeInMainWorld('electronBridge', {
   isFullscreenSync: () => ipcRenderer.sendSync('fm:is-fullscreen-sync'),
   toggleFullscreen: () => ipcRenderer.send('fm:toggle-fullscreen'),
   quitApp: () => ipcRenderer.send('fm:quit-app'),
+  otaGet: () => ipcRenderer.invoke('fm:ota-get'),
+  otaSave: (hash, code) => ipcRenderer.invoke('fm:ota-save', hash, code),
+  otaClear: () => ipcRenderer.invoke('fm:ota-clear'),
 });

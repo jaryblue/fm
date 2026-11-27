@@ -390,6 +390,8 @@ export class MatchEngine {
         this.subTrackers = [];
         // V6 原子事件总线状态
         this.v6PassiveHooks = { home: [], away: [] };
+        this.aiSegmentCards = { home: [], away: [] };
+        this.teamAttrCap = { home: 99, away: 99 };
         this.v6ImmunityFlags = { home: {}, away: {} };
         this.v6PreventPenRedUsed = { home: false, away: false };
         this.v6TotalFootballMaster = { home: false, away: false };
@@ -407,6 +409,14 @@ export class MatchEngine {
         this.v6PassiveHooks = {
             home: home.v6PassiveHooks ? [...home.v6PassiveHooks] : [],
             away: away.v6PassiveHooks ? [...away.v6PassiveHooks] : [],
+        };
+        this.aiSegmentCards = {
+            home: home.aiSegmentCards ? [...home.aiSegmentCards] : [],
+            away: away.aiSegmentCards ? [...away.aiSegmentCards] : [],
+        };
+        this.teamAttrCap = {
+            home: home.hiddenAttrCap ?? 99,
+            away: away.hiddenAttrCap ?? 99,
         };
         this.v6ImmunityFlags = {
             home: home.v6ImmunityFlags ? { ...home.v6ImmunityFlags } : {},
@@ -725,7 +735,7 @@ export class MatchEngine {
                 return { ok: false };
             }
         }
-        const clampAttr = (v) => Math.max(25, Math.min(99, v));
+        const clampAttr = (v) => Math.max(25, Math.min(this.teamAttrCap[team], v));
         const targetLine = card.targetLine ?? 'ALL';
         const hadActiveBuff = s.activeBuffs.some(b => b.team === team);
         let energyRefund = 0;
@@ -1250,6 +1260,12 @@ export class MatchEngine {
         if (!freezePrologueClock) {
             s.tick++;
             s.minute = Math.min(95, Math.floor(s.tick / SIM_CONFIG.TICKS_PER_MINUTE));
+            for (const side of ['home', 'away']) {
+                while (this.aiSegmentCards[side].length > 0 && this.aiSegmentCards[side][0].minute <= s.minute) {
+                    const next = this.aiSegmentCards[side].shift();
+                    this.applyCommandCard(side, next.effect);
+                }
+            }
         }
         if (this.setPieceBoostTicks > 0)
             this.setPieceBoostTicks--;
@@ -2617,7 +2633,7 @@ export class MatchEngine {
         const strainPenalty = shooter.strainWarning ? 0.035 : 0;
         const antiAttackShotPenalty = (oppIs5Back && (myStyleShot === 'wing_play' || getDefenseSystem(myFormShot) === '3-back') ? 0.08 : 0) +
             (oppStyleShot === 'park_bus' && (myStyleShot === 'wing_play' || myStyleShot === 'gegenpress') ? 0.07 : 0);
-        const rawShoot = Math.min(99, shooter.attributes.shooting + (hasBloodFrenzy ? 8 : 0));
+        const rawShoot = Math.min(this.teamAttrCap[shooter.team], shooter.attributes.shooting + (hasBloodFrenzy ? 8 : 0));
         const effectiveShoot = rawShoot > 80 ? 80 + (rawShoot - 80) * 1.35 : rawShoot;
         const longDistPenalty = dist >= 22 && !hasLongShotCannon ? (dist - 20) * 0.015 : 0;
         const onTargetProb = clamp(0.24 + (effectiveShoot / 99) * 0.34 - (dist / 32) * 0.16 - longDistPenalty - fatiguePenalty - strainPenalty - antiAttackShotPenalty + (hasLongShotCannon ? 0.14 : 0), 0.10, hasLongShotCannon ? 0.74 : 0.68);
@@ -2872,7 +2888,7 @@ export class MatchEngine {
         const rawGk = gk ? gk.attributes.goalkeeping : 65;
         const gkAttr = rawGk > 80 ? 80 + (rawGk - 80) * 1.15 : rawGk;
         const frenzyShootBonus = shooter && this.hasActiveMechanic(shooter.team, 'blood_frenzy') && this.isTrailing(shooter.team) ? 8 : 0;
-        const rawShooterShoot = shooter ? Math.min(99, shooter.attributes.shooting + frenzyShootBonus) : 70;
+        const rawShooterShoot = shooter ? Math.min(this.teamAttrCap[shooter.team], shooter.attributes.shooting + frenzyShootBonus) : 70;
         const rawShooterComp = shooter ? shooter.attributes.composure : 70;
         const baseShooterAttr = rawShooterShoot * 0.65 + rawShooterComp * 0.35;
         const shooterAttr = baseShooterAttr > 80 ? 80 + (baseShooterAttr - 80) * 1.15 : baseShooterAttr;
@@ -3162,9 +3178,9 @@ export class MatchEngine {
     }
     expireCommandBuffs() {
         const s = this.state;
-        const clampAttr = (v) => Math.max(25, Math.min(99, v));
         for (let i = s.activeBuffs.length - 1; i >= 0; i--) {
             const b = s.activeBuffs[i];
+            const clampAttr = (v) => Math.max(25, Math.min(this.teamAttrCap[b.team], v));
             if (s.minute >= b.endMinute) {
                 const c = b.effect;
                 const targetLine = c.targetLine ?? 'ALL';

@@ -104,6 +104,48 @@ ipcMain.on('fm:quit-app', () => {
   app.quit();
 });
 
+function getOtaDir() {
+  const dir = path.join(app.getPath('userData'), 'ota');
+  if (!fs.existsSync(dir)) {
+    fs.mkdirSync(dir, { recursive: true });
+  }
+  return dir;
+}
+
+ipcMain.handle('fm:ota-get', () => {
+  try {
+    const dir = getOtaDir();
+    const metaPath = path.join(dir, 'meta.json');
+    const bundlePath = path.join(dir, 'steam.bundle.js');
+    if (!fs.existsSync(metaPath) || !fs.existsSync(bundlePath)) return null;
+    const meta = JSON.parse(fs.readFileSync(metaPath, 'utf8'));
+    return { hash: meta.hash || '', bundleUrl: `file://${bundlePath}` };
+  } catch {
+    return null;
+  }
+});
+
+ipcMain.handle('fm:ota-save', (_event, hash, code) => {
+  try {
+    const dir = getOtaDir();
+    fs.writeFileSync(path.join(dir, 'steam.bundle.js'), String(code), 'utf8');
+    fs.writeFileSync(path.join(dir, 'meta.json'), JSON.stringify({ hash: String(hash), updatedAt: Date.now() }), 'utf8');
+    return true;
+  } catch {
+    return false;
+  }
+});
+
+ipcMain.handle('fm:ota-clear', () => {
+  try {
+    const dir = getOtaDir();
+    fs.rmSync(dir, { recursive: true, force: true });
+    return true;
+  } catch {
+    return false;
+  }
+});
+
 app.whenReady().then(() => {
   createWindow();
   app.on('activate', () => {

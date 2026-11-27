@@ -61,7 +61,7 @@ import {
   NavRailTab,
 } from '../CanvasKit';
 import { SoundEngine } from '../SoundEngine';
-import { THEME } from '../Theme';
+import { IS_MOBILE, THEME } from '../Theme';
 import { drawIcon, drawSkillGlyph, IconName, SkillGlyphKind } from '../VectorIcons';
 
 const BRANCH_ICON: Record<MetaBranch, IconName> = {
@@ -258,10 +258,21 @@ export class MetaScreen {
       return false;
     }
     if (!this.inMap(x, y)) return false;
-    const oldZoom = this.zoom;
     const factor = deltaY < 0 ? 1.15 : 0.87;
+    this.applyZoomAt(factor, x, y);
+    return true;
+  }
+
+  public onPinchZoom(factor: number, x: number, y: number): void {
+    if (this.tab !== 'astrolabe' || this.inDrawer(x, y)) return;
+    this.dragging = false;
+    this.applyZoomAt(factor, x, y);
+  }
+
+  private applyZoomAt(factor: number, x: number, y: number): void {
+    const oldZoom = this.zoom;
     const nextZoom = Math.max(0.75, Math.min(2.6, Math.round(oldZoom * factor * 100) / 100));
-    if (nextZoom === oldZoom) return true;
+    if (nextZoom === oldZoom) return;
     const r = this.lastMapRect;
     const cx = r.x + r.w / 2;
     const cy = r.y + r.h / 2;
@@ -269,7 +280,6 @@ export class MetaScreen {
     this.panX = Math.max(-560, Math.min(560, (x - cx) - ((x - cx) - this.panX) * ratio));
     this.panY = Math.max(-560, Math.min(560, (y - cy) - ((y - cy) - this.panY) * ratio));
     this.zoom = nextZoom;
-    return true;
   }
 
   public render(
@@ -448,8 +458,14 @@ export class MetaScreen {
       const unitR = Math.min(mapW, mapH) * 0.48 * this.zoom;
       this.panX = Math.round(-Math.cos(focusAng) * unitR * 0.62);
       this.panY = Math.round(-Math.sin(focusAng) * unitR * 0.62);
-      this.notice = `星宿特写视图：已聚焦【${STYLE_LABELS[club.style].name}】扇区，滚轮缩放/按住拖拽`;
+      this.notice = `星宿特写视图：已聚焦【${STYLE_LABELS[club.style].name}】扇区，双指捏合/滚轮缩放`;
     });
+    drawButton(ctx, hits, pillX + pillW + 8, pillY, 28, pillH, '－', () => {
+      this.applyZoomAt(0.82, mapX + mapW / 2, mapY + mapH / 2);
+    }, { variant: 'ghost', fontSize: 12 });
+    drawButton(ctx, hits, pillX + pillW + 40, pillY, 28, pillH, '＋', () => {
+      this.applyZoomAt(1.22, mapX + mapW / 2, mapY + mapH / 2);
+    }, { variant: 'ghost', fontSize: 12 });
 
     if (this.drawerOpen) {
       this.renderInspectorDrawer(ctx, hits, league, mapX, mapY, mapW, mapH, actions);
@@ -567,12 +583,23 @@ export class MetaScreen {
     color: string,
     isBridge = false
   ): void {
+    const mr = this.lastMapRect;
+    if (
+      Math.max(ax, bx) < mr.x - 20 ||
+      Math.min(ax, bx) > mr.x + mr.w + 20 ||
+      Math.max(ay, by) < mr.y - 20 ||
+      Math.min(ay, by) > mr.y + mr.h + 20
+    ) {
+      return;
+    }
     ctx.save();
     if (bothUnlocked) {
       ctx.strokeStyle = color;
       ctx.lineWidth = isBridge ? 2.6 : 1.9;
-      ctx.shadowColor = color;
-      ctx.shadowBlur = isBridge ? 10 : 6;
+      if (!IS_MOBILE) {
+        ctx.shadowColor = color;
+        ctx.shadowBlur = isBridge ? 10 : 6;
+      }
       ctx.beginPath();
       ctx.moveTo(ax, ay);
       ctx.lineTo(bx, by);
@@ -583,7 +610,7 @@ export class MetaScreen {
       const sx = ax + (bx - ax) * t;
       const sy = ay + (by - ay) * t;
       ctx.fillStyle = '#FEF08A';
-      ctx.shadowBlur = 4;
+      if (!IS_MOBILE) ctx.shadowBlur = 4;
       ctx.beginPath();
       ctx.arc(sx, sy, isBridge ? 2.4 : 1.7, 0, Math.PI * 2);
       ctx.fill();
@@ -779,8 +806,10 @@ export class MetaScreen {
       // 1. 融合轨道金色扩张冲击波
       ctx.strokeStyle = `rgba(250, 204, 21, ${alpha.toFixed(3)})`;
       ctx.lineWidth = 3.5 * (1 - p * 0.6);
-      ctx.shadowColor = THEME.GOLD_LIGHT;
-      ctx.shadowBlur = 16;
+      if (!IS_MOBILE) {
+        ctx.shadowColor = THEME.GOLD_LIGHT;
+        ctx.shadowBlur = 16;
+      }
       ctx.beginPath();
       ctx.arc(cx, cy, baseR * (0.48 + p * 0.14), 0, Math.PI * 2);
       ctx.stroke();
@@ -1095,8 +1124,10 @@ export class MetaScreen {
         const isClubStyle = club.style === style;
 
         ctx.save();
-        ctx.shadowColor = info.color;
-        ctx.shadowBlur = isClubStyle ? 18 : 10;
+        if (!IS_MOBILE) {
+          ctx.shadowColor = info.color;
+          ctx.shadowBlur = isClubStyle ? 18 : 10;
+        }
         ctx.fillStyle = isClubStyle ? '#162A48' : '#0F1B33';
         ctx.beginPath();
         ctx.arc(mx, my, mr, 0, Math.PI * 2);
@@ -1157,7 +1188,7 @@ export class MetaScreen {
           : Math.max(4.8, 6.0 * Math.min(1.3, this.zoom));
 
         ctx.save();
-        if (pos.unlocked || pos.reachable || isSel) {
+        if (!IS_MOBILE && (pos.unlocked || pos.reachable || isSel)) {
           ctx.shadowColor = isSel ? '#FFFFFF' : pos.unlocked ? info.color : '#38BDF8';
           ctx.shadowBlur = isSel ? 12 : pos.unlocked ? 8 : 5;
         }
@@ -1218,7 +1249,7 @@ export class MetaScreen {
         const dr = Math.max(7.2, 9.2 * Math.min(1.35, this.zoom));
 
         ctx.save();
-        if (isSel || isEq || pos.unlocked) {
+        if (!IS_MOBILE && (isSel || isEq || pos.unlocked)) {
           ctx.shadowColor = isSel ? '#FFFFFF' : isEq ? '#4ADE80' : '#38BDF8';
           ctx.shadowBlur = isSel ? 14 : 10;
         }
@@ -1280,7 +1311,7 @@ export class MetaScreen {
         const subAngle = Math.atan2(pos.y - cy, pos.x - cx);
 
         ctx.save();
-        if (isSel || isEq || pos.unlocked) {
+        if (!IS_MOBILE && (isSel || isEq || pos.unlocked)) {
           ctx.shadowColor = isSel ? '#FFFFFF' : isEq ? '#4ADE80' : ZONE_COLOR[dir.zone];
           ctx.shadowBlur = isSel ? 12 : isEq ? 9 : 5;
         }
@@ -1339,7 +1370,7 @@ export class MetaScreen {
       const r = Math.max(9.5, 12.2 * Math.min(1.3, this.zoom));
 
       ctx.save();
-      if (pos.unlocked || pos.reachable || isSel) {
+      if (!IS_MOBILE && (pos.unlocked || pos.reachable || isSel)) {
         ctx.shadowColor = isSel ? '#FFFFFF' : THEME.GOLD_LIGHT;
         ctx.shadowBlur = pos.unlocked ? 16 : 10;
       }
@@ -1399,7 +1430,7 @@ export class MetaScreen {
       const r = isOrigin ? (isMacro ? 14 : Math.max(8, 10.2 * Math.min(1.28, this.zoom))) : Math.max(5.2, 6.4 * Math.min(1.28, this.zoom));
 
       ctx.save();
-      if (pos.unlocked || pos.reachable || isSel) {
+      if (!IS_MOBILE && (pos.unlocked || pos.reachable || isSel)) {
         ctx.shadowColor = isSel ? '#FFFFFF' : pos.unlocked ? sysCol : '#38BDF8';
         ctx.shadowBlur = isSel ? 12 : 7;
       }
@@ -1444,7 +1475,7 @@ export class MetaScreen {
         const r = Math.max(6.2, 7.8 * Math.min(1.28, this.zoom));
 
         ctx.save();
-        if (isCurFm || isSel) {
+        if (!IS_MOBILE && (isCurFm || isSel)) {
           ctx.shadowColor = isSel ? '#FFFFFF' : THEME.GREEN;
           ctx.shadowBlur = 10;
         }
@@ -1485,7 +1516,7 @@ export class MetaScreen {
       const r = Math.max(9.5, 11.8 * Math.min(1.25, this.zoom));
 
       ctx.save();
-      if (pos.unlocked || pos.reachable || isSel) {
+      if (!IS_MOBILE && (pos.unlocked || pos.reachable || isSel)) {
         ctx.shadowColor = isSel ? '#FFFFFF' : pos.unlocked ? THEME.GOLD_LIGHT : sCol;
         ctx.shadowBlur = 14;
       }
@@ -1517,8 +1548,10 @@ export class MetaScreen {
     const coreSel = this.selected.kind === 'core';
     const pulse = 0.5 + 0.5 * Math.sin(this.animTime * 2.8);
     ctx.save();
-    ctx.shadowColor = ast.coreUnlocked ? '#FACC15' : coreCheck.ok ? '#38BDF8' : '#475569';
-    ctx.shadowBlur = ast.coreUnlocked ? 22 + pulse * 8 : coreCheck.ok ? 14 : 6;
+    if (!IS_MOBILE) {
+      ctx.shadowColor = ast.coreUnlocked ? '#FACC15' : coreCheck.ok ? '#38BDF8' : '#475569';
+      ctx.shadowBlur = ast.coreUnlocked ? 22 + pulse * 8 : coreCheck.ok ? 14 : 6;
+    }
     ctx.fillStyle = ast.coreUnlocked ? '#78350F' : '#0F172A';
     ctx.beginPath();
     ctx.arc(cx, cy, coreR, 0, Math.PI * 2);

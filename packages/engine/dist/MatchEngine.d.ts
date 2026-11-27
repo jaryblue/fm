@@ -58,6 +58,8 @@ export declare class MatchEngine {
     private pendingSkillResolution;
     private subTrackers;
     private v6PassiveHooks;
+    private aiSegmentCards;
+    private teamAttrCap;
     private v6ImmunityFlags;
     private v6PreventPenRedUsed;
     private v6TotalFootballMaster;

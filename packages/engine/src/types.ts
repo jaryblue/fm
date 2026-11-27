@@ -318,6 +318,8 @@ export interface TeamSetup {
   v6TotalFootballMaster?: boolean;
   v6SkillTempRankBonus?: number;
   v6SkillDualBranch?: boolean;
+  aiSegmentCards?: Array<{ minute: number; effect: CommandCardEffect }>;
+  hiddenAttrCap?: number;
   v6StartingShields?: number;
   v6MaxCounterStacks?: number;
 }

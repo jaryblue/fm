@@ -10,7 +10,7 @@
   ],
   "scripts": {
     "typecheck": "tsc -p tsconfig.json",
-    "build:web": "esbuild apps/steam/src/main.ts --bundle --format=iife --outfile=apps/steam/steam.bundle.js && esbuild packages/engine/src/index.ts --bundle --format=iife --global-name=FMLeagueEngine --minify --outfile=apps/steam/engine.iife.js",
+    "build:web": "esbuild apps/steam/src/main.ts --bundle --format=iife --outfile=apps/steam/steam.bundle.js && esbuild packages/engine/src/index.ts --bundle --format=iife --global-name=FMLeagueEngine --minify --outfile=apps/steam/engine.iife.js && node scripts/gen_ota_manifest.mjs",
     "build:engine": "npm run build --workspace=@fm-league/engine",
     "electron:dev": "npm run build:web && npx electron apps/steam/electron/main.cjs",
     "electron:pack": "npm run build:web && npx electron-builder --config apps/steam/electron-builder.json --dir",
