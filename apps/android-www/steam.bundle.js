@@ -8791,7 +8791,7 @@
           const attPower = holder.attributes.dribbling * 0.7 + holder.attributes.strength * 0.3 + frenzyHolderEdge;
           const tackleGoldMul = def.goldTraits?.includes("\u7CBE\u51C6\u94F2\u65AD") ? 2 : 1;
           const traitTackleBonus = def.traits?.includes("\u7CBE\u51C6\u94F2\u65AD") ? 0.1 * tackleGoldMul : 0;
-          const styleTackleBonus = oppStyle === "gegenpress" ? 0.06 : oppStyle === "park_bus" && toRelativeX(holder.pos.x, this.getAttackDir(holder.team)) >= 68 ? 0.03 : 0;
+          const styleTackleBonus = oppStyle === "gegenpress" ? 0.06 : oppStyle === "park_bus" && toRelativeX(holder.pos.x, this.getAttackDir(holder.team)) >= 68 ? 0.045 : 0;
           const defFatigueTacklePenalty = def.fitness < 75 ? -((75 - def.fitness) / 55) * 0.08 : 0;
           const holderStyle = holder.team === "home" ? this.state.homeStyle : this.state.awayStyle;
           const holderForm = holder.team === "home" ? this.state.homeFormation : this.state.awayFormation;
@@ -8942,8 +8942,10 @@
       const oppFormShot = shooter.team === "home" ? this.state.awayFormation : this.state.homeFormation;
       const oppIs5Back = getDefenseSystem(oppFormShot) === "5-back";
       if ((myStyleShot === "counter" || myStyleShot === "park_bus") && (oppStyleShot === "gegenpress" || oppStyleShot === "wing_play")) {
-        xG = Math.min(0.68, xG + (myStyleShot === "counter" ? 0.05 : 0.02));
+        xG = Math.min(0.68, xG + (myStyleShot === "counter" ? 0.05 : 0.04));
         this.pushTacticalCallout(shooter, "\u6218\u672F\u514B\u5236 +xG", "tactic");
+      } else if (myStyleShot === "park_bus" && oppStyleShot !== "park_bus") {
+        xG = Math.min(0.68, xG + 0.015);
       } else if (oppStyleShot === "gegenpress" && dist >= 18 && dist < 24) {
         xG = Math.min(0.68, xG + 0.02);
       } else if (myStyleShot === "tiki_taka" && oppStyleShot === "park_bus") {
@@ -8960,7 +8962,7 @@
         xG = Math.min(0.68, xG + 0.03);
       }
       if (getDefenseSystem(myFormShot) === "4-back" && toRelativeX(shooter.pos.x, dir) > 70) {
-        xG = Math.min(0.68, xG + 0.035);
+        xG = Math.min(0.68, xG + 0.025);
       }
       shooter.hasBall = false;
       shooter.matchStats.shots++;
@@ -33042,7 +33044,7 @@
           drawText(ctx2, fitText(ctx2, `+${cap.benefit}`, 124, 10), bx + 108, 102, { size: 10, bold: true, color: "#4ADE80" });
           drawText(ctx2, fitText(ctx2, `-${cap.risk}`, 114, 10), bx + 238, 102, { size: 10, color: "#FCA5A5" });
         });
-      } else if (!this.goalBanner) {
+      } else if (!this.goalBanner && !this.cardBanner && !st.skillResolution) {
         const userBuffs = (st.activeBuffs || []).filter((b) => b.team === this.userSide);
         userBuffs.slice(0, 2).forEach((bf, bi) => {
           const bx = 278 + bi * 194;
@@ -33058,7 +33060,7 @@
       }
       const aspCount = st.activeAspects?.length ?? 0;
       const aspStacks = st.aspectStacks;
-      if (aspCount > 0 || (aspStacks?.shieldCharges ?? 0) > 0 || (aspStacks?.counterCharges ?? 0) > 0) {
+      if (!this.goalBanner && !this.cardBanner && !st.skillResolution && (aspCount > 0 || (aspStacks?.shieldCharges ?? 0) > 0 || (aspStacks?.counterCharges ?? 0) > 0)) {
         let ax = 672;
         if (aspCount > 0) {
           drawBadge(ctx2, ax, 92, 92, 24, `\u2605 \u5A01\u80FD \xD7${aspCount}`, "rgba(120, 53, 15, 0.88)", THEME.GOLD_LIGHT);

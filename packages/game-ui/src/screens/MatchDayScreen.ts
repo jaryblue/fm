@@ -2453,7 +2453,7 @@ export class MatchDayScreen {
         drawText(ctx, fitText(ctx, `+${cap.benefit}`, 124, 10), bx + 108, 102, { size: 10, bold: true, color: '#4ADE80' });
         drawText(ctx, fitText(ctx, `-${cap.risk}`, 114, 10), bx + 238, 102, { size: 10, color: '#FCA5A5' });
       });
-    } else if (!this.goalBanner) {
+    } else if (!this.goalBanner && !this.cardBanner && !st.skillResolution) {
       const userBuffs = (st.activeBuffs || []).filter(b => b.team === this.userSide);
       userBuffs.slice(0, 2).forEach((bf, bi) => {
         const bx = 278 + bi * 194;
@@ -2468,10 +2468,10 @@ export class MatchDayScreen {
       });
     }
 
-    // 右上球场边角：传奇融合威能 & 护盾/反击实时层数 HUD
+    // 右上球场边角：传奇融合威能 & 护盾/反击实时层数 HUD（有顶部转播条时自动避让）
     const aspCount = st.activeAspects?.length ?? 0;
     const aspStacks = st.aspectStacks;
-    if (aspCount > 0 || (aspStacks?.shieldCharges ?? 0) > 0 || (aspStacks?.counterCharges ?? 0) > 0) {
+    if (!this.goalBanner && !this.cardBanner && !st.skillResolution && (aspCount > 0 || (aspStacks?.shieldCharges ?? 0) > 0 || (aspStacks?.counterCharges ?? 0) > 0)) {
       let ax = 672;
       if (aspCount > 0) {
         drawBadge(ctx, ax, 92, 92, 24, `★ 威能 ×${aspCount}`, 'rgba(120, 53, 15, 0.88)', THEME.GOLD_LIGHT);
