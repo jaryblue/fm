@@ -1145,7 +1145,7 @@ export class MatchDayScreen {
               } else if (st.homeScore === 2) {
                 this.storyBeatBanner = {
                   speaker: '场边 · 替补席',
-                  text: '陈小宇梅开二度后小腿抽筋倒地！#10 林锋一把撕开了左膝冰袋……',
+                  text: '陈小宇梅开二度后小腿抽筋倒地！#10 梅利纳一把撕开了左膝冰袋……',
                   color: '#FBBF24',
                   timer: 3.8,
                   maxTimer: 3.8,
@@ -1190,9 +1190,9 @@ export class MatchDayScreen {
               }
             }
           }
-        } else if (ev.type === 'substitution' && this.isPrologueMode && ev.playerName.includes('林锋')) {
+        } else if (ev.type === 'substitution' && this.isPrologueMode && (ev.playerName.includes('梅利纳') || ev.playerName.includes('林锋'))) {
           this.storyBeatBanner = {
-            speaker: '#10 林锋(老队长)',
+            speaker: '#10 梅利纳(老队长)',
             text: '「老板，最后十分钟，交给我。」全场八万人起立高呼老队长的名字！',
             color: THEME.GOLD_LIGHT,
             timer: 3.8,
@@ -2130,7 +2130,7 @@ export class MatchDayScreen {
           ctx.globalAlpha = pulse;
           drawBadge(ctx, sp.x - 18, sp.y - 34, 36, 14, '抽筋!', '#7F1D1D', '#FCA5A5');
           ctx.restore();
-        } else if (p.id === 'prologue_vet_10' || p.name.includes('林锋')) {
+        } else if (p.id === 'prologue_vet_10' || p.name.includes('梅利纳') || p.name.includes('林锋')) {
           ctx.save();
           const auraR = 17 + Math.sin(this.elapsedSec * 5) * 2.5;
           ctx.strokeStyle = 'rgba(250, 204, 21, 0.82)';
@@ -2138,7 +2138,7 @@ export class MatchDayScreen {
           ctx.beginPath();
           ctx.arc(sp.x, sp.y, auraR, 0, Math.PI * 2);
           ctx.stroke();
-          drawBadge(ctx, sp.x - 24, sp.y - 34, 48, 14, '#10 林锋', '#78350F', THEME.GOLD_LIGHT);
+          drawBadge(ctx, sp.x - 26, sp.y - 34, 52, 14, '#10 梅利纳', '#78350F', THEME.GOLD_LIGHT);
           ctx.restore();
         }
       }
@@ -2324,7 +2324,7 @@ export class MatchDayScreen {
       const bx = 294;
       const bw = 692;
       const bh = 48;
-      const spkImg = sbData.speaker.includes('林锋') ? AssetLoader.get('portrait_linfeng') : sbData.speaker.includes('陈小宇') ? AssetLoader.get('portrait_xiaoyu') : null;
+      const spkImg = (sbData.speaker.includes('梅利纳') || sbData.speaker.includes('林锋')) ? AssetLoader.get('portrait_linfeng') : sbData.speaker.includes('陈小宇') ? AssetLoader.get('portrait_xiaoyu') : null;
       ctx.save();
       ctx.globalAlpha = Math.max(0, Math.min(1, alpha));
       drawChamferPanel(ctx, bx, by, bw, bh, 10, 'rgba(7, 11, 22, 0.94)', sbData.color, 1.8, sbData.color);
@@ -3085,8 +3085,8 @@ export class MatchDayScreen {
 
       drawText(ctx, '本场关键焦点', 1044, 154, { size: 12.5, bold: true, color: THEME.GOLD_LIGHT });
       const chen = st.players.find(p => p.team === this.userSide && p.id === 'prologue_st_19');
-      const linOnPitch = st.players.find(p => p.team === this.userSide && (p.id === 'prologue_vet_10' || p.name.includes('林锋')));
-      const linSub = (this.userSide === 'home' ? st.homeSubs : st.awaySubs).find(p => p.id === 'prologue_vet_10' || p.name.includes('林锋'));
+      const linOnPitch = st.players.find(p => p.team === this.userSide && (p.id === 'prologue_vet_10' || p.name.includes('梅利纳') || p.name.includes('林锋')));
+      const linSub = (this.userSide === 'home' ? st.homeSubs : st.awaySubs).find(p => p.id === 'prologue_vet_10' || p.name.includes('梅利纳') || p.name.includes('林锋'));
       const linObj = linOnPitch ?? linSub;
       const xiaoImg = AssetLoader.get('portrait_xiaoyu');
       const linImg = AssetLoader.get('portrait_linfeng');
@@ -3111,7 +3111,7 @@ export class MatchDayScreen {
         }
         const lx0 = linImg ? 1102 : 1052;
         drawBadge(ctx, lx0, 296, 30, 16, 'ST', '#78350F', THEME.GOLD_LIGHT);
-        drawText(ctx, '#10 林锋', lx0 + 36, 304, { size: 12, bold: true, color: THEME.GOLD_LIGHT });
+        drawText(ctx, '#10 梅利纳', lx0 + 36, 304, { size: 12, bold: true, color: THEME.GOLD_LIGHT });
         drawText(ctx, linOnPitch ? '已登场' : '替补待命', lx0, 326, { size: 10.5, bold: true, color: linOnPitch ? THEME.GREEN : '#FBBF24' });
         drawText(ctx, '37岁传奇老队长 · 最后一舞', 1052, 354, { size: 10.5, color: THEME.TX1 });
         drawText(ctx, linOnPitch ? '带伤出战 · 寻觅绝杀一击' : '在替补席随时准备上场', 1052, 374, { size: 10.5, color: '#FEF08A' });
@@ -3267,11 +3267,11 @@ export class MatchDayScreen {
     drawChamferPanel(ctx, mx, my, mw, mh, 14, 'rgba(11, 17, 30, 0.98)', THEME.BORDER_GOLD, 1.6, THEME.GOLD_LIGHT);
 
     const modalPrologueTut = this.isPrologueMode && this.engine ? this.engine.getPrologueTutorialState() : null;
-    const vetOnPitch = this.isPrologueMode && st.players.some(p => p.team === this.userSide && (p.id === 'prologue_vet_10' || p.name.includes('林锋')));
+    const vetOnPitch = this.isPrologueMode && st.players.some(p => p.team === this.userSide && (p.id === 'prologue_vet_10' || p.name.includes('梅利纳') || p.name.includes('林锋')));
     const modalSubTip = modalPrologueTut?.waitingForSub
       ? !this.selectedOutId
         ? '请先点击中间球场上的【#19 陈小宇】将他换下！'
-        : '再点击右侧「替补席」中的【#10 林锋】球员卡片完成换人！'
+        : '再点击右侧「替补席」中的【#10 梅利纳】球员卡片完成换人！'
       : vetOnPitch
       ? '老队长已披挂上阵！点击右上角【保存并返回比赛 ▶】继续决战！'
       : this.modalBanner;
@@ -3622,7 +3622,7 @@ export class MatchDayScreen {
       const fitColor = fitVal < 55 ? THEME.RED_LIGHT : fitVal < 75 ? THEME.GOLD_LIGHT : THEME.GREEN;
       const isNaturalMatch = !!outRole && sub.role === outRole;
       const isSecMatch = !!outRole && !isNaturalMatch && (sub.secondaryRoles?.includes(outRole) ?? false);
-      const isTutInTarget = !!modalPrologueTut?.waitingForSub && !!this.selectedOutId && (sub.id === 'prologue_vet_10' || sub.name.includes('林锋'));
+      const isTutInTarget = !!modalPrologueTut?.waitingForSub && !!this.selectedOutId && (sub.id === 'prologue_vet_10' || sub.name.includes('梅利纳') || sub.name.includes('林锋'));
 
       const borderCol = isBenchSelected ? THEME.GREEN : isTutInTarget ? THEME.GOLD_LIGHT : isNaturalMatch ? THEME.GREEN : isSecMatch ? '#38BDF8' : canSubWithPitch ? 'rgba(74,222,128,0.45)' : THEME.BORDER;
       const bgCol = isBenchSelected ? 'rgba(20, 83, 45, 0.50)' : isTutInTarget ? 'rgba(120, 53, 15, 0.44)' : canSubWithPitch ? 'rgba(14, 28, 46, 0.94)' : 'rgba(11, 17, 30, 0.88)';
@@ -3645,7 +3645,7 @@ export class MatchDayScreen {
         mono: true,
       });
 
-      const customSubPortrait = (sub.id === 'prologue_vet_10' || sub.name.includes('林锋'))
+      const customSubPortrait = (sub.id === 'prologue_vet_10' || sub.name.includes('梅利纳') || sub.name.includes('林锋'))
         ? AssetLoader.get('portrait_linfeng')
         : (sub.id === 'prologue_st_19' || sub.name.includes('陈小宇'))
         ? AssetLoader.get('portrait_xiaoyu')
@@ -3723,7 +3723,7 @@ export class MatchDayScreen {
         ctx.lineWidth = 2.6;
         ctx.strokeRect(sx - 2, sy - 2, cw + 4, ch + 4);
         drawChamferPanel(ctx, 560, sy + 24, 326, 40, 8, 'rgba(8, 15, 32, 0.98)', THEME.GOLD_LIGHT, 2);
-        drawText(ctx, '点这里派上【#10 林锋】 ▶', 723, sy + 44, {
+        drawText(ctx, '点这里派上【#10 梅利纳】 ▶', 723, sy + 44, {
           size: 11.5,
           bold: true,
           color: '#FEF08A',
@@ -3909,7 +3909,7 @@ export class MatchDayScreen {
       drawText(ctx, '超级联赛冠军加冕 · 4:3 史诗逆转！', 640, my + 278, { size: 28, bold: true, color: THEME.GOLD_LIGHT, align: 'center' });
       drawText(ctx, '曙光竞技 4 : 3 铁幕联  |  0:1 → 1:1 → 1:3 → 4:3 绝境捧杯', 640, my + 306, { size: 15, bold: true, color: THEME.TX1, align: 'center' });
       drawRoundRect(ctx, mx + 90, my + 334, mw - 180, 94, 12, 'rgba(15, 23, 42, 0.90)', THEME.BORDER_GOLD, 1.4);
-      drawText(ctx, '37岁队长 #10 林锋 80\' 替补登场 · 85\' 远射绝平 · 90\' 读秒绝杀', 640, my + 364, { size: 14.5, bold: true, color: '#FEF08A', align: 'center' });
+      drawText(ctx, '37岁队长 #10 梅利纳 80\' 替补登场 · 85\' 远射绝平 · 90\' 读秒绝杀', 640, my + 364, { size: 14.5, bold: true, color: '#FEF08A', align: 'center' });
       drawText(ctx, '雨夜的金色纸屑落下，你摘下浸满汗水的队长袖标，独自走回寂静的更衣室……', 640, my + 394, { size: 13, color: '#94A3B8', align: 'center' });
       drawButton(ctx, hits, 450, my + mh - 74, 380, 50, '捧杯之后 · 回到更衣室 ▶', () => {
         SoundEngine.playClick();

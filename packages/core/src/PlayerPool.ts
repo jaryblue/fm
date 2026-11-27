@@ -561,7 +561,7 @@ export function createReturningCaptainLinFeng(): DraftPlayer {
   const ca = computeWeightedCA('ST', attributes);
   return {
     id: 'captain_lin_feng',
-    name: '林锋',
+    name: '梅利纳',
     role: 'ST',
     secondaryRoles: ['CAM', 'CM', 'CDM', 'CB'],
     shirtNumber: 10,

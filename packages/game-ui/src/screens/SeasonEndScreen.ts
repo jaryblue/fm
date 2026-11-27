@@ -811,7 +811,7 @@ export class SeasonEndScreen {
         if (res.ok) {
           SoundEngine.playFanfare();
           actions.onBurst?.(cx + cw / 2, cy + ch / 2, THEME.GOLD_LIGHT);
-          actions.onToast?.(`${res.playerName} 已继承林锋衣钵，觉醒金标【${res.grantedTrait}】！`, THEME.GOLD_LIGHT);
+          actions.onToast?.(`${res.playerName} 已继承梅利纳衣钵，觉醒金标【${res.grantedTrait}】！`, THEME.GOLD_LIGHT);
           actions.onSave?.();
         }
       };

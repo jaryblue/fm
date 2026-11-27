@@ -512,7 +512,7 @@ export class GameApp {
           this.setRoute('draft', 'CORE PACKS · 核心开包');
           this.showToast(
             gotHeirloom
-              ? `${opts.customName || '新俱乐部'} 建队完成 · 老队长 #10 林锋（中轴全能 80+）游子归家压阵首季！`
+              ? `${opts.customName || '新俱乐部'} 建队完成 · 老队长 #10 梅利纳（中轴全能 80+）游子归家压阵首季！`
               : `${opts.customName || '新俱乐部'} 建队完成，开启 3 轮核心开包！`,
             gotHeirloom ? THEME.GOLD_LIGHT : THEME.GREEN
           );
@@ -597,7 +597,7 @@ export class GameApp {
           this.save();
           this.titleScreen.openNewSeasonWizard();
           this.setRoute('title', 'HOMETOWN CLUB · 重返家乡');
-          this.showToast('老队长 #10 林锋（80+中轴全能）已整装待发！请为家乡球队定名启程', THEME.GOLD_LIGHT);
+          this.showToast('老队长 #10 梅利纳（80+中轴全能）已整装待发！请为家乡球队定名启程', THEME.GOLD_LIGHT);
         },
         onDeclineSecretEnding: () => {
           this.league.markSecretRetiredEnding();

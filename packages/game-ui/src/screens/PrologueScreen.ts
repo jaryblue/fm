@@ -648,7 +648,7 @@ export class PrologueScreen {
         ctx.drawImage(roarImg, lx + 24, ly + 58, 114, 78);
       }
       drawText(ctx, '游子归家，再踢最后一季', lx + 156, ly + 72, { size: 18, bold: true, color: THEME.TX1 });
-      drawBadge(ctx, lx + 156, ly + 90, 232, 22, '老队长 #10 林锋亲自上阵 · S1限', '#14532D', THEME.GREEN);
+      drawBadge(ctx, lx + 156, ly + 90, 232, 22, '老队长 #10 梅利纳亲自上阵 · S1限', '#14532D', THEME.GREEN);
       drawText(ctx, 'CA 84 中轴全能(ST/CAM/CM/CDM/CB) · 季末转教练', lx + 156, ly + 128, { size: 11.5, color: '#7DD3FC' });
       drawWrappedText(
         ctx,

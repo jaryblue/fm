@@ -989,7 +989,7 @@ export class MatchEngine {
         return { ok: false, reason: '序章教学阶段暂未到换人时机，请先按场上提示指挥！' };
       }
       if (inSubId !== 'prologue_vet_10') {
-        return { ok: false, reason: '请换上替补席的老队长 #10 林锋！' };
+        return { ok: false, reason: '请换上替补席的老队长 #10 梅利纳！' };
       }
     }
     const used = team === 'home' ? s.homeSubsUsed : s.awaySubsUsed;
@@ -1069,7 +1069,7 @@ export class MatchEngine {
       this.prologueWaitingForSub = false;
       this.prologueStage = 5;
       this.prologueScriptTicks = 0;
-      this.pushEvent('commentary', team, newPlayer.id, newPlayer.name, newPlayer.pos, '【80\' 老队长登场】37岁队长 #10 林锋替补登场！全场八万人起立欢呼！', undefined, 'important');
+      this.pushEvent('commentary', team, newPlayer.id, newPlayer.name, newPlayer.pos, '【80\' 老队长登场】37岁队长 #10 梅利纳替补登场！全场八万人起立欢呼！', undefined, 'important');
     }
     return { ok: true };
   }
@@ -1215,7 +1215,7 @@ export class MatchEngine {
       }
       if (s.minute >= 85) {
         this.prologueWaitingForSub = true;
-        this.pushEvent('commentary', side, '', '', { x: PITCH.HALF_X, y: PITCH.HALF_Y }, '【教学 3/5 · 85\'换人】时间所剩无几！请换上替补席的 37岁老队长 #10 林锋！', undefined, 'important');
+        this.pushEvent('commentary', side, '', '', { x: PITCH.HALF_X, y: PITCH.HALF_Y }, '【教学 3/5 · 85\'换人】时间所剩无几！请换上替补席的 37岁老队长 #10 梅利纳！', undefined, 'important');
       }
     } else if (this.prologueStage === 5) {
       // 85'~86': 老队长登场拿球，弹出主动技 #1 (3:3)
@@ -1554,7 +1554,7 @@ export class MatchEngine {
           const crampStriker = s.players.find(p => p.team === side && p.id === 'prologue_st_19')
             ?? s.players.find(p => p.team === side && !p.redCard && p.role === 'ST');
           if (crampStriker) crampStriker.fitness = 30;
-          this.pushEvent('commentary', side, '', '', { x: PITCH.HALF_X, y: PITCH.HALF_Y }, '【2:3 看到希望】#19 陈小宇梅开二度，但落地时小腿抽筋！替补席上 #10 林锋撕开了左膝冰袋！', undefined, 'important');
+          this.pushEvent('commentary', side, '', '', { x: PITCH.HALF_X, y: PITCH.HALF_Y }, '【2:3 看到希望】#19 陈小宇梅开二度，但落地时小腿抽筋！替补席上 #10 梅利纳撕开了左膝冰袋！', undefined, 'important');
         } else if (this.prologuePendingForcedGoal) {
           const attacker = s.players.find(p => p.team === side && !p.redCard && p.id === 'prologue_st_19')
             ?? s.players.find(p => p.team === side && !p.redCard && ['ST', 'CAM', 'RW', 'LW'].includes(p.role))
@@ -1579,11 +1579,11 @@ export class MatchEngine {
         if (s.minute >= 80 && s.homeSubs.some(sub => sub.id === 'prologue_vet_10')) {
           if (!this.prologueWaitingForSub) {
             this.prologueWaitingForSub = true;
-            this.pushEvent('commentary', side, '', '', { x: PITCH.HALF_X, y: PITCH.HALF_Y }, '【80\' 抽筋警报】#19 陈小宇拼到抽筋！请点击右上【换人/战术】，换上老队长 #10 林锋！', undefined, 'important');
+            this.pushEvent('commentary', side, '', '', { x: PITCH.HALF_X, y: PITCH.HALF_Y }, '【80\' 抽筋警报】#19 陈小宇拼到抽筋！请点击右上【换人/战术】，换上老队长 #10 梅利纳！', undefined, 'important');
           }
         }
       } else if (this.prologueStage === 5 && s.homeScore < 3) {
-        const veteran = s.players.find(p => p.team === side && (p.id === 'prologue_vet_10' || p.name.includes('林锋')))
+        const veteran = s.players.find(p => p.team === side && (p.id === 'prologue_vet_10' || p.name.includes('梅利纳') || p.name.includes('林锋')))
           ?? s.players.find(p => p.team === side && p.role !== 'GK');
         if (veteran && s.minute >= 80) {
           // 保持在越位线前（不超过对方倒数第二名防守队员），临近 84' 再反越位前插接球
@@ -1608,7 +1608,7 @@ export class MatchEngine {
           this.executeShot(veteran, 0.85, true);
         }
       } else if (this.prologueStage === 6 && s.homeScore === 3 && sk) {
-        const veteran = s.players.find(p => p.team === side && (p.id === 'prologue_vet_10' || p.name.includes('林锋')))
+        const veteran = s.players.find(p => p.team === side && (p.id === 'prologue_vet_10' || p.name.includes('梅利纳') || p.name.includes('林锋')))
           ?? s.players.find(p => p.team === side && p.role !== 'GK');
         if (veteran && s.minute >= 86) {
           // 86'~89' 保持在弧顶越位线前策应，90' 踏入禁区弧顶起脚重炮
@@ -2020,7 +2020,7 @@ export class MatchEngine {
     if (this.prologueScriptedMode && team === this.userTeamSide) {
       this.prologueSkillTriggered = true;
       this.prologueGuaranteedGoal = true;
-      const veteran = s.players.find(p => p.team === team && (p.id === 'prologue_vet_10' || p.name.includes('林锋'))) ?? s.players.find(p => p.team === team && p.role !== 'GK');
+      const veteran = s.players.find(p => p.team === team && (p.id === 'prologue_vet_10' || p.name.includes('梅利纳') || p.name.includes('林锋'))) ?? s.players.find(p => p.team === team && p.role !== 'GK');
       const wasStage5 = this.prologueStage === 5;
       if (veteran) {
         if (!veteran.hasBall) this.giveBallTo(veteran);

@@ -7504,7 +7504,7 @@
           return { ok: false, reason: "\u5E8F\u7AE0\u6559\u5B66\u9636\u6BB5\u6682\u672A\u5230\u6362\u4EBA\u65F6\u673A\uFF0C\u8BF7\u5148\u6309\u573A\u4E0A\u63D0\u793A\u6307\u6325\uFF01" };
         }
         if (inSubId !== "prologue_vet_10") {
-          return { ok: false, reason: "\u8BF7\u6362\u4E0A\u66FF\u8865\u5E2D\u7684\u8001\u961F\u957F #10 \u6797\u950B\uFF01" };
+          return { ok: false, reason: "\u8BF7\u6362\u4E0A\u66FF\u8865\u5E2D\u7684\u8001\u961F\u957F #10 \u6885\u5229\u7EB3\uFF01" };
         }
       }
       const used = team === "home" ? s.homeSubsUsed : s.awaySubsUsed;
@@ -7585,7 +7585,7 @@
         this.prologueWaitingForSub = false;
         this.prologueStage = 5;
         this.prologueScriptTicks = 0;
-        this.pushEvent("commentary", team, newPlayer.id, newPlayer.name, newPlayer.pos, "\u301080' \u8001\u961F\u957F\u767B\u573A\u301137\u5C81\u961F\u957F #10 \u6797\u950B\u66FF\u8865\u767B\u573A\uFF01\u5168\u573A\u516B\u4E07\u4EBA\u8D77\u7ACB\u6B22\u547C\uFF01", void 0, "important");
+        this.pushEvent("commentary", team, newPlayer.id, newPlayer.name, newPlayer.pos, "\u301080' \u8001\u961F\u957F\u767B\u573A\u301137\u5C81\u961F\u957F #10 \u6885\u5229\u7EB3\u66FF\u8865\u767B\u573A\uFF01\u5168\u573A\u516B\u4E07\u4EBA\u8D77\u7ACB\u6B22\u547C\uFF01", void 0, "important");
       }
       return { ok: true };
     }
@@ -7710,7 +7710,7 @@
         }
         if (s.minute >= 85) {
           this.prologueWaitingForSub = true;
-          this.pushEvent("commentary", side, "", "", { x: PITCH.HALF_X, y: PITCH.HALF_Y }, "\u3010\u6559\u5B66 3/5 \xB7 85'\u6362\u4EBA\u3011\u65F6\u95F4\u6240\u5269\u65E0\u51E0\uFF01\u8BF7\u6362\u4E0A\u66FF\u8865\u5E2D\u7684 37\u5C81\u8001\u961F\u957F #10 \u6797\u950B\uFF01", void 0, "important");
+          this.pushEvent("commentary", side, "", "", { x: PITCH.HALF_X, y: PITCH.HALF_Y }, "\u3010\u6559\u5B66 3/5 \xB7 85'\u6362\u4EBA\u3011\u65F6\u95F4\u6240\u5269\u65E0\u51E0\uFF01\u8BF7\u6362\u4E0A\u66FF\u8865\u5E2D\u7684 37\u5C81\u8001\u961F\u957F #10 \u6885\u5229\u7EB3\uFF01", void 0, "important");
         }
       } else if (this.prologueStage === 5) {
         this.prologueScriptTicks++;
@@ -8010,7 +8010,7 @@
             this.prologueStage = 4;
             const crampStriker = s.players.find((p) => p.team === side && p.id === "prologue_st_19") ?? s.players.find((p) => p.team === side && !p.redCard && p.role === "ST");
             if (crampStriker) crampStriker.fitness = 30;
-            this.pushEvent("commentary", side, "", "", { x: PITCH.HALF_X, y: PITCH.HALF_Y }, "\u30102:3 \u770B\u5230\u5E0C\u671B\u3011#19 \u9648\u5C0F\u5B87\u6885\u5F00\u4E8C\u5EA6\uFF0C\u4F46\u843D\u5730\u65F6\u5C0F\u817F\u62BD\u7B4B\uFF01\u66FF\u8865\u5E2D\u4E0A #10 \u6797\u950B\u6495\u5F00\u4E86\u5DE6\u819D\u51B0\u888B\uFF01", void 0, "important");
+            this.pushEvent("commentary", side, "", "", { x: PITCH.HALF_X, y: PITCH.HALF_Y }, "\u30102:3 \u770B\u5230\u5E0C\u671B\u3011#19 \u9648\u5C0F\u5B87\u6885\u5F00\u4E8C\u5EA6\uFF0C\u4F46\u843D\u5730\u65F6\u5C0F\u817F\u62BD\u7B4B\uFF01\u66FF\u8865\u5E2D\u4E0A #10 \u6885\u5229\u7EB3\u6495\u5F00\u4E86\u5DE6\u819D\u51B0\u888B\uFF01", void 0, "important");
           } else if (this.prologuePendingForcedGoal) {
             const attacker = s.players.find((p) => p.team === side && !p.redCard && p.id === "prologue_st_19") ?? s.players.find((p) => p.team === side && !p.redCard && ["ST", "CAM", "RW", "LW"].includes(p.role)) ?? s.players.find((p) => p.team === side && !p.redCard && p.role !== "GK");
             if (attacker) {
@@ -8033,11 +8033,11 @@
           if (s.minute >= 80 && s.homeSubs.some((sub) => sub.id === "prologue_vet_10")) {
             if (!this.prologueWaitingForSub) {
               this.prologueWaitingForSub = true;
-              this.pushEvent("commentary", side, "", "", { x: PITCH.HALF_X, y: PITCH.HALF_Y }, "\u301080' \u62BD\u7B4B\u8B66\u62A5\u3011#19 \u9648\u5C0F\u5B87\u62FC\u5230\u62BD\u7B4B\uFF01\u8BF7\u70B9\u51FB\u53F3\u4E0A\u3010\u6362\u4EBA/\u6218\u672F\u3011\uFF0C\u6362\u4E0A\u8001\u961F\u957F #10 \u6797\u950B\uFF01", void 0, "important");
+              this.pushEvent("commentary", side, "", "", { x: PITCH.HALF_X, y: PITCH.HALF_Y }, "\u301080' \u62BD\u7B4B\u8B66\u62A5\u3011#19 \u9648\u5C0F\u5B87\u62FC\u5230\u62BD\u7B4B\uFF01\u8BF7\u70B9\u51FB\u53F3\u4E0A\u3010\u6362\u4EBA/\u6218\u672F\u3011\uFF0C\u6362\u4E0A\u8001\u961F\u957F #10 \u6885\u5229\u7EB3\uFF01", void 0, "important");
             }
           }
         } else if (this.prologueStage === 5 && s.homeScore < 3) {
-          const veteran = s.players.find((p) => p.team === side && (p.id === "prologue_vet_10" || p.name.includes("\u6797\u950B"))) ?? s.players.find((p) => p.team === side && p.role !== "GK");
+          const veteran = s.players.find((p) => p.team === side && (p.id === "prologue_vet_10" || p.name.includes("\u6885\u5229\u7EB3") || p.name.includes("\u6797\u950B"))) ?? s.players.find((p) => p.team === side && p.role !== "GK");
           if (veteran && s.minute >= 80) {
             const oppXs = s.players.filter((p) => p.team !== side && !p.redCard).map((p) => p.pos.x).sort((a, b) => dir === 1 ? b - a : a - b);
             const offsideLineX = oppXs[1] ?? (dir === 1 ? 80 : 25);
@@ -8055,7 +8055,7 @@
             this.executeShot(veteran, 0.85, true);
           }
         } else if (this.prologueStage === 6 && s.homeScore === 3 && sk) {
-          const veteran = s.players.find((p) => p.team === side && (p.id === "prologue_vet_10" || p.name.includes("\u6797\u950B"))) ?? s.players.find((p) => p.team === side && p.role !== "GK");
+          const veteran = s.players.find((p) => p.team === side && (p.id === "prologue_vet_10" || p.name.includes("\u6885\u5229\u7EB3") || p.name.includes("\u6797\u950B"))) ?? s.players.find((p) => p.team === side && p.role !== "GK");
           if (veteran && s.minute >= 86) {
             const oppXs = s.players.filter((p) => p.team !== side && !p.redCard).map((p) => p.pos.x).sort((a, b) => dir === 1 ? b - a : a - b);
             const offsideLineX = oppXs[1] ?? (dir === 1 ? 80 : 25);
@@ -8415,7 +8415,7 @@
       if (this.prologueScriptedMode && team === this.userTeamSide) {
         this.prologueSkillTriggered = true;
         this.prologueGuaranteedGoal = true;
-        const veteran = s.players.find((p) => p.team === team && (p.id === "prologue_vet_10" || p.name.includes("\u6797\u950B"))) ?? s.players.find((p) => p.team === team && p.role !== "GK");
+        const veteran = s.players.find((p) => p.team === team && (p.id === "prologue_vet_10" || p.name.includes("\u6885\u5229\u7EB3") || p.name.includes("\u6797\u950B"))) ?? s.players.find((p) => p.team === team && p.role !== "GK");
         const wasStage5 = this.prologueStage === 5;
         if (veteran) {
           if (!veteran.hasBall) this.giveBallTo(veteran);
@@ -14512,7 +14512,7 @@
     const ca = computeWeightedCA("ST", attributes);
     return {
       id: "captain_lin_feng",
-      name: "\u6797\u950B",
+      name: "\u6885\u5229\u7EB3",
       role: "ST",
       secondaryRoles: ["CAM", "CM", "CDM", "CB"],
       shirtNumber: 10,
@@ -22106,7 +22106,7 @@
       });
       const veteranSub = {
         id: "prologue_vet_10",
-        name: "\u6797\u950B(\u8001\u961F\u957F)",
+        name: "\u6885\u5229\u7EB3(\u8001\u961F\u957F)",
         role: "ST",
         shirtNumber: 10,
         attributes: { passing: 82, shooting: 90, dribbling: 82, pace: 68, strength: 78, defending: 42, positioning: 88, composure: 94, stamina: 76, goalkeeping: 20 },
@@ -22146,7 +22146,7 @@
             maxPerMatch: 2,
             durationMinutes: 10,
             instantAction: "force_shot_on_target",
-            instantLabel: "\u6797\u950B\u5F27\u9876\u8D77\u811A\u8F70\u51FA\u4E16\u754C\u6CE2",
+            instantLabel: "\u6885\u5229\u7EB3\u5F27\u9876\u8D77\u811A\u8F70\u51FA\u4E16\u754C\u6CE2",
             vfxTheme: "ult",
             effectiveRank: 3,
             effect: {
@@ -24854,7 +24854,7 @@
           appearances: capEntity.seasonStats.appearances,
           goals: capEntity.seasonStats.goals,
           assists: capEntity.seasonStats.assists,
-          note: "\u6E38\u5B50\u5F52\u5BB6\u5706\u6EE1\u843D\u5E55\uFF01#10 \u6797\u950B\u6B63\u5F0F\u6302\u9774\u8F6C\u4EFB\u4E3B\u6559\u7EC3\uFF0C\u4F20\u627F\u624B\u724C\u3010\u8001\u961F\u957F\u7684\u6012\u543C\u3011\u5E76\u6CE8\u5165 +50 Meta \u6267\u6559\u57FA\u91D1\uFF01"
+          note: "\u6E38\u5B50\u5F52\u5BB6\u5706\u6EE1\u843D\u5E55\uFF01#10 \u6885\u5229\u7EB3\u6B63\u5F0F\u6302\u9774\u8F6C\u4EFB\u4E3B\u6559\u7EC3\uFF0C\u4F20\u627F\u624B\u724C\u3010\u8001\u961F\u957F\u7684\u6012\u543C\u3011\u5E76\u6CE8\u5165 +50 Meta \u6267\u6559\u57FA\u91D1\uFF01"
         };
         if (capIdx >= 0) userClub.squad.splice(capIdx, 1);
         if (rosterCapIdx >= 0) roster.splice(rosterCapIdx, 1);
@@ -25446,7 +25446,7 @@
       if (idx < 0) return { ok: false, reason: "\u5927\u540D\u5355\u4E2D\u672A\u627E\u5230\u8BE5\u7403\u5458" };
       const p = roster[idx];
       if (p.isPrologueCaptain || p.id === "captain_lin_feng") {
-        return { ok: false, reason: "\u8001\u961F\u957F #10 \u6797\u950B\u6B63\u5728\u4E0A\u6F14\u6E38\u5B50\u5F52\u5BB6\u6700\u540E\u4E00\u821E\uFF0C\u65E0\u6CD5\u51FA\u552E\uFF01" };
+        return { ok: false, reason: "\u8001\u961F\u957F #10 \u6885\u5229\u7EB3\u6B63\u5728\u4E0A\u6F14\u6E38\u5B50\u5F52\u5BB6\u6700\u540E\u4E00\u821E\uFF0C\u65E0\u6CD5\u51FA\u552E\uFF01" };
       }
       if (p.role === "GK" && roster.filter((x) => x.role === "GK").length <= 1) {
         return { ok: false, reason: "\u4E0D\u80FD\u51FA\u552E\u6700\u540E 1 \u540D\u95E8\u5C06 (GK)" };
@@ -25493,7 +25493,7 @@
       const p = roster.find((x) => x.id === playerId);
       if (!p) return { ok: false, reason: "\u672A\u627E\u5230\u8BE5\u7403\u5458" };
       if (p.isPrologueCaptain || p.id === "captain_lin_feng") {
-        return { ok: false, reason: "\u8001\u961F\u957F #10 \u6797\u950B\u6B63\u5728\u4E0A\u6F14\u6E38\u5B50\u5F52\u5BB6\u6700\u540E\u4E00\u821E\uFF0C\u65E0\u6CD5\u6302\u724C\uFF01" };
+        return { ok: false, reason: "\u8001\u961F\u957F #10 \u6885\u5229\u7EB3\u6B63\u5728\u4E0A\u6F14\u6E38\u5B50\u5F52\u5BB6\u6700\u540E\u4E00\u821E\uFF0C\u65E0\u6CD5\u6302\u724C\uFF01" };
       }
       if (p.role === "GK" && roster.filter((x) => x.role === "GK").length <= 1) return { ok: false, reason: "\u4E0D\u80FD\u6302\u724C\u6700\u540E 1 \u540D\u95E8\u5C06" };
       const baseValue = p.marketValue ?? calcTransferValue(p);
@@ -31867,7 +31867,7 @@
                 } else if (st.homeScore === 2) {
                   this.storyBeatBanner = {
                     speaker: "\u573A\u8FB9 \xB7 \u66FF\u8865\u5E2D",
-                    text: "\u9648\u5C0F\u5B87\u6885\u5F00\u4E8C\u5EA6\u540E\u5C0F\u817F\u62BD\u7B4B\u5012\u5730\uFF01#10 \u6797\u950B\u4E00\u628A\u6495\u5F00\u4E86\u5DE6\u819D\u51B0\u888B\u2026\u2026",
+                    text: "\u9648\u5C0F\u5B87\u6885\u5F00\u4E8C\u5EA6\u540E\u5C0F\u817F\u62BD\u7B4B\u5012\u5730\uFF01#10 \u6885\u5229\u7EB3\u4E00\u628A\u6495\u5F00\u4E86\u5DE6\u819D\u51B0\u888B\u2026\u2026",
                     color: "#FBBF24",
                     timer: 3.8,
                     maxTimer: 3.8
@@ -31912,9 +31912,9 @@
                 }
               }
             }
-          } else if (ev.type === "substitution" && this.isPrologueMode && ev.playerName.includes("\u6797\u950B")) {
+          } else if (ev.type === "substitution" && this.isPrologueMode && (ev.playerName.includes("\u6885\u5229\u7EB3") || ev.playerName.includes("\u6797\u950B"))) {
             this.storyBeatBanner = {
-              speaker: "#10 \u6797\u950B(\u8001\u961F\u957F)",
+              speaker: "#10 \u6885\u5229\u7EB3(\u8001\u961F\u957F)",
               text: "\u300C\u8001\u677F\uFF0C\u6700\u540E\u5341\u5206\u949F\uFF0C\u4EA4\u7ED9\u6211\u3002\u300D\u5168\u573A\u516B\u4E07\u4EBA\u8D77\u7ACB\u9AD8\u547C\u8001\u961F\u957F\u7684\u540D\u5B57\uFF01",
               color: THEME.GOLD_LIGHT,
               timer: 3.8,
@@ -32741,7 +32741,7 @@
             ctx2.globalAlpha = pulse;
             drawBadge(ctx2, sp.x - 18, sp.y - 34, 36, 14, "\u62BD\u7B4B!", "#7F1D1D", "#FCA5A5");
             ctx2.restore();
-          } else if (p.id === "prologue_vet_10" || p.name.includes("\u6797\u950B")) {
+          } else if (p.id === "prologue_vet_10" || p.name.includes("\u6885\u5229\u7EB3") || p.name.includes("\u6797\u950B")) {
             ctx2.save();
             const auraR = 17 + Math.sin(this.elapsedSec * 5) * 2.5;
             ctx2.strokeStyle = "rgba(250, 204, 21, 0.82)";
@@ -32749,7 +32749,7 @@
             ctx2.beginPath();
             ctx2.arc(sp.x, sp.y, auraR, 0, Math.PI * 2);
             ctx2.stroke();
-            drawBadge(ctx2, sp.x - 24, sp.y - 34, 48, 14, "#10 \u6797\u950B", "#78350F", THEME.GOLD_LIGHT);
+            drawBadge(ctx2, sp.x - 26, sp.y - 34, 52, 14, "#10 \u6885\u5229\u7EB3", "#78350F", THEME.GOLD_LIGHT);
             ctx2.restore();
           }
         }
@@ -32923,7 +32923,7 @@
         const bx = 294;
         const bw = 692;
         const bh = 48;
-        const spkImg = sbData.speaker.includes("\u6797\u950B") ? AssetLoader.get("portrait_linfeng") : sbData.speaker.includes("\u9648\u5C0F\u5B87") ? AssetLoader.get("portrait_xiaoyu") : null;
+        const spkImg = sbData.speaker.includes("\u6885\u5229\u7EB3") || sbData.speaker.includes("\u6797\u950B") ? AssetLoader.get("portrait_linfeng") : sbData.speaker.includes("\u9648\u5C0F\u5B87") ? AssetLoader.get("portrait_xiaoyu") : null;
         ctx2.save();
         ctx2.globalAlpha = Math.max(0, Math.min(1, alpha));
         drawChamferPanel(ctx2, bx, by, bw, bh, 10, "rgba(7, 11, 22, 0.94)", sbData.color, 1.8, sbData.color);
@@ -33572,8 +33572,8 @@
         );
         drawText(ctx2, "\u672C\u573A\u5173\u952E\u7126\u70B9", 1044, 154, { size: 12.5, bold: true, color: THEME.GOLD_LIGHT });
         const chen = st.players.find((p) => p.team === this.userSide && p.id === "prologue_st_19");
-        const linOnPitch = st.players.find((p) => p.team === this.userSide && (p.id === "prologue_vet_10" || p.name.includes("\u6797\u950B")));
-        const linSub = (this.userSide === "home" ? st.homeSubs : st.awaySubs).find((p) => p.id === "prologue_vet_10" || p.name.includes("\u6797\u950B"));
+        const linOnPitch = st.players.find((p) => p.team === this.userSide && (p.id === "prologue_vet_10" || p.name.includes("\u6885\u5229\u7EB3") || p.name.includes("\u6797\u950B")));
+        const linSub = (this.userSide === "home" ? st.homeSubs : st.awaySubs).find((p) => p.id === "prologue_vet_10" || p.name.includes("\u6885\u5229\u7EB3") || p.name.includes("\u6797\u950B"));
         const linObj = linOnPitch ?? linSub;
         const xiaoImg = AssetLoader.get("portrait_xiaoyu");
         const linImg = AssetLoader.get("portrait_linfeng");
@@ -33608,7 +33608,7 @@
           }
           const lx0 = linImg ? 1102 : 1052;
           drawBadge(ctx2, lx0, 296, 30, 16, "ST", "#78350F", THEME.GOLD_LIGHT);
-          drawText(ctx2, "#10 \u6797\u950B", lx0 + 36, 304, { size: 12, bold: true, color: THEME.GOLD_LIGHT });
+          drawText(ctx2, "#10 \u6885\u5229\u7EB3", lx0 + 36, 304, { size: 12, bold: true, color: THEME.GOLD_LIGHT });
           drawText(ctx2, linOnPitch ? "\u5DF2\u767B\u573A" : "\u66FF\u8865\u5F85\u547D", lx0, 326, { size: 10.5, bold: true, color: linOnPitch ? THEME.GREEN : "#FBBF24" });
           drawText(ctx2, "37\u5C81\u4F20\u5947\u8001\u961F\u957F \xB7 \u6700\u540E\u4E00\u821E", 1052, 354, { size: 10.5, color: THEME.TX1 });
           drawText(ctx2, linOnPitch ? "\u5E26\u4F24\u51FA\u6218 \xB7 \u5BFB\u89C5\u7EDD\u6740\u4E00\u51FB" : "\u5728\u66FF\u8865\u5E2D\u968F\u65F6\u51C6\u5907\u4E0A\u573A", 1052, 374, { size: 10.5, color: "#FEF08A" });
@@ -33748,8 +33748,8 @@
       const mh = 684;
       drawChamferPanel(ctx2, mx, my, mw, mh, 14, "rgba(11, 17, 30, 0.98)", THEME.BORDER_GOLD, 1.6, THEME.GOLD_LIGHT);
       const modalPrologueTut = this.isPrologueMode && this.engine ? this.engine.getPrologueTutorialState() : null;
-      const vetOnPitch = this.isPrologueMode && st.players.some((p) => p.team === this.userSide && (p.id === "prologue_vet_10" || p.name.includes("\u6797\u950B")));
-      const modalSubTip = modalPrologueTut?.waitingForSub ? !this.selectedOutId ? "\u8BF7\u5148\u70B9\u51FB\u4E2D\u95F4\u7403\u573A\u4E0A\u7684\u3010#19 \u9648\u5C0F\u5B87\u3011\u5C06\u4ED6\u6362\u4E0B\uFF01" : "\u518D\u70B9\u51FB\u53F3\u4FA7\u300C\u66FF\u8865\u5E2D\u300D\u4E2D\u7684\u3010#10 \u6797\u950B\u3011\u7403\u5458\u5361\u7247\u5B8C\u6210\u6362\u4EBA\uFF01" : vetOnPitch ? "\u8001\u961F\u957F\u5DF2\u62AB\u6302\u4E0A\u9635\uFF01\u70B9\u51FB\u53F3\u4E0A\u89D2\u3010\u4FDD\u5B58\u5E76\u8FD4\u56DE\u6BD4\u8D5B \u25B6\u3011\u7EE7\u7EED\u51B3\u6218\uFF01" : this.modalBanner;
+      const vetOnPitch = this.isPrologueMode && st.players.some((p) => p.team === this.userSide && (p.id === "prologue_vet_10" || p.name.includes("\u6885\u5229\u7EB3") || p.name.includes("\u6797\u950B")));
+      const modalSubTip = modalPrologueTut?.waitingForSub ? !this.selectedOutId ? "\u8BF7\u5148\u70B9\u51FB\u4E2D\u95F4\u7403\u573A\u4E0A\u7684\u3010#19 \u9648\u5C0F\u5B87\u3011\u5C06\u4ED6\u6362\u4E0B\uFF01" : "\u518D\u70B9\u51FB\u53F3\u4FA7\u300C\u66FF\u8865\u5E2D\u300D\u4E2D\u7684\u3010#10 \u6885\u5229\u7EB3\u3011\u7403\u5458\u5361\u7247\u5B8C\u6210\u6362\u4EBA\uFF01" : vetOnPitch ? "\u8001\u961F\u957F\u5DF2\u62AB\u6302\u4E0A\u9635\uFF01\u70B9\u51FB\u53F3\u4E0A\u89D2\u3010\u4FDD\u5B58\u5E76\u8FD4\u56DE\u6BD4\u8D5B \u25B6\u3011\u7EE7\u7EED\u51B3\u6218\uFF01" : this.modalBanner;
       drawText(ctx2, `\u573A\u5185\u7EC6\u81F4\u6218\u672F\u4E0E\u6362\u4EBA\u8C03\u6574 \xB7 \u7B2C ${st.minute}' \u5206\u949F`, mx + 24, my + 28, { size: 19, bold: true, color: THEME.GOLD_LIGHT });
       drawText(ctx2, modalSubTip, mx + 24, my + 52, {
         size: 11.5,
@@ -34067,7 +34067,7 @@
         const fitColor = fitVal < 55 ? THEME.RED_LIGHT : fitVal < 75 ? THEME.GOLD_LIGHT : THEME.GREEN;
         const isNaturalMatch = !!outRole && sub.role === outRole;
         const isSecMatch = !!outRole && !isNaturalMatch && (sub.secondaryRoles?.includes(outRole) ?? false);
-        const isTutInTarget = !!modalPrologueTut?.waitingForSub && !!this.selectedOutId && (sub.id === "prologue_vet_10" || sub.name.includes("\u6797\u950B"));
+        const isTutInTarget = !!modalPrologueTut?.waitingForSub && !!this.selectedOutId && (sub.id === "prologue_vet_10" || sub.name.includes("\u6885\u5229\u7EB3") || sub.name.includes("\u6797\u950B"));
         const borderCol = isBenchSelected ? THEME.GREEN : isTutInTarget ? THEME.GOLD_LIGHT : isNaturalMatch ? THEME.GREEN : isSecMatch ? "#38BDF8" : canSubWithPitch ? "rgba(74,222,128,0.45)" : THEME.BORDER;
         const bgCol = isBenchSelected ? "rgba(20, 83, 45, 0.50)" : isTutInTarget ? "rgba(120, 53, 15, 0.44)" : canSubWithPitch ? "rgba(14, 28, 46, 0.94)" : "rgba(11, 17, 30, 0.88)";
         drawRoundRect(ctx2, sx, sy, cw, ch, 8, bgCol, borderCol, isBenchSelected || isTutInTarget || isNaturalMatch ? 2 : canSubWithPitch ? 1.3 : 1);
@@ -34087,7 +34087,7 @@
           align: "right",
           mono: true
         });
-        const customSubPortrait = sub.id === "prologue_vet_10" || sub.name.includes("\u6797\u950B") ? AssetLoader.get("portrait_linfeng") : sub.id === "prologue_st_19" || sub.name.includes("\u9648\u5C0F\u5B87") ? AssetLoader.get("portrait_xiaoyu") : null;
+        const customSubPortrait = sub.id === "prologue_vet_10" || sub.name.includes("\u6885\u5229\u7EB3") || sub.name.includes("\u6797\u950B") ? AssetLoader.get("portrait_linfeng") : sub.id === "prologue_st_19" || sub.name.includes("\u9648\u5C0F\u5B87") ? AssetLoader.get("portrait_xiaoyu") : null;
         if (customSubPortrait && typeof ctx2.drawImage === "function") {
           ctx2.save();
           ctx2.beginPath();
@@ -34150,7 +34150,7 @@
           ctx2.lineWidth = 2.6;
           ctx2.strokeRect(sx - 2, sy - 2, cw + 4, ch + 4);
           drawChamferPanel(ctx2, 560, sy + 24, 326, 40, 8, "rgba(8, 15, 32, 0.98)", THEME.GOLD_LIGHT, 2);
-          drawText(ctx2, "\u70B9\u8FD9\u91CC\u6D3E\u4E0A\u3010#10 \u6797\u950B\u3011 \u25B6", 723, sy + 44, {
+          drawText(ctx2, "\u70B9\u8FD9\u91CC\u6D3E\u4E0A\u3010#10 \u6885\u5229\u7EB3\u3011 \u25B6", 723, sy + 44, {
             size: 11.5,
             bold: true,
             color: "#FEF08A",
@@ -34309,7 +34309,7 @@
         drawText(ctx2, "\u8D85\u7EA7\u8054\u8D5B\u51A0\u519B\u52A0\u5195 \xB7 4:3 \u53F2\u8BD7\u9006\u8F6C\uFF01", 640, my2 + 278, { size: 28, bold: true, color: THEME.GOLD_LIGHT, align: "center" });
         drawText(ctx2, "\u66D9\u5149\u7ADE\u6280 4 : 3 \u94C1\u5E55\u8054  |  0:1 \u2192 1:1 \u2192 1:3 \u2192 4:3 \u7EDD\u5883\u6367\u676F", 640, my2 + 306, { size: 15, bold: true, color: THEME.TX1, align: "center" });
         drawRoundRect(ctx2, mx2 + 90, my2 + 334, mw2 - 180, 94, 12, "rgba(15, 23, 42, 0.90)", THEME.BORDER_GOLD, 1.4);
-        drawText(ctx2, "37\u5C81\u961F\u957F #10 \u6797\u950B 80' \u66FF\u8865\u767B\u573A \xB7 85' \u8FDC\u5C04\u7EDD\u5E73 \xB7 90' \u8BFB\u79D2\u7EDD\u6740", 640, my2 + 364, { size: 14.5, bold: true, color: "#FEF08A", align: "center" });
+        drawText(ctx2, "37\u5C81\u961F\u957F #10 \u6885\u5229\u7EB3 80' \u66FF\u8865\u767B\u573A \xB7 85' \u8FDC\u5C04\u7EDD\u5E73 \xB7 90' \u8BFB\u79D2\u7EDD\u6740", 640, my2 + 364, { size: 14.5, bold: true, color: "#FEF08A", align: "center" });
         drawText(ctx2, "\u96E8\u591C\u7684\u91D1\u8272\u7EB8\u5C51\u843D\u4E0B\uFF0C\u4F60\u6458\u4E0B\u6D78\u6EE1\u6C57\u6C34\u7684\u961F\u957F\u8896\u6807\uFF0C\u72EC\u81EA\u8D70\u56DE\u5BC2\u9759\u7684\u66F4\u8863\u5BA4\u2026\u2026", 640, my2 + 394, { size: 13, color: "#94A3B8", align: "center" });
         drawButton(ctx2, hits, 450, my2 + mh2 - 74, 380, 50, "\u6367\u676F\u4E4B\u540E \xB7 \u56DE\u5230\u66F4\u8863\u5BA4 \u25B6", () => {
           SoundEngine.playClick();
@@ -39674,7 +39674,7 @@
           ctx2.drawImage(roarImg, lx + 24, ly + 58, 114, 78);
         }
         drawText(ctx2, "\u6E38\u5B50\u5F52\u5BB6\uFF0C\u518D\u8E22\u6700\u540E\u4E00\u5B63", lx + 156, ly + 72, { size: 18, bold: true, color: THEME.TX1 });
-        drawBadge(ctx2, lx + 156, ly + 90, 232, 22, "\u8001\u961F\u957F #10 \u6797\u950B\u4EB2\u81EA\u4E0A\u9635 \xB7 S1\u9650", "#14532D", THEME.GREEN);
+        drawBadge(ctx2, lx + 156, ly + 90, 232, 22, "\u8001\u961F\u957F #10 \u6885\u5229\u7EB3\u4EB2\u81EA\u4E0A\u9635 \xB7 S1\u9650", "#14532D", THEME.GREEN);
         drawText(ctx2, "CA 84 \u4E2D\u8F74\u5168\u80FD(ST/CAM/CM/CDM/CB) \xB7 \u5B63\u672B\u8F6C\u6559\u7EC3", lx + 156, ly + 128, { size: 11.5, color: "#7DD3FC" });
         drawWrappedText(
           ctx2,
@@ -40463,7 +40463,7 @@
           if (res.ok) {
             SoundEngine.playFanfare();
             actions.onBurst?.(cx + cw / 2, cy + ch / 2, THEME.GOLD_LIGHT);
-            actions.onToast?.(`${res.playerName} \u5DF2\u7EE7\u627F\u6797\u950B\u8863\u94B5\uFF0C\u89C9\u9192\u91D1\u6807\u3010${res.grantedTrait}\u3011\uFF01`, THEME.GOLD_LIGHT);
+            actions.onToast?.(`${res.playerName} \u5DF2\u7EE7\u627F\u6885\u5229\u7EB3\u8863\u94B5\uFF0C\u89C9\u9192\u91D1\u6807\u3010${res.grantedTrait}\u3011\uFF01`, THEME.GOLD_LIGHT);
             actions.onSave?.();
           }
         };
@@ -42841,7 +42841,7 @@
             this.save();
             this.setRoute("draft", "CORE PACKS \xB7 \u6838\u5FC3\u5F00\u5305");
             this.showToast(
-              gotHeirloom ? `${opts.customName || "\u65B0\u4FF1\u4E50\u90E8"} \u5EFA\u961F\u5B8C\u6210 \xB7 \u8001\u961F\u957F #10 \u6797\u950B\uFF08\u4E2D\u8F74\u5168\u80FD 80+\uFF09\u6E38\u5B50\u5F52\u5BB6\u538B\u9635\u9996\u5B63\uFF01` : `${opts.customName || "\u65B0\u4FF1\u4E50\u90E8"} \u5EFA\u961F\u5B8C\u6210\uFF0C\u5F00\u542F 3 \u8F6E\u6838\u5FC3\u5F00\u5305\uFF01`,
+              gotHeirloom ? `${opts.customName || "\u65B0\u4FF1\u4E50\u90E8"} \u5EFA\u961F\u5B8C\u6210 \xB7 \u8001\u961F\u957F #10 \u6885\u5229\u7EB3\uFF08\u4E2D\u8F74\u5168\u80FD 80+\uFF09\u6E38\u5B50\u5F52\u5BB6\u538B\u9635\u9996\u5B63\uFF01` : `${opts.customName || "\u65B0\u4FF1\u4E50\u90E8"} \u5EFA\u961F\u5B8C\u6210\uFF0C\u5F00\u542F 3 \u8F6E\u6838\u5FC3\u5F00\u5305\uFF01`,
               gotHeirloom ? THEME.GOLD_LIGHT : THEME.GREEN
             );
           },
@@ -42923,7 +42923,7 @@
             this.save();
             this.titleScreen.openNewSeasonWizard();
             this.setRoute("title", "HOMETOWN CLUB \xB7 \u91CD\u8FD4\u5BB6\u4E61");
-            this.showToast("\u8001\u961F\u957F #10 \u6797\u950B\uFF0880+\u4E2D\u8F74\u5168\u80FD\uFF09\u5DF2\u6574\u88C5\u5F85\u53D1\uFF01\u8BF7\u4E3A\u5BB6\u4E61\u7403\u961F\u5B9A\u540D\u542F\u7A0B", THEME.GOLD_LIGHT);
+            this.showToast("\u8001\u961F\u957F #10 \u6885\u5229\u7EB3\uFF0880+\u4E2D\u8F74\u5168\u80FD\uFF09\u5DF2\u6574\u88C5\u5F85\u53D1\uFF01\u8BF7\u4E3A\u5BB6\u4E61\u7403\u961F\u5B9A\u540D\u542F\u7A0B", THEME.GOLD_LIGHT);
           },
           onDeclineSecretEnding: () => {
             this.league.markSecretRetiredEnding();

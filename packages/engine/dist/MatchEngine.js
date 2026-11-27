@@ -958,7 +958,7 @@ export class MatchEngine {
                 return { ok: false, reason: '序章教学阶段暂未到换人时机，请先按场上提示指挥！' };
             }
             if (inSubId !== 'prologue_vet_10') {
-                return { ok: false, reason: '请换上替补席的老队长 #10 林锋！' };
+                return { ok: false, reason: '请换上替补席的老队长 #10 梅利纳！' };
             }
         }
         const used = team === 'home' ? s.homeSubsUsed : s.awaySubsUsed;
@@ -1038,7 +1038,7 @@ export class MatchEngine {
             this.prologueWaitingForSub = false;
             this.prologueStage = 5;
             this.prologueScriptTicks = 0;
-            this.pushEvent('commentary', team, newPlayer.id, newPlayer.name, newPlayer.pos, '【80\' 老队长登场】37岁队长 #10 林锋替补登场！全场八万人起立欢呼！', undefined, 'important');
+            this.pushEvent('commentary', team, newPlayer.id, newPlayer.name, newPlayer.pos, '【80\' 老队长登场】37岁队长 #10 梅利纳替补登场！全场八万人起立欢呼！', undefined, 'important');
         }
         return { ok: true };
     }
@@ -1184,7 +1184,7 @@ export class MatchEngine {
             }
             if (s.minute >= 85) {
                 this.prologueWaitingForSub = true;
-                this.pushEvent('commentary', side, '', '', { x: PITCH.HALF_X, y: PITCH.HALF_Y }, '【教学 3/5 · 85\'换人】时间所剩无几！请换上替补席的 37岁老队长 #10 林锋！', undefined, 'important');
+                this.pushEvent('commentary', side, '', '', { x: PITCH.HALF_X, y: PITCH.HALF_Y }, '【教学 3/5 · 85\'换人】时间所剩无几！请换上替补席的 37岁老队长 #10 梅利纳！', undefined, 'important');
             }
         }
         else if (this.prologueStage === 5) {
@@ -1534,7 +1534,7 @@ export class MatchEngine {
                         ?? s.players.find(p => p.team === side && !p.redCard && p.role === 'ST');
                     if (crampStriker)
                         crampStriker.fitness = 30;
-                    this.pushEvent('commentary', side, '', '', { x: PITCH.HALF_X, y: PITCH.HALF_Y }, '【2:3 看到希望】#19 陈小宇梅开二度，但落地时小腿抽筋！替补席上 #10 林锋撕开了左膝冰袋！', undefined, 'important');
+                    this.pushEvent('commentary', side, '', '', { x: PITCH.HALF_X, y: PITCH.HALF_Y }, '【2:3 看到希望】#19 陈小宇梅开二度，但落地时小腿抽筋！替补席上 #10 梅利纳撕开了左膝冰袋！', undefined, 'important');
                 }
                 else if (this.prologuePendingForcedGoal) {
                     const attacker = s.players.find(p => p.team === side && !p.redCard && p.id === 'prologue_st_19')
@@ -1563,12 +1563,12 @@ export class MatchEngine {
                 if (s.minute >= 80 && s.homeSubs.some(sub => sub.id === 'prologue_vet_10')) {
                     if (!this.prologueWaitingForSub) {
                         this.prologueWaitingForSub = true;
-                        this.pushEvent('commentary', side, '', '', { x: PITCH.HALF_X, y: PITCH.HALF_Y }, '【80\' 抽筋警报】#19 陈小宇拼到抽筋！请点击右上【换人/战术】，换上老队长 #10 林锋！', undefined, 'important');
+                        this.pushEvent('commentary', side, '', '', { x: PITCH.HALF_X, y: PITCH.HALF_Y }, '【80\' 抽筋警报】#19 陈小宇拼到抽筋！请点击右上【换人/战术】，换上老队长 #10 梅利纳！', undefined, 'important');
                     }
                 }
             }
             else if (this.prologueStage === 5 && s.homeScore < 3) {
-                const veteran = s.players.find(p => p.team === side && (p.id === 'prologue_vet_10' || p.name.includes('林锋')))
+                const veteran = s.players.find(p => p.team === side && (p.id === 'prologue_vet_10' || p.name.includes('梅利纳') || p.name.includes('林锋')))
                     ?? s.players.find(p => p.team === side && p.role !== 'GK');
                 if (veteran && s.minute >= 80) {
                     // 保持在越位线前（不超过对方倒数第二名防守队员），临近 84' 再反越位前插接球
@@ -1597,7 +1597,7 @@ export class MatchEngine {
                 }
             }
             else if (this.prologueStage === 6 && s.homeScore === 3 && sk) {
-                const veteran = s.players.find(p => p.team === side && (p.id === 'prologue_vet_10' || p.name.includes('林锋')))
+                const veteran = s.players.find(p => p.team === side && (p.id === 'prologue_vet_10' || p.name.includes('梅利纳') || p.name.includes('林锋')))
                     ?? s.players.find(p => p.team === side && p.role !== 'GK');
                 if (veteran && s.minute >= 86) {
                     // 86'~89' 保持在弧顶越位线前策应，90' 踏入禁区弧顶起脚重炮
@@ -2014,7 +2014,7 @@ export class MatchEngine {
         if (this.prologueScriptedMode && team === this.userTeamSide) {
             this.prologueSkillTriggered = true;
             this.prologueGuaranteedGoal = true;
-            const veteran = s.players.find(p => p.team === team && (p.id === 'prologue_vet_10' || p.name.includes('林锋'))) ?? s.players.find(p => p.team === team && p.role !== 'GK');
+            const veteran = s.players.find(p => p.team === team && (p.id === 'prologue_vet_10' || p.name.includes('梅利纳') || p.name.includes('林锋'))) ?? s.players.find(p => p.team === team && p.role !== 'GK');
             const wasStage5 = this.prologueStage === 5;
             if (veteran) {
                 if (!veteran.hasBall)
@@ -2433,9 +2433,8 @@ export class MatchEngine {
                 const holderForm = holder.team === 'home' ? this.state.homeFormation : this.state.awayFormation;
                 const holderRelX = toRelativeX(holder.pos.x, this.getAttackDir(holder.team));
                 const counterStyleTackleMod = (oppStyle === 'gegenpress' && holderStyle === 'tiki_taka' && holderRelX < 55 ? 0.08 : 0) +
-                    ((oppStyle === 'gegenpress' || oppStyle === 'wing_play') && (holderStyle === 'counter' || holderStyle === 'park_bus') && holderRelX < 58 ? -0.10 : 0) +
+                    ((oppStyle === 'gegenpress' || oppStyle === 'wing_play') && (holderStyle === 'counter' || holderStyle === 'park_bus') && holderRelX < 58 ? -0.06 : 0) +
                     (holderStyle === 'balanced' && (oppStyle === 'gegenpress' || oppStyle === 'tiki_taka') ? 0.03 : 0) +
-                    (getDefenseSystem(holderForm) === '5-back' && holderRelX >= 52 ? -0.03 : 0) +
                     (getDefenseSystem(holderForm) === '4-back' && holderRelX < 52 ? -0.03 : 0);
                 const immuneHighPress = this.hasImmunity(holder.team, 'immuneHighPressTackle');
                 const blitzBonus = !immuneHighPress && this.hasActiveMechanic(oppTeam, 'high_press_blitz') ? 0.12 : 0;
@@ -2598,13 +2597,10 @@ export class MatchEngine {
         const oppFormShot = shooter.team === 'home' ? this.state.awayFormation : this.state.homeFormation;
         const oppIs5Back = getDefenseSystem(oppFormShot) === '5-back';
         if ((myStyleShot === 'counter' || myStyleShot === 'park_bus') && (oppStyleShot === 'gegenpress' || oppStyleShot === 'wing_play')) {
-            xG = Math.min(0.68, xG + (myStyleShot === 'counter' ? 0.08 : 0.05));
+            xG = Math.min(0.68, xG + (myStyleShot === 'counter' ? 0.05 : 0.04));
             this.pushTacticalCallout(shooter, '战术克制 +xG', 'tactic');
         }
         else if (myStyleShot === 'park_bus' && oppStyleShot !== 'park_bus') {
-            xG = Math.min(0.68, xG + 0.03);
-        }
-        else if (myStyleShot === 'counter' && oppStyleShot !== 'park_bus') {
             xG = Math.min(0.68, xG + 0.02);
         }
         else if (oppStyleShot === 'gegenpress' && dist >= 18 && dist < 24) {
@@ -2618,8 +2614,8 @@ export class MatchEngine {
             xG = Math.min(0.68, xG + 0.035);
             this.pushTacticalCallout(shooter, '传控渗透撕防', 'tactic');
         }
-        if (getDefenseSystem(myFormShot) === '5-back' && toRelativeX(shooter.pos.x, dir) > 50) {
-            xG = Math.min(0.68, xG + (myFormShot === '5-4-1' ? 0.02 : 0.01));
+        if ((myStyleShot === 'wing_play' || getDefenseSystem(myFormShot) === '3-back') && toRelativeX(shooter.pos.x, dir) > 72) {
+            xG = Math.min(0.68, xG + 0.025);
         }
         if (getDefenseSystem(myFormShot) === '4-back' && toRelativeX(shooter.pos.x, dir) > 70) {
             xG = Math.min(0.68, xG + 0.02);
@@ -2631,8 +2627,8 @@ export class MatchEngine {
         // 决定是否射正门框范围内（受 shooting、平滑疲惫曲线、五后卫/铁桶密集干扰与距离影响）
         const fatiguePenalty = shooter.fitness < 72 ? ((72 - shooter.fitness) / 52) * 0.07 : 0;
         const strainPenalty = shooter.strainWarning ? 0.035 : 0;
-        const antiAttackShotPenalty = (oppIs5Back && (myStyleShot === 'wing_play' || getDefenseSystem(myFormShot) === '3-back') ? 0.08 : 0) +
-            (oppStyleShot === 'park_bus' && (myStyleShot === 'wing_play' || myStyleShot === 'gegenpress') ? 0.07 : 0);
+        const antiAttackShotPenalty = (oppIs5Back && (myStyleShot === 'wing_play' || getDefenseSystem(myFormShot) === '3-back') ? 0.04 : 0) +
+            (oppStyleShot === 'park_bus' && (myStyleShot === 'wing_play' || myStyleShot === 'gegenpress') ? 0.05 : 0);
         const rawShoot = Math.min(this.teamAttrCap[shooter.team], shooter.attributes.shooting + (hasBloodFrenzy ? 8 : 0));
         const effectiveShoot = rawShoot > 80 ? 80 + (rawShoot - 80) * 1.35 : rawShoot;
         const longDistPenalty = dist >= 22 && !hasLongShotCannon ? (dist - 20) * 0.015 : 0;
@@ -2799,17 +2795,17 @@ export class MatchEngine {
             const tStyle = target.team === 'home' ? this.state.homeStyle : this.state.awayStyle;
             const tMods = target.team === 'home' ? this.homeMods : this.awayMods;
             const isCornerCross = this.lastPassPattern[target.team] === 'set_piece';
-            const baseCrossFinish = isCornerCross ? 0.68 : tStyle === 'wing_play' || (tMods.crossBias ?? 0) > 0.03 ? 0.62 : 0.56;
+            const baseCrossFinish = isCornerCross ? 0.68 : tStyle === 'wing_play' || (tMods.crossBias ?? 0) > 0.03 ? 0.67 : 0.56;
             const defFormCross = target.team === 'home' ? this.state.awayFormation : this.state.homeFormation;
             const defStyleCross = target.team === 'home' ? this.state.awayStyle : this.state.homeStyle;
-            const antiCrossPenalty = (getDefenseSystem(defFormCross) === '5-back' ? 0.18 : 0) +
-                (defStyleCross === 'park_bus' ? 0.14 : 0);
-            const crossFinishProb = clamp(baseCrossFinish + (this.hasActiveMechanic(target.team, 'wing_overload') ? 0.26 : 0) - antiCrossPenalty, 0.22, 0.92);
+            const antiCrossPenalty = (getDefenseSystem(defFormCross) === '5-back' ? 0.12 : 0) +
+                (defStyleCross === 'park_bus' ? 0.10 : 0);
+            const crossFinishProb = clamp(baseCrossFinish + (this.hasActiveMechanic(target.team, 'wing_overload') ? 0.26 : 0) - antiCrossPenalty, 0.25, 0.92);
             if (b.passType === 'cross' && target.role !== 'GK' && Math.random() < crossFinishProb) {
                 const dir = this.getAttackDir(target.team);
                 const relX = toRelativeX(target.pos.x, dir);
                 if (relX > 76) {
-                    const headXg = isCornerCross ? 0.22 : this.hasActiveMechanic(target.team, 'wing_overload') ? 0.23 : 0.19;
+                    const headXg = isCornerCross ? 0.22 : this.hasActiveMechanic(target.team, 'wing_overload') ? 0.24 : (tStyle === 'wing_play' ? 0.21 : 0.19);
                     this.executeShot(target, headXg, false, 'header');
                 }
             }
@@ -2835,7 +2831,7 @@ export class MatchEngine {
         const shootEffMods = this.getEffectiveMods(shootTeam);
         const shootForm = shootTeam === 'home' ? this.state.homeFormation : this.state.awayFormation;
         const shootStyle = shootTeam === 'home' ? this.state.homeStyle : this.state.awayStyle;
-        const fiveVsCounterTarget = isFiveBack && (getDefenseSystem(shootForm) === '3-back' || shootStyle === 'wing_play') ? 0.10 : 0;
+        const fiveVsCounterTarget = isFiveBack && (getDefenseSystem(shootForm) === '3-back' || shootStyle === 'wing_play') ? 0.06 : 0;
         const busVsCounterTarget = defStyle === 'park_bus' && (shootStyle === 'wing_play' || shootStyle === 'gegenpress') ? 0.09 : 0;
         const blockDist = (defStyle === 'park_bus' || isFiveBack ? 1.36 : 1.08) + (hasIronWall ? 0.25 : 0);
         const blockProb = clamp((defStyle === 'park_bus' || isFiveBack ? 0.22 : 0.18) + fiveVsCounterTarget + busVsCounterTarget + (hasIronWall ? 0.16 : 0) + defShotMods.blockBonus, 0.05, 0.78);

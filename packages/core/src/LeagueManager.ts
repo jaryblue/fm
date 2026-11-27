@@ -3548,7 +3548,7 @@ export class LeagueManager {
     });
     const veteranSub: PlayerInput = {
       id: 'prologue_vet_10',
-      name: '林锋(老队长)',
+      name: '梅利纳(老队长)',
       role: 'ST',
       shirtNumber: 10,
       attributes: { passing: 82, shooting: 90, dribbling: 82, pace: 68, strength: 78, defending: 42, positioning: 88, composure: 94, stamina: 76, goalkeeping: 20 },
@@ -3588,7 +3588,7 @@ export class LeagueManager {
           maxPerMatch: 2,
           durationMinutes: 10,
           instantAction: 'force_shot_on_target',
-          instantLabel: '林锋弧顶起脚轰出世界波',
+          instantLabel: '梅利纳弧顶起脚轰出世界波',
           vfxTheme: 'ult',
           effectiveRank: 3,
           effect: {
@@ -6569,7 +6569,7 @@ export class LeagueManager {
     // 休赛期默契度微幅回落
     decayChemistryOffSeason(this.getChemistryLinks());
 
-    // 游子归家老队长 #10 林锋：首季圆满落幕，传奇挂靴转任主教练并传承【老队长的怒吼】+50 Meta + 钦点衣钵传人
+    // 游子归家老队长 #10 梅利纳：首季圆满落幕，传奇挂靴转任主教练并传承【老队长的怒吼】+50 Meta + 钦点衣钵传人
     let retiredLegend: SeasonSummary['retiredLegend'] = null;
     let captainSuccessor: SeasonSummary['captainSuccessor'] = null;
     const capIdx = userClub.squad.findIndex(p => p.isPrologueCaptain || p.id === 'captain_lin_feng');
@@ -6582,7 +6582,7 @@ export class LeagueManager {
         appearances: capEntity.seasonStats.appearances,
         goals: capEntity.seasonStats.goals,
         assists: capEntity.seasonStats.assists,
-        note: '游子归家圆满落幕！#10 林锋正式挂靴转任主教练，传承手牌【老队长的怒吼】并注入 +50 Meta 执教基金！',
+        note: '游子归家圆满落幕！#10 梅利纳正式挂靴转任主教练，传承手牌【老队长的怒吼】并注入 +50 Meta 执教基金！',
       };
       if (capIdx >= 0) userClub.squad.splice(capIdx, 1);
       if (rosterCapIdx >= 0) roster.splice(rosterCapIdx, 1);
@@ -7208,7 +7208,7 @@ export class LeagueManager {
     if (idx < 0) return { ok: false, reason: '大名单中未找到该球员' };
     const p = roster[idx];
     if (p.isPrologueCaptain || p.id === 'captain_lin_feng') {
-      return { ok: false, reason: '老队长 #10 林锋正在上演游子归家最后一舞，无法出售！' };
+      return { ok: false, reason: '老队长 #10 梅利纳正在上演游子归家最后一舞，无法出售！' };
     }
     if (p.role === 'GK' && roster.filter(x => x.role === 'GK').length <= 1) {
       return { ok: false, reason: '不能出售最后 1 名门将 (GK)' };
@@ -7256,7 +7256,7 @@ export class LeagueManager {
     const p = roster.find(x => x.id === playerId);
     if (!p) return { ok: false, reason: '未找到该球员' };
     if (p.isPrologueCaptain || p.id === 'captain_lin_feng') {
-      return { ok: false, reason: '老队长 #10 林锋正在上演游子归家最后一舞，无法挂牌！' };
+      return { ok: false, reason: '老队长 #10 梅利纳正在上演游子归家最后一舞，无法挂牌！' };
     }
     if (p.role === 'GK' && roster.filter(x => x.role === 'GK').length <= 1) return { ok: false, reason: '不能挂牌最后 1 名门将' };
     const baseValue = p.marketValue ?? calcTransferValue(p);

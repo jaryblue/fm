@@ -52,8 +52,8 @@ export interface DraftPlayer extends Omit<PlayerInput, 'formationFamiliarity'> {
   seasonGrowthXp?: number;   // 赛季内逐场累积的成长进度 (0~100)
   seasonAttrGained?: number; // 赛季内已实时兑换的属性成长步数（用于赛季末差额补齐）
   isAcademy?: boolean;     // 青训学院提拔新星（天生高阵型熟练度）
-  isPrologueCaptain?: boolean; // 序章老队长 #10 林锋（首季游子归家碾压卡，季末退役转教练）
-  isCaptainSuccessor?: boolean; // 继承老队长 #10 林锋衣钵的接班人
+  isPrologueCaptain?: boolean; // 序章老队长 #10 梅利纳（首季游子归家碾压卡，季末退役转教练）
+  isCaptainSuccessor?: boolean; // 继承老队长 #10 梅利纳衣钵的接班人
   formerUserClub?: boolean; // 曾效力玩家俱乐部（转投 AI 后触发旧将反戈提示）
   isStarred?: boolean;     // 玩家收藏/常用标记（换人与名单置顶）
   coreTag?: 'veteran' | 'balanced' | 'wonderkid'; // 开局三核开包原型标签
