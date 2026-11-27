@@ -23,7 +23,11 @@
     "cli:e2e": "node scripts/cli_ui_e2e.mjs",
     "cli:device": "node scripts/cli_device.mjs",
     "audit:quick": "node scripts/audit_balance.mjs --quick",
-    "audit:balance": "node scripts/audit_balance.mjs"
+    "audit:balance": "node scripts/audit_balance.mjs",
+    "cli:ui": "node scripts/capture_ui_all.mjs",
+    "test:ui": "npm run build:web && npm run cli:ui",
+    "test:ui:fast": "npm run build:web && npm run cli:ui -- --no-shots",
+    "verify": "npm run typecheck && npm run cli:e2e && npm run test:ui:fast"
   },
   "devDependencies": {
     "@capacitor/android": "^8.6.3",

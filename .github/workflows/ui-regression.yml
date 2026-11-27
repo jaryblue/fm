@@ -1,0 +1,67 @@
+name: UI Regression
+
+# Canvas UI 全量回归：走真实玩家路径覆盖 12 页面 + 7 弹窗。
+# 本地等价命令：npm run verify（类型检查 + 断点 E2E + UI 全量断言）
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  ui-regression:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      ELECTRON_SKIP_BINARY_DOWNLOAD: 1
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      # playwright 没有进 devDependencies（避免给本地安装和 lock 文件加负担），
+      # CI 里临时装一份到 node_modules，测试底座 require('playwright') 就能解析到。
+      - name: Install Playwright + Chromium
+        run: |
+          npm i --no-save playwright
+          npx playwright install --with-deps chromium
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Build web bundle
+        run: npm run build:web
+
+      - name: E2E 断点校验
+        run: npm run cli:e2e
+
+      - name: UI 全量回归（带截图）
+        run: npm run cli:ui -- --out=shots/ui-all
+
+      - name: Upload screenshots & manifest
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ui-regression-shots
+          path: |
+            shots/ui-all/
+          retention-days: 14
+          if-no-files-found: warn
+
+      - name: Upload failure log
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ui-regression-failures
+          path: shots/ui-all/fail_*.png
+          retention-days: 14
+          if-no-files-found: ignore
