@@ -3,6 +3,7 @@
  */
 import { AttackDir, BallState, PlayerState, TacticalMods, TacticalStyle, Vec2 } from './types';
 import { FORMATIONS } from './formations';
+export type AttackPatternTag = 'byline_cross' | 'early_cross' | 'cutback' | 'through_ball' | 'short_combo' | 'long_switch';
 export type OnBallAction = {
     type: 'shoot';
     xG: number;
@@ -10,6 +11,7 @@ export type OnBallAction = {
     type: 'pass';
     target: PlayerState;
     passType: 'short' | 'through' | 'cross' | 'long';
+    patternTag?: AttackPatternTag;
 } | {
     type: 'dribble';
     targetPos: Vec2;

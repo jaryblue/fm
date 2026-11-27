@@ -1,4 +1,3 @@
-"use strict";
 /**
  * 大规模矩阵仿真压测脚本（1,500 场）：
  * 1. 全量覆盖 16 种阵型 × 6 种战术风格 × 随机 CA 对局
@@ -6,9 +5,8 @@
  * 3. 分战术风格踢法差异校验（传球数、控球率、射门、抢断）
  * 4. 300 场镜像 A/B 对照（同阵型同 CA：满技能网 TacticalMods vs 无技能网）
  */
-Object.defineProperty(exports, "__esModule", { value: true });
-const MatchEngine_1 = require("./MatchEngine");
-const formations_1 = require("./formations");
+import { MatchEngine } from './MatchEngine';
+import { FORMATIONS } from './formations';
 function randInt(min, max) {
     return Math.floor(Math.random() * (max - min + 1)) + min;
 }
@@ -32,7 +30,7 @@ function makeAttrs(role, baseCA) {
     };
 }
 function makeTeam(name, formation, style, baseCA, tacticalMods) {
-    const slots = formations_1.FORMATIONS[formation];
+    const slots = FORMATIONS[formation];
     const players = slots.map((s, idx) => ({
         id: `${name}_${idx}`,
         name: `${name}-${s.role}${idx + 1}`,
@@ -86,7 +84,7 @@ function runMatrix() {
         const ca2 = randInt(70, 76);
         const m1 = Math.random() < 0.35 ? FULL_MODS_BY_STYLE[s1] : undefined;
         const m2 = Math.random() < 0.35 ? FULL_MODS_BY_STYLE[s2] : undefined;
-        const res = new MatchEngine_1.MatchEngine(makeTeam('Home', f1, s1, ca1, m1), makeTeam('Away', f2, s2, ca2, m2)).simulateMatch();
+        const res = new MatchEngine(makeTeam('Home', f1, s1, ca1, m1), makeTeam('Away', f2, s2, ca2, m2)).simulateMatch();
         const h = res.stats.home;
         const a = res.stats.away;
         totalGoals += h.goals + a.goals;
@@ -126,7 +124,7 @@ function runMatrix() {
     for (let i = 0; i < AB_N; i++) {
         const f = FORMATION_POOL[i % FORMATION_POOL.length];
         const s = STYLE_POOL[i % STYLE_POOL.length];
-        const res = new MatchEngine_1.MatchEngine(makeTeam('ModTeam', f, s, 73, FULL_MODS_BY_STYLE[s]), makeTeam('BaseTeam', f, s, 73, undefined)).simulateMatch();
+        const res = new MatchEngine(makeTeam('ModTeam', f, s, 73, FULL_MODS_BY_STYLE[s]), makeTeam('BaseTeam', f, s, 73, undefined)).simulateMatch();
         const h = res.stats.home;
         const a = res.stats.away;
         if (h.goals > a.goals)

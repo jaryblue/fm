@@ -84,9 +84,6 @@ export class HallOfFameScreen {
       title: '历史荣誉室与编年史',
       club: hasRail ? league.getUserClub() : undefined,
       onBack: hasRail ? undefined : onBack,
-      rightAction: hasRail
-        ? { label: '返回门户', variant: 'ghost', onClick: onBack }
-        : undefined,
       badge: `成就 ${unlockedSet.size}/${ACHIEVEMENTS.length} · 编年史 ${completedChronCount}/${chronicles.length}`,
       metaPoints: league.getState().metaPointsTotal,
       showSoundToggle: true,
@@ -240,8 +237,23 @@ export class HallOfFameScreen {
           ctx.restore();
         } else if (blankMedalImg && typeof ctx.drawImage === 'function') {
           ctx.save();
-          ctx.globalAlpha = unlocked ? 1 : 0.28;
+          ctx.globalAlpha = unlocked ? 1 : 0.32;
           ctx.drawImage(blankMedalImg, ax + 8, ay + 16, 48, 48);
+          // 为通用奖章叠加稀有度金属外环与内圈高光，消除占位感
+          const cxM = ax + 32;
+          const cyM = ay + 40;
+          if (unlocked) {
+            ctx.strokeStyle = vis.tint;
+            ctx.lineWidth = 1.6;
+            ctx.beginPath();
+            ctx.arc(cxM, cyM, 20, 0, Math.PI * 2);
+            ctx.stroke();
+            ctx.strokeStyle = 'rgba(255,255,255,0.45)';
+            ctx.lineWidth = 1.1;
+            ctx.beginPath();
+            ctx.arc(cxM, cyM, 17, Math.PI * 1.15, Math.PI * 1.85);
+            ctx.stroke();
+          }
           ctx.restore();
           drawIcon(ctx, vis.icon, ax + 32, ay + 40, 18, unlocked ? vis.tint : THEME.TX3);
         } else {
@@ -255,7 +267,7 @@ export class HallOfFameScreen {
         });
         drawText(ctx, fitText(ctx, ach.desc, achW - 76, 11), ax + 64, ay + 52, {
           size: 11,
-          color: unlocked ? THEME.TX1 : THEME.TX3,
+          color: unlocked ? THEME.TX1 : THEME.TX2,
         });
         drawBadge(
           ctx,

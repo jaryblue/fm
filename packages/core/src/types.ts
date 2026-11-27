@@ -10,6 +10,12 @@ import {
   TacticalStyle,
 } from '../../engine/src/types';
 import { CommandCard, ElementId } from './CommandCards';
+import type {
+  V6AstrolabeState,
+  V6DirectiveEnchantId,
+  V6RelicId,
+  V6SeasonRogueState,
+} from './v6/types';
 
 export type PlayerTier = 'S' | 'A' | 'B' | 'C';
 export type PlayerMorale = 'low' | 'normal' | 'high';
@@ -20,7 +26,7 @@ export interface TempTraitBuff {
   remainingMatches: number;
 }
 
-export interface DraftPlayer extends PlayerInput {
+export interface DraftPlayer extends Omit<PlayerInput, 'formationFamiliarity'> {
   ca: number;              // 综合能力 55 - 92
   cost: number;            // 选秀预算点 (40 - 130)
   tier: PlayerTier;
@@ -50,6 +56,8 @@ export interface DraftPlayer extends PlayerInput {
   formerUserClub?: boolean; // 曾效力玩家俱乐部（转投 AI 后触发旧将反戈提示）
   isStarred?: boolean;     // 玩家收藏/常用标记（换人与名单置顶）
   coreTag?: 'veteran' | 'balanced' | 'wonderkid'; // 开局三核开包原型标签
+  agingArchetype?: 'prodigy_early' | 'standard' | 'late_bloomer' | 'gk_longevity'; // 差异化巅峰/衰老曲线模板
+  careerInjuries?: number; // 生涯累计伤病次数（伤病越多断崖与退役越早）
   formationFamiliarity?: Partial<Record<FormationName, number>>; // 0-100 各阵型个人熟练度
   careerStats?: {
     seasons: number;
@@ -578,6 +586,20 @@ export interface TacticalPresetSlot {
   starterIds: string[];
 }
 
+export interface DeckPreset {
+  id: string;
+  name: string;
+  cardIds: string[]; // 4~8 张消耗卡实例 ID（0 阶 4 张基础卡随当前 style 自动带入）
+  orderedKeys?: string[]; // 玩家在卡组编排页自定义拖拽后的完整顺序（含 0 阶底牌与消耗卡 ID）
+}
+
+export interface CardShopOffer {
+  id: string;
+  card: CommandCard;
+  price: number;
+  sold?: boolean;
+}
+
 export interface LeagueSaveState {
   seasonNumber: number;
   currentTier?: number;
@@ -612,6 +634,12 @@ export interface LeagueSaveState {
   elementInventory?: Record<ElementId, number>;
   coachDeck?: CommandCard[];
   coachLoadoutIds?: string[];
+  deckPresets?: DeckPreset[];
+  activeDeckPresetIdx?: number;
+  onboardingDeckFull?: boolean;
+  cardShopOffers?: CardShopOffer[];
+  cardShopRound?: number;
+  cardShopBuysThisRound?: number;
   tacticalPresets?: TacticalPresetSlot[];
   persistentSquad?: DraftPlayer[];
   clubRoster?: DraftPlayer[];
@@ -622,6 +650,8 @@ export interface LeagueSaveState {
   skillLoadoutIds?: string[];
   skillRanks?: Record<string, number>;
   skillMutations?: Record<string, 'A' | 'B'>;
+  v6Astrolabe?: V6AstrolabeState;
+  v6SeasonRogue?: V6SeasonRogueState;
   chemistryLinks?: Record<string, ChemistryLink>;
   seasonRewardDrafts?: DraftPlayer[];
   seasonTrainedIds?: string[];
@@ -718,7 +748,18 @@ export interface PostMatchRewardOption {
   perk?: TacticalPerk;
   statBoost?: { attr: keyof PlayerAttributes; attrLabel: string; delta: number };
   lineBoost?: { line: 'GK' | 'DEF' | 'MID' | 'ATT'; lineLabel: string; attr: keyof PlayerAttributes; attrLabel: string; delta: number };
-  craftReward?: { kind: 'new_card' | 'upgrade_card' | 'elements'; card?: CommandCard; elements?: Array<{ id: ElementId; name: string; count: number }> };
+  craftReward?: { kind: 'new_card' | 'upgrade_card' | 'elements' | 'refill_uses' | 'grant_affix'; card?: CommandCard; elements?: Array<{ id: ElementId; name: string; count: number }> };
+  v6RogueReward?: {
+    kind: 'enchant' | 'relic' | 'overclock_dir' | 'overload_skill' | 'borrow_fusion';
+    targetId?: string;
+    enchantId?: V6DirectiveEnchantId;
+    relicId?: V6RelicId;
+    fusionId?: string;
+    fusionBranch?: 'A' | 'B';
+    metaBonus: number;
+    badge: string;
+    description: string;
+  };
   eventReward?: {
     kind:
       | 'heal_all'
@@ -751,4 +792,11 @@ export interface PostMatchRewardState {
   pendingStatOptionId?: string | null;
   completed: boolean;
   summaryText?: string;
+  tutorialCardUnlock?: {
+    card: CommandCard;
+    tip: string;
+    stage?: 'combo' | 'timing' | 'skill';
+    openerName?: string;
+    claimed?: boolean;
+  };
 }

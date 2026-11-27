@@ -3,3 +3,7 @@ node_modules/
 .playwright-cli/
 .workbuddy/
 *.log
+
+shots/
+.tmp_cli_playtest.mjs
+server/__pycache__/

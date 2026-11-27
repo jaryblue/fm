@@ -1,11 +1,9 @@
-"use strict";
 /**
  * 100 场无头模拟校准测试脚本
  * 覆盖均衡、传控、高位逼抢、防反、两翼齐飞多种战术对局
  */
-Object.defineProperty(exports, "__esModule", { value: true });
-const MatchEngine_1 = require("./MatchEngine");
-const formations_1 = require("./formations");
+import { MatchEngine } from './MatchEngine';
+import { FORMATIONS } from './formations';
 function randInt(min, max) {
     return Math.floor(Math.random() * (max - min + 1)) + min;
 }
@@ -29,7 +27,7 @@ function makeAttrs(role, baseCA) {
     };
 }
 function makeTeam(name, formation, style, baseCA) {
-    const slots = formations_1.FORMATIONS[formation];
+    const slots = FORMATIONS[formation];
     const players = slots.map((s, idx) => ({
         id: `${name}_${idx}`,
         name: `${name}-${s.role}${idx + 1}`,
@@ -77,7 +75,7 @@ function run100() {
         const s2 = STYLE_POOL[(i + 3) % STYLE_POOL.length];
         const ca1 = randInt(69, 77);
         const ca2 = randInt(68, 76);
-        const engine = new MatchEngine_1.MatchEngine(makeTeam('Home', f1, s1, ca1), makeTeam('Away', f2, s2, ca2));
+        const engine = new MatchEngine(makeTeam('Home', f1, s1, ca1), makeTeam('Away', f2, s2, ca2));
         const res = engine.simulateMatch();
         const h = res.stats.home;
         const a = res.stats.away;

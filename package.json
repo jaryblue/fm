@@ -3,18 +3,31 @@
   "private": true,
   "version": "0.1.0",
   "description": "FM27 风格轻度 Rogue 足球联赛（Steam & 微信小游戏双端同构）",
+  "main": "apps/steam/electron/main.cjs",
   "workspaces": [
     "packages/*",
     "apps/*"
   ],
   "scripts": {
+    "typecheck": "tsc -p tsconfig.json",
     "build:web": "esbuild apps/steam/src/main.ts --bundle --format=iife --outfile=apps/steam/steam.bundle.js && esbuild packages/engine/src/index.ts --bundle --format=iife --global-name=FMLeagueEngine --minify --outfile=apps/steam/engine.iife.js",
     "build:engine": "npm run build --workspace=@fm-league/engine",
+    "electron:dev": "npm run build:web && npx electron apps/steam/electron/main.cjs",
+    "electron:pack": "npm run build:web && npx electron-builder --config apps/steam/electron-builder.json --dir",
+    "electron:build": "npm run build:web && npx electron-builder --config apps/steam/electron-builder.json",
+    "android:sync": "npm run build:web && node scripts/build_android_web.mjs && npx cap sync android",
     "sim:100": "npm run sim:100 --workspace=@fm-league/engine",
     "cli:play": "node scripts/cli_playtest.mjs",
-    "cli:e2e": "node scripts/cli_ui_e2e.mjs"
+    "cli:e2e": "node scripts/cli_ui_e2e.mjs",
+    "audit:quick": "node scripts/audit_balance.mjs --quick",
+    "audit:balance": "node scripts/audit_balance.mjs"
   },
   "devDependencies": {
+    "@capacitor/android": "^8.6.3",
+    "@capacitor/cli": "^8.6.3",
+    "@capacitor/core": "^8.6.3",
+    "electron": "^45.5.0",
+    "electron-builder": "^26.18.0",
     "esbuild": "^0.28.2",
     "typescript": "^7.0.2"
   }

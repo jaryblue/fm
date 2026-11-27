@@ -1,0 +1,8 @@
+{
+  "appId": "com.zaikaiyiju.fmleague",
+  "appName": "再开一局",
+  "webDir": "apps/android-www",
+  "android": {
+    "backgroundColor": "#04070D"
+  }
+}

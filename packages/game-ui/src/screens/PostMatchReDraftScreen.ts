@@ -15,8 +15,10 @@ import {
   drawChamferPanel,
   drawFoilShimmer,
   drawRoundRect,
+  drawStatMicro,
   drawText,
   drawWrappedText,
+  fitText,
   HitRegistry,
   tierColor,
 } from '../CanvasKit';
@@ -34,7 +36,7 @@ export interface PostMatchFxCallbacks {
 
 export class PostMatchReDraftScreen {
   private lastMatch: MatchState | null = null;
-  private viewMode: 'recap' | 'reward' | 'redraft' = 'recap';
+  private viewMode: 'recap' | 'card_unlock' | 'reward' | 'redraft' = 'recap';
   private recapTab: 'analytics' | 'results' = 'analytics';
   private selectedCandidateId: string | null = null;
   private selectedDropId: string | null = null;
@@ -144,6 +146,15 @@ export class PostMatchReDraftScreen {
       return;
     }
 
+    if (
+      (this.viewMode === 'card_unlock' || this.viewMode === 'reward') &&
+      rw?.tutorialCardUnlock &&
+      !rw.tutorialCardUnlock.claimed
+    ) {
+      this.renderCardUnlockView(ctx, hits, league, onContinue, onSave);
+      return;
+    }
+
     if (this.viewMode === 'reward' && rw) {
       this.renderRewardView(ctx, hits, league, onContinue, onSave);
       return;
@@ -170,14 +181,19 @@ export class PostMatchReDraftScreen {
     const rw = st.pendingPostMatchReward;
     const m = this.lastMatch;
 
+    const hasPendingCardUnlock = !!(rw?.tutorialCardUnlock && !rw.tutorialCardUnlock.claimed);
     const hasPendingReward = !!(rw && !rw.completed);
-    const nextActionLabel = hasPendingReward
+    const nextActionLabel = hasPendingCardUnlock
+      ? '领取新解锁战术卡 ▶'
+      : hasPendingReward
       ? '领取赛后肉鸽奖励 (3选1) ▶'
       : rd
       ? '进入赛后补强 (2步) ▶'
       : '返回门户首页 ▶';
     const goNext = () => {
-      if (hasPendingReward) {
+      if (hasPendingCardUnlock) {
+        this.viewMode = 'card_unlock';
+      } else if (hasPendingReward) {
         this.catEnterTimer = 0;
         this.packAnim = null;
         this.resetCardRevealAnim();
@@ -278,11 +294,9 @@ export class PostMatchReDraftScreen {
         drawRewardIllustration(ctx, myScore > oppScore, 816, 132, 164, 92);
       }
 
-      const elemDrop = myScore > oppScore ? 2 : 1;
-      drawRoundRect(ctx, 994, 130, 248, 96, 8, THEME.BG_CARD, THEME.BORDER_GOLD);
-      drawFoilShimmer(ctx, 994, 130, 248, 96, this.animClock * 0.9, 'rgba(74, 222, 128, 0.22)');
-      drawText(ctx, `获得战术元素 x ${elemDrop}`, 1010, 158, { size: 15, bold: true, color: THEME.GREEN });
-      drawWrappedText(ctx, '可在门户“合成”中组合新的场外指挥卡', 1010, 178, 216, 16, { size: 11, color: THEME.TX2, maxLines: 2 });
+      drawRoundRect(ctx, 994, 130, 248, 96, 8, THEME.BG_CARD, THEME.BORDER);
+      drawText(ctx, '赛后 3 选 1 战利品已就绪', 1010, 158, { size: 14.5, bold: true, color: THEME.GOLD_LIGHT });
+      drawWrappedText(ctx, '可领取赛季圣物、手牌暗金附魔或永久星盘点', 1010, 178, 224, 16, { size: 10.5, color: THEME.TX2, maxLines: 2 });
 
       const goals = m.events.filter(e => e.type === 'goal').slice(0, 3);
       if (goals.length === 0) {
@@ -419,8 +433,8 @@ export class PostMatchReDraftScreen {
         align: 'center',
       });
 
-      // 右半区：首发 11 人赛后评分与 MVP 关键贡献榜（联动球员默契/隐藏特质与本场成长）
-      const xgX = 638, xgY = 414, xgW = 606, xgH = 194;
+      // 右半区：首发 11 人赛后评分与 MVP 关键贡献榜（灰阶微图标 + 31px 行高）
+      const xgX = 638, xgY = 408, xgW = 606, xgH = 202;
       drawRoundRect(ctx, xgX, xgY, xgW, xgH, 8, THEME.BG_CARD, THEME.BORDER);
 
       const userSide = m.homeName === club.name ? 'home' : 'away';
@@ -455,16 +469,16 @@ export class PostMatchReDraftScreen {
           traitBonus;
         const rating = Math.max(5.2, Math.min(10.0, Math.round(raw * 10) / 10));
 
-        const statParts: string[] = [];
-        if (ms.goals > 0) statParts.push(`${ms.goals}球`);
-        if (ms.assists > 0) statParts.push(`${ms.assists}助`);
+        const statIcons: Array<{ ic: 'ball' | 'stat_assist' | 'stat_gk' | 'stat_pass' | 'stat_def' | 'stat_shoot'; val: number }> = [];
+        if (ms.goals > 0) statIcons.push({ ic: 'ball', val: ms.goals });
+        if (ms.assists > 0) statIcons.push({ ic: 'stat_assist', val: ms.assists });
         if (p.role === 'GK') {
-          statParts.push(`扑${ms.saves}`);
-          statParts.push(`传${ms.passesSuccess}`);
+          statIcons.push({ ic: 'stat_gk', val: ms.saves });
+          statIcons.push({ ic: 'stat_pass', val: ms.passesSuccess });
         } else {
-          statParts.push(`传${ms.passesSuccess}`);
-          if (ms.tackles + ms.interceptions > 0) statParts.push(`断${ms.tackles + ms.interceptions}`);
-          else if (ms.shots > 0) statParts.push(`射${ms.shots}`);
+          statIcons.push({ ic: 'stat_pass', val: ms.passesSuccess });
+          if (ms.tackles + ms.interceptions > 0) statIcons.push({ ic: 'stat_def', val: ms.tackles + ms.interceptions });
+          else if (ms.shots > 0) statIcons.push({ ic: 'stat_shoot', val: ms.shots });
         }
 
         const gainParts: string[] = [];
@@ -481,7 +495,7 @@ export class PostMatchReDraftScreen {
         return {
           player: p,
           rating,
-          statsText: statParts.slice(0, 3).join(' '),
+          statIcons: statIcons.slice(0, 3),
           gainText: gainParts.join(' '),
           keyTrait,
           isUnlocked: !!g?.unlockedTrait,
@@ -498,9 +512,9 @@ export class PostMatchReDraftScreen {
         const col = idx < 6 ? 0 : 1;
         const row = idx < 6 ? idx : idx - 6;
         const rx = xgX + 6 + col * 300;
-        const ry = xgY + 4 + row * 32;
+        const ry = xgY + 3 + row * 33;
         const rw = 294;
-        const rh = 29;
+        const rh = 31;
         const isMvp = idx === 0;
         const rColor = item.rating >= 8.0 ? THEME.GREEN : item.rating >= 7.0 ? THEME.GOLD_LIGHT : THEME.TX1;
 
@@ -517,25 +531,36 @@ export class PostMatchReDraftScreen {
         );
 
         if (isMvp) {
-          drawBadge(ctx, rx + 4, ry + 5, 30, 18, 'MVP', '#78350F', THEME.GOLD_LIGHT);
+          drawBadge(ctx, rx + 4, ry + 6, 30, 18, 'MVP', '#78350F', THEME.GOLD_LIGHT);
         } else {
-          drawText(ctx, `${idx + 1}`, rx + 13, ry + 14, { size: 9.5, bold: true, color: THEME.TX3, align: 'center', mono: true });
+          drawText(ctx, `${idx + 1}`, rx + 13, ry + 15, { size: 9.5, bold: true, color: THEME.TX3, align: 'center', mono: true });
         }
         const nameX = isMvp ? rx + 38 : rx + 24;
-        drawBadge(ctx, nameX, ry + 6, 28, 16, item.player.role, '#1E293B', THEME.TX2);
+        drawBadge(ctx, nameX, ry + 7, 28, 16, item.player.role, '#1E293B', THEME.TX2);
         drawText(ctx, item.player.name.slice(0, 5), nameX + 32, ry + 10, {
           size: 10.5,
           bold: true,
           color: isMvp ? THEME.GOLD_LIGHT : THEME.TX1,
         });
 
-        drawText(ctx, item.statsText, nameX + 32, ry + 22, { size: 8.8, color: THEME.TX2 });
+        let sx = nameX + 32;
+        item.statIcons.forEach(si => {
+          sx += drawStatMicro(ctx, si.ic, `${si.val}`, sx, ry + 23, {
+            iconSize: 9,
+            fontSize: 9,
+            iconColor: THEME.TX3,
+            valueColor: THEME.TX2,
+            gap: 2,
+          });
+          sx += 7;
+        });
         if (item.gainText) {
-          drawText(ctx, item.gainText, rx + rw - 42, ry + 22, {
+          drawText(ctx, item.gainText, rx + rw - 42, ry + 23, {
             size: 8.8,
             bold: item.isUnlocked,
             color: item.isUnlocked ? '#38BDF8' : THEME.GREEN,
             align: 'right',
+            mono: !item.isUnlocked,
           });
         }
         if (item.keyTrait) {
@@ -552,8 +577,8 @@ export class PostMatchReDraftScreen {
           });
         }
 
-        drawRoundRect(ctx, rx + rw - 36, ry + 4, 32, 21, 4, '#0F172A', rColor, 1);
-        drawText(ctx, item.rating.toFixed(1), rx + rw - 20, ry + 15, {
+        drawRoundRect(ctx, rx + rw - 36, ry + 5, 32, 21, 4, '#0F172A', rColor, 1);
+        drawText(ctx, item.rating.toFixed(1), rx + rw - 20, ry + 15.5, {
           size: 10.5,
           bold: true,
           color: rColor,
@@ -563,9 +588,9 @@ export class PostMatchReDraftScreen {
       });
 
       const sumX = xgX + 306;
-      const sumY = xgY + 4 + 5 * 32;
-      drawRoundRect(ctx, sumX, sumY, 294, 29, 5, 'rgba(30, 58, 95, 0.35)', THEME.BORDER_GOLD, 0.9);
-      drawText(ctx, `首发均分 ${avgRating} · 默契总升温 +${totalChemGain.toFixed(0)}`, sumX + 147, sumY + 15, {
+      const sumY = xgY + 3 + 5 * 33;
+      drawRoundRect(ctx, sumX, sumY, 294, 31, 5, 'rgba(30, 58, 95, 0.35)', THEME.BORDER_GOLD, 0.9);
+      drawText(ctx, `首发均分 ${avgRating} · 默契总升温 +${totalChemGain.toFixed(0)}`, sumX + 147, sumY + 15.5, {
         size: 10,
         bold: true,
         color: THEME.GOLD_LIGHT,
@@ -617,6 +642,168 @@ export class PostMatchReDraftScreen {
     if (hasPendingReward || rd) {
       drawFoilShimmer(ctx, 440, 642, 400, 54, this.animClock * 1.15, 'rgba(254, 240, 138, 0.30)');
     }
+  }
+
+  private renderCardUnlockView(
+    ctx: CanvasRenderingContext2D,
+    hits: HitRegistry,
+    league: LeagueManager,
+    onContinue: () => void,
+    onSave: () => void
+  ): void {
+    const st = league.getState();
+    const rd = st.reDraft;
+    const rw = st.pendingPostMatchReward!;
+    const tc = rw.tutorialCardUnlock!;
+    const card = tc.card;
+    const stage = tc.stage ?? (card.comboRule ? 'combo' : card.timingCondition ? 'timing' : 'skill');
+
+    const stageMeta =
+      stage === 'combo'
+        ? {
+            num: '1/3',
+            title: '连击配合卡',
+            accent: '#C084FC',
+            flowLeft: `${tc.openerName || '主力态势卡'}（先打起手）`,
+            flowRight: `${card.name}（接在后面打出）`,
+            howToPlay: '入队后会自动排在起手卡后面！下场先打出起手卡切出态势，再打这张卡就能触发亮紫【态势连击】额外收益。',
+          }
+        : stage === 'timing'
+        ? {
+            num: '2/3',
+            title: '时机白嫖卡',
+            accent: '#34D399',
+            flowLeft: '平时先捏在手里别急着打',
+            flowRight: `满足条件亮绿 → 0 费白嫖 ${card.name}`,
+            howToPlay: '不要盲目开局就打掉！比赛过程中随时看底部手牌栏，一旦条件达成卡片会自动亮起绿光，此时点击可 0 费白嫖！',
+          }
+        : {
+            num: '3/3',
+            title: '大招联动卡',
+            accent: '#FACC15',
+            flowLeft: `打出 ${card.name}`,
+            flowRight: '加速弹出队友子弹时间大招',
+            howToPlay: '准备发起强攻或破局时打出这张牌，能大幅提升场上核心球员主动大招的触发概率，打出连续技！',
+          };
+
+    // 顶栏
+    drawRoundRect(ctx, 16, 14, 1248, 56, 10, THEME.BG_PANEL, THEME.BORDER);
+    drawButton(ctx, hits, 28, 24, 104, 36, '← 看战报', () => {
+      this.viewMode = 'recap';
+    }, { variant: 'ghost', fontSize: 12 });
+    drawBadge(ctx, 152, 29, 210, 26, `流派递进教学 · 第 ${stageMeta.num} 阶段`, '#3B1F6E', stageMeta.accent);
+    drawText(ctx, `新战术卡解锁：${stageMeta.title}`, 382, 42, { size: 17, bold: true, color: THEME.GOLD_LIGHT });
+
+    // 主舞台面板
+    drawChamferPanel(ctx, 90, 96, 1100, 566, 14, 'rgba(10, 17, 32, 0.96)', stageMeta.accent, 2, stageMeta.accent);
+    drawFoilShimmer(ctx, 90, 96, 1100, 566, this.animClock * 1.1, stageMeta.accent + '22');
+
+    drawText(ctx, '🎉 赛后新卡入队确认（点击下方按钮正式收入卡组）', 640, 134, {
+      size: 16,
+      bold: true,
+      color: THEME.GOLD_LIGHT,
+      align: 'center',
+    });
+
+    // 左侧：新卡大图展示 (x: 140..440, y: 170..536)
+    const cx = 140;
+    const cy = 170;
+    const cw = 300;
+    const ch = 366;
+    drawChamferPanel(ctx, cx, cy, cw, ch, 12, '#0F1B33', stageMeta.accent, 2.2, THEME.GOLD_LIGHT);
+    drawFoilShimmer(ctx, cx, cy, cw, ch, this.animClock * 1.4, stageMeta.accent + '2E');
+
+    drawBadge(ctx, cx + 16, cy + 16, 56, 26, `E${card.cost}`, '#0C4A6E', '#7DD3FC');
+    drawBadge(ctx, cx + 80, cy + 16, 102, 26, stageMeta.title, '#1E293B', stageMeta.accent);
+    if (card.maxUses) {
+      drawBadge(ctx, cx + cw - 82, cy + 16, 66, 26, `剩${card.maxUses}次`, '#3B1F6E', '#E9D5FF');
+    }
+
+    drawText(ctx, card.name, cx + cw / 2, cy + 84, { size: 22, bold: true, color: THEME.TX1, align: 'center' });
+    drawRoundRect(ctx, cx + 22, cy + 114, cw - 44, 158, 8, 'rgba(7, 12, 24, 0.85)', THEME.BORDER);
+    drawWrappedText(ctx, card.summary || card.name, cx + 34, cy + 134, cw - 68, 24, {
+      size: 13.5,
+      color: THEME.TX1,
+      maxLines: 5,
+    });
+
+    drawBadge(ctx, cx + 24, cy + ch - 46, cw - 48, 28, card.isBase ? '0阶常备底牌' : `${card.tier ?? 1}阶流派战术卡`, '#14532D', '#86EFAC');
+
+    // 右侧：这张卡怎么用？ (x: 472..1140, y: 170..536)
+    const rx = 472;
+    const ry = 170;
+    const rwBox = 668;
+    const rhBox = 366;
+    drawChamferPanel(ctx, rx, ry, rwBox, rhBox, 12, 'rgba(13, 22, 42, 0.94)', THEME.BORDER_GOLD, 1.5);
+    drawText(ctx, '这张卡怎么用？', rx + 24, ry + 34, { size: 18, bold: true, color: THEME.GOLD_LIGHT });
+
+    // 1) 联动示意图
+    drawRoundRect(ctx, rx + 22, ry + 58, rwBox - 44, 84, 8, 'rgba(8, 13, 25, 0.9)', stageMeta.accent, 1.2);
+    drawText(ctx, '触发流程', rx + 36, ry + 76, { size: 11.5, bold: true, color: THEME.TX2 });
+    drawRoundRect(ctx, rx + 36, ry + 90, 264, 38, 6, '#1E293B', THEME.BORDER);
+    drawText(ctx, fitText(ctx, stageMeta.flowLeft, 248, 12.5), rx + 168, ry + 109, {
+      size: 12.5,
+      bold: true,
+      color: THEME.TX1,
+      align: 'center',
+    });
+    drawText(ctx, '──▶', rx + 334, ry + 109, { size: 15, bold: true, color: stageMeta.accent, align: 'center' });
+    drawRoundRect(ctx, rx + 368, ry + 90, 264, 38, 6, '#1B2E28', stageMeta.accent, 1.3);
+    drawText(ctx, fitText(ctx, stageMeta.flowRight, 248, 12.5), rx + 500, ry + 109, {
+      size: 12.5,
+      bold: true,
+      color: stageMeta.accent,
+      align: 'center',
+    });
+
+    // 2) 核心一句话用法
+    drawRoundRect(ctx, rx + 22, ry + 156, rwBox - 44, 92, 8, 'rgba(20, 48, 40, 0.45)', '#34D399', 1.2);
+    drawText(ctx, '核心用法', rx + 36, ry + 176, { size: 11.5, bold: true, color: '#6EE7B7' });
+    drawWrappedText(ctx, tc.tip, rx + 36, ry + 196, rwBox - 72, 24, {
+      size: 14.5,
+      bold: true,
+      color: '#ECFDF5',
+      maxLines: 2,
+    });
+
+    // 3) 赛中操作提示
+    drawRoundRect(ctx, rx + 22, ry + 262, rwBox - 44, 86, 8, 'rgba(15, 23, 42, 0.85)', THEME.BORDER);
+    drawText(ctx, '赛中操作提示', rx + 36, ry + 282, { size: 11.5, bold: true, color: '#7DD3FC' });
+    drawWrappedText(ctx, stageMeta.howToPlay, rx + 36, ry + 302, rwBox - 72, 22, {
+      size: 13,
+      color: THEME.TX1,
+      maxLines: 2,
+    });
+
+    // 底部主按钮：点击后才真正入队！
+    drawButton(
+      ctx,
+      hits,
+      410,
+      574,
+      460,
+      54,
+      `收入卡组 · 我学会了（${card.name}） ▶`,
+      () => {
+        league.claimTutorialCardUnlock();
+        SoundEngine.playRewardChime();
+        this.fx.onBurst?.(640, 320, stageMeta.accent);
+        this.fx.onBurst?.(420, 340, THEME.GOLD_LIGHT);
+        onSave();
+        const hasPendingReward = !rw.completed;
+        if (hasPendingReward) {
+          this.catEnterTimer = 0;
+          this.packAnim = null;
+          this.resetCardRevealAnim();
+          this.viewMode = 'reward';
+        } else if (rd) {
+          this.viewMode = 'redraft';
+        } else {
+          onContinue();
+        }
+      },
+      { variant: 'gold', fontSize: 16 }
+    );
   }
 
   private renderRewardView(
@@ -726,9 +913,9 @@ export class PostMatchReDraftScreen {
         elemKey: 'elem_iron',
       },
       craft_card: {
-        title: '战术合成包 · 教练手牌',
-        badge: '指挥卡 / 升阶',
-        desc: '获得高阶指挥卡或手牌升阶',
+        title: '星盘圣物 · 手牌暗金附魔',
+        badge: '赛季圣物 / 附魔 + 星盘点',
+        desc: '装备单季规则圣物、手牌附魔或三星超频',
         color: '#C084FC',
         elemKey: 'elem_pass',
       },
@@ -953,7 +1140,12 @@ export class PostMatchReDraftScreen {
           league.pickPostMatchRewardCategory(cat);
           onSave();
         };
-        drawButton(ctx, hits, cx + 22, cy + ch - 56, cw - 44, 40, '撕开此盲盒', pickPack, { variant: 'gold', fontSize: 13.5, icon: 'sparkle' });
+        drawText(ctx, hovered ? '✦ 点击撕开此盲盒 ✦' : '点击卡牌撕开盲盒', cx + cw / 2, cy + ch - 28, {
+          size: 13,
+          bold: true,
+          color: hovered ? THEME.GOLD_LIGHT : meta.color,
+          align: 'center',
+        });
         hits.add(cx, cy, cw, ch, pickPack);
       });
       return;
@@ -1137,13 +1329,24 @@ export class PostMatchReDraftScreen {
       const resBadgeTxt = rolledTier === 'jackpot' ? '超额暴击！' : rolledTier === 'negative' ? '触发代价' : rolledTier === 'positive' ? '稳健收益' : '赛后奖励已领取';
       drawChamferPanel(ctx, 240, 196, 800, 290, 14, THEME.BG_PANEL, resCol, 2, resCol);
       drawFoilShimmer(ctx, 240, 196, 800, 290, this.animClock * 1.1, resCol + '33');
-      drawBadge(ctx, 560, 224, 160, 28, resBadgeTxt, resBadgeBg, resCol);
-      drawWrappedText(ctx, rw.summaryText || '奖励已生效', 290, 286, 700, 28, {
-        size: 19,
+      drawBadge(ctx, 560, 222, 160, 28, resBadgeTxt, resBadgeBg, resCol);
+      drawWrappedText(ctx, rw.summaryText || '奖励已生效', 290, 276, 700, 26, {
+        size: 18,
         bold: true,
         color: rolledTier === 'negative' ? '#FCA5A5' : THEME.GOLD_LIGHT,
-        maxLines: 3,
+        maxLines: 2,
       });
+
+      if (rw.tutorialCardUnlock?.claimed) {
+        drawText(
+          ctx,
+          `✓ 本轮新解锁流派卡【${rw.tutorialCardUnlock.card.name}】已收入卡组，可在「合成/卡组」页拖动调整顺序`,
+          640,
+          346,
+          { size: 12.5, bold: true, color: '#6EE7B7', align: 'center' }
+        );
+      }
+
       drawButton(
         ctx,
         hits,
@@ -1298,8 +1501,26 @@ export class PostMatchReDraftScreen {
       }
 
       drawBadge(ctx, cx + 24, cy + 24, 120, 24, rLabel, '#1E293B', rCol);
-      drawText(ctx, opt.title, cx + 24, cy + 78, { size: 17, bold: true, color: THEME.TX1 });
-      drawWrappedText(ctx, opt.subtitle, cx + 24, cy + 112, cw - 48, 22, { size: 13, color: THEME.TX2, maxLines: 4 });
+      if (opt.v6RogueReward) {
+        drawBadge(ctx, cx + cw - 126, cy + 24, 102, 24, `${opt.v6RogueReward.badge} +${opt.v6RogueReward.metaBonus}pt`, '#3B1F6E', '#E9D5FF');
+      }
+      drawText(ctx, fitText(ctx, opt.title, cw - 48, 16.5, true), cx + 24, cy + 78, { size: 16.5, bold: true, color: THEME.TX1 });
+      drawWrappedText(ctx, opt.subtitle, cx + 24, cy + 112, cw - 48, 22, { size: 13, color: THEME.TX2, maxLines: 5 });
+
+      if (opt.v6RogueReward) {
+        drawRoundRect(ctx, cx + 24, cy + 236, cw - 48, 56, 8, 'rgba(30, 20, 56, 0.72)', '#C084FC', 1.2);
+        drawText(ctx, `★ 本季常驻生效 · 另赠永久星盘点 +${opt.v6RogueReward.metaBonus}pt`, cx + cw / 2, cy + 255, {
+          size: 11.5,
+          bold: true,
+          color: THEME.GOLD_LIGHT,
+          align: 'center',
+        });
+        drawText(ctx, fitText(ctx, opt.v6RogueReward.description, cw - 68, 11), cx + cw / 2, cy + 276, {
+          size: 11,
+          color: '#E9D5FF',
+          align: 'center',
+        });
+      }
 
       if (opt.player) {
         const pl = opt.player;
@@ -1343,8 +1564,25 @@ export class PostMatchReDraftScreen {
 
       if (fp >= 0.8) {
         const needsPlayerTarget = opt.category === 'stat_boost' || opt.category === 'trait_forge';
-        const btnTxt = opt.category === 'gamble' ? '开奖博弈' : needsPlayerTarget ? '选择并指定球员 ▶' : '确认领取 ▶';
-        drawButton(ctx, hits, cx + 24, cy + ch - 62, cw - 48, 42, btnTxt, () => {
+        const btnTxt = opt.category === 'gamble' ? '✦ 点击卡牌开奖博弈 ✦' : needsPlayerTarget ? '✦ 点击选择并指定球员 ✦' : '✦ 点击卡牌收入囊中 ✦';
+        drawRoundRect(
+          ctx,
+          cx + 24,
+          cy + ch - 46,
+          cw - 48,
+          28,
+          14,
+          hovered ? 'rgba(245, 158, 11, 0.28)' : 'rgba(15, 23, 42, 0.72)',
+          hovered ? THEME.GOLD_LIGHT : rCol,
+          hovered ? 1.6 : 1
+        );
+        drawText(ctx, btnTxt, cx + cw / 2, cy + ch - 32, {
+          size: 12.5,
+          bold: true,
+          color: hovered ? '#FFFFFF' : THEME.GOLD_LIGHT,
+          align: 'center',
+        });
+        hits.add(cx, cy, cw, ch, () => {
           const res = league.applyPostMatchRewardOption(opt.id);
           if (!res.needsTarget) {
             if (res.gambleTier === 'jackpot') {
@@ -1363,7 +1601,7 @@ export class PostMatchReDraftScreen {
             SoundEngine.playClick();
           }
           onSave();
-        }, { variant: 'gold', fontSize: 14, icon: opt.category === 'gamble' ? 'dice' : undefined });
+        });
       }
     });
   }

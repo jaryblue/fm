@@ -1,19 +1,9 @@
-"use strict";
 /**
  * 动态阵型锚点矩阵（4后卫 / 3后卫 / 5后卫 共 16 种经典阵型）
  * 根据 球的位置 + 控球状态 + 战术风格 + 技能网行为修正 实时计算 11 名球员的理想战术站位
  */
-Object.defineProperty(exports, "__esModule", { value: true });
-exports.FORMATIONS = exports.FORMATION_SYSTEMS = exports.ROLE_DUTY_OPTIONS = void 0;
-exports.gridToPitch = gridToPitch;
-exports.pitchToGrid = pitchToGrid;
-exports.getDefenseSystem = getDefenseSystem;
-exports.clamp = clamp;
-exports.toRelativeX = toRelativeX;
-exports.toAbsoluteX = toAbsoluteX;
-exports.getDynamicAnchor = getDynamicAnchor;
-const types_1 = require("./types");
-exports.ROLE_DUTY_OPTIONS = {
+import { PITCH, TACTICAL_PRESETS, } from './types';
+export const ROLE_DUTY_OPTIONS = {
     ST: [
         { duty: 'default', label: '全能前锋', desc: '均衡串联与抢点' },
         { duty: 'false_nine', label: '伪九号', desc: '回撤接应组织，拉空防线' },
@@ -77,7 +67,7 @@ exports.ROLE_DUTY_OPTIONS = {
         { duty: 'inverted_fb', label: '内收翼卫', desc: '内切中路配合渗透' },
     ],
 };
-function gridToPitch(col, row) {
+export function gridToPitch(col, row) {
     const c = Math.max(0, Math.min(4, Math.round(col)));
     const r = Math.max(0, Math.min(5, Math.round(row)));
     return {
@@ -85,13 +75,13 @@ function gridToPitch(col, row) {
         baseY: 10 + c * 12,
     };
 }
-function pitchToGrid(baseX, baseY) {
+export function pitchToGrid(baseX, baseY) {
     return {
         col: Math.max(0, Math.min(4, Math.round((baseY - 10) / 12))),
         row: Math.max(0, Math.min(5, Math.round((baseX - 14) / 13))),
     };
 }
-exports.FORMATION_SYSTEMS = {
+export const FORMATION_SYSTEMS = {
     '4-back': {
         label: '四后卫体系',
         formations: ['4-3-3', '4-2-3-1', '4-4-2', '4-1-2-1-2', '4-4-1-1', '4-1-4-1', '4-2-2-2', '4-3-2-1'],
@@ -105,14 +95,14 @@ exports.FORMATION_SYSTEMS = {
         formations: ['5-4-1', '5-3-2', '5-2-3', '5-2-1-2'],
     },
 };
-function getDefenseSystem(f) {
+export function getDefenseSystem(f) {
     if (f.startsWith('3-'))
         return '3-back';
     if (f.startsWith('5-'))
         return '5-back';
     return '4-back';
 }
-exports.FORMATIONS = {
+export const FORMATIONS = {
     // ==================== 四后卫体系 (8种) ====================
     '4-3-3': [
         { role: 'GK', baseX: 5, baseY: 34 },
@@ -325,32 +315,32 @@ exports.FORMATIONS = {
         { role: 'ST', baseX: 71, baseY: 42 },
     ],
 };
-function clamp(v, min, max) {
+export function clamp(v, min, max) {
     return v < min ? min : v > max ? max : v;
 }
-function toRelativeX(absX, dir) {
-    return dir === 1 ? absX : types_1.PITCH.LENGTH - absX;
+export function toRelativeX(absX, dir) {
+    return dir === 1 ? absX : PITCH.LENGTH - absX;
 }
-function toAbsoluteX(relX, dir) {
-    return dir === 1 ? relX : types_1.PITCH.LENGTH - relX;
+export function toAbsoluteX(relX, dir) {
+    return dir === 1 ? relX : PITCH.LENGTH - relX;
 }
 /**
  * 计算球员在当前瞬间的动态战术锚点（绝对球场坐标）
  */
-function getDynamicAnchor(slot, ballPos, dir, hasPossession, // true=本方控球, false=对方控球, null=争抢
+export function getDynamicAnchor(slot, ballPos, dir, hasPossession, // true=本方控球, false=对方控球, null=争抢
 style, _formation, mods, duty) {
-    const preset = types_1.TACTICAL_PRESETS[style];
+    const preset = TACTICAL_PRESETS[style];
     const relBallX = toRelativeX(ballPos.x, dir);
-    const ballOffsetFromCenterY = ballPos.y - types_1.PITCH.HALF_Y;
+    const ballOffsetFromCenterY = ballPos.y - PITCH.HALF_Y;
     if (slot.role === 'GK') {
         const gkRelX = clamp(3 + (relBallX < 30 ? (30 - relBallX) * 0.12 : 0), 2.5, 9);
-        const gkY = clamp(types_1.PITCH.HALF_Y + ballOffsetFromCenterY * 0.22, 27, 41);
+        const gkY = clamp(PITCH.HALF_Y + ballOffsetFromCenterY * 0.22, 27, 41);
         return { x: toAbsoluteX(gkRelX, dir), y: gkY };
     }
     // 第一性原理 3 参数团队阵型模型：全队重心 + 阵型紧凑度 + 统一宽度缩放
     const possShift = hasPossession === true ? 5 : hasPossession === false ? -6 : 0;
     const lineMod = clamp(mods?.lineShift ?? 0, -8, 8) * 0.6;
-    const blockShiftX = (relBallX - types_1.PITCH.HALF_X) * 0.52 + preset.lineHeight * 0.65 + possShift + lineMod;
+    const blockShiftX = (relBallX - PITCH.HALF_X) * 0.52 + preset.lineHeight * 0.65 + possShift + lineMod;
     const compactX = hasPossession === false ? 0.78 : 0.96;
     let roleModX = 0;
     let roleModY = 0;
@@ -362,8 +352,8 @@ style, _formation, mods, duty) {
             roleModX = -Math.min(6, (mods?.falseNineDrop ?? 0) * 0.5);
         }
         else if (slot.role === 'LB' || slot.role === 'RB' || slot.role === 'LWB' || slot.role === 'RWB') {
-            const isLeft = slot.baseY < types_1.PITCH.HALF_Y;
-            const onFlank = isLeft ? ballPos.y < types_1.PITCH.HALF_Y + 6 : ballPos.y > types_1.PITCH.HALF_Y - 6;
+            const isLeft = slot.baseY < PITCH.HALF_Y;
+            const onFlank = isLeft ? ballPos.y < PITCH.HALF_Y + 6 : ballPos.y > PITCH.HALF_Y - 6;
             if (onFlank || mods?.dualOverlap) {
                 roleModX = 8 + clamp(mods?.overlapDepthBonus ?? 0, 0, 12) * 0.6;
             }
@@ -376,11 +366,11 @@ style, _formation, mods, duty) {
             roleModX += 6;
         else if (duty === 'inverted_fb') {
             roleModX += 4;
-            roleModY += slot.baseY < types_1.PITCH.HALF_Y ? 11 : -11;
+            roleModY += slot.baseY < PITCH.HALF_Y ? 11 : -11;
         }
         else if (duty === 'wing_back') {
             roleModX += 7;
-            roleModY += slot.baseY < types_1.PITCH.HALF_Y ? -3 : 3;
+            roleModY += slot.baseY < PITCH.HALF_Y ? -3 : 3;
         }
         else if (duty === 'regista')
             roleModX -= 5;
@@ -388,14 +378,14 @@ style, _formation, mods, duty) {
             roleModX += 6;
         else if (duty === 'mezzala') {
             roleModX += 6;
-            roleModY += slot.baseY < types_1.PITCH.HALF_Y ? -4 : 4;
+            roleModY += slot.baseY < PITCH.HALF_Y ? -4 : 4;
         }
         else if (duty === 'inside_forward') {
             roleModX += 4;
-            roleModY += slot.baseY < types_1.PITCH.HALF_Y ? 9 : -9;
+            roleModY += slot.baseY < PITCH.HALF_Y ? 9 : -9;
         }
         else if (duty === 'classic_winger') {
-            roleModY += slot.baseY < types_1.PITCH.HALF_Y ? -4 : 4;
+            roleModY += slot.baseY < PITCH.HALF_Y ? -4 : 4;
         }
     }
     else if (hasPossession === false && duty === 'box_to_box') {
@@ -403,7 +393,7 @@ style, _formation, mods, duty) {
     }
     const targetRelX = clamp(22 + (slot.baseX - 22) * compactX + blockShiftX + roleModX, 11, 88);
     const widthFactor = preset.widthScale * (hasPossession === false ? 0.84 : 1.0);
-    const targetY = clamp(types_1.PITCH.HALF_Y + (slot.baseY - types_1.PITCH.HALF_Y) * widthFactor + ballOffsetFromCenterY * 0.28 + roleModY, 5, types_1.PITCH.WIDTH - 5);
+    const targetY = clamp(PITCH.HALF_Y + (slot.baseY - PITCH.HALF_Y) * widthFactor + ballOffsetFromCenterY * 0.28 + roleModY, 5, PITCH.WIDTH - 5);
     return {
         x: toAbsoluteX(targetRelX, dir),
         y: targetY,

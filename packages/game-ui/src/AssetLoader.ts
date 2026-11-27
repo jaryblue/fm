@@ -179,7 +179,7 @@ export const ART_MANIFEST: Record<ArtAssetId, string> = {
   pack_burst_fx: 'assets/art/pack_burst_fx.webp',
   bg_skill_constellation: 'assets/art/bg_skill_constellation.webp',
   bg_season_ceremony: 'assets/art/bg_season_ceremony.webp',
-  trophy_grand_cup: 'assets/art/trophy_grand_cup.png',
+  trophy_grand_cup: 'assets/art/trophy_grand_cup.webp',
   card_frame_mythic: 'assets/art/card_frame_mythic.webp',
   fx_skill_cutin_att: 'assets/art/fx_skill_cutin_att.webp',
   fx_skill_cutin_def: 'assets/art/fx_skill_cutin_def.webp',
@@ -216,7 +216,12 @@ class AssetLoaderImpl {
   }
 
   public preloadAll(): void {
-    (Object.keys(ART_MANIFEST) as ArtAssetId[]).forEach(id => this.load(id));
+    // 优先加载启动开场与标题页核心资源，避免开场闪现占位图
+    const priority: ArtAssetId[] = ['game_logo', 'stadium_bg', 'bg_title'];
+    priority.forEach(id => this.load(id));
+    (Object.keys(ART_MANIFEST) as ArtAssetId[]).forEach(id => {
+      if (!priority.includes(id)) this.load(id);
+    });
   }
 
   public load(id: ArtAssetId): void {

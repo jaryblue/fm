@@ -11,11 +11,13 @@ import { ConfirmModal } from './ConfirmModal';
 import { BootIntro, RouteTransition, ScreenShake } from './Motion';
 import { PlatformAdapter } from './Platform';
 import { PlayerModal } from './PlayerModal';
-import { SoundEngine } from './SoundEngine';
+import { SaveSlotModal } from './SaveSlotModal';
+import { SettingsModal } from './SettingsModal';
+import { AudioMode, SoundEngine } from './SoundEngine';
 import { StoryModal } from './StoryModal';
+import { TextInputModal } from './TextInputModal';
 import { IS_MOBILE, THEME } from './Theme';
 import { TutorialOverlay } from './TutorialOverlay';
-import { CardCraftScreen } from './screens/CardCraftScreen';
 import { ClubRosterScreen } from './screens/ClubRosterScreen';
 import { DraftScreen } from './screens/DraftScreen';
 import { HallOfFameScreen } from './screens/HallOfFameScreen';
@@ -61,6 +63,9 @@ export class GameApp {
   private playerModal = new PlayerModal();
   private confirmModal = new ConfirmModal();
   private storyModal = new StoryModal();
+  private textInputModal = new TextInputModal();
+  private settingsModal = new SettingsModal();
+  private saveSlotModal = new SaveSlotModal();
   private tutorialOverlay = new TutorialOverlay();
 
   private knownAchievements = new Set<string>();
@@ -75,7 +80,6 @@ export class GameApp {
   private clubRosterScreen = new ClubRosterScreen();
   private metaScreen = new MetaScreen();
   private hofScreen = new HallOfFameScreen();
-  private cardCraftScreen = new CardCraftScreen();
   private draftScreen = new DraftScreen();
   private portalScreen = new PortalScreen();
   private leagueScreen = new LeagueScreen();
@@ -87,6 +91,7 @@ export class GameApp {
   constructor(platform: PlatformAdapter) {
     this.platform = platform;
     AssetLoader.preloadAll();
+    this.loadPersistedSettings();
     const saved = this.platform.loadSave(SAVE_KEY);
     if (saved) {
       try {
@@ -97,11 +102,52 @@ export class GameApp {
     } else {
       this.league = new LeagueManager();
     }
-    this.knownAchievements = new Set(this.league.getState().hallOfFame.unlockedAchievements);
+    this.knownAchievements = new Set(this.league.getState().hallOfFame?.unlockedAchievements ?? []);
     this.route = 'title';
     this.bootIntro = new BootIntro(() => {
       this.titleScreen.resetEnterAnim();
     });
+  }
+
+  private loadPersistedSettings(): void {
+    const raw = this.platform.loadSettings?.();
+    if (!raw) return;
+    try {
+      const parsed = JSON.parse(raw) as { audioMode?: AudioMode; bgmVolume?: number; sfxVolume?: number };
+      if (typeof parsed.bgmVolume === 'number') SoundEngine.setBgmVolume(parsed.bgmVolume);
+      if (typeof parsed.sfxVolume === 'number') SoundEngine.setSfxVolume(parsed.sfxVolume);
+      if (parsed.audioMode === 'all' || parsed.audioMode === 'sfx_only' || parsed.audioMode === 'muted') {
+        SoundEngine.setAudioMode(parsed.audioMode);
+      }
+    } catch {
+      // ignore invalid settings
+    }
+  }
+
+  private persistSettings(): void {
+    this.platform.saveSettings?.(
+      JSON.stringify({
+        audioMode: SoundEngine.audioMode,
+        bgmVolume: SoundEngine.getBgmVolume(),
+        sfxVolume: SoundEngine.getSfxVolume(),
+      })
+    );
+  }
+
+  private reloadFromActiveSlot(): void {
+    const saved = this.platform.loadSave(SAVE_KEY);
+    if (saved) {
+      try {
+        this.league = LeagueManager.deserialize(saved);
+      } catch {
+        this.league = new LeagueManager();
+      }
+    } else {
+      this.league = new LeagueManager();
+    }
+    this.knownAchievements = new Set(this.league.getState().hallOfFame?.unlockedAchievements ?? []);
+    this.grantCaptainHeirloomOnNextSeason = false;
+    this.titleScreen.resetEnterAnim();
   }
 
   public showToast(text: string, color: string = THEME.GOLD_LIGHT): void {
@@ -135,7 +181,7 @@ export class GameApp {
   }
 
   private checkNewAchievements(): void {
-    const unlocked = this.league.getState().hallOfFame.unlockedAchievements;
+    const unlocked = this.league.getState().hallOfFame?.unlockedAchievements ?? [];
     for (const id of unlocked) {
       if (!this.knownAchievements.has(id)) {
         this.knownAchievements.add(id);
@@ -152,6 +198,9 @@ export class GameApp {
     const isSeasonTab = this.route === 'portal' || this.route === 'league' || this.route === 'tactics' || this.route === 'cards' || this.route === 'roster';
     if (tab === 'title') {
       this.setRoute('title');
+    } else if (tab === 'cards') {
+      this.tacticsScreen.setMainTab('loadout');
+      this.setRoute('tactics', 'TACTICAL LOADOUT · 临场指令配装');
     } else if (tab === 'meta') {
       this.metaReturnRoute = isSeasonTab ? this.route : 'portal';
       this.setRoute('meta');
@@ -171,8 +220,8 @@ export class GameApp {
         this.setRoute('roster', 'TRANSFER HUB · 引援中心');
       }
     } else {
-      if (tab === 'scout' && this.route === 'portal' && !this.league.getTutorialProgress().portal_scout) {
-        this.league.markTutorialStep('portal_scout');
+      if (tab === 'tactics') {
+        this.tacticsScreen.setMainTab('pitch');
       }
       this.setRoute(tab);
     }
@@ -202,6 +251,10 @@ export class GameApp {
   public onPointerMove(x: number, y: number): void {
     this.hits.hoverX = x;
     this.hits.hoverY = y;
+    if (this.settingsModal.isOpen()) {
+      this.settingsModal.onPointerMove(x, y, () => this.persistSettings());
+      return;
+    }
     if (this.route === 'meta') {
       this.metaScreen.onPointerMove(x, y);
     }
@@ -218,7 +271,7 @@ export class GameApp {
     const prevRoute = this.route;
     this.hits.hoverX = x;
     this.hits.hoverY = y;
-    if (this.route === 'meta') {
+    if (this.route === 'meta' && !this.settingsModal.isOpen() && !this.saveSlotModal.isOpen() && !this.textInputModal.isOpen()) {
       this.metaScreen.onPointerDown(x, y);
     }
     this.hits.handleClick(x, y);
@@ -229,12 +282,18 @@ export class GameApp {
 
   public onPointerUp(_x: number, _y: number): void {
     this.hits.pointerDown = false;
+    if (this.settingsModal.isOpen()) {
+      this.settingsModal.onPointerUp();
+    }
     if (this.route === 'meta') {
       this.metaScreen.onPointerUp();
     }
   }
 
   public onWheel(deltaY: number, x: number, y: number): boolean {
+    if (this.settingsModal.isOpen() || this.saveSlotModal.isOpen() || this.textInputModal.isOpen()) {
+      return true;
+    }
     if (this.route === 'meta') {
       return this.metaScreen.onWheel(deltaY, x, y);
     }
@@ -250,29 +309,42 @@ export class GameApp {
     return false;
   }
 
-  public onKeyDown(code: string): void {
+  public onKeyDown(code: string, key?: string): void {
     if (this.bootIntro.isBlocking()) {
       if (code === 'Space' || code === 'Enter' || code === 'Escape') {
         this.bootIntro.skip();
       }
       return;
     }
+    if (this.textInputModal.isOpen()) {
+      this.textInputModal.onKeyDown(code, key);
+      return;
+    }
+    if (code === 'F11' && this.platform.toggleFullscreen) {
+      this.platform.toggleFullscreen();
+      return;
+    }
     if (code === 'Escape') {
-      if (this.playerModal.isOpen()) {
-        this.playerModal.close();
-        return;
-      }
       if (this.confirmModal.isOpen()) {
         this.confirmModal.close();
+        return;
+      }
+      if (this.settingsModal.isOpen()) {
+        this.settingsModal.close();
+        return;
+      }
+      if (this.saveSlotModal.isOpen()) {
+        this.saveSlotModal.close();
+        return;
+      }
+      if (this.playerModal.isOpen()) {
+        this.playerModal.close();
         return;
       }
       if (this.route === 'portal' && this.portalScreen.handleEscape()) {
         return;
       }
       if (this.route === 'tactics' && this.tacticsScreen.handleEscape()) {
-        return;
-      }
-      if (this.route === 'cards' && this.cardCraftScreen.handleEscape()) {
         return;
       }
       if (this.route === 'meta' && this.metaScreen.handleEscape()) {
@@ -287,7 +359,10 @@ export class GameApp {
   }
 
   public needsHighFps(): boolean {
-    if (!this.bootIntro.isDone() || this.transition.isActive() || this.toast !== null) {
+    if (!this.bootIntro.isDone() || this.transition.isActive() || this.toast !== null || this.textInputModal.isOpen()) {
+      return true;
+    }
+    if (this.route === 'meta' && this.metaScreen.isAnimating()) {
       return true;
     }
     return this.route === 'match' || this.route === 'prologue' || this.route === 'post_match';
@@ -296,6 +371,7 @@ export class GameApp {
   public update(dtSec: number): void {
     this.elapsedTime += dtSec;
     this.bootIntro.update(dtSec);
+    this.textInputModal.update(dtSec);
 
     if (this.routeCooldownMs > 0) {
       this.routeCooldownMs = Math.max(0, this.routeCooldownMs - dtSec * 1000);
@@ -315,8 +391,6 @@ export class GameApp {
       this.prologueScreen.update(dtSec);
     } else if (this.route === 'meta') {
       this.metaScreen.update(dtSec);
-    } else if (this.route === 'cards') {
-      this.cardCraftScreen.update(dtSec);
     } else if (this.route === 'draft') {
       this.draftScreen.update(dtSec);
     } else if (this.route === 'match') {
@@ -381,7 +455,10 @@ export class GameApp {
         },
         onStartNewSeason: (opts: NewSeasonOptions) => {
           this.league.startNewSeason(opts);
-          const gotHeirloom = this.grantCaptainHeirloomOnNextSeason;
+          const stNow = this.league.getState();
+          const gotHeirloom =
+            this.grantCaptainHeirloomOnNextSeason ||
+            (stNow.seasonNumber === 1 && !!stNow.prologueCompleted && !stNow.secretRetiredEnding);
           if (gotHeirloom) {
             this.league.grantReturningCaptainPlayer();
             this.grantCaptainHeirloomOnNextSeason = false;
@@ -422,11 +499,30 @@ export class GameApp {
             '确认重置'
           );
         },
-        onEditName: this.platform.promptText
-          ? (current, apply) => {
-              this.platform.promptText!('请输入俱乐部名称（最多 12 字）', current, apply);
+        onEditName: (current, apply) => {
+          this.textInputModal.open('自定义俱乐部名称', current, apply, {
+            maxLen: 12,
+            platform: this.platform,
+          });
+        },
+        onOpenSettings: () => this.settingsModal.open(),
+        onOpenSaveSlots: this.platform.listSaveSlots ? () => this.saveSlotModal.open() : undefined,
+        onQuitApp: this.platform.quitApp
+          ? () => {
+              this.confirmModal.open(
+                '退出游戏',
+                '当前进度已自动保存，确认退出《再开一局》吗？',
+                () => this.platform.quitApp!(),
+                '确认退出',
+                'danger'
+              );
             }
           : undefined,
+        activeSlotLabel: (() => {
+          const id = this.platform.getActiveSlotId?.() ?? 'slot_1';
+          const n = id.replace('slot_', '');
+          return `存档位 ${n}`;
+        })(),
       });
     } else if (this.route === 'prologue') {
       this.prologueScreen.render(ctx, this.hits, {
@@ -526,15 +622,8 @@ export class GameApp {
         fromSeason ? (tab) => this.navigateFromRail(tab) : undefined
       );
     } else if (this.route === 'cards') {
-      this.cardCraftScreen.render(ctx, this.hits, this.league, {
-        onNavigate: (tab) => this.navigateFromRail(tab),
-        onSave: () => {
-          this.save();
-          this.showToast('教练指挥卡组已更新', THEME.GOLD_LIGHT);
-        },
-        onBurst: (bx, by, col) => this.particles.burst(bx, by, col || THEME.GOLD_LIGHT, 24),
-      });
-      this.tutorialOverlay.render(ctx, this.hits, this.league, 'cards', () => this.save());
+      this.tacticsScreen.setMainTab('loadout');
+      this.route = 'tactics';
     } else if (this.route === 'draft') {
       this.draftScreen.render(ctx, this.hits, this.league, {
         onDone: () => {
@@ -676,6 +765,7 @@ export class GameApp {
           this.setRoute('prologue', 'MIDNIGHT CALL · 更衣室未接来电');
           return;
         }
+        this.league.consumePlayedCardUses(this.matchScreen.consumePlayedCardIds());
         this.league.completeCurrentRoundWithUserResult(result);
         this.postMatchScreen.setLastMatch(result);
         this.matchScreen.dispose();
@@ -754,34 +844,75 @@ export class GameApp {
       onSave: () => this.save(),
       onToast: (msg, col) => this.showToast(msg, col),
     });
+    this.saveSlotModal.render(ctx, this.hits, {
+      platform: this.platform,
+      onSelectSlot: (slotId) => {
+        this.platform.setActiveSlotId?.(slotId);
+        this.reloadFromActiveSlot();
+        const n = slotId.replace('slot_', '');
+        this.showToast(`已切换至存档位 ${n}`, '#38BDF8');
+      },
+      onDeleteSlot: (slotId, label) => {
+        this.confirmModal.open(
+          `删除 ${label}`,
+          `确定要永久删除 ${label} 的全部赛季与天赋数据吗？此操作不可撤销。`,
+          () => {
+            const active = this.platform.getActiveSlotId?.() ?? 'slot_1';
+            this.platform.setActiveSlotId?.(slotId);
+            this.platform.clearSave?.(SAVE_KEY);
+            this.platform.setActiveSlotId?.(active);
+            this.reloadFromActiveSlot();
+            this.showToast(`${label} 已清空`, '#FCA5A5');
+          },
+          '确认删除',
+          'danger'
+        );
+      },
+    });
+    this.settingsModal.render(ctx, this.hits, {
+      platform: this.platform,
+      onPersistSettings: () => this.persistSettings(),
+      onRequestQuit: this.platform.quitApp
+        ? () => {
+            this.confirmModal.open(
+              '退出游戏',
+              '当前进度已自动保存，确认退出《再开一局》吗？',
+              () => this.platform.quitApp!(),
+              '确认退出',
+              'danger'
+            );
+          }
+        : undefined,
+    });
+    this.textInputModal.render(ctx, this.hits);
     this.confirmModal.render(ctx, this.hits);
     ctx.restore();
 
     this.particles.render(ctx);
 
     if (this.toast) {
-      // 顶部居中实色 Toast：快速淡出 + 上滑，避免半透明残影叠在内容上
+      // 底部居中悬浮胶囊 Toast（不遮挡顶栏徽章与任何主面板标题）
       const alpha = Math.min(1, this.toast.timer * 4);
-      const slide = (1 - alpha) * -10;
+      const slide = (1 - alpha) * 10;
       ctx.save();
       ctx.globalAlpha = alpha;
-      ctx.font = `bold 13px ${THEME.FONT_FAMILY}`;
-      const tw = Math.min(760, Math.max(280, ctx.measureText(this.toast.text).width + 64));
+      ctx.font = `bold 12px ${THEME.FONT_FAMILY}`;
+      const tw = Math.min(580, Math.max(240, ctx.measureText(this.toast.text).width + 48));
       const tx = 640 - tw / 2;
-      const ty = 82 + slide;
+      const ty = 668 + slide;
       if (!IS_MOBILE) {
-        ctx.shadowColor = 'rgba(0,0,0,0.55)';
+        ctx.shadowColor = 'rgba(0,0,0,0.65)';
         ctx.shadowBlur = 18;
-        ctx.shadowOffsetY = 6;
+        ctx.shadowOffsetY = 4;
       }
-      drawRoundRect(ctx, tx, ty, tw, 38, 19, 'rgb(12,19,35)', this.toast.color, 1.6);
+      drawRoundRect(ctx, tx, ty, tw, 30, 15, 'rgba(11, 17, 30, 0.94)', 'rgba(255,255,255,0.16)', 1);
       ctx.shadowColor = 'transparent';
       ctx.fillStyle = this.toast.color;
       ctx.beginPath();
-      ctx.arc(tx + 22, ty + 19, 4, 0, Math.PI * 2);
+      ctx.arc(tx + 16, ty + 15, 3.5, 0, Math.PI * 2);
       ctx.fill();
-      drawText(ctx, this.toast.text, 640 + 8, ty + 19, {
-        size: 13,
+      drawText(ctx, this.toast.text, 640 + 8, ty + 15, {
+        size: 12,
         bold: true,
         color: THEME.TX1,
         align: 'center',

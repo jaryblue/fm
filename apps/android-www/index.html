@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>再开一局 · 轻度 Rogue 足球经理</title>
+  <link rel="preload" as="image" href="./assets/art/game_logo.webp" />
+  <link rel="icon" type="image/png" href="./assets/art/app_icon.png" />
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body {
+      width: 100%;
+      height: 100%;
+      background: #04070D;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      overflow: hidden;
+    }
+    canvas {
+      width: min(100vw, calc(100vh * 16 / 9));
+      height: min(100vh, calc(100vw * 9 / 16));
+      display: block;
+      cursor: pointer;
+      user-select: none;
+    }
+    #imeBridge {
+      position: fixed;
+      left: -9999px;
+      top: 0;
+      width: 1px;
+      height: 1px;
+      opacity: 0;
+      pointer-events: none;
+    }
+  </style>
+</head>
+<body>
+  <canvas id="gameCanvas" width="1280" height="720"></canvas>
+  <input id="imeBridge" type="text" autocomplete="off" spellcheck="false" />
+  <script src="./steam.bundle.js?v=6.3_desktop_20261127"></script>
+</body>
+</html>

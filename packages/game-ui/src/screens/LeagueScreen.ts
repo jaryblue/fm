@@ -74,11 +74,11 @@ export class LeagueScreen {
     const userRankIdx = standings.findIndex(r => r.isUser);
     const userRow = standings[userRankIdx];
     drawText(ctx, '本队赛季赛程与战绩', 116, 104, { size: 15, bold: true, color: THEME.GOLD_LIGHT });
-    drawButton(ctx, hits, 454, 90, 86, 28, '? 重置引导', () => {
+    drawButton(ctx, hits, 510, 90, 28, 28, '?', () => {
       league.resetTutorial();
       this.toastMsg = '已重置新手引导，返回对应页面将重新弹出提示';
       actions.onSave?.();
-    }, { variant: 'ghost', fontSize: 11 });
+    }, { variant: 'ghost', fontSize: 12 });
 
     // 顶部本队排名概览条
     drawRoundRect(ctx, 114, 128, 424, 54, 8, THEME.BG_CARD, THEME.BORDER);

@@ -74,13 +74,30 @@ export function drawRoundRect(
   ctx.arcTo(x, y, x + w, y, rad);
   ctx.closePath();
   if (fill) {
-    ctx.fillStyle = fill;
+    if (typeof fill === 'string' && (fill === THEME.BG_CARD || fill === THEME.BG_CARD_HOVER)) {
+      const g = ctx.createLinearGradient(x, y, x, y + h);
+      g.addColorStop(0, fill === THEME.BG_CARD_HOVER ? '#222E44' : '#1B2538');
+      g.addColorStop(1, fill === THEME.BG_CARD_HOVER ? '#182133' : '#121927');
+      ctx.fillStyle = g;
+    } else {
+      ctx.fillStyle = fill;
+    }
     ctx.fill();
   }
   if (stroke) {
     ctx.strokeStyle = stroke;
     ctx.lineWidth = lineWidth;
     ctx.stroke();
+  }
+  if (typeof fill === 'string' && (fill === THEME.BG_CARD || fill === THEME.BG_CARD_HOVER) && w > 24 && h > 24) {
+    ctx.save();
+    ctx.strokeStyle = 'rgba(255,255,255,0.06)';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(x + rad, y + 1);
+    ctx.lineTo(x + w - rad, y + 1);
+    ctx.stroke();
+    ctx.restore();
   }
 }
 
@@ -94,13 +111,18 @@ export function drawChamferPanel(
   w: number,
   h: number,
   cut = 12,
-  fill: string | CanvasGradient = 'rgba(11, 17, 30, 0.88)',
-  stroke: string = THEME.BORDER_GOLD,
-  lineWidth = 1.2,
+  fill: string | CanvasGradient = 'rgba(17, 23, 34, 0.92)',
+  stroke: string = THEME.BORDER,
+  lineWidth = 1,
   accentTop?: string
 ): void {
   const c = Math.min(cut, w / 3, h / 3);
   ctx.save();
+  if (!IS_MOBILE && cut >= 8 && w > 80 && h > 40) {
+    ctx.shadowColor = 'rgba(0, 0, 0, 0.42)';
+    ctx.shadowBlur = 14;
+    ctx.shadowOffsetY = 5;
+  }
   ctx.beginPath();
   ctx.moveTo(x + c, y);
   ctx.lineTo(x + w - c, y);
@@ -112,14 +134,22 @@ export function drawChamferPanel(
   ctx.lineTo(x, y + c);
   ctx.closePath();
 
-  ctx.fillStyle = fill;
+  if (typeof fill === 'string' && (fill.includes('17, 23, 34') || fill.includes('14, 19, 29') || fill.includes('15, 21, 31') || fill === THEME.BG_PANEL || fill === THEME.BG_CARD)) {
+    const pGrad = ctx.createLinearGradient(x, y, x, y + h);
+    pGrad.addColorStop(0, 'rgba(24, 32, 48, 0.96)');
+    pGrad.addColorStop(1, 'rgba(12, 17, 27, 0.96)');
+    ctx.fillStyle = pGrad;
+  } else {
+    ctx.fillStyle = fill;
+  }
   ctx.fill();
-  if (typeof fill === 'string' && (fill.includes('11, 17, 30') || fill.includes('14, 22, 40') || fill.includes('17, 25, 44'))) {
+  ctx.shadowColor = 'transparent';
+  if (typeof fill === 'string' && (fill.includes('11, 17, 30') || fill.includes('14, 22, 40') || fill.includes('17, 25, 44') || fill.includes('17, 23, 34'))) {
     const carbon = AssetLoader.get('panel_carbon_bg');
     if (carbon && typeof ctx.drawImage === 'function') {
       ctx.save();
       ctx.clip();
-      ctx.globalAlpha = 0.14;
+      ctx.globalAlpha = 0.05;
       ctx.drawImage(carbon, x, y, w, h);
       ctx.restore();
     }
@@ -129,14 +159,15 @@ export function drawChamferPanel(
     ctx.lineWidth = lineWidth;
     ctx.stroke();
   }
-  if (accentTop) {
-    ctx.strokeStyle = accentTop;
-    ctx.lineWidth = 2;
-    ctx.beginPath();
-    ctx.moveTo(x + c + 4, y + 1.5);
-    ctx.lineTo(x + w - c - 4, y + 1.5);
-    ctx.stroke();
-  }
+  ctx.save();
+  ctx.globalAlpha = accentTop ? 0.45 : 0.08;
+  ctx.strokeStyle = accentTop || '#FFFFFF';
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(x + c + 2, y + 1);
+  ctx.lineTo(x + w - c - 2, y + 1);
+  ctx.stroke();
+  ctx.restore();
   ctx.restore();
 }
 
@@ -158,7 +189,7 @@ export function drawText(
   const size = opts.size ?? 13;
   const italic = opts.italic ? 'italic ' : '';
   const weight = opts.bold ? 'bold ' : '';
-  const family = opts.mono ? 'monospace' : THEME.FONT_FAMILY;
+  const family = opts.mono ? THEME.NUM_FONT_FAMILY : THEME.FONT_FAMILY;
   ctx.font = `${italic}${weight}${size}px ${family}`;
   ctx.fillStyle = opts.color ?? THEME.TX1;
   ctx.textAlign = opts.align ?? 'left';
@@ -179,24 +210,29 @@ export function wrapTextLines(
 ): string[] {
   const weight = bold ? 'bold ' : '';
   ctx.font = `${weight}${size}px ${THEME.FONT_FAMILY}`;
+  const tokens = text.match(/[A-Za-z0-9._%+-]+|\s+|[^\sA-Za-z0-9._%+-]/g) ?? [];
   const lines: string[] = [];
   let current = '';
 
-  for (const ch of text) {
-    const test = current + ch;
+  for (const tok of tokens) {
+    if (/^\s+$/.test(tok) && current.length === 0) continue;
+    const test = current + tok;
     if (ctx.measureText(test).width > maxWidth && current.length > 0) {
-      lines.push(current);
-      current = ch;
+      lines.push(current.trimEnd());
+      current = /^\s+$/.test(tok) ? '' : tok;
       if (lines.length >= maxLines) break;
     } else {
       current = test;
     }
   }
-  if (current && lines.length < maxLines) {
-    lines.push(current);
-  } else if (lines.length === maxLines && current) {
-    const last = lines[maxLines - 1];
-    lines[maxLines - 1] = last.slice(0, Math.max(1, last.length - 1)) + '…';
+  if (current.trimEnd() && lines.length < maxLines) {
+    lines.push(current.trimEnd());
+  } else if (lines.length === maxLines && current.trim()) {
+    let last = lines[maxLines - 1];
+    while (last.length > 1 && ctx.measureText(last + '…').width > maxWidth) {
+      last = last.slice(0, -1);
+    }
+    lines[maxLines - 1] = last + '…';
   }
   return lines;
 }
@@ -230,6 +266,60 @@ export function drawWrappedText(
   return lines.length;
 }
 
+/**
+ * 全局复用：极简灰阶微图标 + 运动数字组合（跨语言零膨胀）
+ */
+export function drawStatMicro(
+  ctx: CanvasRenderingContext2D,
+  icon: IconName,
+  value: string,
+  x: number,
+  y: number,
+  opts: {
+    iconSize?: number;
+    fontSize?: number;
+    iconColor?: string;
+    valueColor?: string;
+    bold?: boolean;
+    gap?: number;
+  } = {}
+): number {
+  const iconSize = opts.iconSize ?? 11;
+  const fontSize = opts.fontSize ?? 11;
+  const gap = opts.gap ?? 3;
+  const iconColor = opts.iconColor ?? THEME.TX3;
+  const valueColor = opts.valueColor ?? THEME.TX1;
+  drawIcon(ctx, icon, x + iconSize / 2, y, iconSize, iconColor);
+  drawText(ctx, value, x + iconSize + gap, y, {
+    size: fontSize,
+    bold: opts.bold,
+    color: valueColor,
+    mono: true,
+  });
+  ctx.font = `${opts.bold ? 'bold ' : ''}${fontSize}px ${THEME.NUM_FONT_FAMILY}`;
+  return iconSize + gap + ctx.measureText(value).width;
+}
+
+/**
+ * 全局复用：极简细进度条（用于体能/熟练度等状态可视化）
+ */
+export function drawMiniBar(
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  w: number,
+  h: number,
+  ratio: number,
+  fillColor: string,
+  bgColor = 'rgba(255,255,255,0.08)'
+): void {
+  const r = Math.max(0, Math.min(1, ratio));
+  drawRoundRect(ctx, x, y, w, h, h / 2, bgColor);
+  if (r > 0) {
+    drawRoundRect(ctx, x, y, Math.max(h, Math.round(w * r)), h, h / 2, fillColor);
+  }
+}
+
 export type ButtonVariant = 'gold' | 'primary' | 'ghost' | 'danger' | 'green';
 
 export function drawButton(
@@ -252,38 +342,45 @@ export function drawButton(
   const variant = opts.variant ?? 'ghost';
   const hovered = !opts.disabled && hits.isHovered(x, y, w, h);
 
-  let topCol = '#18243E';
-  let botCol = '#0F172A';
-  let border: string = THEME.BORDER;
+  let topCol = '#1E283B';
+  let midCol = '#151D2D';
+  let botCol = '#0F1521';
+  let border: string = 'rgba(255,255,255,0.09)';
   let textColor: string = THEME.TX1;
 
   if (variant === 'gold') {
-    topCol = hovered ? '#FEF08A' : '#FACC15';
-    botCol = hovered ? '#EA580C' : '#C2410C';
-    border = hovered ? '#FEF08A' : THEME.GOLD_LIGHT;
-    textColor = '#090D16';
+    topCol = hovered ? '#FCE07A' : '#F3C14B';
+    midCol = hovered ? '#E59A1D' : '#D48315';
+    botCol = hovered ? '#C46F0C' : '#AD5C08';
+    border = hovered ? '#FDE68A' : 'rgba(250, 204, 21, 0.72)';
+    textColor = '#0A0E17';
   } else if (variant === 'primary') {
-    topCol = hovered ? '#3B82F6' : '#2563EB';
-    botCol = hovered ? '#1D4ED8' : '#1E40AF';
-    border = '#60A5FA';
+    topCol = hovered ? '#3B72C4' : '#2D5DA6';
+    midCol = hovered ? '#29579C' : '#214885';
+    botCol = hovered ? '#1E437A' : '#183666';
+    border = 'rgba(96, 165, 250, 0.45)';
   } else if (variant === 'green') {
-    topCol = hovered ? '#22C55E' : '#16A34A';
-    botCol = hovered ? '#15803D' : '#14532D';
-    border = THEME.GREEN;
+    topCol = hovered ? '#27B860' : '#1E9E51';
+    midCol = hovered ? '#1E964D' : '#177D40';
+    botCol = hovered ? '#16753B' : '#115E30';
+    border = 'rgba(74, 222, 128, 0.45)';
   } else if (variant === 'danger') {
-    topCol = hovered ? '#EF4444' : '#B91C1C';
-    botCol = hovered ? '#991B1B' : '#7F1D1D';
-    border = THEME.RED_LIGHT;
+    topCol = hovered ? '#E04848' : '#BE2E2E';
+    midCol = hovered ? '#BD2F2F' : '#9E2222';
+    botCol = hovered ? '#962020' : '#7D1919';
+    border = 'rgba(248, 113, 113, 0.45)';
   } else {
-    topCol = opts.active ? '#284C82' : hovered ? '#1E2D4D' : '#131E36';
-    botCol = opts.active ? '#162C50' : hovered ? '#142038' : '#0B1221';
-    border = opts.active ? THEME.GOLD_LIGHT : THEME.BORDER;
-    textColor = opts.active ? '#FEF08A' : THEME.TX1;
+    topCol = opts.active ? '#284575' : hovered ? '#243047' : '#1B2333';
+    midCol = opts.active ? '#1E355C' : hovered ? '#1A2438' : '#141B29';
+    botCol = opts.active ? '#162745' : hovered ? '#131B2B' : '#0F1521';
+    border = opts.active ? 'rgba(212,168,67,0.52)' : hovered ? 'rgba(255,255,255,0.16)' : 'rgba(255,255,255,0.08)';
+    textColor = opts.active ? '#FDE68A' : THEME.TX1;
   }
 
   if (opts.disabled) {
-    topCol = '#111827';
-    botCol = '#0B111E';
+    topCol = '#141923';
+    midCol = '#10141D';
+    botCol = '#0C1017';
     border = 'rgba(255,255,255,0.04)';
     textColor = THEME.TX3;
   }
@@ -292,17 +389,18 @@ export function drawButton(
   const dy = pressed ? 1 : hovered ? -1 : 0;
   const grad = ctx.createLinearGradient(x, y + dy, x, y + dy + h);
   grad.addColorStop(0, topCol);
+  grad.addColorStop(0.52, midCol);
   grad.addColorStop(1, botCol);
 
   const accent = !opts.disabled && (variant === 'gold' || variant === 'primary' || variant === 'green' || opts.active)
-    ? 'rgba(255,255,255,0.32)'
+    ? 'rgba(255,255,255,0.34)'
     : undefined;
   ctx.save();
-  if (!IS_MOBILE && hovered && !opts.disabled && (variant === 'gold' || variant === 'primary' || variant === 'green')) {
-    ctx.shadowColor = variant === 'gold' ? 'rgba(250,204,21,0.45)' : variant === 'green' ? 'rgba(34,197,94,0.45)' : 'rgba(59,130,246,0.45)';
+  if (!IS_MOBILE && hovered && !opts.disabled && variant === 'gold') {
+    ctx.shadowColor = 'rgba(243, 193, 75, 0.30)';
     ctx.shadowBlur = 10;
   }
-  drawChamferPanel(ctx, x, y + dy, w, h, 6, grad, border, opts.active ? 1.5 : 1, accent);
+  drawChamferPanel(ctx, x, y + dy, w, h, 6, grad, border, opts.active ? 1.3 : 1, accent);
   ctx.restore();
 
   const fSize = opts.fontSize ?? 13;
@@ -460,14 +558,13 @@ export function drawNavRail(
   activeTab: NavRailTab,
   onNavigate: (tab: NavRailTab) => void
 ): void {
-  drawChamferPanel(ctx, 14, 80, 68, 624, 10, 'rgba(11, 17, 30, 0.92)', THEME.BORDER, 1, THEME.BORDER_GOLD);
+  drawChamferPanel(ctx, 14, 80, 68, 624, 10, 'rgba(14, 19, 29, 0.94)', THEME.BORDER, 1);
   const items: Array<{ key: NavRailTab; label: string; icon: IconName }> = [
     { key: 'portal', label: '门户', icon: 'ball' },
     { key: 'league', label: '联赛', icon: 'chart' },
     { key: 'tactics', label: '战术', icon: 'tactics' },
-    { key: 'cards', label: '合成', icon: 'craft' },
     { key: 'transfer_hub', label: '引援', icon: 'refresh' },
-    { key: 'meta', label: '基建', icon: 'talent' },
+    { key: 'meta', label: '星盘', icon: 'talent' },
     { key: 'hof', label: '荣誉', icon: 'trophy' },
   ];
 
@@ -476,10 +573,10 @@ export function drawNavRail(
     const isAct = activeTab === item.key;
     const hovered = hits.isHovered(20, iy, 56, 60);
     if (isAct) {
-      drawRoundRect(ctx, 20, iy, 56, 60, 8, 'rgba(212,168,67,0.18)', THEME.GOLD, 1.4);
-      drawRoundRect(ctx, 14, iy + 10, 4, 40, 2, THEME.GOLD_LIGHT);
+      drawRoundRect(ctx, 20, iy, 56, 60, 8, 'rgba(212,168,67,0.12)', 'rgba(212,168,67,0.28)', 1);
+      drawRoundRect(ctx, 14, iy + 12, 3, 36, 1.5, THEME.GOLD_LIGHT);
     } else if (hovered) {
-      drawRoundRect(ctx, 20, iy, 56, 60, 8, 'rgba(30,45,77,0.7)', THEME.BORDER);
+      drawRoundRect(ctx, 20, iy, 56, 60, 8, 'rgba(255,255,255,0.05)', THEME.BORDER);
     }
     const col = isAct ? THEME.GOLD_LIGHT : hovered ? THEME.TX1 : THEME.TX2;
     drawIcon(ctx, item.icon, 48, iy + 22, 18, col);
@@ -580,7 +677,7 @@ export function drawBadge(
     }
   }
   const label = fitText(ctx, text, innerMax, fontSize, true);
-  drawRoundRect(ctx, x, y, w, h, 4, bg);
+  drawRoundRect(ctx, x, y, w, h, Math.min(6, h / 2), bg, 'rgba(255,255,255,0.08)', 0.8);
   drawText(ctx, label, x + w / 2, y + h / 2, {
     size: fontSize,
     bold: true,

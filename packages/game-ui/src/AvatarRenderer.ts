@@ -444,12 +444,19 @@ function drawJersey(ctx: CanvasRenderingContext2D, t: PortraitTraits): void {
   ctx.quadraticCurveTo(PW - 68, 300, PW - 62, 316);
   ctx.stroke();
 
-  ctx.strokeStyle = 'rgba(255, 255, 255, 0.38)';
+  ctx.strokeStyle = 'rgba(255, 255, 255, 0.44)';
   ctx.lineWidth = 4;
   ctx.beginPath();
   ctx.moveTo(22, 306);
   ctx.bezierCurveTo(26, 274, 48, 252, CX - 30, 238);
   ctx.stroke();
+
+  // 胸口斜向球衣面料高光带，增强立体裁剪质感
+  const chestSheen = ctx.createLinearGradient(36, 238, CX + 20, PH);
+  chestSheen.addColorStop(0, 'rgba(255, 255, 255, 0.14)');
+  chestSheen.addColorStop(0.45, 'rgba(255, 255, 255, 0)');
+  ctx.fillStyle = chestSheen;
+  ctx.fillRect(20, 236, PW - 40, PH - 236);
 
   const crX = CX + 44;
   const crY = 285;

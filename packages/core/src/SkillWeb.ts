@@ -758,6 +758,11 @@ const MUTATION_TAG_DESC: Record<SkillMutationTag, string> = {
   grant_shield_stack: '叠加 +1 绝杀护盾层（可自动化解一次禁区高危射门）',
   steal_tempo: '打乱对手传控节奏并使其核心逼抢/持球短暂迟滞',
   counter_damage_amp: '叠加 +1 反击威能层（消耗时显著拔高反击射门 xG）',
+  drain_opp_stamina: '瞬间消耗对手场上球员体能，削弱其对抗与回追效率',
+  extra_box_crash: '额外派遣多名高点球员冲入禁区参与二点包抄抢点',
+  force_yellow_card: '造犯规成功后迫使最近防守球员领到一张黄牌警告',
+  heal_team: '立即为我方全队场上球员恢复体能，稳住攻防跑动强度',
+  reset_all_cd: '立即重置其余全部已装备主动技的冷却时间',
 };
 
 function makeProfile(

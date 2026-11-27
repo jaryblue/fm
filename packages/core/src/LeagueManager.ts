@@ -7,6 +7,7 @@ import { FORMATIONS, getDefenseSystem } from '../../engine/src/formations';
 import { MatchEngine } from '../../engine/src/MatchEngine';
 import {
   ActiveLegendaryAspect,
+  CommandCardEffect,
   EquippedActiveSkill,
   FormationName,
   MatchState,
@@ -18,6 +19,36 @@ import {
   TacticalStyle,
   TeamSetup,
 } from '../../engine/src/types';
+import {
+  calcRefundablePoints,
+  canUnlockCore,
+  canUnlockMasterySeal,
+  canUnlockV6Node,
+  compileAstrolabeToMatchSetup,
+  compileDirectiveToEffect,
+  getV6TierCaps,
+  createDefaultAstrolabeState,
+  createEmptySeasonRogueState,
+  ensureV6AstrolabeState,
+  getAlignedFusions,
+  V6_ACTIVE_SKILL_MAP,
+  V6_DIRECTIVES,
+  V6_DIRECTIVE_ENCHANTS,
+  V6_DIRECTIVE_MAP,
+  V6_FUSION_KEYSTONES,
+  V6_FUSION_MAP,
+  V6_MASTERY_SEAL_MAP,
+  V6_PASSIVE_MAP,
+  V6_RELICS,
+  type V6AstrolabeState,
+  type V6CheckpointKey,
+  type V6CompiledDirectiveEntry,
+  type V6DirectiveDef,
+  type V6DirectiveEnchantId,
+  type V6RelicId,
+  type V6SatelliteKey,
+  type V6SeasonRogueState,
+} from './v6';
 import {
   calcTransferValue,
   computeInitialPA,
@@ -83,15 +114,26 @@ import {
 } from './OpponentScouting';
 import {
   CommandCard,
+  computeDeckArchetypeGene,
   CraftFocus,
+  craftFromReactor,
   createCaptainRoarCard,
   createInitialElements,
   createStarterCoachDeck,
   ElementId,
   fuseTwoCards,
+  getStyleBaseCards,
+  inferCardElement,
+  instantiateV5Card,
+  POSITIVE_AFFIXES,
+  previewReactor,
+  ReactorPreview,
+  pickStyleOnboardingCard,
+  rollStyleConsumableCard,
   synthesizeChemistry,
   TACTICAL_ELEMENTS,
   upgradeCommandCard,
+  V5_CHEMICAL_CARDS,
 } from './CommandCards';
 import { createDefaultHallOfFame, tryUnlockAchievement } from './Achievements';
 import {
@@ -105,10 +147,12 @@ import {
 import { computeStandings, generateRoundRobinFixtures, getLeagueTierInfo, getTierRegularRounds, TOTAL_TIERS } from './LeagueScheduler';
 import { getRoundCadence, rollTieredGambleOptions, rollTriStateGamble } from './PostMatchEvents';
 import {
+  CardShopOffer,
   ChemistryLink,
   ChronicleProgress,
   ClubDirectoryEntry,
   CorePackDraftState,
+  DeckPreset,
   DraftPlayer,
   FixtureMatch,
   GambleOutcomeTier,
@@ -223,6 +267,14 @@ export class LeagueManager {
         getOriginForFormation(uc?.formation ?? '4-3-3'),
       ];
     }
+    {
+      const uc = this.state.clubs?.find(c => c.id === this.state.userClubId);
+      this.state.v6Astrolabe = ensureV6AstrolabeState(
+        this.state.v6Astrolabe,
+        uc?.style ?? 'tiki_taka',
+        uc?.formation ?? '4-3-3'
+      );
+    }
     if (!this.state.hallOfFame) this.state.hallOfFame = createDefaultHallOfFame();
     if (!this.state.tutorialDone) this.state.tutorialDone = {};
     if (!this.state.elementInventory) this.state.elementInventory = createInitialElements();
@@ -238,13 +290,35 @@ export class LeagueManager {
       }
     }
 
+    const userStyle = this.state.clubs?.find(c => c.id === this.state.userClubId)?.style ?? 'tiki_taka';
     if (!this.state.coachDeck || this.state.coachDeck.length === 0) {
-      this.state.coachDeck = createStarterCoachDeck();
+      this.state.coachDeck = createStarterCoachDeck(userStyle);
     } else {
       for (const c of this.state.coachDeck) {
         if (!c.level) c.level = 1;
         if (!c.targetLine) c.targetLine = 'ALL';
+        if (!c.isBase && c.id !== 'card_captain_roar') {
+          if (c.tier === undefined) c.tier = c.level >= 3 ? 2 : 1;
+          if (c.maxUses === undefined) c.maxUses = c.tier === 3 ? 1 : c.tier === 2 ? 2 : 3;
+          if (c.remainingUses === undefined) c.remainingUses = c.maxUses;
+          if (!c.gene) c.gene = inferCardElement(c);
+        }
       }
+      this.state.coachDeck = this.state.coachDeck.filter(c => c.isBase || c.id === 'card_captain_roar' || (c.remainingUses ?? 1) > 0);
+    }
+    // V5 旧存档迁移：残留元素按 2:1 折算为 1 阶消耗卡
+    if (this.state.elementInventory) {
+      const totalElems = Object.values(this.state.elementInventory).reduce((s, n) => s + (n || 0), 0);
+      const convertCards = Math.floor(totalElems / 2);
+      if (convertCards > 0) {
+        for (let i = 0; i < convertCards && this.state.coachDeck.length < 60; i++) {
+          this.state.coachDeck.push(rollStyleConsumableCard(userStyle, 1));
+        }
+        this.state.elementInventory = createInitialElements();
+      }
+    }
+    while (this.state.coachDeck.filter(c => !c.isBase && c.id !== 'card_captain_roar').length < 4) {
+      this.state.coachDeck.push(rollStyleConsumableCard(userStyle, 1));
     }
     if (!this.state.clubs || this.state.clubs.length === 0) {
       const fresh = this.createNewSeasonState();
@@ -293,6 +367,16 @@ export class LeagueManager {
       this.state.interMatchPrep = createInterMatchPrep(this.state, this.getUserClub());
     }
     const uc = this.getUserClub();
+    if (
+      this.state.seasonNumber === 1 &&
+      this.state.prologueCompleted &&
+      !this.state.secretRetiredEnding &&
+      this.state.phase !== 'SEASON_END' &&
+      uc &&
+      !uc.squad.some(p => p.isPrologueCaptain || p.id === 'captain_lin_feng')
+    ) {
+      this.grantReturningCaptainPlayer();
+    }
     if (uc && uc.starterIds.length === 11) {
       this.replaceUnavailableStarters(uc);
     }
@@ -514,6 +598,12 @@ export class LeagueManager {
       const rIdx = roster.findIndex(r => r.id === removedId);
       if (rIdx >= 0) roster[rIdx] = linCopy;
       else roster.unshift(linCopy);
+      const sIdx = club.starterIds.indexOf(removedId);
+      if (sIdx >= 0) club.starterIds[sIdx] = linFeng.id;
+      if (this.state.rosterSelectedIds) {
+        const rsIdx = this.state.rosterSelectedIds.indexOf(removedId);
+        if (rsIdx >= 0) this.state.rosterSelectedIds[rsIdx] = linFeng.id;
+      }
     } else {
       club.squad.unshift(linFeng);
       roster.unshift(linCopy);
@@ -816,6 +906,405 @@ export class LeagueManager {
     return res;
   }
 
+  // ==================== V6 锁定式五层八卦星盘总控 API ====================
+
+  public getV6Astrolabe(): V6AstrolabeState {
+    const uc = this.getUserClub();
+    this.state.v6Astrolabe = ensureV6AstrolabeState(
+      this.state.v6Astrolabe,
+      uc?.style ?? 'tiki_taka',
+      uc?.formation ?? '4-3-3'
+    );
+    return this.state.v6Astrolabe;
+  }
+
+  public rotateV6Astrolabe(ring: 'outer' | 'inner', delta: number): { ok: boolean; reason?: string } {
+    const ast = this.getV6Astrolabe();
+    if (ast.locked) return { ok: false, reason: '星盘已锁定，洗点重置后方可重新旋转内外双环' };
+    if (ring === 'outer') ast.outerRingStep = ((ast.outerRingStep + delta) % 6 + 6) % 6;
+    else ast.innerRingStep = ((ast.innerRingStep + delta) % 3 + 3) % 3;
+    return { ok: true };
+  }
+
+  public lockV6Astrolabe(): { ok: boolean } {
+    const ast = this.getV6Astrolabe();
+    ast.locked = true;
+    return { ok: true };
+  }
+
+  public respecV6Astrolabe(): { ok: boolean; refunded: number; costFunds: number; reason?: string } {
+    const ast = this.getV6Astrolabe();
+    const uc = this.getUserClub();
+    const style = uc?.style ?? 'tiki_taka';
+    const form = uc?.formation ?? '4-3-3';
+    const refunded = calcRefundablePoints(ast, style, form);
+    let costFunds = 0;
+    if (!ast.freeRespecAvailable) {
+      costFunds = 80;
+      if (!this.spendClubFunds(costFunds)) {
+        return { ok: false, refunded: 0, costFunds, reason: `本赛季免费洗点已用完，再次洗点需俱乐部资金 ¥${costFunds}万` };
+      }
+    }
+    this.state.metaPointsTotal += refunded;
+    const fresh = createDefaultAstrolabeState(style, form);
+    fresh.fogCleared = ast.fogCleared;
+    fresh.freeRespecAvailable = false;
+    this.state.v6Astrolabe = fresh;
+    return { ok: true, refunded, costFunds };
+  }
+
+  public clearV6AstrolabeFog(): void {
+    this.getV6Astrolabe().fogCleared = true;
+  }
+
+  public unlockV6Passive(passiveId: string): { ok: boolean; reason?: string } {
+    const ast = this.getV6Astrolabe();
+    const p = V6_PASSIVE_MAP[passiveId];
+    if (!p) return { ok: false, reason: '未找到该被动节点' };
+    if (ast.unlockedPassives.includes(passiveId)) return { ok: false, reason: '已点亮' };
+    const caps = getV6TierCaps(this.getBestTierReached());
+    if (ast.unlockedPassives.length >= caps.maxPassives) {
+      return { ok: false, reason: `当前级别被动槽位已满 (${caps.maxPassives})，升入更高级别联赛后解锁更多` };
+    }
+    const prereq = canUnlockV6Node(ast, 'passive', passiveId);
+    if (!prereq.ok) return { ok: false, reason: prereq.reason };
+    if (this.state.metaPointsTotal < p.unlockCost) return { ok: false, reason: `Meta 点数不足 (需 ${p.unlockCost} pt)` };
+    this.state.metaPointsTotal -= p.unlockCost;
+    ast.locked = true;
+    ast.unlockedPassives.push(passiveId);
+    return { ok: true };
+  }
+
+  public unlockV6Directive(directiveId: string): { ok: boolean; reason?: string } {
+    const ast = this.getV6Astrolabe();
+    const d = V6_DIRECTIVE_MAP[directiveId];
+    if (!d) return { ok: false, reason: '未找到该三区手牌' };
+    if (ast.unlockedDirectives.includes(directiveId)) return { ok: false, reason: '已解锁' };
+    const caps = getV6TierCaps(this.getBestTierReached());
+    if (ast.unlockedDirectives.length >= caps.maxDirectives) {
+      return { ok: false, reason: `当前级别手牌库上限为 ${caps.maxDirectives} 张，升入更高级别联赛后扩容` };
+    }
+    const prereq = canUnlockV6Node(ast, 'directive', directiveId);
+    if (!prereq.ok) return { ok: false, reason: prereq.reason };
+    if (this.state.metaPointsTotal < d.unlockCost) return { ok: false, reason: `Meta 点数不足 (需 ${d.unlockCost} pt)` };
+    this.state.metaPointsTotal -= d.unlockCost;
+    ast.locked = true;
+    ast.unlockedDirectives.push(directiveId);
+    return { ok: true };
+  }
+
+  public unlockV6DirectiveSatellite(directiveId: string, sat: V6SatelliteKey): { ok: boolean; reason?: string } {
+    const ast = this.getV6Astrolabe();
+    const d = V6_DIRECTIVE_MAP[directiveId];
+    if (!d) return { ok: false, reason: '未找到该手牌' };
+    if (!ast.unlockedDirectives.includes(directiveId)) return { ok: false, reason: '请先解锁该手牌本体' };
+    const caps = getV6TierCaps(this.getBestTierReached());
+    if (caps.maxSatelliteLevel === 0) {
+      return { ok: false, reason: '需曾晋级第 5 级或更高联赛后开放手牌卫星改造' };
+    }
+    if (sat === 'C' && caps.maxSatelliteLevel < 3) {
+      return { ok: false, reason: '需曾晋级第 3 级或更高联赛后开放 C 卫星宗师改造' };
+    }
+    const cur = ast.directiveSatellites[directiveId] ?? [];
+    if (cur.includes(sat)) return { ok: false, reason: '该卫星改造已点亮' };
+    const cost = d.satellites[sat].cost;
+    if (this.state.metaPointsTotal < cost) return { ok: false, reason: `Meta 点数不足 (需 ${cost} pt)` };
+    this.state.metaPointsTotal -= cost;
+    ast.locked = true;
+    ast.directiveSatellites[directiveId] = [...cur, sat];
+    return { ok: true };
+  }
+
+  public unlockV6Skill(skillId: string): { ok: boolean; reason?: string } {
+    const ast = this.getV6Astrolabe();
+    const sk = V6_ACTIVE_SKILL_MAP[skillId];
+    if (!sk) return { ok: false, reason: '未找到该主动技' };
+    if (ast.unlockedSkills.includes(skillId)) return { ok: false, reason: '已解锁' };
+    if (sk.source === 'mastery' || sk.source === 'core') {
+      return { ok: false, reason: '宗师终极技需通过点亮对应宗师印或圆心解锁' };
+    }
+    const caps = getV6TierCaps(this.getBestTierReached());
+    if (ast.unlockedSkills.length >= caps.maxSkills) {
+      return { ok: false, reason: `当前级别主动技上限为 ${caps.maxSkills} 个，升入更高级别联赛后解锁更多` };
+    }
+    const prereq = canUnlockV6Node(ast, 'skill', skillId);
+    if (!prereq.ok) return { ok: false, reason: prereq.reason };
+    if (this.state.metaPointsTotal < sk.unlockCost) return { ok: false, reason: `Meta 点数不足 (需 ${sk.unlockCost} pt)` };
+    this.state.metaPointsTotal -= sk.unlockCost;
+    ast.locked = true;
+    ast.unlockedSkills.push(skillId);
+    ast.skillBranchChoice[skillId] = 'A';
+    if (ast.equippedSkills.length < 4) ast.equippedSkills.push(skillId);
+    return { ok: true };
+  }
+
+  public setV6SkillBranch(skillId: string, choice: SkillBranchChoice): { ok: boolean; reason?: string } {
+    const ast = this.getV6Astrolabe();
+    if (!ast.unlockedSkills.includes(skillId)) return { ok: false, reason: '请先解锁该主动技' };
+    ast.skillBranchChoice[skillId] = choice;
+    return { ok: true };
+  }
+
+  public unlockV6Fusion(fusionId: string): { ok: boolean; reason?: string } {
+    const ast = this.getV6Astrolabe();
+    const f = V6_FUSION_MAP[fusionId];
+    if (!f) return { ok: false, reason: '未找到该融合奇点' };
+    if (ast.unlockedFusions.includes(fusionId)) return { ok: false, reason: '已点亮' };
+    const caps = getV6TierCaps(this.getBestTierReached());
+    if (!caps.allowFusion) {
+      return { ok: false, reason: '需曾晋级第 5 级或更高联赛后解锁融合奇点' };
+    }
+    const prereq = canUnlockV6Node(ast, 'fusion', fusionId);
+    if (!prereq.ok) return { ok: false, reason: prereq.reason };
+    if (this.state.metaPointsTotal < f.unlockCost) return { ok: false, reason: `Meta 点数不足 (需 ${f.unlockCost} pt)` };
+    this.state.metaPointsTotal -= f.unlockCost;
+    ast.locked = true;
+    ast.unlockedFusions.push(fusionId);
+    ast.fusionBranchChoice[fusionId] = 'A';
+    if (!ast.unlockedDirectives.includes(f.royalDirectiveId)) {
+      ast.unlockedDirectives.push(f.royalDirectiveId);
+    }
+    return { ok: true };
+  }
+
+  public setV6FusionBranch(fusionId: string, choice: 'A' | 'B'): { ok: boolean; reason?: string } {
+    const ast = this.getV6Astrolabe();
+    if (!ast.unlockedFusions.includes(fusionId)) return { ok: false, reason: '请先点亮该融合奇点' };
+    ast.fusionBranchChoice[fusionId] = choice;
+    return { ok: true };
+  }
+
+  public unlockV6MasterySeal(sealId: string): { ok: boolean; reason?: string } {
+    const ast = this.getV6Astrolabe();
+    const seal = V6_MASTERY_SEAL_MAP[sealId];
+    if (!seal) return { ok: false, reason: '未找到该宗师印' };
+    if (ast.unlockedMasterySeals.includes(sealId)) return { ok: false, reason: '已点亮' };
+    const caps = getV6TierCaps(this.getBestTierReached());
+    if (!caps.allowMastery) {
+      return { ok: false, reason: '需曾晋级第 3 级或更高联赛后解锁宗师印' };
+    }
+    const check = canUnlockMasterySeal(ast, seal.style);
+    if (!check.ok) return check;
+    if (this.state.metaPointsTotal < seal.unlockCost) return { ok: false, reason: `Meta 点数不足 (需 ${seal.unlockCost} pt)` };
+    this.state.metaPointsTotal -= seal.unlockCost;
+    ast.locked = true;
+    ast.unlockedMasterySeals.push(sealId);
+    if (!ast.unlockedSkills.includes(seal.activeSkillId)) {
+      ast.unlockedSkills.push(seal.activeSkillId);
+      ast.skillBranchChoice[seal.activeSkillId] = 'A';
+    }
+    return { ok: true };
+  }
+
+  public unlockV6Core(): { ok: boolean; reason?: string } {
+    const ast = this.getV6Astrolabe();
+    if (ast.coreUnlocked) return { ok: false, reason: '圆心超级宗师已觉醒' };
+    const check = canUnlockCore(ast);
+    if (!check.ok) return { ok: false, reason: check.reason };
+    if (this.state.metaPointsTotal < 5) return { ok: false, reason: 'Meta 点数不足 (需 5 pt)' };
+    this.state.metaPointsTotal -= 5;
+    ast.locked = true;
+    ast.coreUnlocked = true;
+    if (!ast.unlockedSkills.includes('sk_ult_core')) {
+      ast.unlockedSkills.push('sk_ult_core');
+      ast.skillBranchChoice['sk_ult_core'] = 'A';
+    }
+    return { ok: true };
+  }
+
+  public getV6SeasonRogue(): V6SeasonRogueState {
+    if (!this.state.v6SeasonRogue) {
+      this.state.v6SeasonRogue = createEmptySeasonRogueState();
+    }
+    const r = this.state.v6SeasonRogue;
+    r.directiveEnchants = r.directiveEnchants ?? {};
+    r.seasonRelics = Array.isArray(r.seasonRelics) ? r.seasonRelics : [];
+    r.overclockedDirectives = Array.isArray(r.overclockedDirectives) ? r.overclockedDirectives : [];
+    r.overloadedSkills = Array.isArray(r.overloadedSkills) ? r.overloadedSkills : [];
+    return r;
+  }
+
+  public toggleV6CheckpointCard(checkpoint: V6CheckpointKey, directiveId: string): { ok: boolean; equipped?: boolean; reason?: string } {
+    const ast = this.getV6Astrolabe();
+    if (!ast.unlockedDirectives.includes(directiveId)) return { ok: false, reason: '请先在星盘中解锁该手牌' };
+    const targetKey: V6CheckpointKey = ast.useUniversalPool ? 's1' : checkpoint;
+    const list = ast.checkpointPools[targetKey];
+    const idx = list.indexOf(directiveId);
+    if (idx >= 0) {
+      list.splice(idx, 1);
+      if (ast.useUniversalPool) {
+        ast.checkpointPools.s2 = [...list];
+        ast.checkpointPools.s3 = [...list];
+        ast.checkpointPools.s4 = [...list];
+      }
+      return { ok: true, equipped: false };
+    }
+    if (list.length >= 4) return { ok: false, reason: '该赛段临场指令槽已满 (4/4)，请先点击槽位卸下 1 张' };
+    list.push(directiveId);
+    if (ast.useUniversalPool) {
+      ast.checkpointPools.s2 = [...list];
+      ast.checkpointPools.s3 = [...list];
+      ast.checkpointPools.s4 = [...list];
+    }
+    return { ok: true, equipped: true };
+  }
+
+  public setV6UniversalPool(enabled: boolean): void {
+    const ast = this.getV6Astrolabe();
+    ast.useUniversalPool = enabled;
+    if (enabled) {
+      ast.checkpointPools.s2 = [...ast.checkpointPools.s1];
+      ast.checkpointPools.s3 = [...ast.checkpointPools.s1];
+      ast.checkpointPools.s4 = [...ast.checkpointPools.s1];
+    }
+  }
+
+  /** 按当前俱乐部阵型与打法一键智能推荐装配四赛段手牌与主动技 */
+  public autoFillV6LoadoutForClub(): { filledDirectives: number; filledSkills: number } {
+    const ast = this.getV6Astrolabe();
+    const club = this.getUserClub();
+    const rogue = this.getV6SeasonRogue();
+
+    // 若切换了新打法且尚无该打法基础稳健牌，免费同步赠送该打法原点与 2 张稳健起手牌，避免切流派后无契合牌可用
+    const styleSteady = V6_DIRECTIVES.filter(d => d.source === 'style' && d.style === club.style && d.route === 'steady');
+    for (const sd of styleSteady.slice(0, 2)) {
+      if (!ast.unlockedDirectives.includes(sd.id)) ast.unlockedDirectives.push(sd.id);
+    }
+
+    const scoreDir = (id: string, seg: V6CheckpointKey): number => {
+      const def = V6_DIRECTIVE_MAP[id];
+      if (!def) return -999;
+      let sc = 0;
+      if (def.formation === club.formation) sc += 50;
+      if (def.style === club.style) sc += 40;
+      if (def.source === 'fusion') sc += 35;
+      sc += (ast.directiveSatellites[id]?.length ?? 0) * 8;
+      if (rogue.overclockedDirectives.includes(id)) sc += 20;
+      if (rogue.directiveEnchants[id]) sc += 18;
+      if (seg === 's1' && def.route === 'steady') sc += 10;
+      if (seg === 's4' && (def.tpCost >= 2 || def.tendency === 'ATK')) sc += 12;
+      return sc;
+    };
+
+    const pickFour = (seg: V6CheckpointKey): string[] => {
+      const sorted = [...ast.unlockedDirectives].sort((a, b) => scoreDir(b, seg) - scoreDir(a, seg));
+      const chosen: string[] = [];
+      // 优先保证攻守兼备 + 包含 1TP 灵活拼图牌
+      const steadyOne = sorted.find(id => V6_DIRECTIVE_MAP[id]?.tpCost === 1);
+      if (steadyOne) chosen.push(steadyOne);
+      const atkOne = sorted.find(id => !chosen.includes(id) && V6_DIRECTIVE_MAP[id]?.tendency === 'ATK');
+      if (atkOne) chosen.push(atkOne);
+      const defOne = sorted.find(id => !chosen.includes(id) && V6_DIRECTIVE_MAP[id]?.tendency === 'DEF');
+      if (defOne) chosen.push(defOne);
+      for (const id of sorted) {
+        if (chosen.length >= 4) break;
+        if (!chosen.includes(id)) chosen.push(id);
+      }
+      return chosen.slice(0, 4);
+    };
+
+    if (ast.useUniversalPool) {
+      const uni = pickFour('s1');
+      ast.checkpointPools = { s1: [...uni], s2: [...uni], s3: [...uni], s4: [...uni] };
+    } else {
+      ast.checkpointPools = {
+        s1: pickFour('s1'),
+        s2: pickFour('s2'),
+        s3: pickFour('s3'),
+        s4: pickFour('s4'),
+      };
+    }
+
+    const sortedSkills = [...ast.unlockedSkills].sort((a, b) => {
+      const sa = V6_ACTIVE_SKILL_MAP[a];
+      const sb = V6_ACTIVE_SKILL_MAP[b];
+      const scoreS = (sk?: typeof sa, id?: string) =>
+        (sk?.source === 'core' ? 60 : sk?.source === 'mastery' ? 50 : sk?.formation === club.formation ? 45 : sk?.style === club.style ? 35 : 10) +
+        (id && rogue.overloadedSkills.includes(id) ? 20 : 0);
+      return scoreS(sb, b) - scoreS(sa, a);
+    });
+    ast.equippedSkills = sortedSkills.slice(0, 4);
+
+    return {
+      filledDirectives: ast.checkpointPools.s1.length,
+      filledSkills: ast.equippedSkills.length,
+    };
+  }
+
+  public toggleV6EquippedSkill(skillId: string): { ok: boolean; equipped?: boolean; reason?: string } {
+    const ast = this.getV6Astrolabe();
+    if (!ast.unlockedSkills.includes(skillId)) return { ok: false, reason: '请先在星盘中解锁该主动技' };
+    const idx = ast.equippedSkills.indexOf(skillId);
+    if (idx >= 0) {
+      ast.equippedSkills.splice(idx, 1);
+      return { ok: true, equipped: false };
+    }
+    if (ast.equippedSkills.length >= 4) return { ok: false, reason: '主动技出战槽已满 (4/4)' };
+    ast.equippedSkills.push(skillId);
+    return { ok: true, equipped: true };
+  }
+
+  public getV6CheckpointDirectives(checkpoint: V6CheckpointKey): V6CompiledDirectiveEntry[] {
+    const ast = this.getV6Astrolabe();
+    const rogue = this.getV6SeasonRogue();
+    const club = this.getUserClub();
+    const ids = ast.useUniversalPool ? ast.checkpointPools.s1 : ast.checkpointPools[checkpoint];
+    const noCrossPenalty = ast.unlockedFusions.some(fid => {
+      const f = V6_FUSION_MAP[fid];
+      const br = ast.fusionBranchChoice[fid] === 'B' ? f?.branchB : f?.branchA;
+      return !!br?.immunityFlags?.noCrossStylePenalty;
+    });
+    const out: V6CompiledDirectiveEntry[] = [];
+    for (const id of (ids ?? []).slice(0, 4)) {
+      const def = V6_DIRECTIVE_MAP[id];
+      const effect = compileDirectiveToEffect(id, ast, club.style, club.formation, rogue);
+      if (def && effect) {
+        const isOverclocked = rogue.overclockedDirectives.includes(id);
+        const enchant = rogue.directiveEnchants[id];
+        const isGreenSynergy = !!(
+          noCrossPenalty ||
+          (def.style && def.style === club.style) ||
+          (def.formation && def.formation === club.formation)
+        );
+        let effectiveTpCost: number = def.tpCost;
+        if (enchant === 'minus_cost') effectiveTpCost = Math.max(0, effectiveTpCost - 1);
+        if (enchant === 'fergie_time' && checkpoint === 's4') effectiveTpCost = Math.max(0, effectiveTpCost - 1);
+        out.push({
+          def,
+          effect,
+          satellites: isOverclocked ? ['A', 'B', 'C'] : (ast.directiveSatellites[id] ?? []),
+          effectiveTpCost,
+          enchant,
+          isOverclocked,
+          isGreenSynergy,
+        });
+      }
+    }
+    return out;
+  }
+
+  public getV6MatchRuntimeConfig(): {
+    checkpointTpBase: number;
+    maxCarryTp: number;
+    maxPlaysPerSegment: number;
+    hasEmergencyCall: boolean;
+    totalFootballMaster: boolean;
+    relics: V6RelicId[];
+  } {
+    const ast = this.getV6Astrolabe();
+    const rogue = this.getV6SeasonRogue();
+    const club = this.getUserClub();
+    const compiled = compileAstrolabeToMatchSetup(ast, club.formation, club.style, rogue);
+    return {
+      checkpointTpBase: compiled.checkpointTpBase,
+      maxCarryTp: compiled.maxCarryTp,
+      maxPlaysPerSegment: compiled.maxPlaysPerSegment,
+      hasEmergencyCall: compiled.hasEmergencyCall,
+      totalFootballMaster: compiled.v6TotalFootballMaster,
+      relics: compiled.relics,
+    };
+  }
+
   public getChemistryLinks(): Record<string, ChemistryLink> {
     if (!this.state.chemistryLinks) {
       this.state.chemistryLinks = {};
@@ -875,6 +1364,8 @@ export class LeagueManager {
     const prevElements = this.state?.elementInventory ? { ...this.state.elementInventory } : undefined;
     const prevDeck = this.state?.coachDeck ? JSON.parse(JSON.stringify(this.state.coachDeck)) : undefined;
     const prevLoadout = this.state?.coachLoadoutIds ? [...this.state.coachLoadoutIds] : undefined;
+    const prevDeckPresets = this.state?.deckPresets ? JSON.parse(JSON.stringify(this.state.deckPresets)) : undefined;
+    const prevActivePresetIdx = this.state?.activeDeckPresetIdx;
     const prevRecipes = this.state?.discoveredRecipes ? [...this.state.discoveredRecipes] : undefined;
     const prevRoster = this.state?.clubRoster ? JSON.parse(JSON.stringify(this.state.clubRoster)) : undefined;
     const prevRosterSel = this.state?.rosterSelectedIds ? [...this.state.rosterSelectedIds] : undefined;
@@ -883,6 +1374,7 @@ export class LeagueManager {
     const prevSkillLoadout = this.state?.skillLoadoutIds ? [...this.state.skillLoadoutIds] : undefined;
     const prevSkillRanks = this.state?.skillRanks ? { ...this.state.skillRanks } : undefined;
     const prevSkillMutations = this.state?.skillMutations ? { ...this.state.skillMutations } : undefined;
+    const prevV6Astrolabe = this.state?.v6Astrolabe ? JSON.parse(JSON.stringify(this.state.v6Astrolabe)) as V6AstrolabeState : undefined;
     const prevTier = carryOverSquad ? (this.state?.currentTier ?? 7) : 7;
     const prevPyramid = carryOverSquad && this.state?.leaguePyramid ? JSON.parse(JSON.stringify(this.state.leaguePyramid)) : undefined;
     const prevChronicles = carryOverSquad && this.state?.chronicles ? JSON.parse(JSON.stringify(this.state.chronicles)) : undefined;
@@ -894,7 +1386,7 @@ export class LeagueManager {
 
     this.state = this.createNewSeasonState(
       opts,
-      prevSeason + 1,
+      carryOverSquad ? prevSeason + 1 : 1,
       prevMeta,
       prevLevels,
       prevHof,
@@ -908,6 +1400,8 @@ export class LeagueManager {
     if (prevElements) this.state.elementInventory = prevElements;
     if (prevDeck) this.state.coachDeck = prevDeck;
     if (prevLoadout) this.state.coachLoadoutIds = prevLoadout;
+    if (prevDeckPresets) this.state.deckPresets = prevDeckPresets;
+    if (prevActivePresetIdx !== undefined) this.state.activeDeckPresetIdx = prevActivePresetIdx;
     if (prevRecipes) this.state.discoveredRecipes = prevRecipes;
     if (carryOverSquad && prevRoster) this.state.clubRoster = prevRoster;
     if (carryOverSquad && prevRosterSel) this.state.rosterSelectedIds = prevRosterSel;
@@ -943,6 +1437,13 @@ export class LeagueManager {
       if (prevSkillRanks) this.state.skillRanks = prevSkillRanks;
       if (prevSkillMutations) this.state.skillMutations = prevSkillMutations;
     }
+    if (prevV6Astrolabe && (carryOverSquad || prevMeta > 0 || prevV6Astrolabe.locked)) {
+      prevV6Astrolabe.freeRespecAvailable = true;
+      this.state.v6Astrolabe = ensureV6AstrolabeState(prevV6Astrolabe, opts.style ?? 'tiki_taka', opts.formation ?? '4-3-3');
+    } else {
+      this.state.v6Astrolabe = createDefaultAstrolabeState(opts.style ?? 'tiki_taka', opts.formation ?? '4-3-3');
+    }
+    this.state.v6SeasonRogue = createEmptySeasonRogueState();
     return this.state;
   }
 
@@ -990,12 +1491,26 @@ export class LeagueManager {
     };
     const pyramid = existingPyramid ?? generateTierPyramid(userClubTemplateId, userTpl);
     const tierEntries = pyramid[currentTier] ?? pyramid[7];
+    const curTierBaseCA = getLeagueTierInfo(currentTier).baseCA;
+    const totalEntries = Math.max(1, tierEntries.length - 1);
 
     const clubs: LeagueClub[] = tierEntries.map((entry, idx) => {
       const isUser = entry.id === userClubTemplateId;
       const aiForm = AI_FORMATIONS[(idx + seasonNumber) % AI_FORMATIONS.length];
       const aiStyle = AI_STYLES[(idx + seasonNumber) % AI_STYLES.length];
-      const aiSquad = isUser ? carriedSquad : generateAIDraftSquad(Math.max(32, Math.min(86, entry.baseStrength)));
+      // 全级别四层集团分层：争冠集团 / 中游集团 / 下游集团 / 保级集团
+      const ratio = idx / totalEntries;
+      const [minCA, maxCA] =
+        ratio <= 0.22
+          ? [curTierBaseCA + (currentTier === 1 ? 3 : 2), curTierBaseCA + (currentTier === 1 ? 6 : currentTier === 2 ? 5 : 4)]
+          : ratio <= 0.67
+          ? [curTierBaseCA - 1, curTierBaseCA + 2]
+          : ratio <= 0.85
+          ? [curTierBaseCA - 3, curTierBaseCA - 1]
+          : [curTierBaseCA - 5, curTierBaseCA - 3];
+      const clampedAiBase = Math.max(minCA, Math.min(maxCA, entry.baseStrength));
+      if (!isUser) entry.baseStrength = clampedAiBase;
+      const aiSquad = isUser ? carriedSquad : generateAIDraftSquad(Math.max(32, Math.min(93, clampedAiBase)));
       const avgAge = aiSquad.length > 0 ? aiSquad.reduce((s, p) => s + p.age, 0) / aiSquad.length : 25;
       const ecoTag = isUser ? undefined :
         avgAge <= 23.2 ? '青春风暴' :
@@ -1052,10 +1567,11 @@ export class LeagueManager {
       pendingStoryEvent: null,
       storyLog: [],
       elementInventory: createInitialElements(),
-      coachDeck: createStarterCoachDeck(),
+      coachDeck: createStarterCoachDeck(style),
       persistentSquad: hasCarryOver ? carriedSquad : undefined,
       clubRoster: JSON.parse(JSON.stringify(carriedSquad)),
       skillWebUnlocked: [getOriginForStyle(style), getOriginForFormation(formation)],
+      v6Astrolabe: createDefaultAstrolabeState(style, formation),
       seasonRewardDrafts: undefined,
       seasonTrainedIds: [],
       discoveredRecipes: [],
@@ -1079,39 +1595,383 @@ export class LeagueManager {
 
   public getCoachDeck(): CommandCard[] {
     if (!this.state.coachDeck || this.state.coachDeck.length === 0) {
-      this.state.coachDeck = createStarterCoachDeck();
+      const style = this.state.clubs?.find(c => c.id === this.state.userClubId)?.style ?? 'tiki_taka';
+      this.state.coachDeck = createStarterCoachDeck(style);
     }
     return this.state.coachDeck;
   }
 
-  public getLoadoutIds(): string[] {
+  // ==================== V5 卡组预设（3~4套 × 8~12张）、耐久损耗、残血回收与商店 ====================
+
+  public getDeckPresets(): DeckPreset[] {
     const deck = this.getCoachDeck();
-    const deckIds = new Set(deck.map(c => c.id));
-    if (!this.state.coachLoadoutIds) {
-      this.state.coachLoadoutIds = deck.slice(0, 4).map(c => c.id);
-    } else {
-      this.state.coachLoadoutIds = this.state.coachLoadoutIds.filter(id => deckIds.has(id)).slice(0, 4);
+    const validIds = new Set(deck.filter(c => !c.isBase && c.id !== 'card_captain_roar').map(c => c.id));
+    if (!this.state.deckPresets || this.state.deckPresets.length === 0) {
+      const initIds = Array.from(validIds).slice(0, 6);
+      this.state.deckPresets = [
+        { id: 'preset_1', name: '主力方案', cardIds: [...initIds] },
+        { id: 'preset_2', name: '备选方案 B', cardIds: [...initIds] },
+        { id: 'preset_3', name: '备选方案 C', cardIds: [...initIds] },
+      ];
+      this.state.activeDeckPresetIdx = 0;
     }
+    for (const pr of this.state.deckPresets) {
+      pr.cardIds = pr.cardIds.filter(id => validIds.has(id)).slice(0, 8);
+    }
+    const mainPreset = this.state.deckPresets[0];
+    if (mainPreset && mainPreset.cardIds.length < 6) {
+      const userStyle = this.getUserClub().style;
+      const sortedIds = [...deck]
+        .filter(c => validIds.has(c.id))
+        .sort((a, b) => ((b.styleTag === userStyle ? 1 : 0) - (a.styleTag === userStyle ? 1 : 0)) || ((b.tier ?? 1) - (a.tier ?? 1)))
+        .map(c => c.id);
+      for (const id of sortedIds) {
+        if (mainPreset.cardIds.length >= 6) break;
+        if (!mainPreset.cardIds.includes(id)) mainPreset.cardIds.push(id);
+      }
+    }
+    return this.state.deckPresets;
+  }
+
+  public getActiveDeckPresetIdx(): number {
+    const presets = this.getDeckPresets();
+    const idx = this.state.activeDeckPresetIdx ?? 0;
+    if (idx < 0 || idx >= presets.length) {
+      this.state.activeDeckPresetIdx = 0;
+      return 0;
+    }
+    return idx;
+  }
+
+  public setActiveDeckPreset(idx: number): { ok: boolean; reason?: string } {
+    const presets = this.getDeckPresets();
+    if (idx < 0 || idx >= presets.length) return { ok: false, reason: '无效的卡组方案索引' };
+    this.state.activeDeckPresetIdx = idx;
+    return { ok: true };
+  }
+
+  public renameDeckPreset(idx: number, name: string): { ok: boolean } {
+    const presets = this.getDeckPresets();
+    if (idx < 0 || idx >= presets.length || !name.trim()) return { ok: false };
+    presets[idx].name = name.trim().slice(0, 12);
+    return { ok: true };
+  }
+
+  public addDeckPreset(name?: string): { ok: boolean; preset?: DeckPreset; reason?: string } {
+    const presets = this.getDeckPresets();
+    if (presets.length >= 4) return { ok: false, reason: '最多支持 4 套卡组方案' };
+    const next: DeckPreset = {
+      id: `preset_${presets.length + 1}`,
+      name: name?.trim().slice(0, 12) || `方案 ${presets.length + 1}`,
+      cardIds: [...(presets[0]?.cardIds ?? [])],
+    };
+    presets.push(next);
+    return { ok: true, preset: next };
+  }
+
+  public toggleCardInPreset(presetIdx: number, cardId: string): { ok: boolean; equipped?: boolean; reason?: string } {
+    const presets = this.getDeckPresets();
+    const pr = presets[presetIdx];
+    if (!pr) return { ok: false, reason: '未找到该卡组方案' };
+    const card = this.getCoachDeck().find(c => c.id === cardId);
+    if (!card) return { ok: false, reason: '背包中未找到该卡牌' };
+    if (card.isBase || card.id === 'card_captain_roar') {
+      return { ok: false, reason: '0 阶基础卡随风格自动编入，无需手动装配' };
+    }
+    const idx = pr.cardIds.indexOf(cardId);
+    if (idx >= 0) {
+      pr.cardIds.splice(idx, 1);
+      return { ok: true, equipped: false };
+    }
+    if (pr.cardIds.length >= 8) return { ok: false, reason: '自由槽已满 (8/8)，请先移出 1 张消耗卡' };
+    pr.cardIds.push(cardId);
+    return { ok: true, equipped: true };
+  }
+
+  public isOnboardingDeckFull(): boolean {
+    return (
+      !!this.state.onboardingDeckFull ||
+      (this.state.currentTier ?? 7) < 7 ||
+      this.state.seasonNumber > 1 ||
+      this.state.currentRound >= 4
+    );
+  }
+
+  public skipOnboardingDeck(): void {
+    this.state.onboardingDeckFull = true;
+    this.autoFillDeckPreset();
+  }
+
+  public getActiveMatchDeck(): CommandCard[] {
+    const club = this.getUserClub();
+    const baseCards = getStyleBaseCards(club?.style ?? 'tiki_taka');
+    const deck = this.getCoachDeck();
+    const presets = this.getDeckPresets();
+    const activePreset = presets[this.getActiveDeckPresetIdx()] ?? presets[0];
+
+    if (!this.isOnboardingDeckFull()) {
+      const r = Math.max(1, this.state.currentRound);
+      const opener = baseCards[0];
+      const support = baseCards[2] ?? baseCards[1];
+      const unlockedCons = (activePreset?.cardIds ?? [])
+        .map(id => deck.find(c => c.id === id))
+        .filter((c): c is CommandCard => !!c)
+        .slice(0, Math.max(0, r - 1));
+      const baseSubset = [opener, support].filter((c): c is CommandCard => !!c);
+      const combined = [...baseSubset, ...unlockedCons];
+      const order = activePreset?.orderedKeys;
+      if (order && order.length > 0) {
+        const rankMap = new Map<string, number>();
+        order.forEach((k, idx) => rankMap.set(k, idx));
+        combined.sort((a, b) => (rankMap.get(a.id) ?? 999) - (rankMap.get(b.id) ?? 999));
+      }
+      return combined;
+    }
+
+    const freeIds = [...(activePreset?.cardIds ?? [])];
+    if (freeIds.length < 4) {
+      for (const c of deck) {
+        if (freeIds.length >= 4) break;
+        if (!c.isBase && c.id !== 'card_captain_roar' && !freeIds.includes(c.id)) {
+          freeIds.push(c.id);
+        }
+      }
+    }
+    const freeCards = freeIds
+      .map(id => deck.find(c => c.id === id))
+      .filter((c): c is CommandCard => !!c)
+      .slice(0, 8);
+    const captainRoar = deck.find(c => c.id === 'card_captain_roar');
+    const combined = captainRoar ? [...baseCards, captainRoar, ...freeCards] : [...baseCards, ...freeCards];
+    const order = activePreset?.orderedKeys;
+    if (order && order.length > 0) {
+      const rankMap = new Map<string, number>();
+      order.forEach((k, idx) => rankMap.set(k, idx));
+      combined.sort((a, b) => (rankMap.get(a.id) ?? 999) - (rankMap.get(b.id) ?? 999));
+    }
+    return combined;
+  }
+
+  public moveDeckCard(presetIdx: number, fromIdx: number, toIdx: number): boolean {
+    const presets = this.getDeckPresets();
+    const pr = presets[presetIdx];
+    if (!pr) return false;
+    const prevIdx = this.getActiveDeckPresetIdx();
+    this.state.activeDeckPresetIdx = presetIdx;
+    const ordered = this.getActiveMatchDeck().map(c => c.id);
+    this.state.activeDeckPresetIdx = prevIdx;
+    if (fromIdx < 0 || fromIdx >= ordered.length || toIdx < 0 || toIdx >= ordered.length || fromIdx === toIdx) {
+      return false;
+    }
+    const [moved] = ordered.splice(fromIdx, 1);
+    ordered.splice(toIdx, 0, moved);
+    pr.orderedKeys = ordered;
+    return true;
+  }
+
+  public consumePlayedCardUses(playedCardIds: string[]): { depletedNames: string[]; remainingCount: number } {
+    const deck = this.getCoachDeck();
+    const depletedNames: string[] = [];
+    const removedIds = new Set<string>();
+    const counts = new Map<string, number>();
+    for (const id of playedCardIds) counts.set(id, (counts.get(id) ?? 0) + 1);
+
+    for (const c of deck) {
+      const usedTimes = counts.get(c.id) ?? 0;
+      if (usedTimes <= 0) continue;
+      if (c.isBase || c.id === 'card_captain_roar' || (c.tier ?? 1) === 0) continue;
+      const cur = c.remainingUses ?? c.maxUses ?? 1;
+      const next = Math.max(0, cur - usedTimes);
+      c.remainingUses = next;
+      if (next <= 0) {
+        removedIds.add(c.id);
+        depletedNames.push(c.name);
+      }
+    }
+
+    if (removedIds.size > 0) {
+      this.state.coachDeck = deck.filter(c => !removedIds.has(c.id));
+      for (const pr of this.getDeckPresets()) {
+        pr.cardIds = pr.cardIds.filter(id => !removedIds.has(id));
+      }
+      if (this.state.coachLoadoutIds) {
+        this.state.coachLoadoutIds = this.state.coachLoadoutIds.filter(id => !removedIds.has(id));
+      }
+    }
+    return { depletedNames, remainingCount: this.state.coachDeck?.length ?? 0 };
+  }
+
+  public recycleDamagedCard(cardId: string): { ok: boolean; fundsGained?: number; cardName?: string; reason?: string } {
+    const deck = this.getCoachDeck();
+    const idx = deck.findIndex(c => c.id === cardId);
+    if (idx < 0) return { ok: false, reason: '未找到该卡牌' };
+    const card = deck[idx];
+    if (card.isBase || card.id === 'card_captain_roar') {
+      return { ok: false, reason: '0 阶基础常备卡不可回收' };
+    }
+    const rem = card.remainingUses ?? card.maxUses ?? 1;
+    if (rem > 1) {
+      return { ok: false, reason: '仅剩余 1 次耐久的残血卡可直接回收折现（耐久 ≥2 请优先投入化学反应釜）' };
+    }
+    deck.splice(idx, 1);
+    for (const pr of this.getDeckPresets()) {
+      pr.cardIds = pr.cardIds.filter(id => id !== cardId);
+    }
+    if (this.state.coachLoadoutIds) {
+      this.state.coachLoadoutIds = this.state.coachLoadoutIds.filter(id => id !== cardId);
+    }
+    const fundsGained = 20;
+    this.addClubFunds(fundsGained);
+    return { ok: true, fundsGained, cardName: card.name };
+  }
+
+  public autoFillDeckPreset(presetIdx?: number): { ok: boolean; added: number; total: number } {
+    const presets = this.getDeckPresets();
+    const idx = presetIdx ?? this.getActiveDeckPresetIdx();
+    const pr = presets[idx];
+    if (!pr) return { ok: false, added: 0, total: 0 };
+    const deck = this.getCoachDeck();
+    const userStyle = this.getUserClub().style;
+    const candidates = deck
+      .filter(c => !c.isBase && c.id !== 'card_captain_roar' && !pr.cardIds.includes(c.id))
+      .sort((a, b) => {
+        const aScore = (a.tier ?? 1) * 10 + (a.styleTag === userStyle ? 8 : 0) + (a.isChemical ? 12 : 0) + (a.affix?.kind === 'positive' || a.affix?.kind === 'easter_egg' ? 5 : 0) + (a.remainingUses ?? 1);
+        const bScore = (b.tier ?? 1) * 10 + (b.styleTag === userStyle ? 8 : 0) + (b.isChemical ? 12 : 0) + (b.affix?.kind === 'positive' || b.affix?.kind === 'easter_egg' ? 5 : 0) + (b.remainingUses ?? 1);
+        return bScore - aScore;
+      });
+    let added = 0;
+    for (const c of candidates) {
+      if (pr.cardIds.length >= 8) break;
+      pr.cardIds.push(c.id);
+      added++;
+    }
+    return { ok: true, added, total: pr.cardIds.length };
+  }
+
+  public tidyAndAutoFillDeck(presetIdx?: number): { recycledCount: number; fundsGained: number; addedCount: number; totalDeckSize: number } {
+    const deck = this.getCoachDeck();
+    const toRecycle = deck.filter(c => !c.isBase && c.id !== 'card_captain_roar' && (c.tier ?? 1) <= 2 && (c.remainingUses ?? c.maxUses ?? 1) === 1);
+    let recycledCount = 0;
+    let fundsGained = 0;
+    for (const c of toRecycle) {
+      const res = this.recycleDamagedCard(c.id);
+      if (res.ok) {
+        recycledCount++;
+        fundsGained += res.fundsGained ?? 20;
+      }
+    }
+    const fill = this.autoFillDeckPreset(presetIdx);
+    return {
+      recycledCount,
+      fundsGained,
+      addedCount: fill.added,
+      totalDeckSize: fill.total,
+    };
+  }
+
+  public previewV5Reactor(cardIds: string[]): ReactorPreview {
+    const deck = this.getCoachDeck();
+    const cards = cardIds.map(id => deck.find(c => c.id === id)).filter((c): c is CommandCard => !!c);
+    if (cards.length !== cardIds.length) {
+      return { valid: false, reason: '部分选中的卡牌已不在背包中', odds: { purePct: 100, positivePct: 0, negativePct: 0, easterEggPct: 0 }, genes: [] };
+    }
+    return previewReactor(cards);
+  }
+
+  public isReactorUnlocked(): boolean {
+    return (this.state.currentTier ?? 7) <= 6;
+  }
+
+  public craftV5ReactorCards(
+    cardIds: string[],
+    preferredSameGeneCatalogId?: string
+  ): { ok: boolean; card?: CommandCard; affix?: CommandCard['affix']; reason?: string } {
+    if (!this.isReactorUnlocked()) {
+      return { ok: false, reason: '化学反应釜将于升入【第 6 级 · 地区联赛】后解锁' };
+    }
+    const deck = this.getCoachDeck();
+    const cards = cardIds.map(id => deck.find(c => c.id === id)).filter((c): c is CommandCard => !!c);
+    if (cards.length !== cardIds.length) return { ok: false, reason: '部分材料卡不存在' };
+    const res = craftFromReactor(cards, preferredSameGeneCatalogId);
+    if (!res.ok || !res.card) return { ok: false, reason: res.reason };
+
+    const removeSet = new Set(cardIds);
+    this.state.coachDeck = deck.filter(c => !removeSet.has(c.id));
+    this.state.coachDeck.push(res.card);
+    for (const pr of this.getDeckPresets()) {
+      pr.cardIds = pr.cardIds.filter(id => !removeSet.has(id));
+    }
+    const activePr = this.getDeckPresets()[this.getActiveDeckPresetIdx()];
+    if (activePr && activePr.cardIds.length < 8) {
+      activePr.cardIds.push(res.card.id);
+    }
+    this.state.discoveredRecipes = this.state.discoveredRecipes ?? [];
+    const key = res.card.recipeKey ?? inferCardElement(res.card);
+    if (!this.state.discoveredRecipes.includes(key)) {
+      this.state.discoveredRecipes.push(key);
+    }
+    tryUnlockAchievement(this.state, 'ach_craft_card');
+    if (this.state.discoveredRecipes.length >= 5) tryUnlockAchievement(this.state, 'ach_recipe_5');
+    if ((res.card.tier ?? 1) >= 3 || (res.card.level ?? 1) >= 4) tryUnlockAchievement(this.state, 'ach_lv4_card');
+    return { ok: true, card: res.card, affix: res.affix };
+  }
+
+  public getCardShopOffers(): CardShopOffer[] {
+    const curRound = this.state.currentRound ?? 1;
+    if (!this.state.cardShopOffers || this.state.cardShopRound !== curRound) {
+      const style = this.getUserClub()?.style ?? 'tiki_taka';
+      const c1 = rollStyleConsumableCard(style, 1);
+      const c2 = rollStyleConsumableCard(style, 1);
+      const c3 = rollStyleConsumableCard(style, 2);
+      this.state.cardShopOffers = [
+        { id: `shop_r${curRound}_1`, card: c1, price: 70, sold: false },
+        { id: `shop_r${curRound}_2`, card: c2, price: 70, sold: false },
+        { id: `shop_r${curRound}_3`, card: c3, price: 140, sold: false },
+      ];
+      this.state.cardShopRound = curRound;
+      this.state.cardShopBuysThisRound = 0;
+    }
+    return this.state.cardShopOffers;
+  }
+
+  public buyCardFromShop(offerId: string): { ok: boolean; card?: CommandCard; price?: number; reason?: string } {
+    const offers = this.getCardShopOffers();
+    if ((this.state.cardShopBuysThisRound ?? 0) >= 2) {
+      return { ok: false, reason: '本轮卡牌商店限购 2 张已用完' };
+    }
+    const offer = offers.find(o => o.id === offerId);
+    if (!offer || offer.sold) return { ok: false, reason: '该商品已售罄或不存在' };
+    const deck = this.getCoachDeck();
+    if (deck.length >= 60) return { ok: false, reason: '卡牌背包已满 (60/60)' };
+    if (!this.spendClubFunds(offer.price)) {
+      return { ok: false, reason: `俱乐部资金不足（需要 ¥${offer.price}万）` };
+    }
+    offer.sold = true;
+    this.state.cardShopBuysThisRound = (this.state.cardShopBuysThisRound ?? 0) + 1;
+    const bought = JSON.parse(JSON.stringify(offer.card)) as CommandCard;
+    deck.push(bought);
+    const activePr = this.getDeckPresets()[this.getActiveDeckPresetIdx()];
+    if (activePr && activePr.cardIds.length < 8) activePr.cardIds.push(bought.id);
+    return { ok: true, card: bought, price: offer.price };
+  }
+
+  public getLoadoutIds(): string[] {
+    const activePr = this.getDeckPresets()[this.getActiveDeckPresetIdx()];
+    if (activePr) {
+      this.state.coachLoadoutIds = [...activePr.cardIds];
+      return this.state.coachLoadoutIds;
+    }
+    const deck = this.getCoachDeck();
+    this.state.coachLoadoutIds = deck.slice(0, 4).map(c => c.id);
     return this.state.coachLoadoutIds;
   }
 
   public getMatchLoadout(): CommandCard[] {
-    const deck = this.getCoachDeck();
-    const ids = this.getLoadoutIds();
-    const list = ids.map(id => deck.find(c => c.id === id)).filter((c): c is CommandCard => !!c).slice(0, 4);
-    return list.length > 0 ? list : deck.slice(0, 1);
+    return this.getActiveMatchDeck();
   }
 
   public toggleLoadoutCard(cardId: string): { ok: boolean; equipped?: boolean; reason?: string } {
-    const ids = this.getLoadoutIds();
-    const idx = ids.indexOf(cardId);
-    if (idx >= 0) {
-      ids.splice(idx, 1);
-      return { ok: true, equipped: false };
-    }
-    if (ids.length >= 4) return { ok: false, reason: '出战卡槽已满 (4/4)，请先卸下 1 张' };
-    ids.push(cardId);
-    return { ok: true, equipped: true };
+    return this.toggleCardInPreset(this.getActiveDeckPresetIdx(), cardId);
   }
 
   public craftChemistryCard(
@@ -2482,8 +3342,26 @@ export class LeagueManager {
         };
       });
 
+    const v6Payload = club.isUser
+      ? compileAstrolabeToMatchSetup(this.getV6Astrolabe(), club.formation, club.style, this.getV6SeasonRogue())
+      : null;
+    if (v6Payload && v6Payload.lineStatDeltas.length > 0) {
+      const lineOf = (r: PlayerInput['role']) =>
+        r === 'GK' ? 'GK' : ['CB', 'LB', 'RB', 'LWB', 'RWB'].includes(r) ? 'DEF' : ['CDM', 'CM', 'CAM', 'LM', 'RM'].includes(r) ? 'MID' : 'ATT';
+      for (const pl of players) {
+        for (const sd of v6Payload.lineStatDeltas) {
+          if (sd.targetLine && sd.targetLine !== 'ALL' && lineOf(pl.role) !== sd.targetLine) continue;
+          if (sd.passing) pl.attributes.passing = clampAttr(pl.attributes.passing + sd.passing);
+          if (sd.shooting) pl.attributes.shooting = clampAttr(pl.attributes.shooting + sd.shooting);
+          if (sd.defending) pl.attributes.defending = clampAttr(pl.attributes.defending + sd.defending);
+          if (sd.pace) pl.attributes.pace = clampAttr(pl.attributes.pace + sd.pace);
+          if (sd.composure) pl.attributes.composure = clampAttr(pl.attributes.composure + sd.composure);
+          if (sd.goalkeeping && pl.role === 'GK') pl.attributes.goalkeeping = clampAttr(pl.attributes.goalkeeping + sd.goalkeeping);
+        }
+      }
+    }
     const tacticalMods = club.isUser
-      ? computeSkillWebMods(this.getSkillWebUnlocked(), club.formation, club.style)
+      ? { ...computeSkillWebMods(this.getSkillWebUnlocked(), club.formation, club.style), ...(v6Payload?.tacticalMods ?? {}) }
       : undefined;
 
     const spineBonus = club.isUser ? computeCentralSpineInfo(club, this.getChemistryLinks()).bonus : 0;
@@ -2499,7 +3377,9 @@ export class LeagueManager {
         : 30;
     }
 
-    let userEquippedSkills = club.isUser ? this.getEquippedActiveSkills() : undefined;
+    let userEquippedSkills = club.isUser
+      ? (v6Payload && v6Payload.equippedSkills.length > 0 ? v6Payload.equippedSkills : this.getEquippedActiveSkills())
+      : undefined;
     if (
       club.isUser &&
       userEquippedSkills &&
@@ -2551,6 +3431,14 @@ export class LeagueManager {
       gridSlots: club.gridSlots,
       slotDuties: club.slotDuties,
       weather: this.state.interMatchPrep?.weather ?? 'sunny',
+      deckArchetypeGene: club.isUser ? computeDeckArchetypeGene(this.getActiveMatchDeck()) : undefined,
+      v6PassiveHooks: v6Payload?.v6PassiveHooks,
+      v6ImmunityFlags: v6Payload?.v6ImmunityFlags,
+      v6TotalFootballMaster: v6Payload?.v6TotalFootballMaster,
+      v6SkillTempRankBonus: v6Payload?.v6SkillTempRankBonus,
+      v6SkillDualBranch: v6Payload?.v6SkillDualBranch,
+      v6StartingShields: v6Payload?.v6StartingShields,
+      v6MaxCounterStacks: v6Payload?.v6MaxCounterStacks,
     };
   }
 
@@ -2632,6 +3520,7 @@ export class LeagueManager {
           minChemistry: 0,
           cooldownMinutes: 0,
           maxPerMatch: 2,
+          durationMinutes: 10,
           instantAction: 'force_shot_on_target',
           instantLabel: '林锋弧顶起脚轰出世界波',
           vfxTheme: 'ult',
@@ -2690,12 +3579,13 @@ export class LeagueManager {
       const res = this.simulateUserRound();
       if (!res.ok) break;
       simulated++;
-      if (this.state.phase !== 'REGULAR_SEASON' || this.state.pendingStoryEvent) {
+      const nextPhase = this.state.phase as string;
+      if (nextPhase !== 'REGULAR_SEASON' || this.state.pendingStoryEvent) {
         return {
           simulated,
           stoppedReason:
-            this.state.phase === 'RE_DRAFT' ? '触发赛季中期 Re-Draft 补强' :
-            this.state.phase === 'SEASON_END' ? '常规赛全部结束，进入赛季结算' :
+            nextPhase === 'RE_DRAFT' ? '触发赛季中期 Re-Draft 补强' :
+            nextPhase === 'SEASON_END' ? '常规赛全部结束，进入赛季结算' :
             '触发赛季剧情抉择事件',
         };
       }
@@ -2727,10 +3617,15 @@ export class LeagueManager {
     }
 
 
-    // 赛后体能恢复、体能疲惫/轻伤判定与士气浮动
+    // 赛后体能恢复、体能疲惫/轻伤判定与士气浮动（玩家与 AI 采用对称体能规则）
+    const userSquadIds = new Set(this.getUserClub().squad.map(p => p.id));
     const userEndFitness = new Map<string, number>();
     for (const mp of userMatchResult.players) {
-      userEndFitness.set(mp.id, mp.fitness);
+      if (userSquadIds.has(mp.id)) {
+        userEndFitness.set(mp.id, mp.fitness);
+      } else {
+        aiMatchFitness.set(mp.id, mp.fitness);
+      }
     }
     const userIsHome = userFixture.homeClubId === this.state.userClubId;
     const myGoals = userIsHome ? userFixture.homeGoals : userFixture.awayGoals;
@@ -2755,6 +3650,10 @@ export class LeagueManager {
             p.fitness = Math.min(100, Math.round(endFit + activeRecover));
             if (hadStrain && endFit < 56 && Math.random() < 0.45) {
               p.injuredRounds = 1;
+              p.careerInjuries = (p.careerInjuries ?? 0) + 1;
+              if (p.careerInjuries >= 3) {
+                p.attributes.pace = Math.max(30, p.attributes.pace - 1);
+              }
               p.strainWarning = false;
               p.morale = 'low';
             } else {
@@ -2771,10 +3670,26 @@ export class LeagueManager {
           }
         } else {
           const aiEnd = aiMatchFitness.get(p.id);
-          p.fitness = aiEnd !== undefined
-            ? Math.min(100, Math.round(aiEnd + 38))
-            : Math.min(100, Math.round((p.fitness ?? 100) + 50));
+          if (aiEnd !== undefined) {
+            const hadStrain = !!p.strainWarning;
+            p.fitness = Math.min(100, Math.round(aiEnd + 17));
+            if (hadStrain && aiEnd < 56 && Math.random() < 0.40) {
+              p.injuredRounds = 1;
+              p.strainWarning = false;
+            } else {
+              p.strainWarning = p.fitness < 68;
+            }
+          } else {
+            p.fitness = Math.min(100, Math.round((p.fitness ?? 100) + 36));
+            p.strainWarning = false;
+          }
         }
+      }
+      if (!c.isUser) {
+        const tiredIds = new Set(
+          c.squad.filter(p => p.strainWarning || (p.fitness ?? 100) < 74).map(p => p.id)
+        );
+        this.replaceUnavailableStarters(c, tiredIds);
       }
     }
     const oppClubId = userIsHome ? userFixture.awayClubId : userFixture.homeClubId;
@@ -2825,11 +3740,21 @@ export class LeagueManager {
     if ((userMatchResult.unlockedHiddenTraits || []).some(u => u.team === userSide)) {
       tryUnlockAchievement(this.state, 'ach_hidden_trait');
     }
+    // V5 赛后保底卡牌掉落：胜场 +2 张 1 阶消耗卡，平/负 +1 张（叠加词条额外掉落）
     const drops = (userWon ? 2 : 1) + perkElemDrops;
-    const inv = this.getElementInventory();
+    const deckNow = this.getCoachDeck();
+    const activePreset = this.getDeckPresets()[this.getActiveDeckPresetIdx()];
+    const styleForDrop = this.getUserClub().style;
     for (let i = 0; i < drops; i++) {
-      const el = TACTICAL_ELEMENTS[Math.floor(Math.random() * TACTICAL_ELEMENTS.length)];
-      inv[el.id] = (inv[el.id] ?? 0) + 1;
+      if (deckNow.length < 60) {
+        const dropped = rollStyleConsumableCard(styleForDrop, 1);
+        deckNow.push(dropped);
+        if (activePreset && activePreset.cardIds.length < 6) {
+          activePreset.cardIds.push(dropped.id);
+        }
+      } else {
+        this.addClubFunds(20);
+      }
     }
 
     // 积累当前阵型与战术风格熟练度经验（胜场+2，平负+1；战术幕僚Lv.5翻倍）
@@ -2851,6 +3776,9 @@ export class LeagueManager {
     const homeMul = userIsHome ? 1 + (stadBonusRates[metaNow.stadium ?? 0] ?? 0) : 1;
     const finMul = 1 + (finBonusRates[metaNow.finance ?? 0] ?? 0);
     this.addClubFunds(Math.round(baseMatchFunds * tierFundScale * homeMul * finMul));
+    // V6 Meta 永久星盘点稳定产出（胜 +2pt / 平 +1pt / 负 0pt，拉长星盘成型曲线）
+    const v6MetaGain = userWon ? 2 : myGoals === oppGoals ? 1 : 0;
+    this.state.metaPointsTotal += v6MetaGain;
 
     // 慢热成长：个人阵型熟练度 + 随比赛进度逐场积累属性成长（受赛季总上限约束，防止低级联赛超模）
     this.lastMatchGrowth = {};
@@ -2880,7 +3808,7 @@ export class LeagueManager {
       let caGainThisMatch = 0;
       const pa = p.pa ?? computeInitialPA(p.ca, p.age ?? 24, (p.age ?? 24) <= 19);
       p.pa = pa;
-      if (isStarter && p.ca < pa && (p.age ?? 24) <= 29) {
+      if (isStarter && p.ca < pa && (p.age ?? 24) <= 28) {
         const pst = p.seasonStats;
         const goodSeasonPerf = pst.goals >= 8 || pst.assists >= 6 || pst.cleanSheets >= 8;
         const seasonCap = this.computeSeasonTargetAttrGain(p, p.age ?? 24, goodSeasonPerf, tgLv);
@@ -3015,6 +3943,36 @@ export class LeagueManager {
     }
   }
 
+  public claimTutorialCardUnlock(): boolean {
+    const rw = this.state.pendingPostMatchReward;
+    const tc = rw?.tutorialCardUnlock;
+    if (!tc || tc.claimed) return false;
+
+    const club = this.getUserClub();
+    const deck = this.getCoachDeck();
+    if (!deck.some(c => c.id === tc.card.id)) {
+      deck.push(tc.card);
+    }
+    const presets = this.getDeckPresets();
+    const activePr = presets[this.getActiveDeckPresetIdx()] ?? presets[0];
+    if (activePr) {
+      if (!activePr.cardIds.includes(tc.card.id)) {
+        activePr.cardIds.unshift(tc.card.id);
+      }
+      const base0 = getStyleBaseCards(club.style)[0]?.id;
+      if (base0) {
+        const prevOrd = activePr.orderedKeys?.filter(k => k !== tc.card.id) ?? [];
+        const bIdx = prevOrd.indexOf(base0);
+        if (bIdx >= 0) {
+          prevOrd.splice(bIdx + 1, 0, tc.card.id);
+          activePr.orderedKeys = prevOrd;
+        }
+      }
+    }
+    tc.claimed = true;
+    return true;
+  }
+
   private createPostMatchRewardState(won: boolean, completedRound = this.state.currentRound): PostMatchRewardState {
     const cadence = getRoundCadence(completedRound, this.state.winlessStreak ?? 0);
     const picked = this.rollPostMatchCategories(won, cadence, completedRound);
@@ -3039,18 +3997,19 @@ export class LeagueManager {
     round = this.state.currentRound
   ): PostMatchRewardCategory[] {
     const pool: PostMatchRewardCategory[] = cadence === 'normal'
-      ? ['event', 'craft_card', 'trait_forge', 'gamble', 'chemistry_forge']
-      : ['player', 'stat_boost', 'line_boost', 'craft_card', 'event', 'trait_forge', 'tactical_pact', 'chemistry_forge', 'gamble'];
+      ? ['craft_card', 'event', 'trait_forge', 'gamble', 'chemistry_forge']
+      : ['craft_card', 'player', 'stat_boost', 'line_boost', 'event', 'trait_forge', 'tactical_pact', 'chemistry_forge', 'gamble'];
     const club = this.getUserClub();
     const recent = new Set(this.state.recentRewardCategories ?? []);
     const tiredCount = club.squad.filter(p => (p.fitness ?? 100) < 72).length;
-    const hasHighCostCard = this.getCoachDeck().some(c => c.cost >= 2);
+    const rogue = this.getV6SeasonRogue();
 
     const scored = pool.map(cat => {
-      let weight = recent.has(cat) ? 0.35 : 1.5;
+      let weight = recent.has(cat) ? 0.55 : 1.5;
+      if (cat === 'craft_card') weight += round <= 3 ? 2.4 : rogue.seasonRelics.length < 3 ? 0.85 : 0.45;
       if (!won && (cat === 'tactical_pact' || cat === 'trait_forge' || cat === 'player' || cat === 'gamble')) weight += 0.55;
       if (tiredCount >= 3 && (cat === 'event' || cat === 'tactical_pact' || cat === 'gamble')) weight += 0.5;
-      if (hasHighCostCard && (cat === 'chemistry_forge' || cat === 'craft_card')) weight += 0.45;
+      if (cat === 'chemistry_forge') weight += 0.35;
       if ((round % 3 === 0) && cat === 'trait_forge') weight += 0.4;
       return { cat, score: weight * (0.65 + Math.random() * 0.7) };
     });
@@ -3201,36 +4160,134 @@ export class LeagueManager {
         });
       });
     } else if (cat === 'craft_card') {
-      const focuses: CraftFocus[] = ['balanced', 'endure', 'surge'];
-      const e1 = TACTICAL_ELEMENTS[Math.floor(Math.random() * TACTICAL_ELEMENTS.length)];
-      const e2 = TACTICAL_ELEMENTS[Math.floor(Math.random() * TACTICAL_ELEMENTS.length)];
-      const synth = synthesizeChemistry([e1.id, e2.id], focuses[Math.floor(Math.random() * focuses.length)], true);
-      options.push({
-        id: 'pm_cc_new',
-        category: 'craft_card',
-        title: `成品指挥卡：${synth.card.name}`,
-        subtitle: synth.card.summary,
-        rarity: 'epic',
-        craftReward: { kind: 'new_card', card: synth.card },
-      });
-      options.push({
-        id: 'pm_cc_upg',
-        category: 'craft_card',
-        title: '战术精研：现有指挥卡 +1 级',
-        subtitle: '随机将卡库内 1 张未满级指挥卡免费升阶 Lv.+1',
-        rarity: 'rare',
-        craftReward: { kind: 'upgrade_card' },
-      });
-      const elA = TACTICAL_ELEMENTS[Math.floor(Math.random() * TACTICAL_ELEMENTS.length)];
-      const elB = TACTICAL_ELEMENTS[Math.floor(Math.random() * TACTICAL_ELEMENTS.length)];
-      options.push({
-        id: 'pm_cc_elem',
-        category: 'craft_card',
-        title: `高阶元素包：${elA.name}×2 + ${elB.name}×1`,
-        subtitle: '直接入库用于化学实验室合成高阶双效果指挥卡',
-        rarity: 'common',
-        craftReward: { kind: 'elements', elements: [{ id: elA.id, name: elA.name, count: 2 }, { id: elB.id, name: elB.name, count: 1 }] },
-      });
+      const ast = this.getV6Astrolabe();
+      const rogue = this.getV6SeasonRogue();
+      const activePoolIds = Array.from(
+        new Set([
+          ...ast.checkpointPools.s1,
+          ...ast.checkpointPools.s2,
+          ...ast.checkpointPools.s3,
+          ...ast.checkpointPools.s4,
+          ...ast.unlockedDirectives,
+        ])
+      );
+
+      // 选项 1：赛季战术圣物（未满当前级别上限时）或跨界融合奇点借用
+      const maxRelics = getV6TierCaps(this.getBestTierReached()).maxRelics;
+      const allRelicIds = Object.keys(V6_RELICS) as V6RelicId[];
+      const availRelics = allRelicIds.filter(rid => !rogue.seasonRelics.includes(rid));
+      if (rogue.seasonRelics.length < maxRelics && availRelics.length > 0) {
+        const pickedRelicId = availRelics[Math.floor(Math.random() * availRelics.length)];
+        const relic = V6_RELICS[pickedRelicId];
+        options.push({
+          id: `pm_v6_relic_${pickedRelicId}`,
+          category: 'craft_card',
+          title: `赛季战术圣物：《${relic.name}》`,
+          subtitle: `${relic.desc}（本季常驻 ${rogue.seasonRelics.length + 1}/${maxRelics} · 另赠 +1 Meta 星盘点）`,
+          rarity: relic.rarity === 'mythic' ? 'epic' : 'rare',
+          v6RogueReward: {
+            kind: 'relic',
+            relicId: pickedRelicId,
+            metaBonus: 1,
+            badge: '赛季圣物',
+            description: relic.desc,
+          },
+        });
+      } else {
+        const candFusions = V6_FUSION_KEYSTONES.filter(
+          f => !ast.unlockedFusions.includes(f.id) && rogue.borrowedFusion?.id !== f.id
+        );
+        const fPick = candFusions[Math.floor(Math.random() * Math.max(1, candFusions.length))] ?? V6_FUSION_KEYSTONES[0];
+        const fBranch: 'A' | 'B' = Math.random() < 0.55 ? 'A' : 'B';
+        const brDef = fBranch === 'B' ? fPick.branchB : fPick.branchA;
+        options.push({
+          id: `pm_v6_fusion_${fPick.id}`,
+          category: 'craft_card',
+          title: `跨界奇点借用：【${fPick.name}·${fBranch}】`,
+          subtitle: `${brDef.desc}（本季临时跨流派生效 · 另赠 +2 Meta 星盘点）`,
+          rarity: 'epic',
+          v6RogueReward: {
+            kind: 'borrow_fusion',
+            fusionId: fPick.id,
+            fusionBranch: fBranch,
+            metaBonus: 2,
+            badge: '邪道奇点',
+            description: brDef.desc,
+          },
+        });
+      }
+
+      // 选项 2：临场手牌暗金词条附魔
+      const unenchantedDirs = activePoolIds.filter(did => !rogue.directiveEnchants[did]);
+      const targetDirId = (unenchantedDirs.length > 0 ? unenchantedDirs : activePoolIds)[
+        Math.floor(Math.random() * Math.max(1, (unenchantedDirs.length > 0 ? unenchantedDirs : activePoolIds).length))
+      ];
+      const targetDir = targetDirId ? V6_DIRECTIVE_MAP[targetDirId] : undefined;
+      const enchantIds = Object.keys(V6_DIRECTIVE_ENCHANTS) as V6DirectiveEnchantId[];
+      const pickedEnchantId = enchantIds[Math.floor(Math.random() * enchantIds.length)];
+      const ench = V6_DIRECTIVE_ENCHANTS[pickedEnchantId];
+      if (targetDir) {
+        options.push({
+          id: `pm_v6_ench_${targetDir.id}`,
+          category: 'craft_card',
+          title: `手牌附魔：《${targetDir.name}》·【${ench.name}】`,
+          subtitle: `${ench.desc}（本赛季生效 · 另赠 +1 Meta 星盘点）`,
+          rarity: ench.rarity === 'mythic' ? 'epic' : 'rare',
+          v6RogueReward: {
+            kind: 'enchant',
+            targetId: targetDir.id,
+            enchantId: pickedEnchantId,
+            metaBonus: 1,
+            badge: '暗金附魔',
+            description: ench.desc,
+          },
+        });
+      }
+
+      // 选项 3：手牌三卫星超频 或 主动技双质变过载
+      const unOverclockedDirs = activePoolIds.filter(
+        did => !rogue.overclockedDirectives.includes(did) && (ast.directiveSatellites[did]?.length ?? 0) < 3
+      );
+      const unOverloadedSkills = ast.equippedSkills.filter(sid => !rogue.overloadedSkills.includes(sid));
+      if (unOverloadedSkills.length > 0 && (Math.random() < 0.45 || unOverclockedDirs.length === 0)) {
+        const skId = unOverloadedSkills[Math.floor(Math.random() * unOverloadedSkills.length)];
+        const skDef = V6_ACTIVE_SKILL_MAP[skId];
+        if (skDef) {
+          options.push({
+            id: `pm_v6_skov_${skDef.id}`,
+            category: 'craft_card',
+            title: `绝技过载觉醒：《${skDef.name}》双质变`,
+            subtitle: `本赛季同时激活 A+B 双分支质变、冷却 -3' 且限次 +1（另赠 +2 Meta 星盘点）`,
+            rarity: 'epic',
+            v6RogueReward: {
+              kind: 'overload_skill',
+              targetId: skDef.id,
+              metaBonus: 2,
+              badge: '双支觉醒',
+              description: `${skDef.branchA.label} + ${skDef.branchB.label}`,
+            },
+          });
+        }
+      } else {
+        const ocId = (unOverclockedDirs.length > 0 ? unOverclockedDirs : activePoolIds)[0];
+        const ocDef = ocId ? V6_DIRECTIVE_MAP[ocId] : undefined;
+        if (ocDef) {
+          options.push({
+            id: `pm_v6_diroc_${ocDef.id}`,
+            category: 'craft_card',
+            title: `卫星满载超频：《${ocDef.name}》★3`,
+            subtitle: `本赛季免费激活该牌全部 A+B+C 三颗卫星（含宗师质变：${ocDef.satellites.C.desc}）并赠 +2 Meta 星盘点`,
+            rarity: 'epic',
+            v6RogueReward: {
+              kind: 'overclock_dir',
+              targetId: ocDef.id,
+              metaBonus: 2,
+              badge: '三星超频',
+              description: ocDef.satellites.C.desc,
+            },
+          });
+        }
+      }
     } else if (cat === 'trait_forge') {
       const silverPool = [
         { trait: '远射重炮', desc: '禁区外远射(18m+) xG +25%，适合前腰/中场/前锋' },
@@ -3303,10 +4360,10 @@ export class LeagueManager {
         {
           id: 'pm_tp_alchemy',
           category: 'tactical_pact',
-          title: '契约·黑市炼金：Meta与备战点双收',
-          subtitle: '代价：消耗最多 2 元素 | 收益：Meta +25pt、下轮备战点 +1、全队冷静 +1',
+          title: '契约·战术研习所：星盘点与备战双收',
+          subtitle: '代价：赞助研发费 ¥30万 | 收益：Meta 星盘点 +6pt、下轮备战点 +1、全队冷静 +1',
           rarity: 'epic',
-          pactReward: { kind: 'black_market_alchemy', description: '消耗最多2元素换取 Meta +25pt、备战点 +1 及冷静+1' },
+          pactReward: { kind: 'black_market_alchemy', description: '花费 ¥30万换取 Meta +6pt、备战点 +1 及全队冷静 +1' },
         },
         {
           id: 'pm_tp_stamina',
@@ -3351,10 +4408,10 @@ export class LeagueManager {
         {
           id: 'pm_cf_overclock',
           category: 'chemistry_forge',
-          title: '指挥卡超频降费：战术能量减负',
-          subtitle: '卡库内 1 张高费卡(2+费)能量消耗 -1 且持续时间 +2 分（若无则赠 Meta +25pt）',
+          title: '星盘指令超频：免费满载三颗卫星',
+          subtitle: '本赛季随机为 1 张已装配三区手牌激活全部 A+B+C 卫星改造，并赠 Meta +3pt',
           rarity: 'epic',
-          chemReward: { kind: 'card_overclock', description: '高费指挥卡费用 -1、持续 +2 分钟' },
+          chemReward: { kind: 'card_overclock', description: '已装手牌满载激活三颗卫星 + Meta +3pt' },
         },
       ];
       for (let i = chemPool.length - 1; i > 0; i--) {
@@ -3625,35 +4682,94 @@ export class LeagueManager {
       return { ok: true, summary: rw.summaryText };
     }
 
+    if (opt.category === 'craft_card' && opt.v6RogueReward) {
+      const vr = opt.v6RogueReward;
+      const rogue = this.getV6SeasonRogue();
+      this.state.metaPointsTotal += vr.metaBonus;
+      if (vr.kind === 'relic' && vr.relicId) {
+        const maxRelics = getV6TierCaps(this.getBestTierReached()).maxRelics;
+        if (!rogue.seasonRelics.includes(vr.relicId) && rogue.seasonRelics.length < maxRelics) {
+          rogue.seasonRelics.push(vr.relicId);
+        }
+        const relic = V6_RELICS[vr.relicId];
+        rw.summaryText = `已装备赛季战术圣物《${relic.name}》（${rogue.seasonRelics.length}/${maxRelics}）· 星盘点 +${vr.metaBonus}pt`;
+      } else if (vr.kind === 'enchant' && vr.targetId && vr.enchantId) {
+        rogue.directiveEnchants[vr.targetId] = vr.enchantId;
+        const dName = V6_DIRECTIVE_MAP[vr.targetId]?.name ?? '三区手牌';
+        const eName = V6_DIRECTIVE_ENCHANTS[vr.enchantId].name;
+        rw.summaryText = `手牌《${dName}》本赛季已附魔【${eName}】· 星盘点 +${vr.metaBonus}pt`;
+      } else if (vr.kind === 'overclock_dir' && vr.targetId) {
+        if (!rogue.overclockedDirectives.includes(vr.targetId)) {
+          rogue.overclockedDirectives.push(vr.targetId);
+        }
+        const dName = V6_DIRECTIVE_MAP[vr.targetId]?.name ?? '三区手牌';
+        rw.summaryText = `手牌《${dName}》本赛季已满载超频 ★3（A+B+C 全卫星激活）· 星盘点 +${vr.metaBonus}pt`;
+      } else if (vr.kind === 'overload_skill' && vr.targetId) {
+        if (!rogue.overloadedSkills.includes(vr.targetId)) {
+          rogue.overloadedSkills.push(vr.targetId);
+        }
+        const sName = V6_ACTIVE_SKILL_MAP[vr.targetId]?.name ?? '主动技';
+        rw.summaryText = `主动技《${sName}》本赛季已觉醒 A+B 双质变且冷却缩减 · 星盘点 +${vr.metaBonus}pt`;
+      } else if (vr.kind === 'borrow_fusion' && vr.fusionId) {
+        const br = vr.fusionBranch ?? 'A';
+        rogue.borrowedFusion = { id: vr.fusionId, branch: br };
+        const fName = V6_FUSION_MAP[vr.fusionId]?.name ?? '融合奇点';
+        rw.summaryText = `跨界奇点【${fName}·${br}】已在本赛季激活 · 星盘点 +${vr.metaBonus}pt`;
+      }
+      rw.completed = true;
+      return { ok: true, summary: rw.summaryText };
+    }
+
     if (opt.category === 'craft_card' && opt.craftReward) {
       const cr = opt.craftReward;
+      const deck = this.getCoachDeck();
+      const activePr = this.getDeckPresets()[this.getActiveDeckPresetIdx()];
       if (cr.kind === 'new_card' && cr.card) {
-        const deck = this.getCoachDeck();
-        if (deck.length < 12) {
+        if (deck.length < 60) {
           deck.push(cr.card);
-          const loadout = this.getLoadoutIds();
-          if (loadout.length < 4) loadout.push(cr.card.id);
-          rw.summaryText = `获得指挥卡【${cr.card.name}】`;
+          if (activePr && activePr.cardIds.length < 8) activePr.cardIds.push(cr.card.id);
+          rw.summaryText = `获得 2 阶战术卡【${cr.card.name}】`;
         } else {
-          this.state.metaPointsTotal += 20;
-          rw.summaryText = `卡库已满，折算 Meta +20pt`;
+          this.addClubFunds(50);
+          rw.summaryText = `卡牌背包已满，折算俱乐部资金 +¥50万`;
         }
-      } else if (cr.kind === 'upgrade_card') {
-        const deck = this.getCoachDeck();
-        const upgradable = deck.find(c => (c.level ?? 1) < 4);
-        if (upgradable) {
-          upgradeCommandCard(upgradable);
-          rw.summaryText = `指挥卡【${upgradable.name}】免费升至 Lv.${upgradable.level}`;
+      } else if (cr.kind === 'refill_uses' || cr.kind === 'upgrade_card') {
+        const damaged = deck.find(c => !c.isBase && c.maxUses && (c.remainingUses ?? c.maxUses) < c.maxUses);
+        if (damaged && damaged.maxUses) {
+          damaged.remainingUses = damaged.maxUses;
+          rw.summaryText = `战备修复：【${damaged.name}】耐久恢复至 ${damaged.maxUses}/${damaged.maxUses} 次`;
         } else {
-          this.state.metaPointsTotal += 20;
-          rw.summaryText = `所有指挥卡已满级，改赠 Meta +20pt`;
+          const extra1 = rollStyleConsumableCard(club.style, 1);
+          const extra2 = rollStyleConsumableCard(club.style, 1);
+          if (deck.length < 59) deck.push(extra1, extra2);
+          rw.summaryText = `全卡完好，改赠 2 张 1 阶战术卡【${extra1.name}】【${extra2.name}】`;
+        }
+      } else if (cr.kind === 'grant_affix') {
+        const plain = deck.find(c => !c.isBase && c.id !== 'card_captain_roar' && !c.affix);
+        if (plain) {
+          const af = POSITIVE_AFFIXES[Math.floor(Math.random() * POSITIVE_AFFIXES.length)];
+          plain.affix = af;
+          if (af.costDelta) plain.cost = Math.max(0, plain.cost + af.costDelta);
+          if (af.usesBonus && plain.maxUses) {
+            plain.maxUses += af.usesBonus;
+            plain.remainingUses = (plain.remainingUses ?? plain.maxUses) + af.usesBonus;
+          }
+          plain.summary = `${plain.summary} [${af.name}]`;
+          rw.summaryText = `战术附魔：【${plain.name}】获得正面词条 [${af.name}]（${af.desc}）`;
+        } else {
+          const extra = rollStyleConsumableCard(club.style, 2);
+          if (deck.length < 60) deck.push(extra);
+          rw.summaryText = `所有消耗卡均已有词条，改赠 2 阶卡【${extra.name}】`;
         }
       } else if (cr.kind === 'elements' && cr.elements) {
-        const inv = this.getElementInventory();
-        for (const el of cr.elements) {
-          inv[el.id] = (inv[el.id] ?? 0) + el.count;
+        const cnt = Math.max(1, Math.min(3, cr.elements.reduce((s, e) => s + e.count, 0)));
+        const names: string[] = [];
+        for (let i = 0; i < cnt && deck.length < 60; i++) {
+          const nc = rollStyleConsumableCard(club.style, 1);
+          deck.push(nc);
+          names.push(nc.name);
         }
-        rw.summaryText = `入库元素：${cr.elements.map(e => `${e.name}×${e.count}`).join(' + ')}`;
+        rw.summaryText = `获赠战术卡：${names.join('、')}`;
       }
       rw.completed = true;
       return { ok: true, summary: rw.summaryText };
@@ -3716,15 +4832,8 @@ export class LeagueManager {
           for (const p of club.squad) p.attributes.composure = clampAttr(p.attributes.composure + 1);
         }
       } else if (pr.kind === 'black_market_alchemy') {
-        const inv = this.getElementInventory();
-        let spent = 0;
-        for (const el of TACTICAL_ELEMENTS) {
-          while ((inv[el.id] ?? 0) > 0 && spent < 2) {
-            inv[el.id] -= 1;
-            spent++;
-          }
-        }
-        this.state.metaPointsTotal += 25;
+        const paid = this.spendClubFunds(30);
+        this.state.metaPointsTotal += 6;
         if (this.state.interMatchPrep) {
           this.state.interMatchPrep.actionsLeft += 1;
         }
@@ -3732,7 +4841,7 @@ export class LeagueManager {
           p.attributes.composure = clampAttr(p.attributes.composure + 1);
           p.ca = computeWeightedCA(p.role, p.attributes);
         }
-        rw.summaryText = `黑市炼金完成：消耗 ${spent} 元素，入账 Meta +25pt、下轮备战点 +1、全队冷静 +1`;
+        rw.summaryText = `战术研习所结算：${paid ? '投入 ¥30万，' : ''}入账 Meta +6pt、下轮备战点 +1、全队冷静 +1`;
       } else if (pr.kind === 'stamina_limit_break') {
         for (const p of club.squad) {
           p.attributes.stamina = clampAttr(p.attributes.stamina + 4);
@@ -3798,15 +4907,16 @@ export class LeagueManager {
         }
         rw.summaryText = `中轴共鸣：${boosted.join('·')} 冷静/站位 +2，中轴默契 +10`;
       } else if (cr.kind === 'card_overclock') {
-        const deck = this.getCoachDeck();
-        const highCost = deck.find(c => c.cost >= 2);
-        if (highCost) {
-          highCost.cost = Math.max(1, highCost.cost - 1);
-          highCost.durationMinutes += 2;
-          rw.summaryText = `超频成功：【${highCost.name}】费用降至 ${highCost.cost}，持续 +2分`;
+        const ast = this.getV6Astrolabe();
+        const rogue = this.getV6SeasonRogue();
+        const cand = ast.checkpointPools.s1.find(id => !rogue.overclockedDirectives.includes(id)) ?? ast.unlockedDirectives[0];
+        this.state.metaPointsTotal += 3;
+        if (cand) {
+          if (!rogue.overclockedDirectives.includes(cand)) rogue.overclockedDirectives.push(cand);
+          const dName = V6_DIRECTIVE_MAP[cand]?.name ?? '三区手牌';
+          rw.summaryText = `星盘指令超频：《${dName}》本季已激活全部三颗卫星 ★3，并获赠 Meta +3pt`;
         } else {
-          this.state.metaPointsTotal += 25;
-          rw.summaryText = '卡库均为 1 费卡，改赠 Meta +25pt';
+          rw.summaryText = '已获赠星盘 Meta +3pt';
         }
       }
       rw.completed = true;
@@ -3959,29 +5069,22 @@ export class LeagueManager {
         }
       }
       if (ef.elementsGain && ef.elementsGain > 0) {
-        const inv = this.getElementInventory();
-        for (let i = 0; i < ef.elementsGain; i++) {
-          const el = TACTICAL_ELEMENTS[Math.floor(Math.random() * TACTICAL_ELEMENTS.length)];
-          inv[el.id] = (inv[el.id] ?? 0) + 1;
+        const deckG = this.getCoachDeck();
+        const cardCount = Math.max(1, Math.ceil(ef.elementsGain / 2));
+        for (let i = 0; i < cardCount && deckG.length < 60; i++) {
+          deckG.push(rollStyleConsumableCard(club.style, 1));
         }
       }
       if (ef.grantCardLevel && ef.grantCardLevel >= 1) {
-        const e1 = TACTICAL_ELEMENTS[Math.floor(Math.random() * TACTICAL_ELEMENTS.length)];
-        const e2 = TACTICAL_ELEMENTS[Math.floor(Math.random() * TACTICAL_ELEMENTS.length)];
-        const synth = synthesizeChemistry([e1.id, e2.id], 'balanced', true);
-        for (let lv = 1; lv < Math.min(4, ef.grantCardLevel); lv++) {
-          upgradeCommandCard(synth.card);
-        }
+        const tierToGrant: 1 | 2 = ef.grantCardLevel >= 3 ? 2 : 1;
+        const granted = rollStyleConsumableCard(club.style, tierToGrant);
         const deck = this.getCoachDeck();
-        if (deck.length < 12) {
-          deck.push(synth.card);
-          const loadout = this.getLoadoutIds();
-          if (loadout.length < 4) loadout.push(synth.card.id);
+        if (deck.length < 60) {
+          deck.push(granted);
+          const activePr = this.getDeckPresets()[this.getActiveDeckPresetIdx()];
+          if (activePr && activePr.cardIds.length < 8) activePr.cardIds.push(granted.id);
         } else {
-          this.state.metaPointsTotal += 15;
-        }
-        if ((synth.card.level ?? 1) >= 4) {
-          tryUnlockAchievement(this.state, 'ach_lv4_card');
+          this.addClubFunds(40);
         }
       }
       const traitTarget = target ?? club.squad.find(p => p.id === club.captainId) ?? club.squad[0];
@@ -4225,7 +5328,7 @@ export class LeagueManager {
         const userScored = lastGoal.team === userSide;
         if (userScored && myGoals >= oppGoals) {
           const isWin = myGoals > oppGoals;
-          const assister = lastGoal.assistPlayerName ?? userTopAssister?.name;
+          const assister = lastGoal.targetName ?? userTopAssister?.name;
           candidates.push({
             id: `mem_s${this.state.seasonNumber}_r${round}_late`,
             round,
@@ -4832,10 +5935,13 @@ export class LeagueManager {
       if (intel.mastery === 'master') {
         tryUnlockAchievement(this.state, 'ach_scout_master');
       }
+      let masteryBonusCardName = '';
       if (intel.mastery === 'master' && opt.counterElements?.[0]) {
-        const bonusEl = opt.counterElements[0] as ElementId;
-        const inv = this.getElementInventory();
-        inv[bonusEl] = (inv[bonusEl] ?? 0) + 1;
+        const bonusGene = opt.counterElements[0] as ElementId;
+        const bonusCard = rollStyleConsumableCard(this.getUserClub().style, 1, bonusGene);
+        const deckS = this.getCoachDeck();
+        if (deckS.length < 60) deckS.push(bonusCard);
+        masteryBonusCardName = bonusCard.name;
         intel.masteryBonusElement = opt.counterElements[0];
       }
       prep.nextMatchBuff = {
@@ -4853,7 +5959,7 @@ export class LeagueManager {
         mastery: intel.mastery,
         msg:
           intel.mastery === 'master'
-            ? `宗师洞察！未删错直抓破绽，额外获赠 1 枚克制元素！请选择本场针对红利`
+            ? `宗师洞察！未删错直抓破绽，额外获赠克制 1 阶卡【${masteryBonusCardName || '战术卡'}】！请选择本场针对红利`
             : `异议成立！${opt.buff.note} · 请选择 1 项赛中针对红利`,
       };
     }
@@ -5056,6 +6162,46 @@ export class LeagueManager {
     return Math.min(gap, 2 + Math.min(3, Math.floor(gap / 6)) + perfBonus);
   }
 
+  private resolvePlayerAgingProfile(p: DraftPlayer): {
+    archetype: 'prodigy_early' | 'standard' | 'late_bloomer' | 'gk_longevity';
+    cliffAge: number;
+    retireAge: number;
+  } {
+    let archetype = p.agingArchetype;
+    if (!archetype) {
+      if (p.role === 'GK') {
+        archetype = 'gk_longevity';
+      } else if (
+        p.goldTraits?.includes('铁肺覆盖') ||
+        p.traits?.includes('铁肺覆盖') ||
+        p.traits?.includes('大心脏')
+      ) {
+        archetype = 'late_bloomer';
+      } else {
+        let h = 0;
+        for (let i = 0; i < p.id.length; i++) h = (h * 31 + p.id.charCodeAt(i)) | 0;
+        const mod = Math.abs(h) % 100;
+        archetype = mod < 18 ? 'prodigy_early' : mod < 38 ? 'late_bloomer' : 'standard';
+      }
+      p.agingArchetype = archetype;
+    }
+    const base =
+      archetype === 'prodigy_early'
+        ? { cliff: 30, retire: 33 }
+        : archetype === 'late_bloomer'
+        ? { cliff: 34, retire: 37 }
+        : archetype === 'gk_longevity'
+        ? { cliff: 35, retire: 38 }
+        : { cliff: 32, retire: 35 };
+    const injuries = p.careerInjuries ?? 0;
+    const injShift = injuries >= 3 ? 2 : injuries === 2 ? 1 : 0;
+    return {
+      archetype,
+      cliffAge: base.cliff - injShift,
+      retireAge: base.retire - injShift,
+    };
+  }
+
   private finalizeSeason(finalRank: number): void {
     const standings = this.getStandings();
     const regularRank = standings.findIndex(s => s.clubId === this.state.userClubId) + 1;
@@ -5082,9 +6228,11 @@ export class LeagueManager {
       const entryMap = new Map(curList.map(e => [e.id, e]));
       const sortedCur = orderedIds.map(id => entryMap.get(id)).filter((e): e is ClubDirectoryEntry => !!e);
       if (sortedCur.length === curList.length) {
-        const top3 = sortedCur.slice(0, tier > 1 ? 3 : 0);
-        const mid = sortedCur.slice(tier > 1 ? 3 : 0, tier < TOTAL_TIERS ? sortedCur.length - 3 : sortedCur.length);
-        const bot3 = sortedCur.slice(tier < TOTAL_TIERS ? sortedCur.length - 3 : sortedCur.length);
+        const promoN = tier > 1 ? tierInfo.promoteCount : 0;
+        const relN = tier < TOTAL_TIERS ? tierInfo.relegateCount : 0;
+        const top3 = sortedCur.slice(0, promoN);
+        const mid = sortedCur.slice(promoN, sortedCur.length - relN);
+        const bot3 = sortedCur.slice(sortedCur.length - relN);
 
         const nextCur: ClubDirectoryEntry[] = [...mid];
         if (tier > 1 && pyr[tier - 1] && top3.length > 0) {
@@ -5250,7 +6398,7 @@ export class LeagueManager {
         // 2. 成年主力攻击手长期哑火（>=12场0球0助），状态下滑
         p.attributes.shooting = clampAttr(p.attributes.shooting - 1);
         p.attributes.composure = clampAttr(p.attributes.composure - 1);
-      } else if (pst.appearances >= Math.max(6, Math.round(this.getTotalRegularRounds() * 0.30)) && p.ca < pa) {
+      } else if (pst.appearances >= Math.max(6, Math.round(this.getTotalRegularRounds() * 0.30)) && p.ca < pa && p.age <= 28) {
         // 3. 赛季末差额补齐：按赛季总轮数动态折算主力门槛，出场率不足则打折
         const totalR = this.getTotalRegularRounds();
         const fullStarterApps = Math.max(10, Math.round(totalR * 0.65));
@@ -5268,16 +6416,25 @@ export class LeagueManager {
         }
       }
 
-      // 4. 老将体能/速度自然衰退（>=30岁），运动医疗Lv.6减半
-      if (p.age >= 30) {
-        const ageDrop = (metaLv.medical ?? 0) >= 6 ? 1 : 2;
-        p.attributes.pace = clampAttr(p.attributes.pace - ageDrop);
-        p.attributes.stamina = clampAttr(p.attributes.stamina - 1);
-      }
-
-      p.ca = computeWeightedCA(p.role, p.attributes);
-      if (p.ca > pa && p.ca > oldCa) {
-        p.ca = pa;
+      // 4. 差异化断崖式衰老（按位置/模板/伤病史决定断崖与退役年龄，保护 28~31 岁巅峰期不提前下滑）
+      const profile = this.resolvePlayerAgingProfile(p);
+      if (p.age >= profile.cliffAge) {
+        const yearsPast = p.age - profile.cliffAge;
+        const medShield = (metaLv.medical ?? 0) >= 6 ? 1 : 0;
+        const physDrop = Math.max(2, (yearsPast === 0 ? 5 : 4) - medShield);
+        const techDrop = Math.max(1, (yearsPast === 0 ? 2 : 3) - medShield);
+        p.attributes.pace = clampAttr(p.attributes.pace - physDrop);
+        p.attributes.stamina = clampAttr(p.attributes.stamina - physDrop);
+        for (const k of roleWeightedKeys(p.role)) {
+          p.attributes[k] = clampAttr(p.attributes[k] - techDrop);
+        }
+        p.ca = computeWeightedCA(p.role, p.attributes);
+        p.pa = Math.min(pa, p.ca);
+      } else {
+        p.ca = computeWeightedCA(p.role, p.attributes);
+        if (p.ca > pa && p.ca > oldCa) {
+          p.ca = pa;
+        }
       }
       p.marketValue = calcTransferValue(p);
       p.lastCaDelta = p.ca - oldCa;
@@ -5372,6 +6529,36 @@ export class LeagueManager {
       metaEarned += 50;
     }
 
+    // 常规老将到期退役换血（玻璃人早退、常青树晚退，至少保留 1 名门将）
+    const retiredIds = new Set<string>();
+    let vetMetaBonus = 0;
+    for (const p of [...userClub.squad]) {
+      if (p.isPrologueCaptain || p.id === 'captain_lin_feng') continue;
+      const prof = this.resolvePlayerAgingProfile(p);
+      if ((p.age ?? 24) >= prof.retireAge) {
+        if (p.role === 'GK' && userClub.squad.filter(x => x.role === 'GK' && !retiredIds.has(x.id)).length <= 1) {
+          continue;
+        }
+        retiredIds.add(p.id);
+        if ((p.careerStats?.appearances ?? 0) >= 10 && vetMetaBonus < 15) {
+          vetMetaBonus += 5;
+        }
+      }
+    }
+    if (retiredIds.size > 0) {
+      userClub.squad = userClub.squad.filter(p => !retiredIds.has(p.id));
+      userClub.starterIds = userClub.starterIds.filter(id => !retiredIds.has(id));
+      if (userClub.captainId && retiredIds.has(userClub.captainId)) userClub.captainId = undefined;
+      for (let i = roster.length - 1; i >= 0; i--) {
+        if (retiredIds.has(roster[i].id)) roster.splice(i, 1);
+      }
+      if (this.state.rosterSelectedIds) {
+        this.state.rosterSelectedIds = this.state.rosterSelectedIds.filter(id => !retiredIds.has(id));
+      }
+      this.state.metaPointsTotal += vetMetaBonus;
+      metaEarned += vetMetaBonus;
+    }
+
     this.state.persistentSquad = JSON.parse(JSON.stringify(userClub.squad));
     const rewardCount = metaLv.scout >= 4 ? 4 : 3;
     this.state.seasonRewardDrafts = generateShuffleSet(rewardCount, rewardBase, rewardBase + 14);
@@ -5462,22 +6649,17 @@ export class LeagueManager {
     const clampAttr = (v: number) => Math.max(20, Math.min(99, v));
 
     if (opt.kind === 'command_pack') {
-      const e1 = TACTICAL_ELEMENTS[Math.floor(Math.random() * TACTICAL_ELEMENTS.length)];
-      const e2 = TACTICAL_ELEMENTS[Math.floor(Math.random() * TACTICAL_ELEMENTS.length)];
-      const synth = synthesizeChemistry([e1.id, e2.id], 'balanced', true);
-      upgradeCommandCard(synth.card);
+      const chemTpl = V5_CHEMICAL_CARDS[Math.floor(Math.random() * V5_CHEMICAL_CARDS.length)];
+      const chemCard = instantiateV5Card(chemTpl, POSITIVE_AFFIXES[Math.floor(Math.random() * POSITIVE_AFFIXES.length)]);
+      const t1a = rollStyleConsumableCard(club.style, 1);
+      const t1b = rollStyleConsumableCard(club.style, 1);
       const deck = this.getCoachDeck();
-      if (deck.length < 12) {
-        deck.push(synth.card);
+      if (deck.length < 58) {
+        deck.push(chemCard, t1a, t1b);
       } else {
-        this.state.metaPointsTotal += 35;
+        this.addClubFunds(120);
       }
-      const inv = this.getElementInventory();
-      for (let i = 0; i < 4; i++) {
-        const el = TACTICAL_ELEMENTS[Math.floor(Math.random() * TACTICAL_ELEMENTS.length)];
-        inv[el.id] = (inv[el.id] ?? 0) + 1;
-      }
-      sum.seasonBonusSummary = `获得 Lv.${synth.card.level ?? 2} 指挥卡【${synth.card.name}】及 4 个战术元素！`;
+      sum.seasonBonusSummary = `获得附魔神卡【${chemCard.name}】及 2 张 1 阶战术卡【${t1a.name}】【${t1b.name}】！`;
     } else if (opt.kind === 'youth_awaken') {
       const youths = club.squad.filter(p => p.age <= 24);
       if (youths.length > 0) {
@@ -5744,7 +6926,7 @@ export class LeagueManager {
     if (!this.state.transferMarket || this.state.transferMarket.seasonNumber !== seasonNum) {
       const shelfSize = trLv >= 6 ? 14 : trLv >= 3 ? 12 : trLv >= 2 ? 10 : trLv >= 1 ? 9 : 8;
       const minBand = Math.max(36, 36 + (7 - tier) * 6);
-      const maxBand = Math.min(90, minBand + 14 + (trLv >= 6 ? 4 : 0));
+      const maxBand = Math.min(90, minBand + 9 + (trLv >= 6 ? 3 : 0));
       const pool = generateShuffleSet(shelfSize, minBand, maxBand).map(p => {
         p.scoutFogLevel = scoutLv >= 7 ? 2 : 1;
         const pa = p.pa ?? computeInitialPA(p.ca, p.age);
@@ -6113,6 +7295,7 @@ export class LeagueManager {
     } else {
       p.fitness = Math.max(40, (p.fitness ?? 100) - (medLv >= 7 ? 15 : 30));
       p.injuredRounds = medLv >= 7 ? 1 : 2;
+      p.careerInjuries = (p.careerInjuries ?? 0) + 1;
       const syncTarget = (arr?: DraftPlayer[]) => {
         const t = arr?.find(x => x.id === playerId);
         if (t) { t.fitness = p.fitness; t.injuredRounds = p.injuredRounds; }

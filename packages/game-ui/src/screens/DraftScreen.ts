@@ -470,18 +470,51 @@ export class DraftScreen {
         color: THEME.TX2,
         align: 'center',
       });
+
+      // 底部：游戏化「SIGNED ✓」印章 / 点击提示 + 右下角紧凑「i 档案」胶囊
+      if (isPicked) {
+        ctx.save();
+        ctx.translate(cx + 68, cy + ch - 22);
+        ctx.rotate(-0.08);
+        drawRoundRect(ctx, -50, -13, 100, 26, 4, 'rgba(6, 78, 59, 0.92)', THEME.GREEN, 1.8);
+        drawText(ctx, 'SIGNED ✓', 0, 0, { size: 12, bold: true, color: '#86EFAC', align: 'center', mono: true });
+        ctx.restore();
+      } else {
+        drawText(ctx, hovered ? '点击签入大名单 +' : '点击整卡签入', cx + 14, cy + ch - 21, {
+          size: 10.5,
+          bold: hovered,
+          color: hovered ? THEME.GOLD_LIGHT : THEME.TX3,
+        });
+      }
       ctx.restore();
 
       if (fp >= 0.8) {
-        hits.add(cx, cy, cw, ch - 52, () => toggleSelect(p.id));
+        hits.add(cx, cy, cw, ch, () => toggleSelect(p.id));
 
-        drawButton(ctx, hits, cx + 12, cy + ch - 46, 62, 34, '详情', () => {
+        const infoX = cx + cw - 58;
+        const infoY = cy + ch - 31;
+        const infoHover = hits.isHovered(infoX, infoY, 46, 20);
+        drawRoundRect(
+          ctx,
+          infoX,
+          infoY,
+          46,
+          20,
+          10,
+          infoHover ? 'rgba(56, 189, 248, 0.22)' : 'rgba(15, 23, 42, 0.85)',
+          infoHover ? '#7DD3FC' : 'rgba(148, 163, 184, 0.35)',
+          1
+        );
+        drawText(ctx, 'i 档案', infoX + 23, infoY + 10, {
+          size: 9.5,
+          bold: infoHover,
+          color: infoHover ? '#BAE6FD' : THEME.TX2,
+          align: 'center',
+        });
+        hits.add(infoX, infoY, 46, 20, () => {
+          SoundEngine.playClick();
           actions.onInspectPlayer(p);
-        }, { variant: 'ghost', fontSize: 11 });
-
-        drawButton(ctx, hits, cx + 80, cy + ch - 46, cw - 92, 34, isPicked ? '已选中 ✓' : '选择入队', () => {
-          toggleSelect(p.id);
-        }, { variant: isPicked ? 'green' : 'primary', fontSize: 11.5 });
+        });
       }
     });
 
@@ -493,44 +526,75 @@ export class DraftScreen {
       ctx.lineWidth = 2.4;
       ctx.strokeRect(436, 546, 408, 54);
       ctx.restore();
-    }
-    drawButton(
-      ctx,
-      hits,
-      440,
-      550,
-      400,
-      46,
-      readyConfirm
-        ? step === 2
-          ? '签入这 3 人并开启夏窗 (20人) ▶'
-          : '签入这 3 人进入下一包 ▶'
-        : `请先勾选 ${needPick} 名球员 (${this.selectedIds.length}/${needPick})`,
-      () => {
-        if (!readyConfirm) return;
-        const res = league.pickCorePackPlayers(this.selectedIds);
-        if (res.ok) {
-          SoundEngine.playRewardChime();
-          actions.onBurst?.(420, 340, THEME.GOLD_LIGHT);
-          actions.onBurst?.(640, 320, THEME.GREEN);
-          actions.onBurst?.(860, 340, THEME.GOLD_LIGHT);
-          const addedVal = (res.players ?? []).reduce((s, x) => s + (x.marketValue ?? x.cost), 0);
-          const avgAddedCa = res.players?.length ? Math.round(res.players.reduce((s, x) => s + x.ca, 0) / res.players.length) : 0;
-          this.signToast = {
-            text: `签入成功！3 名新援入队（均分 CA ${avgAddedCa} · 身价 +¥${addedVal}万）`,
-            timer: 2.0,
-          };
-          actions.onSave();
-          if (res.completed) {
-            this.doneTriggered = true;
-            actions.onDone();
-          } else {
-            this.resetPackAnim();
+      drawButton(
+        ctx,
+        hits,
+        440,
+        550,
+        400,
+        46,
+        step === 2 ? '吹哨集结 · 签入这 3 人开启夏窗 ▶' : '吹哨集结 · 签入这 3 人进入下一包 ▶',
+        () => {
+          const res = league.pickCorePackPlayers(this.selectedIds);
+          if (res.ok) {
+            SoundEngine.playRewardChime();
+            actions.onBurst?.(420, 340, THEME.GOLD_LIGHT);
+            actions.onBurst?.(640, 320, THEME.GREEN);
+            actions.onBurst?.(860, 340, THEME.GOLD_LIGHT);
+            const addedVal = (res.players ?? []).reduce((s, x) => s + (x.marketValue ?? x.cost), 0);
+            const avgAddedCa = res.players?.length ? Math.round(res.players.reduce((s, x) => s + x.ca, 0) / res.players.length) : 0;
+            this.signToast = {
+              text: `签入成功！3 名新援入队（均分 CA ${avgAddedCa} · 身价 +¥${addedVal}万）`,
+              timer: 2.0,
+            };
+            actions.onSave();
+            if (res.completed) {
+              this.doneTriggered = true;
+              actions.onDone();
+            } else {
+              this.resetPackAnim();
+            }
           }
+        },
+        { variant: 'gold', fontSize: 14, icon: 'sparkle' }
+      );
+    } else {
+      // 未满 3 人时：3 个更衣室名牌空位槽替代死板的灰色禁用按钮
+      const slotW = 148;
+      const slotGap = 12;
+      const slotsX = 640 - (needPick * slotW + (needPick - 1) * slotGap) / 2;
+      for (let si = 0; si < needPick; si++) {
+        const sx = slotsX + si * (slotW + slotGap);
+        const sy = 550;
+        const pickedId = this.selectedIds[si];
+        const pickedPlayer = pickedId ? choices.find(c => c.id === pickedId) : undefined;
+        if (pickedPlayer) {
+          drawRoundRect(ctx, sx, sy, slotW, 46, 8, 'rgba(6, 78, 59, 0.72)', THEME.GREEN, 1.4);
+          drawPlayerAvatar(ctx, sx + 8, sy + 6, 28, 34, pickedPlayer, club, { radius: 4 });
+          drawText(ctx, fitText(ctx, pickedPlayer.name, 96, 11.5, true), sx + 42, sy + 16, {
+            size: 11.5,
+            bold: true,
+            color: THEME.TX1,
+          });
+          drawText(ctx, `${pickedPlayer.role} · CA ${pickedPlayer.ca}`, sx + 42, sy + 33, {
+            size: 9.5,
+            color: '#86EFAC',
+            mono: true,
+          });
+          hits.add(sx, sy, slotW, 46, () => toggleSelect(pickedPlayer.id));
+        } else {
+          ctx.save();
+          ctx.setLineDash([4, 3]);
+          drawRoundRect(ctx, sx, sy, slotW, 46, 8, 'rgba(15, 23, 42, 0.55)', 'rgba(148, 163, 184, 0.3)', 1.2);
+          ctx.restore();
+          drawText(ctx, `名牌空位 #${si + 1}`, sx + slotW / 2, sy + 23, {
+            size: 11,
+            color: THEME.TX3,
+            align: 'center',
+          });
         }
-      },
-      { variant: readyConfirm ? 'gold' : 'ghost', disabled: !readyConfirm, fontSize: 14, icon: 'sparkle' }
-    );
+      }
+    }
 
     this.renderPickedSummaryBar(ctx, club.squad, cpd.pickedCores);
     if (this.signToast) {

@@ -20,7 +20,15 @@ import {
 import { LeagueManager } from '../../../core/src/LeagueManager';
 import { WEATHER_INFO } from '../../../core/src/Chronicles';
 import { TacticalPresetSlot } from '../../../core/src/types';
-import { CommandCard, createStarterCoachDeck, formatCardHumanIntent, inferCardElement } from '../../../core/src/CommandCards';
+import { CommandCard, evaluateAdjacencySynergy, evaluateCardEffectiveCost, formatCardHumanIntent, inferCardElement, STANCE_LABELS } from '../../../core/src/CommandCards';
+import {
+  compileDirectiveToEffect,
+  V6_DIRECTIVE_ENCHANTS,
+  V6_SEGMENTS,
+  type V6CheckpointKey,
+  type V6CompiledDirectiveEntry,
+  type V6RelicId,
+} from '../../../core/src/v6';
 import { AssetLoader } from '../AssetLoader';
 import { drawPlayerAvatar } from '../AvatarRenderer';
 import {
@@ -72,8 +80,17 @@ export class MatchDayScreen {
   private lastEventCount = 0;
   private lastHiddenCount = 0;
   private handCards: CommandCard[] = [];
+  private drawPile: CommandCard[] = [];
+  private discardPile: CommandCard[] = [];
+  private deckOrderIds: string[] = [];
+  private lastPlayedCard: CommandCard | null = null;
+  private playedCardIds: string[] = [];
+  private lastPeriodicTickMinute = 0;
+  private saveDrawHalf1 = false;
+  private saveDrawHalf2 = false;
+  private subDrawCount = 0;
   private matchPresets: TacticalPresetSlot[] = [];
-  private tacticalEnergy = 3;
+  private tacticalEnergy = 2;
   private corruptedCardBoost = 0;
   private nextCardDiscount = 0;
   private usedCardIds = new Set<string>();
@@ -141,8 +158,44 @@ export class MatchDayScreen {
   private storyBeatBanner: { speaker: string; text: string; color: string; timer: number; maxTimer: number } | null = null;
   private onPrologueComplete?: () => void;
 
+  // V6 四赛段自由拍板 (0'-20' / 21'-45' / 46'-70' / 71'-90'+) 与 2D 球场光幕状态
+  private leagueRef: LeagueManager | null = null;
+  private v6Checkpoints: Record<V6CheckpointKey, V6CompiledDirectiveEntry[]> = { s1: [], s2: [], s3: [], s4: [] };
+  private v6TpBase = 3;
+  private v6MaxCarryTp = 2;
+  private v6MaxPlaysPerSegment = 2;
+  private v6BonusPlayCap = 0;
+  private v6Tp = 3;
+  private v6CurrentSegment: V6CheckpointKey = 's1';
+  private v6TriggeredCheckpoints = new Set<V6CheckpointKey>();
+  private v6CheckpointPlayedCount = 0;
+  private v6CheckpointUsedIds = new Set<string>();
+  private v6HasEmergencyCall = false;
+  private v6EmergencyUsed = false;
+  private v6HairdryerReady = false;
+  private v6Relics = new Set<V6RelicId>();
+  private v6HoveringCard = false;
+  private v6HoveredZone: 'ATT' | 'MID' | 'DEF' | null = null;
+  private v6ZoneCurtains: Array<{
+    zone: 'ATT' | 'MID' | 'DEF';
+    tendency: 'ATK' | 'DEF';
+    label: string;
+    lineShift?: number;
+    dualOverlap?: boolean;
+    timer: number;
+    maxTimer: number;
+  }> = [];
+  private v6ActiveCapsules: Array<{
+    name: string;
+    zone: 'ATT' | 'MID' | 'DEF';
+    benefit: string;
+    risk: string;
+    endMinute: number;
+  }> = [];
+
   public dispose(): void {
     this.engine = null;
+    this.leagueRef = null;
     this.isPrologueMode = false;
     this.storyBeatBanner = null;
     this.onPrologueComplete = undefined;
@@ -154,10 +207,52 @@ export class MatchDayScreen {
     this.playerPulses = [];
     this.playerFloatTags = [];
     this.pitchRipples = [];
+    this.v6Checkpoints = { s1: [], s2: [], s3: [], s4: [] };
+    this.v6TriggeredCheckpoints.clear();
+    this.v6CurrentSegment = 's1';
+    this.v6Tp = 0;
+    this.v6CheckpointPlayedCount = 0;
+    this.v6CheckpointUsedIds.clear();
+    this.v6BonusPlayCap = 0;
+    this.v6EmergencyUsed = false;
+    this.v6HairdryerReady = false;
+    this.v6Relics.clear();
+    this.v6HoveringCard = false;
+    this.v6HoveredZone = null;
+    this.v6ZoneCurtains = [];
+    this.v6ActiveCapsules = [];
     this.pitchTacticalVfx = [];
     this.usedCardIds.clear();
+    this.drawPile = [];
+    this.discardPile = [];
+    this.playedCardIds = [];
     this.scoutCounterElements.clear();
     this.scoutExploitLabel = '';
+  }
+
+  public consumePlayedCardIds(): string[] {
+    const out = [...this.playedCardIds];
+    this.playedCardIds = [];
+    return out;
+  }
+
+  private drawCardsFromDeck(count: number): void {
+    if (this.isPrologueMode) return;
+    for (let i = 0; i < count; i++) {
+      if (this.handCards.length >= 4) break;
+      if (this.drawPile.length === 0) {
+        const baseBack = this.discardPile.filter(c => c.isBase || c.id === 'card_captain_roar');
+        if (baseBack.length === 0) break;
+        this.discardPile = this.discardPile.filter(c => !c.isBase && c.id !== 'card_captain_roar');
+        for (let j = baseBack.length - 1; j > 0; j--) {
+          const k = Math.floor(Math.random() * (j + 1));
+          [baseBack[j], baseBack[k]] = [baseBack[k], baseBack[j]];
+        }
+        this.drawPile.push(...baseBack);
+      }
+      const next = this.drawPile.shift();
+      if (next) this.handCards.push(next);
+    }
   }
 
   private isScoutResonantCard(card: CommandCard): boolean {
@@ -253,11 +348,144 @@ export class MatchDayScreen {
     }
   }
 
+  private advanceV6Segment(seg: V6CheckpointKey, silent = false): void {
+    if (this.v6TriggeredCheckpoints.has(seg)) return;
+    const isFirst = this.v6TriggeredCheckpoints.size === 0;
+    this.v6TriggeredCheckpoints.add(seg);
+    const carryOver = isFirst ? 0 : Math.min(this.v6MaxCarryTp, this.v6Tp);
+    this.v6Tp = carryOver + this.v6TpBase;
+    this.v6CurrentSegment = seg;
+    this.v6CheckpointPlayedCount = 0;
+    this.v6BonusPlayCap = 0;
+    this.v6CheckpointUsedIds.clear();
+
+    if (seg === 's3' && this.v6Relics.has('hairdryer') && this.engine) {
+      this.v6HairdryerReady = true;
+      this.engine.applyCommandCard(this.userSide, {
+        id: 'relic_hairdryer_heal',
+        name: '弗格森吹风机',
+        durationMinutes: 2,
+        targetLine: 'ALL',
+        fitnessInstantDelta: 12,
+      });
+    }
+    if (seg === 's4' && this.v6Relics.has('clutch_clock') && this.engine) {
+      const stNow = this.engine.getState();
+      const myScore = this.userSide === 'home' ? stNow.homeScore : stNow.awayScore;
+      const oppScore = this.userSide === 'home' ? stNow.awayScore : stNow.homeScore;
+      if (myScore <= oppScore) {
+        this.engine.applyCommandCard(this.userSide, {
+          id: 'relic_clutch_clock',
+          name: '压哨绝杀时钟',
+          durationMinutes: 18,
+          targetLine: 'ALL',
+          shootingDelta: 8,
+          paceDelta: 8,
+          mechanic: 'blood_frenzy',
+        });
+      }
+    }
+
+    if (!silent) {
+      SoundEngine.playClick();
+      const segInfo = V6_SEGMENTS.find(s => s.key === seg);
+      const carryTxt = carryOver > 0 ? `（含上段结转 +${carryOver} TP）` : '';
+      this.cardBanner = {
+        text: `⚡ 进入${segInfo?.title ?? '新赛段'} (${segInfo?.range ?? ''}) · 当前可用 ${this.v6Tp} TP${carryTxt}`,
+        color: '#38BDF8',
+        timer: 2.5,
+      };
+    }
+  }
+
+  private getEffectiveV6CardCost(entry: V6CompiledDirectiveEntry): number {
+    let cost = entry.effectiveTpCost;
+    if (this.v6CurrentSegment === 's3' && this.v6HairdryerReady && this.v6CheckpointPlayedCount === 0) {
+      cost = Math.max(0, cost - 1);
+    }
+    return cost;
+  }
+
+  private playV6Directive(entry: V6CompiledDirectiveEntry): void {
+    if (!this.engine || !this.leagueRef) return;
+    const def = entry.def;
+    const effCost = this.getEffectiveV6CardCost(entry);
+    const maxPlays = this.v6MaxPlaysPerSegment + this.v6BonusPlayCap;
+    if (this.v6Tp < effCost || this.v6CheckpointPlayedCount >= maxPlays || this.v6CheckpointUsedIds.has(def.id)) {
+      SoundEngine.playWarning();
+      return;
+    }
+    const stNow = this.engine.getState();
+    const curForm = this.userSide === 'home' ? stNow.homeFormation : stNow.awayFormation;
+    const curStyle = this.userSide === 'home' ? stNow.homeStyle : stNow.awayStyle;
+    const ast = this.leagueRef.getV6Astrolabe();
+    const rogue = this.leagueRef.getV6SeasonRogue();
+    const eff = compileDirectiveToEffect(def.id, ast, curStyle, curForm, rogue);
+    if (!eff) return;
+
+    // 暗金词条《弗格森时间》：决胜总攻段拍出正面属性翻倍
+    if (entry.enchant === 'fergie_time' && this.v6CurrentSegment === 's4') {
+      if ((eff.passingDelta ?? 0) > 0) eff.passingDelta! *= 2;
+      if ((eff.shootingDelta ?? 0) > 0) eff.shootingDelta! *= 2;
+      if ((eff.defendingDelta ?? 0) > 0) eff.defendingDelta! *= 2;
+      if ((eff.paceDelta ?? 0) > 0) eff.paceDelta! *= 2;
+      if ((eff.composureDelta ?? 0) > 0) eff.composureDelta! *= 2;
+    }
+
+    const res = this.engine.applyCommandCard(this.userSide, eff);
+    if (!res.ok) {
+      SoundEngine.playWarning();
+      return;
+    }
+    if (this.v6CurrentSegment === 's3' && this.v6HairdryerReady && this.v6CheckpointPlayedCount === 0) {
+      this.v6HairdryerReady = false;
+    }
+    this.v6Tp -= effCost;
+    this.v6CheckpointPlayedCount += 1;
+    this.v6CheckpointUsedIds.add(def.id);
+    const zCol = def.zone === 'ATT' ? '#F43F5E' : def.zone === 'MID' ? '#38BDF8' : '#22C55E';
+    this.v6ZoneCurtains.push({
+      zone: def.zone,
+      tendency: def.tendency,
+      label: `${def.name} (${def.zone === 'ATT' ? '前场' : def.zone === 'MID' ? '中场' : '后场'}·${def.tendency === 'ATK' ? '攻' : '守'})`,
+      lineShift: eff.tacticalMod?.lineShift,
+      dualOverlap: eff.tacticalMod?.dualOverlap,
+      timer: 2.2,
+      maxTimer: 2.2,
+    });
+    const riskZeroed = entry.enchant === 'zero_risk' || (entry.satellites.includes('A') && def.satellites.A.removeRisk);
+    this.v6ActiveCapsules.push({
+      name: def.name,
+      zone: def.zone,
+      benefit: def.benefitSummary,
+      risk: riskZeroed ? '已免疫副作用' : def.riskSummary,
+      endMinute: stNow.minute + eff.durationMinutes,
+    });
+    if (this.v6ActiveCapsules.length > 3) this.v6ActiveCapsules.shift();
+    for (const p of stNow.players) {
+      if (p.team !== this.userSide || p.redCard) continue;
+      if (this.getLineOfRole(p.role) === def.zone || def.zone === 'MID') {
+        this.playerPulses.push({ playerId: p.id, color: zCol, timer: 1.2, maxTimer: 1.2 });
+        this.playerFloatTags.push({ playerId: p.id, text: def.name.slice(0, 6), color: zCol, timer: 1.5, maxTimer: 1.5 });
+      }
+    }
+    this.cardBanner = {
+      text: `⚡ 三区指令生效 · 《${def.name}》(${eff.durationMinutes}') · 🟢${def.benefitSummary.slice(0, 20)}`,
+      color: zCol,
+      timer: 2.5,
+    };
+    SoundEngine.playCommandCard(def.route === 'gamble');
+  }
+
   private playCommandCard(card: CommandCard): void {
+    const stNow = this.engine!.getState();
     const scoutResonant = this.isScoutResonantCard(card);
-    const effCost = Math.max(0, card.cost - (scoutResonant ? 1 : 0) - this.nextCardDiscount);
+    const evalCost = evaluateCardEffectiveCost(card, stNow, this.userSide, scoutResonant);
+    const effCost = Math.max(0, evalCost.cost - this.nextCardDiscount);
     const mul = card.isCorrupted && this.corruptedCardBoost > 0 ? 1 + this.corruptedCardBoost : 1;
     const scalePos = (v?: number) => (v && v > 0 ? Math.round(v * mul) : v);
+    const curStyleNow = stNow.teamStance?.[this.userSide] ?? (this.userSide === 'home' ? stNow.homeStyle : stNow.awayStyle);
+    const adjBonus = this.lastPlayedCard && evaluateAdjacencySynergy(this.lastPlayedCard, card, curStyleNow).active ? 2 : 0;
     const res = this.engine!.applyCommandCard(this.userSide, {
       ...card,
       passingDelta: scalePos(card.passingDelta),
@@ -267,7 +495,7 @@ export class MatchDayScreen {
       composureDelta: scalePos(card.composureDelta),
       goalkeepingDelta: scalePos(card.goalkeepingDelta),
       fitnessInstantDelta: scalePos(card.fitnessInstantDelta),
-      durationMinutes: card.durationMinutes + (scoutResonant ? 5 : 0),
+      durationMinutes: card.durationMinutes + (scoutResonant ? 5 : 0) + adjBonus,
       element: inferCardElement(card),
     });
     if (!res.ok) {
@@ -277,19 +505,44 @@ export class MatchDayScreen {
     }
     this.tacticalEnergy -= effCost;
     if (this.nextCardDiscount > 0) this.nextCardDiscount = 0;
-    this.usedCardIds.add(card.id);
     this.selectedCardId = null;
+    if (this.isPrologueMode) {
+      this.usedCardIds.add(card.id);
+    } else {
+      this.playedCardIds.push(card.id);
+      const hIdx = this.handCards.findIndex(c => c.id === card.id);
+      if (hIdx >= 0) this.handCards.splice(hIdx, 1);
+      this.discardPile.push(card);
+      // 若卡组顺序中下一张卡与当前卡存在连携且仍在牌库，优先置顶准备摸取
+      const ordIdx = this.deckOrderIds.indexOf(card.id);
+      if (ordIdx >= 0 && ordIdx + 1 < this.deckOrderIds.length) {
+        const nextId = this.deckOrderIds[ordIdx + 1];
+        const dpIdx = this.drawPile.findIndex(c => c.id === nextId);
+        if (dpIdx > 0) {
+          const [nextCard] = this.drawPile.splice(dpIdx, 1);
+          if (evaluateAdjacencySynergy(card, nextCard, curStyleNow).active) {
+            this.drawPile.unshift(nextCard);
+          } else {
+            this.drawPile.splice(dpIdx, 0, nextCard);
+          }
+        }
+      }
+    }
+    this.lastPlayedCard = card;
     if (res.energyRefund) this.tacticalEnergy = Math.min(5, this.tacticalEnergy + res.energyRefund);
     this.triggerCardFeedback(card);
+    const stanceTxt = card.stance ? ` · 切【${STANCE_LABELS[card.stance]}】` : '';
     this.cardBanner = {
-      text: scoutResonant
+      text: res.comboActivated
+        ? `态势连击爆发！${card.name}${stanceTxt}`
+        : evalCost.discounted && evalCost.reason
+        ? `${evalCost.reason} · ${card.name}${stanceTxt}`
+        : scoutResonant
         ? `破绽共振指挥 · ${card.name} (-1费 · 持续+5分)`
-        : card.chainEffect
-        ? `指挥卡连锁触发 · ${card.name} (${card.chainEffect.label})`
-        : card.isCorrupted
-        ? `双刃剑指挥 · ${card.name} 生效（伴随反噬）`
-        : `战术指挥生效 · ${card.name}`,
-      color: scoutResonant ? THEME.GOLD_LIGHT : card.isCorrupted ? '#FCA5A5' : card.chainEffect ? '#C084FC' : THEME.GOLD_LIGHT,
+        : card.affix?.kind === 'negative'
+        ? `异变代价指挥 · ${card.name} (${card.affix.name})`
+        : `战术指挥生效 · ${card.name}${stanceTxt}`,
+      color: res.comboActivated ? '#C084FC' : evalCost.discounted ? '#4ADE80' : card.affix?.kind === 'negative' ? '#FCA5A5' : THEME.GOLD_LIGHT,
       timer: 2.2,
     };
     SoundEngine.playCommandCard(!!card.isCorrupted);
@@ -379,7 +632,7 @@ export class MatchDayScreen {
       };
       this.cardBanner = {
         text: res.isCardBoosted
-          ? `元素共鸣 · ${res.skillName} (R${res.effectiveRank}) · ${res.instantSummary}`
+          ? `基因共鸣 · ${res.skillName} (R${res.effectiveRank}) · ${res.instantSummary}`
           : `主动技觉醒 · ${res.skillName} (R${res.effectiveRank}) · ${res.instantSummary}`,
         color: res.isCardBoosted ? THEME.GOLD_LIGHT : '#38BDF8',
         timer: 2.4,
@@ -474,36 +727,67 @@ export class MatchDayScreen {
     this.playerFloatTags = [];
     this.tacticalModalOpen = false;
     this.modalSelectedPitchId = null;
+    this.drawPile = [];
+    this.discardPile = [];
     this.handCards = [
       {
-        id: 'prologue_card_wing_surge',
-        name: '两翼齐飞·边路爆破',
-        cost: 2,
-        level: 2,
+        id: 'prologue_card_wing_stance',
+        catalogId: 'b_wp_1',
+        name: '拉开宽度',
+        tier: 0,
+        gene: 'wing',
+        isBase: true,
+        cost: 1,
+        level: 1,
         element: 'wing',
-        recipeKey: 'wing+blitz',
-        targetLine: 'ATT',
-        durationMinutes: 12,
-        paceDelta: 12,
-        shootingDelta: 8,
-        passingDelta: 6,
-        mechanic: 'wing_overload',
-        summary: '12分 [仅前锋线] 速度+12 射门+8 传球+6 · 边路传中抢点+20%',
-      },
-      {
-        id: 'prologue_card_allout_blitz',
-        name: '全线压上·绝地总攻',
-        cost: 2,
-        level: 3,
-        element: 'blitz',
-        recipeKey: 'press+blitz',
         targetLine: 'ALL',
         durationMinutes: 15,
-        shootingDelta: 12,
-        passingDelta: 10,
+        paceDelta: 6,
+        stance: 'wing_play',
+        tacticalMod: { widthScaleDelta: 0.12, crossBias: 0.15 },
+        mechanic: 'wing_overload',
+        summary: '切【两翼】态势 · 宽度+12% 传中+15% 边锋速+6',
+      },
+      {
+        id: 'prologue_card_wing_combo',
+        catalogId: 's_wp_1',
+        name: '边路强突造角',
+        tier: 2,
+        gene: 'wing',
+        cost: 1,
+        level: 2,
+        maxUses: 2,
+        remainingUses: 2,
+        element: 'wing',
+        targetLine: 'ATT',
+        durationMinutes: 12,
+        paceDelta: 10,
+        shootingDelta: 8,
+        comboRule: { requiresStance: 'wing_play', energyRefund: 1, extraBoxCrash: 1, label: '两翼连击返1费+抢点' },
+        tacticalMod: { cornerRateMul: 1.75 },
+        mechanic: 'wing_overload',
+        summary: '造角球×1.75 · 【两翼】连击：返1费且抢点+1人',
+      },
+      {
+        id: 'prologue_card_captain_roar',
+        catalogId: 'b_g_roar',
+        name: '老队长的怒吼',
+        tier: 0,
+        gene: 'blitz',
+        isBase: true,
+        cost: 1,
+        level: 3,
+        element: 'blitz',
+        targetLine: 'ALL',
+        durationMinutes: 15,
+        shootingDelta: 8,
+        paceDelta: 6,
         composureDelta: 10,
+        fitnessInstantDelta: 10,
+        timingCondition: 'late_70_not_leading',
+        timingDiscount: 1,
         mechanic: 'blood_frenzy',
-        summary: '15分 [全队] 射门+12 传球+10 冷静+10 · 落后时全队+8射/速',
+        summary: '全队冷+10 射+8 速+6 回体+10% · 70\'落后0费',
       },
     ];
     this.matchPresets = league.getTacticalPresets().map(p => ({ ...p, starterIds: [...p.starterIds] }));
@@ -560,9 +844,14 @@ export class MatchDayScreen {
     const perks = league.getUserClub().perks ?? [];
     const perkStartEnergy = perks.reduce((s, pk) => s + (pk.effect.startEnergyBonus ?? 0), 0);
     this.corruptedCardBoost = perks.reduce((s, pk) => s + (pk.effect.corruptedCardBoost ?? 0), 0);
-    this.tacticalEnergy = Math.min(5, 3 + (league.getInterMatchPrep()?.nextMatchBuff?.energyBonus ?? 0) + perkStartEnergy);
+    this.tacticalEnergy = Math.min(5, 2 + (league.getInterMatchPrep()?.nextMatchBuff?.energyBonus ?? 0) + perkStartEnergy);
     this.nextCardDiscount = 0;
     this.usedCardIds.clear();
+    this.playedCardIds = [];
+    this.lastPeriodicTickMinute = 0;
+    this.saveDrawHalf1 = false;
+    this.saveDrawHalf2 = false;
+    this.subDrawCount = 0;
     this.selectedCardId = null;
     this.selectedPitchPlayerId = null;
     this.onGoalCallback = onGoal;
@@ -578,7 +867,37 @@ export class MatchDayScreen {
     this.playerFloatTags = [];
     this.tacticalModalOpen = false;
     this.modalSelectedPitchId = null;
-    this.handCards = league.getMatchLoadout();
+    const fullDeck = league.getActiveMatchDeck().map(c => ({ ...c }));
+    this.deckOrderIds = fullDeck.map(c => c.id);
+    this.lastPlayedCard = null;
+    const innateFirst = fullDeck.filter(c => c.affix?.innateOpeningHand);
+    const orderedRest = fullDeck.filter(c => !c.affix?.innateOpeningHand);
+    this.drawPile = [...innateFirst, ...orderedRest];
+    this.discardPile = [];
+    this.handCards = [];
+    this.drawCardsFromDeck(3);
+    this.leagueRef = league;
+    const v6Cfg = league.getV6MatchRuntimeConfig();
+    this.v6TpBase = v6Cfg.checkpointTpBase;
+    this.v6MaxCarryTp = v6Cfg.maxCarryTp;
+    this.v6MaxPlaysPerSegment = v6Cfg.maxPlaysPerSegment;
+    this.v6HasEmergencyCall = v6Cfg.hasEmergencyCall;
+    this.v6EmergencyUsed = false;
+    this.v6HairdryerReady = false;
+    this.v6Relics = new Set<V6RelicId>(v6Cfg.relics);
+    this.v6Checkpoints = {
+      s1: league.getV6CheckpointDirectives('s1'),
+      s2: league.getV6CheckpointDirectives('s2'),
+      s3: league.getV6CheckpointDirectives('s3'),
+      s4: league.getV6CheckpointDirectives('s4'),
+    };
+    this.v6TriggeredCheckpoints.clear();
+    this.v6HoveringCard = false;
+    this.v6HoveredZone = null;
+    this.v6ZoneCurtains = [];
+    this.v6ActiveCapsules = [];
+    // 开场即进入第 1 赛段 (0'-20')，0 秒即可自由拍板出牌！
+    this.advanceV6Segment('s1', true);
     this.matchPresets = league.getTacticalPresets().map(p => ({ ...p, starterIds: [...p.starterIds] }));
     this.storyTags.clear();
     this.playerCaMap.clear();
@@ -668,11 +987,28 @@ export class MatchDayScreen {
       }
     }
 
-    // 半场自动暂停提示一次，并额外恢复 +1 点战术能量
+    // V6 光幕衰减与过期双色胶囊清理
+    for (let i = this.v6ZoneCurtains.length - 1; i >= 0; i--) {
+      this.v6ZoneCurtains[i].timer -= dtSec;
+      if (this.v6ZoneCurtains[i].timer <= 0) this.v6ZoneCurtains.splice(i, 1);
+    }
+    this.v6ActiveCapsules = this.v6ActiveCapsules.filter(c => st.minute < c.endMinute);
+
+    // V6 四赛段区间自然流转 (0'-20' / 21'-45' / 46'-70' / 71'-90'+)：段内任意时刻均可出牌，绝不强制打断顺风局
+    if (!this.isPrologueMode && st.phase !== 'full_time') {
+      if (st.minute >= 71 && !this.v6TriggeredCheckpoints.has('s4')) {
+        this.advanceV6Segment('s4');
+      } else if (st.phase === 'second_half' && st.minute >= 45 && !this.v6TriggeredCheckpoints.has('s3')) {
+        this.advanceV6Segment('s3');
+      } else if (st.minute >= 21 && !this.v6TriggeredCheckpoints.has('s2')) {
+        this.advanceV6Segment('s2');
+      }
+    }
+
+    // 半场自动暂停提示一次
     if (st.phase === 'half_time' && !this.halftimeNotified) {
       this.halftimeNotified = true;
       this.isPaused = true;
-      this.tacticalEnergy = Math.min(4, this.tacticalEnergy + 1);
     }
 
     if (this.kickoffIntroTimer > 0) {
@@ -683,7 +1019,7 @@ export class MatchDayScreen {
       }
     } else if (!this.isPaused && st.phase !== 'full_time' && this.hitStopTimer <= 0) {
       const tutState = this.isPrologueMode ? this.engine.getPrologueTutorialState() : null;
-      const effSpeed = tutState?.waitingForSub ? 0 : st.activeSkillPrompt ? 0.15 : tutState?.waitingForCard ? 0.08 : this.speed;
+      const effSpeed = tutState?.waitingForSub ? 0 : st.activeSkillPrompt ? 0.15 : tutState?.waitingForCard ? 0.08 : this.v6HoveringCard ? 0.25 : this.speed;
       this.tickAcc += dtSec * 10 * effSpeed;
       let steps = 0;
       while (this.tickAcc >= 1 && steps < 20) {
@@ -776,6 +1112,18 @@ export class MatchDayScreen {
           if (ev.team === this.userSide && this.scoutExploitLabel) {
             this.exploitBannerTimer = 2.6;
           }
+          if (!this.isPrologueMode && ev.team !== this.userSide && this.v6Relics.has('comeback_gene')) {
+            const myNow = this.userSide === 'home' ? st.homeScore : st.awayScore;
+            const oppNow = this.userSide === 'home' ? st.awayScore : st.homeScore;
+            if (myNow < oppNow) {
+              this.v6Tp += 1;
+              this.cardBanner = {
+                text: '⚡ 圣物《逆转基因》触发 · 丢球落后额外获得 +1 TP 且绝技冷却缩减！',
+                color: '#C084FC',
+                timer: 2.6,
+              };
+            }
+          }
           if (ev.minute >= 80 && Math.abs(st.homeScore - st.awayScore) <= 1 && !this.isPaused && this.speed >= 4) {
             if (this.savedSpeedBeforeSlowMo === null) {
               this.savedSpeedBeforeSlowMo = this.speed;
@@ -851,10 +1199,20 @@ export class MatchDayScreen {
             maxTimer: 3.8,
           };
           this.onCelebrationBurst?.(640, 320, THEME.GOLD_LIGHT);
+        } else if (ev.type === 'substitution' && !this.isPrologueMode && ev.team === this.userSide) {
+          if (st.minute >= 45 && this.v6Relics.has('super_bench')) {
+            this.v6Tp += 1;
+            this.cardBanner = {
+              text: '⚡ 圣物《超级替补席》触发 · 下半场换人立即获得 +1 TP 并提速！',
+              color: '#4ADE80',
+              timer: 2.2,
+            };
+          }
         } else if (ev.type === 'shot') {
           this.pitchRipples.push({ x: ev.pos.x, y: ev.pos.y, color: '#FDE047', timer: 0.45, maxTimer: 0.45, maxR: 16 });
           this.onImpactCallback?.(2.0, 0.10);
         } else if (ev.type === 'save') {
+          // V6 由引擎原子总线钩子统一处理门将扑救事件
           this.pitchRipples.push({ x: ev.pos.x, y: ev.pos.y, color: '#38BDF8', timer: 0.55, maxTimer: 0.55, maxR: 22 });
           this.onImpactCallback?.(3.2, 0.14);
         } else if (ev.type === 'foul' || ev.type === 'yellow_card' || ev.type === 'red_card') {
@@ -871,6 +1229,7 @@ export class MatchDayScreen {
         if (delta <= 6) {
           if (ev.type === 'goal') {
             SoundEngine.playGoalCheer();
+            SoundEngine.pulseCrowd(1.0, 2.2);
             const goalVo =
               ev.narrativeTag === 'HATTRICK'
                 ? 'vo_goal_hattrick'
@@ -880,16 +1239,24 @@ export class MatchDayScreen {
                 ? 'vo_goal_brace'
                 : 'vo_goal';
             SoundEngine.playVoice(goalVo, 3500);
-          } else if (ev.type === 'shot') SoundEngine.playShot();
-          else if (ev.type === 'save') {
+          } else if (ev.type === 'shot') {
+            SoundEngine.playShot();
+            SoundEngine.pulseCrowd(0.55, 0.9);
+          } else if (ev.type === 'save') {
             SoundEngine.playSave();
+            SoundEngine.pulseCrowd(0.7, 1.1);
             SoundEngine.playVoice('vo_save', 5000);
+          } else if (ev.type === 'substitution') {
+            SoundEngine.playSub();
+          } else if ((ev.type === 'tackle' || ev.type === 'interception') && this.speed <= 4) {
+            SoundEngine.playTackle();
           } else if (ev.type === 'foul') SoundEngine.playWhistle('foul');
           else if (ev.type === 'yellow_card') {
             SoundEngine.playCard();
             SoundEngine.playVoice('vo_foul_yellow', 6000);
           } else if (ev.type === 'red_card') {
             SoundEngine.playCard();
+            SoundEngine.pulseCrowd(0.8, 1.4);
             SoundEngine.playVoice('vo_card_red', 4000);
           } else if (ev.type === 'kickoff') {
             SoundEngine.playWhistle('kickoff');
@@ -1021,20 +1388,47 @@ export class MatchDayScreen {
         }
       }, { variant: 'gold' });
     } else {
-      drawButton(ctx, hits, 860, 24, 72, 36, this.isPaused ? '继续' : '暂停', () => {
-        this.isPaused = !this.isPaused;
-      }, { variant: this.isPaused ? 'green' : 'ghost' });
-
       if (this.isPrologueMode) {
+        drawButton(ctx, hits, 860, 24, 72, 36, this.isPaused ? '继续' : '暂停', () => {
+          this.isPaused = !this.isPaused;
+        }, { variant: this.isPaused ? 'green' : 'ghost' });
         drawBadge(ctx, 944, 30, 152, 24, '2x 序章教学实况', '#1E3A5F', THEME.GOLD_LIGHT);
       } else {
-        [1, 2, 4, 8].forEach((sp, i) => {
-          drawButton(ctx, hits, 940 + i * 44, 24, 38, 36, `${sp}x`, () => {
-            this.speed = sp;
-          }, { active: this.speed === sp });
+        // 紧凑一体式播控胶囊（播放/暂停 | 倍速循环）
+        const capX = 876;
+        const capY = 24;
+        const capW = 166;
+        const capH = 36;
+        drawRoundRect(ctx, capX, capY, capW, capH, 18, 'rgba(11, 18, 34, 0.92)', THEME.BORDER_GOLD, 1.2);
+        const hovPause = hits.isHovered(capX, capY, 82, capH);
+        const hovSpd = hits.isHovered(capX + 84, capY, 82, capH);
+        drawText(ctx, this.isPaused ? '▶ 继续' : '⏸ 暂停', capX + 42, capY + 18, {
+          size: 12,
+          bold: true,
+          color: this.isPaused ? THEME.GREEN : hovPause ? '#FFFFFF' : THEME.TX1,
+          align: 'center',
+        });
+        ctx.fillStyle = 'rgba(148, 163, 184, 0.25)';
+        ctx.fillRect(capX + 83, capY + 8, 1, 20);
+        drawText(ctx, `⏩ ${this.speed}x ▾`, capX + 125, capY + 18, {
+          size: 12.5,
+          bold: true,
+          color: hovSpd ? '#FFFFFF' : THEME.GOLD_LIGHT,
+          align: 'center',
+          mono: true,
+        });
+        hits.add(capX, capY, 82, capH, () => {
+          SoundEngine.playClick();
+          this.isPaused = !this.isPaused;
+        });
+        hits.add(capX + 84, capY, 82, capH, () => {
+          SoundEngine.playClick();
+          const speeds = [1, 2, 4, 8];
+          const curIdx = speeds.indexOf(this.speed);
+          this.speed = speeds[(curIdx + 1) % speeds.length];
         });
 
-        drawButton(ctx, hits, 1126, 24, 124, 36, '快速完赛', () => {
+        drawButton(ctx, hits, 1054, 24, 196, 36, '快速完赛', () => {
           this.engine!.simulateMatch();
         }, { variant: 'primary', icon: 'play' });
       }
@@ -1183,6 +1577,12 @@ export class MatchDayScreen {
       vig.addColorStop(1, 'rgba(4, 14, 8, 0.24)');
       ctx.fillStyle = vig;
       ctx.fillRect(PITCH_RECT.x, PITCH_RECT.y, PITCH_RECT.w, PITCH_RECT.h);
+      const flood = ctx.createLinearGradient(PITCH_RECT.x, PITCH_RECT.y, PITCH_RECT.x + PITCH_RECT.w, PITCH_RECT.y + PITCH_RECT.h);
+      flood.addColorStop(0, 'rgba(226, 242, 255, 0.08)');
+      flood.addColorStop(0.5, 'rgba(226, 242, 255, 0)');
+      flood.addColorStop(1, 'rgba(226, 242, 255, 0.06)');
+      ctx.fillStyle = flood;
+      ctx.fillRect(PITCH_RECT.x, PITCH_RECT.y, PITCH_RECT.w, PITCH_RECT.h);
       ctx.restore();
     } else {
       const sw = PITCH_RECT.w / 10;
@@ -1318,6 +1718,78 @@ export class MatchDayScreen {
         ctx.stroke();
       }
       ctx.restore();
+    }
+
+    // V6 2D 球场三区战术光幕预览 & 2秒拍板光幕+阵型线箭头（紧贴草皮在圆点下方）
+    if (!this.isPrologueMode) {
+      const uDir = this.userSide === 'home' ? st.homeAttackDir : (st.homeAttackDir === 1 ? -1 : 1);
+      const getZoneRect = (z: 'ATT' | 'MID' | 'DEF') => {
+        const thirdW = PITCH_RECT.w / 3;
+        if (z === 'MID') return { x: PITCH_RECT.x + thirdW, w: thirdW };
+        const isRight = (z === 'ATT' && uDir === 1) || (z === 'DEF' && uDir === -1);
+        return { x: isRight ? PITCH_RECT.x + thirdW * 2 : PITCH_RECT.x, w: thirdW };
+      };
+      if (this.v6HoveredZone) {
+        const zr = getZoneRect(this.v6HoveredZone);
+        const hCol = this.v6HoveredZone === 'ATT' ? 'rgba(244,63,94,0.16)' : this.v6HoveredZone === 'MID' ? 'rgba(56,189,248,0.16)' : 'rgba(34,197,94,0.16)';
+        const bCol = this.v6HoveredZone === 'ATT' ? '#F43F5E' : this.v6HoveredZone === 'MID' ? '#38BDF8' : '#22C55E';
+        ctx.save();
+        ctx.fillStyle = hCol;
+        ctx.fillRect(zr.x, PITCH_RECT.y, zr.w, PITCH_RECT.h);
+        ctx.strokeStyle = bCol;
+        ctx.lineWidth = 2;
+        ctx.setLineDash([8, 5]);
+        ctx.strokeRect(zr.x + 2, PITCH_RECT.y + 2, zr.w - 4, PITCH_RECT.h - 4);
+        ctx.restore();
+      }
+      for (const cur of this.v6ZoneCurtains) {
+        const zr = getZoneRect(cur.zone);
+        const p = Math.max(0, Math.min(1, cur.timer / cur.maxTimer));
+        const baseCol = cur.tendency === 'ATK' ? '#F43F5E' : '#22C55E';
+        ctx.save();
+        ctx.globalAlpha = Math.min(1, p * 1.3);
+        ctx.fillStyle = cur.tendency === 'ATK' ? 'rgba(244, 63, 94, 0.22)' : 'rgba(34, 197, 94, 0.22)';
+        ctx.fillRect(zr.x, PITCH_RECT.y, zr.w, PITCH_RECT.h);
+        ctx.strokeStyle = baseCol;
+        ctx.lineWidth = 2.6;
+        ctx.strokeRect(zr.x + 2, PITCH_RECT.y + 2, zr.w - 4, PITCH_RECT.h - 4);
+        if (cur.lineShift && cur.lineShift !== 0) {
+          const arrowDir = cur.lineShift > 0 ? uDir : -uDir;
+          const lineX = zr.x + zr.w * 0.5;
+          ctx.strokeStyle = '#FEF08A';
+          ctx.lineWidth = 2.2;
+          ctx.setLineDash([6, 4]);
+          ctx.beginPath();
+          ctx.moveTo(lineX, PITCH_RECT.y + 30);
+          ctx.lineTo(lineX, PITCH_RECT.y + PITCH_RECT.h - 30);
+          ctx.stroke();
+          ctx.setLineDash([]);
+          for (let ay = PITCH_RECT.y + 90; ay <= PITCH_RECT.y + PITCH_RECT.h - 90; ay += 95) {
+            const tipX = lineX + arrowDir * 28;
+            ctx.beginPath();
+            ctx.moveTo(lineX, ay);
+            ctx.lineTo(tipX, ay);
+            ctx.lineTo(tipX - arrowDir * 8, ay - 6);
+            ctx.moveTo(tipX, ay);
+            ctx.lineTo(tipX - arrowDir * 8, ay + 6);
+            ctx.stroke();
+          }
+        }
+        if (cur.dualOverlap) {
+          ctx.strokeStyle = '#38BDF8';
+          ctx.lineWidth = 2.4;
+          [PITCH_RECT.y + 36, PITCH_RECT.y + PITCH_RECT.h - 36].forEach(wy => {
+            const sx = zr.x + (uDir === 1 ? 16 : zr.w - 16);
+            const ex = zr.x + (uDir === 1 ? zr.w - 16 : 16);
+            ctx.beginPath();
+            ctx.moveTo(sx, wy);
+            ctx.lineTo(ex, wy);
+            ctx.stroke();
+          });
+        }
+        drawBadge(ctx, zr.x + zr.w / 2 - 84, PITCH_RECT.y + PITCH_RECT.h / 2 - 14, 168, 26, cur.label, 'rgba(8,12,22,0.92)', '#FEF08A');
+        ctx.restore();
+      }
     }
 
     // 球场实景战术投影 VFX（始终置于 FM 球员圆点下方，绝不遮挡圆点）
@@ -1470,11 +1942,22 @@ export class MatchDayScreen {
       ctx.lineWidth = p.role === 'GK' ? 2.6 : 2;
       ctx.stroke();
 
-      // 朝向小三角
+      // 朝向小三角与高速冲刺尾迹
       const speedMag = Math.hypot(p.vel.x, p.vel.y);
       const ang = speedMag > 0.4
         ? Math.atan2(p.vel.y, p.vel.x)
         : Math.atan2(st.ball.pos.y - p.pos.y, st.ball.pos.x - p.pos.x);
+      if (speedMag > 4.2) {
+        ctx.save();
+        ctx.strokeStyle = trimColor;
+        ctx.globalAlpha = Math.min(0.45, (speedMag - 4.2) * 0.12);
+        ctx.lineWidth = 1.6;
+        ctx.beginPath();
+        ctx.moveTo(sp.x - Math.cos(ang) * (dotR + 2), sp.y - Math.sin(ang) * (dotR + 2));
+        ctx.lineTo(sp.x - Math.cos(ang) * (dotR + 10), sp.y - Math.sin(ang) * (dotR + 10));
+        ctx.stroke();
+        ctx.restore();
+      }
       ctx.save();
       ctx.fillStyle = trimColor;
       ctx.beginPath();
@@ -1665,17 +2148,23 @@ export class MatchDayScreen {
     const sb = toScreen(this.renderBall.x, this.renderBall.y);
     const zLift = Math.max(0, Math.min(18, this.renderBall.z * 3.5));
     const ballRadius = Math.max(2, 5 + zLift * 0.12);
-    ctx.fillStyle = 'rgba(0,0,0,0.45)';
+    const shadowAlpha = Math.max(0.18, 0.48 - zLift * 0.015);
+    const shadowRx = 5.5 + zLift * 0.12;
+    ctx.fillStyle = `rgba(0,0,0,${shadowAlpha.toFixed(2)})`;
     ctx.beginPath();
-    ctx.ellipse(sb.x, sb.y + 2, 5.5, 3, 0, 0, Math.PI * 2);
+    ctx.ellipse(sb.x, sb.y + 2, shadowRx, 3, 0, 0, Math.PI * 2);
     ctx.fill();
-    ctx.fillStyle = '#FFFFFF';
+    ctx.fillStyle = '#F8FAFC';
     ctx.beginPath();
     ctx.arc(sb.x, sb.y - zLift, ballRadius, 0, Math.PI * 2);
     ctx.fill();
     ctx.strokeStyle = '#0F172A';
     ctx.lineWidth = 1.2;
     ctx.stroke();
+    ctx.fillStyle = '#FFFFFF';
+    ctx.beginPath();
+    ctx.arc(sb.x - ballRadius * 0.3, sb.y - zLift - ballRadius * 0.3, Math.max(1.1, ballRadius * 0.28), 0, Math.PI * 2);
+    ctx.fill();
 
     // 2D 球场转播级天气光学氛围层（序章强制雨夜决战氛围）
     const weatherKind = this.isPrologueMode ? 'rain' : (st.weather ?? 'sunny');
@@ -1896,19 +2385,31 @@ export class MatchDayScreen {
       }
     }
 
-    // 场上生效中的指挥卡倒计时标签
-    const userBuffs = (st.activeBuffs || []).filter(b => b.team === this.userSide);
-    userBuffs.slice(0, 2).forEach((bf, bi) => {
-      const bx = 278 + bi * 194;
-      drawRoundRect(ctx, bx, 92, 186, 24, 5, 'rgba(14,22,40,0.85)', THEME.GOLD_LIGHT);
-      drawIcon(ctx, 'card', bx + 14, 104, 12, THEME.GOLD_LIGHT);
-      drawText(ctx, `${bf.name} (${Math.max(1, bf.endMinute - st.minute)}')`, bx + 100, 104, {
-        size: 11,
-        bold: true,
-        color: THEME.GOLD_LIGHT,
-        align: 'center',
+    // 场上生效中的三区双刃剑指令胶囊（避开进球横幅，精简为清晰紧凑胶囊）
+    if (!this.isPrologueMode && this.v6ActiveCapsules.length > 0 && !this.goalBanner) {
+      this.v6ActiveCapsules.slice(0, 2).forEach((cap, ci) => {
+        const bx = 274 + ci * 368;
+        const rem = Math.max(1, cap.endMinute - st.minute);
+        const zCol = cap.zone === 'ATT' ? '#F43F5E' : cap.zone === 'MID' ? '#38BDF8' : '#22C55E';
+        drawRoundRect(ctx, bx, 89, 360, 26, 6, 'rgba(8, 13, 25, 0.92)', zCol, 1.2);
+        drawText(ctx, `${cap.name} ${rem}'`, bx + 10, 102, { size: 10.5, bold: true, color: THEME.GOLD_LIGHT });
+        drawText(ctx, fitText(ctx, `+${cap.benefit}`, 124, 10), bx + 108, 102, { size: 10, bold: true, color: '#4ADE80' });
+        drawText(ctx, fitText(ctx, `-${cap.risk}`, 114, 10), bx + 238, 102, { size: 10, color: '#FCA5A5' });
       });
-    });
+    } else if (!this.goalBanner) {
+      const userBuffs = (st.activeBuffs || []).filter(b => b.team === this.userSide);
+      userBuffs.slice(0, 2).forEach((bf, bi) => {
+        const bx = 278 + bi * 194;
+        drawRoundRect(ctx, bx, 92, 186, 24, 5, 'rgba(14,22,40,0.85)', THEME.GOLD_LIGHT);
+        drawIcon(ctx, 'card', bx + 14, 104, 12, THEME.GOLD_LIGHT);
+        drawText(ctx, `${bf.name} (${Math.max(1, bf.endMinute - st.minute)}')`, bx + 100, 104, {
+          size: 11,
+          bold: true,
+          color: THEME.GOLD_LIGHT,
+          align: 'center',
+        });
+      });
+    }
 
     // 右上球场边角：传奇融合威能 & 护盾/反击实时层数 HUD
     const aspCount = st.activeAspects?.length ?? 0;
@@ -2038,7 +2539,7 @@ export class MatchDayScreen {
         tagX += 60;
       }
       if (prm.isCardBoosted) {
-        drawBadge(ctx, tagX, by + 9, 78, 20, '元素过载!', '#78350F', THEME.GOLD_LIGHT);
+        drawBadge(ctx, tagX, by + 9, 78, 20, '基因过载!', '#78350F', THEME.GOLD_LIGHT);
         tagX += 84;
       }
       const maxNameW = Math.max(60, bx + bw - 204 - tagX);
@@ -2102,9 +2603,9 @@ export class MatchDayScreen {
 
     const prologueTut = this.isPrologueMode ? this.engine.getPrologueTutorialState() : null;
     const targetPrologueCardId = prologueTut?.waitingForCard === 1
-      ? 'prologue_card_wing_surge'
+      ? 'prologue_card_wing_stance'
       : prologueTut?.waitingForCard === 2
-      ? 'prologue_card_allout_blitz'
+      ? 'prologue_card_wing_combo'
       : null;
     const firstPlayableCard = targetPrologueCardId
       ? this.handCards.find(c => c.id === targetPrologueCardId && !this.usedCardIds.has(c.id)) ?? null
@@ -2116,8 +2617,8 @@ export class MatchDayScreen {
       drawChamferPanel(ctx, 326, 444, 628, 52, 10, 'rgba(8, 15, 32, 0.96)', THEME.GOLD_LIGHT, 2.2);
       drawBadge(ctx, 340, 459, 86, 22, cardBadge, '#78350F', THEME.GOLD_LIGHT);
       const tipMsg = prologueTut.waitingForCard === 1
-        ? `0:1 落后！点击下方【${firstPlayableCard?.name ?? '两翼齐飞'}】撕开防线！`
-        : `1:3 陷入绝境！打出【${firstPlayableCard?.name ?? '全线压上'}】搏命反扑！`;
+        ? `0:1 落后！点击下方【${firstPlayableCard?.name ?? '拉开宽度'}】撕开防线！`
+        : `1:3 陷入绝境！打出【${firstPlayableCard?.name ?? '边路强突造角'}】搏命反扑！`;
       drawText(ctx, tipMsg, 438, 470, { size: 12.5, bold: true, color: '#FEF08A' });
       ctx.save();
       ctx.globalAlpha = pulse;
@@ -2125,12 +2626,226 @@ export class MatchDayScreen {
       ctx.restore();
     }
 
-    // 竖版实体教练手牌槽
+    // 竖版实体教练手牌槽：正式比赛采用 V6 四赛段 (0'-20' / 21'-45' / 46'-70' / 71'-90'+) 随时自由拍板 HUD
+    this.v6HoveredZone = null;
+    this.v6HoveringCard = false;
     const cmdBackImg = AssetLoader.get('command_card_back');
-    drawChamferPanel(ctx, 616, 562, 398, 142, 10, 'rgba(11, 17, 30, 0.90)', THEME.BORDER_GOLD, 1.2, THEME.GOLD);
-    drawText(ctx, '教练手牌 · 悬停预览', 628, 574, { size: 11, bold: true, color: THEME.GOLD_LIGHT });
+    drawChamferPanel(ctx, 616, 562, 398, 142, 10, 'rgba(11, 17, 30, 0.92)', this.v6Tp > 0 ? THEME.BORDER_GOLD : THEME.BORDER, 1.4, THEME.GOLD);
+    const curStance = st.teamStance?.[this.userSide] ?? curStyle;
+    if (!this.isPrologueMode) {
+      const curSeg = this.v6CurrentSegment;
+      const segInfo = V6_SEGMENTS.find(s => s.key === curSeg) ?? V6_SEGMENTS[0];
+      const cpCards = this.v6Checkpoints[curSeg] ?? [];
+      const maxPlays = this.v6MaxPlaysPerSegment + this.v6BonusPlayCap;
+
+      // 顶部四赛段进度胶囊 + 实时 TP 水晶数
+      V6_SEGMENTS.forEach((seg, si) => {
+        const isCur = seg.key === curSeg;
+        const isPast = this.v6TriggeredCheckpoints.has(seg.key) && !isCur;
+        const sx = 622 + si * 52;
+        drawBadge(
+          ctx,
+          sx,
+          566,
+          49,
+          19,
+          seg.shortLabel,
+          isCur ? '#78350F' : isPast ? '#0F172A' : '#1E293B',
+          isCur ? '#FEF08A' : isPast ? '#64748B' : '#94A3B8'
+        );
+      });
+      drawText(ctx, `TP ${this.v6Tp} · 本段${this.v6CheckpointPlayedCount}/${maxPlays}`, 836, 576, {
+        size: 11,
+        bold: true,
+        color: this.v6Tp > 0 ? THEME.GOLD_LIGHT : THEME.TX2,
+        mono: true,
+      });
+      if (this.v6HasEmergencyCall && !this.v6EmergencyUsed && st.phase !== 'full_time') {
+        drawButton(ctx, hits, 930, 565, 78, 21, '爆发+2TP', () => {
+          this.v6EmergencyUsed = true;
+          this.v6Tp += 2;
+          this.v6BonusPlayCap += 1;
+          SoundEngine.playRewardChime();
+          this.cardBanner = {
+            text: `⚡ 宗师印【应急拍板】发动 · 立即补充 +2 TP 且本段可多拍 1 张牌！`,
+            color: THEME.GOLD_LIGHT,
+            timer: 2.5,
+          };
+        }, { variant: 'gold', fontSize: 10 });
+      }
+
+      let hoverV6: { entry: V6CompiledDirectiveEntry; x: number; y: number; effCost: number; canPlay: boolean } | null = null;
+      cpCards.slice(0, 4).forEach((entry, ci) => {
+        const { def } = entry;
+        const effCost = this.getEffectiveV6CardCost(entry);
+        const cx = 623 + ci * 96;
+        const cy = 591;
+        const cw = 91;
+        const ch = 106;
+        const used = this.v6CheckpointUsedIds.has(def.id);
+        const playCapFull = this.v6CheckpointPlayedCount >= maxPlays;
+        const canPlay = !used && !playCapFull && st.phase !== 'full_time' && this.v6Tp >= effCost;
+        const isHov = hits.isHovered(cx, cy - 6, cw, ch + 6);
+        if (isHov) {
+          this.v6HoveredZone = def.zone;
+          if (!used && st.phase !== 'full_time') this.v6HoveringCard = true;
+          hoverV6 = { entry, x: cx, y: cy, effCost, canPlay };
+        }
+        const zCol = def.zone === 'ATT' ? '#F43F5E' : def.zone === 'MID' ? '#38BDF8' : '#22C55E';
+        const cyL = cy + (isHov && canPlay ? -8 : isHov ? -3 : 0);
+        const bgCol = used ? '#090E1A' : isHov && canPlay ? '#1E3458' : canPlay ? '#14233C' : '#0E1628';
+        drawChamferPanel(
+          ctx,
+          cx,
+          cyL,
+          cw,
+          ch,
+          8,
+          bgCol,
+          used ? THEME.BORDER : isHov && canPlay ? zCol : 'rgba(255,255,255,0.10)',
+          isHov && canPlay ? 1.8 : 1
+        );
+        if (!used) {
+          ctx.fillStyle = zCol;
+          ctx.fillRect(cx + 8, cyL + 1, cw - 16, 2.5);
+        }
+
+        // 顶部区域标签 + TP 费用徽标（绿字高亮减费/0费！）
+        const isDisc = effCost < def.tpCost;
+        drawBadge(
+          ctx,
+          cx + 5,
+          cyL + 5,
+          42,
+          17,
+          `${def.zone === 'ATT' ? '前' : def.zone === 'MID' ? '中' : '后'}·${def.tendency === 'ATK' ? '攻' : '守'}`,
+          '#0B1120',
+          used ? THEME.TX3 : zCol
+        );
+        drawBadge(
+          ctx,
+          cx + cw - 40,
+          cyL + 5,
+          35,
+          17,
+          `${effCost}TP`,
+          used ? '#1E293B' : isDisc ? '#065F46' : canPlay ? '#78350F' : '#1E293B',
+          used ? THEME.TX3 : isDisc ? '#6EE7B7' : canPlay ? '#FEF08A' : THEME.TX3
+        );
+
+        // 卡片主标题（11px 紧凑双行，与下方标签留出呼吸感）
+        drawWrappedText(ctx, def.name, cx + 7, cyL + 26, cw - 14, 13, {
+          size: 11,
+          bold: true,
+          color: used ? THEME.TX3 : THEME.TX1,
+          maxLines: 2,
+        });
+
+        // 卫星星级 / 暗金词条标识
+        const satCount = entry.satellites.length;
+        const enchInfo = entry.enchant ? V6_DIRECTIVE_ENCHANTS[entry.enchant] : null;
+        if (enchInfo) {
+          drawBadge(ctx, cx + 6, cyL + 65, cw - 12, 16, `✦${enchInfo.shortTag}`, '#3B1F6E', '#E9D5FF');
+        } else if (satCount > 0) {
+          drawBadge(ctx, cx + 10, cyL + 65, cw - 20, 16, `${'★'.repeat(satCount)}${entry.isOverclocked ? '超频' : '改造'}`, '#1E293B', THEME.GOLD_LIGHT);
+        } else {
+          const routeTag = def.source === 'fusion' ? '融合王牌' : def.source === 'formation' ? '阵型专属' : def.route === 'gamble' ? '高赔豪赌' : '稳健拼图';
+          drawText(ctx, routeTag, cx + cw / 2, cyL + 73, { size: 9.5, color: used ? THEME.TX3 : '#94A3B8', align: 'center' });
+        }
+
+        // 底部清晰操作态提示
+        const statusTxt = used
+          ? '本段已拍 ✓'
+          : playCapFull
+          ? '本段满额'
+          : canPlay
+          ? '⚡ 点击拍板'
+          : `需 ${effCost} TP`;
+        drawText(ctx, statusTxt, cx + cw / 2, cyL + 93, {
+          size: 10,
+          bold: true,
+          color: used ? '#64748B' : canPlay ? THEME.GOLD_LIGHT : THEME.TX3,
+          align: 'center',
+        });
+
+        if (canPlay) {
+          hits.add(cx, cy - 6, cw, ch + 6, () => {
+            this.playV6Directive(entry);
+          });
+        }
+      });
+
+      // 悬停大号高清战术详情浮窗（≥12px 大字 + 0.25x 战术聚焦提示）
+      if (hoverV6) {
+        const { entry, x, y, effCost, canPlay } = hoverV6 as {
+          entry: V6CompiledDirectiveEntry;
+          x: number;
+          y: number;
+          effCost: number;
+          canPlay: boolean;
+        };
+        const { def, effect } = entry;
+        const zCol = def.zone === 'ATT' ? '#F43F5E' : def.zone === 'MID' ? '#38BDF8' : '#22C55E';
+        const fw = 368;
+        const fh = entry.enchant || entry.satellites.length > 0 ? 132 : 112;
+        const tx = Math.min(646, Math.max(616, x - 90));
+        const ty = 556 - fh;
+        drawChamferPanel(ctx, tx, ty, fw, fh, 10, 'rgba(7, 12, 24, 0.97)', canPlay ? zCol : THEME.GOLD_LIGHT, 1.8, zCol);
+        drawBadge(
+          ctx,
+          tx + 14,
+          ty + 12,
+          68,
+          20,
+          `${def.zone === 'ATT' ? '前场' : def.zone === 'MID' ? '中场' : '后场'}·${def.tendency === 'ATK' ? '主攻' : '稳守'}`,
+          '#0F172A',
+          zCol
+        );
+        drawText(ctx, `《${def.name}》`, tx + 88, ty + 22, { size: 14, bold: true, color: THEME.GOLD_LIGHT });
+        drawText(ctx, `${effCost} TP · 持续 ${effect.durationMinutes}'`, tx + fw - 14, ty + 22, {
+          size: 11.5,
+          bold: true,
+          color: effCost < def.tpCost ? '#4ADE80' : '#E2E8F0',
+          align: 'right',
+          mono: true,
+        });
+        drawText(ctx, fitText(ctx, `🟢 收益：${def.benefitSummary}`, fw - 28, 12.5), tx + 14, ty + 50, {
+          size: 12.5,
+          bold: true,
+          color: '#4ADE80',
+        });
+        const riskZeroed = entry.enchant === 'zero_risk' || (entry.satellites.includes('A') && def.satellites.A.removeRisk);
+        drawText(
+          ctx,
+          fitText(ctx, riskZeroed ? '🛡️ 代价：已被卫星/暗金词条彻底免疫清除！' : `🔴 代价：${def.riskSummary}`, fw - 28, 12),
+          tx + 14,
+          ty + 74,
+          { size: 12, color: riskZeroed ? '#7DD3FC' : '#FCA5A5' }
+        );
+        if (entry.enchant || entry.satellites.length > 0) {
+          const enchTxt = entry.enchant ? `✦附魔【${V6_DIRECTIVE_ENCHANTS[entry.enchant].name}】` : '';
+          const satTxt = entry.satellites.length > 0 ? `★已激活卫星 ${entry.satellites.join('+')}` : '';
+          drawText(ctx, fitText(ctx, [enchTxt, satTxt].filter(Boolean).join(' · '), fw - 28, 11.5), tx + 14, ty + 98, {
+            size: 11.5,
+            bold: true,
+            color: '#E9D5FF',
+          });
+        }
+        drawText(ctx, `${segInfo.title} · 悬停自动 0.25x 慢放预览热区`, tx + fw - 14, ty + fh - 12, {
+          size: 10,
+          color: '#94A3B8',
+          align: 'right',
+        });
+      }
+    } else {
+    if (this.isPrologueMode) {
+      drawText(ctx, '教练手牌 · 悬停预览', 628, 574, { size: 11, bold: true, color: THEME.GOLD_LIGHT });
+    } else {
+      drawBadge(ctx, 624, 565, 76, 18, `态势:${STANCE_LABELS[curStance]}`, '#0C4A6E', '#7DD3FC');
+      drawText(ctx, `牌库 ${this.drawPile.length} · 弃 ${this.discardPile.length}`, 706, 574, { size: 10, bold: true, color: '#94A3B8', mono: true });
+    }
     if (this.nextCardDiscount > 0) {
-      drawBadge(ctx, 766, 565, 84, 18, `下卡-${this.nextCardDiscount}费`, '#065F46', '#6EE7B7');
+      drawBadge(ctx, 792, 565, 68, 18, `下卡-${this.nextCardDiscount}费`, '#065F46', '#6EE7B7');
     }
     // 能量宝石显示 (最多5格)
     for (let ei = 0; ei < 5; ei++) {
@@ -2148,6 +2863,9 @@ export class MatchDayScreen {
     drawText(ctx, `能量 ${this.tacticalEnergy}`, 1004, 574, { size: 11, bold: true, color: THEME.GOLD_LIGHT, align: 'right', mono: true });
 
     let previewCard: { card: CommandCard; x: number; y: number; canPlay: boolean; effCost: number } | null = null;
+    if (this.handCards.length === 0 && !this.isPrologueMode) {
+      drawText(ctx, '手牌已打空 · 每 15 分钟/中场/关键事件自动补牌', 815, 646, { size: 11.5, color: THEME.TX3, align: 'center' });
+    }
     this.handCards.slice(0, 4).forEach((card, ci) => {
       const cx = 625 + ci * 97;
       const cy = 596;
@@ -2155,7 +2873,10 @@ export class MatchDayScreen {
       const ch = 100;
       const used = this.usedCardIds.has(card.id);
       const scoutRes = this.isScoutResonantCard(card);
-      const effCost = Math.max(0, card.cost - (scoutRes ? 1 : 0) - this.nextCardDiscount);
+      const evalCost = evaluateCardEffectiveCost(card, st, this.userSide, scoutRes);
+      const effCost = Math.max(0, evalCost.cost - this.nextCardDiscount);
+      const isComboReady = !!card.comboRule && (card.comboRule.anyStance || curStance === card.comboRule.requiresStance || !!card.affix?.anyStanceCombo);
+      const isTimingZero = !used && evalCost.discounted && effCost === 0;
       const isTutTarget = firstPlayableCardId === card.id;
       const prologueLocked = this.isPrologueMode && !used && !isTutTarget;
       const canPlay = !used && st.phase !== 'full_time' && this.tacticalEnergy >= effCost && !prologueLocked;
@@ -2166,30 +2887,34 @@ export class MatchDayScreen {
       }
       const lift = isSelected || isTutTarget ? -10 : (isHovered && canPlay) ? -8 : (isHovered && !used) ? -4 : 0;
       const cyL = cy + lift;
-      const lv = card.level ?? 1;
+      const tier = card.tier ?? (card.isBase ? 0 : 1);
       const borderCol = isSelected
         ? THEME.GREEN
         : isTutTarget
         ? '#FACC15'
         : used || !canPlay
         ? THEME.BORDER
-        : card.isCorrupted
-        ? THEME.RED_LIGHT
-        : lv >= 4
-        ? THEME.GOLD_LIGHT
-        : lv === 3
+        : isTimingZero
+        ? '#4ADE80'
+        : isComboReady
         ? '#C084FC'
-        : lv === 2
+        : card.affix?.kind === 'negative'
+        ? THEME.RED_LIGHT
+        : tier >= 3
+        ? THEME.GOLD_LIGHT
+        : tier === 2
+        ? '#C084FC'
+        : tier === 1
         ? '#38BDF8'
-        : THEME.GOLD;
+        : '#94A3B8';
       const cardBg = used ? '#0B111E' : isSelected ? '#172E4E' : (isHovered && canPlay) ? '#1B2D4F' : THEME.BG_CARD;
 
       ctx.save();
-      if (!IS_MOBILE && (isSelected || (isHovered && canPlay)) && !used) {
-        ctx.shadowColor = isSelected ? 'rgba(34, 197, 94, 0.55)' : 'rgba(250, 204, 21, 0.45)';
+      if (!IS_MOBILE && (isSelected || isTimingZero || isComboReady || (isHovered && canPlay)) && !used) {
+        ctx.shadowColor = isSelected || isTimingZero ? 'rgba(34, 197, 94, 0.55)' : isComboReady ? 'rgba(192, 132, 252, 0.55)' : 'rgba(250, 204, 21, 0.45)';
         ctx.shadowBlur = 12;
       }
-      drawChamferPanel(ctx, cx, cyL, cw, ch, 7, cardBg, borderCol, isSelected || isHovered ? 1.8 : 1.1, !used && canPlay ? borderCol : undefined);
+      drawChamferPanel(ctx, cx, cyL, cw, ch, 7, cardBg, borderCol, isSelected || isHovered || isTimingZero || isComboReady ? 1.8 : 1.1, !used && canPlay ? borderCol : undefined);
       ctx.restore();
 
       // 卡面插画窗口
@@ -2210,7 +2935,7 @@ export class MatchDayScreen {
         ctx.restore();
       }
 
-      // 费用宝石 + 元素徽记
+      // 费用宝石 + 时机/连击徽标 + 基因徽记
       const isDiscounted = !used && effCost < card.cost;
       drawBadge(
         ctx,
@@ -2222,8 +2947,12 @@ export class MatchDayScreen {
         isDiscounted ? '#065F46' : canPlay ? '#0C4A6E' : '#1E293B',
         isDiscounted ? '#6EE7B7' : canPlay ? THEME.GOLD_LIGHT : THEME.TX3
       );
-      if (scoutRes && !used) {
-        drawBadge(ctx, cx + 32, cyL + 5, 32, 16, '减费', '#78350F', THEME.GOLD_LIGHT);
+      if (isTimingZero) {
+        drawBadge(ctx, cx + 31, cyL + 5, 34, 16, '时机0', '#14532D', '#4ADE80');
+      } else if (isComboReady) {
+        drawBadge(ctx, cx + 31, cyL + 5, 34, 16, '连击!', '#581C87', '#E9D5FF');
+      } else if (scoutRes && !used) {
+        drawBadge(ctx, cx + 31, cyL + 5, 34, 16, '减费', '#78350F', THEME.GOLD_LIGHT);
       }
       const elemId = getCommandCardElemId(card);
       const elemImg = AssetLoader.get(`elem_${elemId}`);
@@ -2238,17 +2967,23 @@ export class MatchDayScreen {
       drawText(ctx, cardTitle, cx + cw / 2, cyL + 59, {
         size: 10.5,
         bold: true,
-        color: used ? THEME.TX3 : card.isCorrupted ? '#FCA5A5' : THEME.TX1,
+        color: used ? THEME.TX3 : card.affix?.kind === 'negative' ? '#FCA5A5' : THEME.TX1,
         align: 'center',
       });
       const shortLine = SHORT_LINE_MAP[card.targetLine ?? 'ALL'] ?? '全队';
-      drawText(ctx, scoutRes ? `破绽共振 +5分` : `${card.durationMinutes}分·${shortLine}`, cx + cw / 2, cyL + 74, {
+      const usesTag = card.isBase || card.id === 'card_captain_roar' ? '常备' : card.remainingUses !== undefined ? `剩${card.remainingUses}次` : `${card.durationMinutes}分`;
+      drawText(ctx, scoutRes ? `破绽共振 +5分` : `${usesTag}·${shortLine}`, cx + cw / 2, cyL + 74, {
         size: 8.5,
         color: used ? THEME.TX3 : scoutRes ? THEME.GOLD_LIGHT : '#93C5FD',
         align: 'center',
       });
-      const footText = used ? '已打出' : prologueLocked ? '等待时机' : isTutTarget ? '点击打出!' : isSelected ? '再点打出' : !canPlay ? '能量不足' : '点选预览';
-      const footCol = used ? THEME.TX3 : prologueLocked ? '#FBBF24' : (isTutTarget || isSelected) ? THEME.GREEN : !canPlay ? '#F87171' : THEME.GOLD_LIGHT;
+      const roleHint = card.stance
+        ? (card.stance === curStance ? `强化·${STANCE_LABELS[card.stance]}` : `起手·切${STANCE_LABELS[card.stance]}`)
+        : card.comboRule?.requiresStance && !isComboReady
+        ? `先切${STANCE_LABELS[card.comboRule.requiresStance]}再打`
+        : '点选预览';
+      const footText = used ? '已打出' : prologueLocked ? '等待时机' : isTutTarget ? '点击打出!' : isSelected ? '再点打出' : !canPlay ? '能量不足' : isTimingZero ? '0费白嫖!' : isComboReady ? '连击! 可出' : roleHint;
+      const footCol = used ? THEME.TX3 : prologueLocked ? '#FBBF24' : (isTutTarget || isSelected || isTimingZero) ? THEME.GREEN : isComboReady ? '#E9D5FF' : !canPlay ? '#F87171' : card.stance ? '#7DD3FC' : card.comboRule?.requiresStance ? '#94A3B8' : THEME.GOLD_LIGHT;
       drawText(ctx, footText, cx + cw / 2, cyL + 89, {
         size: 8.5,
         bold: true,
@@ -2326,6 +3061,7 @@ export class MatchDayScreen {
           this.playCommandCard(card);
         }, { variant: 'green', fontSize: 10, icon: 'check' });
       }
+    }
     }
 
     // 5. 右侧面板：序章模式隐藏9行杂乱统计表，只突出「换人/战术」入口与核心球员状态

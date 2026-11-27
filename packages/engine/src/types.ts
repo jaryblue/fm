@@ -96,7 +96,6 @@ export interface PlayerInput {
   silverTraits?: string[]; // FC26 银标 PlayStyle
   hiddenTrait?: string; // 未显露的触发式隐藏词条
   formationFamiliarity?: number; // 0-100 当前阵型个人熟练度
-  secondaryRoles?: PlayerRole[];
   pa?: number;
   isStarred?: boolean;
 }
@@ -126,7 +125,10 @@ export type SkillInstantAction =
   | 'force_shot_on_target'
   | 'win_foul_setpiece'
   | 'GK_save_boost'
-  | 'tempo_burst_intercept';
+  | 'tempo_burst_intercept'
+  | 'force_cross_header'
+  | 'tactical_foul_stop'
+  | 'gk_long_launch';
 
 export type SkillMutationTag =
   | 'bypass_offside'
@@ -134,9 +136,65 @@ export type SkillMutationTag =
   | 'double_duration'
   | 'refund_card_energy'
   | 'reduce_all_cd'
+  | 'reset_all_cd'
   | 'grant_shield_stack'
   | 'steal_tempo'
-  | 'counter_damage_amp';
+  | 'counter_damage_amp'
+  | 'force_yellow_card'
+  | 'drain_opp_stamina'
+  | 'heal_team'
+  | 'extra_box_crash';
+
+export type DirectiveZone = 'ATT' | 'MID' | 'DEF';
+export type DirectiveTendency = 'ATK' | 'DEF';
+
+export type EventHookTrigger =
+  | 'onTackle'
+  | 'onIntercept'
+  | 'onBlock'
+  | 'onSave'
+  | 'onLongShotSaved'
+  | 'onPassStreak'
+  | 'onCross'
+  | 'onShot'
+  | 'onCorner'
+  | 'onOffsideTrap'
+  | 'onPossessionTick'
+  | 'onDirectiveEnd'
+  | 'onSubIn'
+  | 'onConcede';
+
+export type EventHookAction =
+  | 'healTeam'
+  | 'drainOppStamina'
+  | 'oppComposureDebuff'
+  | 'cutSkillCd'
+  | 'addShield'
+  | 'addCounter'
+  | 'grantBypassOffside'
+  | 'grantOnTarget'
+  | 'stealTempo'
+  | 'triggerMiniBuff'
+  | 'extendDirective'
+  | 'forceYellowCard'
+  | 'forceCornerProb';
+
+export interface EventHookRule {
+  trigger: EventHookTrigger;
+  action: EventHookAction;
+  value?: number;
+  streakTarget?: number;
+  minPossession?: number;
+  requireZeroConceded?: boolean;
+  maxPerBuff?: number;
+  miniBuffPreset?: 'pace_burst' | 'shot_burst' | 'counter_burst' | 'tempo_burst';
+}
+
+export interface ImmunityFlags {
+  preventPenaltyOrRedOnce?: boolean;
+  immuneHighPressTackle?: boolean;
+  noCrossStylePenalty?: boolean;
+}
 
 export type LegendaryAspectId = string;
 
@@ -186,7 +244,11 @@ export type ActiveSkillSituation =
   | 'wing_overload'
   | 'midfield_press'
   | 'trailing_late'
-  | 'any_possession';
+  | 'any_possession'
+  | 'set_piece_moment'
+  | 'leading_late'
+  | 'just_conceded'
+  | 'high_possession';
 
 export interface EquippedActiveSkill {
   id: string;
@@ -205,6 +267,7 @@ export interface EquippedActiveSkill {
   effectiveRank?: number;
   mutationChoice?: SkillBranchChoice;
   mutationTag?: SkillMutationTag;
+  secondaryMutationTag?: SkillMutationTag;
   mutationLabel?: string;
   instantAction?: SkillInstantAction;
   instantLabel?: string;
@@ -248,6 +311,15 @@ export interface TeamSetup {
   gridSlots?: Record<number, { col: number; row: number }>;
   slotDuties?: Record<number, PlayerDuty>;
   prologueScripted?: boolean;
+  deckArchetypeGene?: CardGene;
+  // V6 原子总线常驻扩展
+  v6PassiveHooks?: EventHookRule[];
+  v6ImmunityFlags?: ImmunityFlags;
+  v6TotalFootballMaster?: boolean;
+  v6SkillTempRankBonus?: number;
+  v6SkillDualBranch?: boolean;
+  v6StartingShields?: number;
+  v6MaxCounterStacks?: number;
 }
 
 export interface PlayerState {
@@ -324,11 +396,13 @@ export type MatchEventType =
   | 'tackle'
   | 'interception'
   | 'foul'
+  | 'injury'
   | 'yellow_card'
   | 'red_card'
   | 'corner'
   | 'offside'
   | 'substitution'
+  | 'tactic'
   | 'commentary'
   | 'halftime'
   | 'fulltime';
@@ -379,6 +453,8 @@ export interface TeamMatchStats {
   offsides: number;
   saves: number;
   distanceKm: number;
+  attackShotPatterns?: Record<string, number>;
+  attackGoalPatterns?: Record<string, number>;
 }
 
 export type CardTargetLine = 'GK' | 'DEF' | 'MID' | 'ATT' | 'ALL';
@@ -400,6 +476,114 @@ export type CardMechanic =
   | 'iron_wall_block'
   | 'blood_frenzy';
 
+export type TeamStance = TacticalStyle;
+export type CardGene = 'press' | 'pass' | 'wing' | 'iron' | 'blitz';
+export type CardAffixKind = 'positive' | 'negative' | 'easter_egg';
+
+export interface CardAffix {
+  id: string;
+  name: string;
+  kind: CardAffixKind;
+  desc: string;
+  costDelta?: number;
+  usesBonus?: number;
+  innateOpeningHand?: boolean;
+  anyStanceCombo?: boolean;
+  energyRefundBonus?: number;
+  foulRateMul?: number;
+  endFitnessPenalty?: number;
+  lineShiftDelta?: number;
+  defPacePenalty?: number;
+  chemistryPenalty?: number;
+  allPacePenalty?: number;
+  oppThroughPassBonus?: number;
+  passHealEvery6?: number;
+  fergieTime?: boolean;
+  mouBusLeading?: boolean;
+  clutchSetPiece85?: boolean;
+}
+
+export interface CardTacticalMod extends TacticalMods {
+  shootBias?: number;
+  tempoMul?: number;
+  widthScaleDelta?: number;
+  blockBonus?: number;
+  setPieceXgMul?: number;
+  foulRateMul?: number;
+  cornerRateMul?: number;
+  freeKickRateMul?: number;
+  oppShotXgPenalty?: number;
+  // V6 原子修饰器扩展
+  interceptRangeBonus?: number;
+  interceptProbBonus?: number;
+  oppThroughPassBonus?: number;
+  oppLongShotBonus?: number;
+  offsideTrapBonus?: number;
+  oppStaminaDrainPerMin?: number;
+  skillDualBranch?: boolean;
+  skillTempRankBonus?: number;
+}
+
+export interface CardChemistryMod {
+  scope: 'spine' | 'wings' | 'all';
+  delta: number;
+  setTo100?: boolean;
+}
+
+export interface CardOppDebuff {
+  oppFitnessDelta?: number;
+  oppComposureDelta?: number;
+  oppPassPenalty?: number;
+}
+
+export interface CardComboRule {
+  requiresStance?: TeamStance;
+  anyStance?: boolean;
+  energyRefund?: number;
+  durationBonus?: number;
+  extraShooting?: number;
+  extraPace?: number;
+  extraDefending?: number;
+  extraGoalkeeping?: number;
+  extraChemistry?: number;
+  extraBoxCrash?: number;
+  extraXgBonus?: number;
+  fitnessLeech?: number;
+  fitnessGain?: number;
+  extraCornerMul?: number;
+  label: string;
+}
+
+export type CardTimingCondition =
+  | 'trailing'
+  | 'leading'
+  | 'drawing'
+  | 'late_70_not_leading'
+  | 'late_70_leading'
+  | 'late_75_leading'
+  | 'late_75_drawing'
+  | 'late_80_not_leading'
+  | 'late_65_lead_1'
+  | 'early_20'
+  | 'after_60'
+  | 'halftime_45_55'
+  | 'recent_conceded'
+  | 'recent_save'
+  | 'sub_used'
+  | 'sub_used_2'
+  | 'red_card'
+  | 'low_possession'
+  | 'vs_5back'
+  | 'bad_weather'
+  | 'switched_stance_2';
+
+export interface CardSkillSynergy {
+  targetSkillTags: string[];
+  promptBonusRate?: number;
+  freeCooldownOnce?: boolean;
+  rankBoost?: number;
+}
+
 export interface CommandCardEffect {
   id: string;
   name: string;
@@ -417,7 +601,27 @@ export interface CommandCardEffect {
   chainEffect?: CommandCardChain;
   mechanic?: CardMechanic;
   forceStyle?: TacticalStyle;
-  element?: 'press' | 'pass' | 'wing' | 'iron' | 'blitz';
+  element?: CardGene;
+  // V5 扩展字段
+  stance?: TeamStance;
+  tacticalMod?: CardTacticalMod;
+  chemistryMod?: CardChemistryMod;
+  oppDebuff?: CardOppDebuff;
+  comboRule?: CardComboRule;
+  timingCondition?: CardTimingCondition;
+  timingDiscount?: number;
+  skillSynergy?: CardSkillSynergy;
+  affix?: CardAffix;
+  endFitnessPenalty?: number;
+  starPlayerTarget?: 'top_shooter' | 'top_passer' | 'fastest_winger' | 'fastest_striker';
+  // V6 三区双刃剑指令与原子总线扩展
+  zone?: DirectiveZone;
+  tendency?: DirectiveTendency;
+  tpCost?: number;
+  benefitSummary?: string;
+  riskSummary?: string;
+  immunityFlags?: ImmunityFlags;
+  eventHooks?: EventHookRule[];
 }
 
 export interface ActiveCommandBuff {
@@ -425,6 +629,10 @@ export interface ActiveCommandBuff {
   name: string;
   endMinute: number;
   effect: CommandCardEffect;
+  comboActivated?: boolean;
+  endPenaltyApplied?: boolean;
+  startConceded?: number;
+  hookUseCount?: Record<string, number>;
   startStats?: {
     shots: number;
     xG: number;
@@ -483,6 +691,16 @@ export interface MatchState {
     counterCharges: number;
     passSeq: number;
   };
+  // V5 局内态势与时机窗追踪
+  teamStance?: { home?: TeamStance; away?: TeamStance };
+  stanceSwitchCount?: { home: number; away: number };
+  lastConcededMin?: { home: number; away: number };
+  lastSaveMin?: { home: number; away: number };
+  deckArchetypeGene?: { home?: CardGene; away?: CardGene };
+  pendingClutchSetPiece?: { home: boolean; away: boolean };
+  // V6 三区轨迹与全攻全守 Zone
+  usedDirectiveZones?: { home: DirectiveZone[]; away: DirectiveZone[] };
+  totalFootballZoneTriggered?: { home: boolean; away: boolean };
 }
 
 export interface TacticalStyleConfig {

@@ -60,6 +60,8 @@ export interface PlayerInput {
     silverTraits?: string[];
     hiddenTrait?: string;
     formationFamiliarity?: number;
+    pa?: number;
+    isStarred?: boolean;
 }
 export interface TacticalMods {
     overlapDepthBonus?: number;
@@ -78,8 +80,27 @@ export interface TacticalMods {
 }
 export type SkillBranchChoice = 'A' | 'B';
 export type SkillVfxTheme = 'att' | 'def' | 'ult';
-export type SkillInstantAction = 'clear_danger' | 'instant_counter_pass' | 'force_through_ball' | 'force_shot_on_target' | 'win_foul_setpiece' | 'GK_save_boost' | 'tempo_burst_intercept';
-export type SkillMutationTag = 'bypass_offside' | 'guarantee_shot_on_target' | 'double_duration' | 'refund_card_energy' | 'reduce_all_cd' | 'grant_shield_stack' | 'steal_tempo' | 'counter_damage_amp';
+export type SkillInstantAction = 'clear_danger' | 'instant_counter_pass' | 'force_through_ball' | 'force_shot_on_target' | 'win_foul_setpiece' | 'GK_save_boost' | 'tempo_burst_intercept' | 'force_cross_header' | 'tactical_foul_stop' | 'gk_long_launch';
+export type SkillMutationTag = 'bypass_offside' | 'guarantee_shot_on_target' | 'double_duration' | 'refund_card_energy' | 'reduce_all_cd' | 'reset_all_cd' | 'grant_shield_stack' | 'steal_tempo' | 'counter_damage_amp' | 'force_yellow_card' | 'drain_opp_stamina' | 'heal_team' | 'extra_box_crash';
+export type DirectiveZone = 'ATT' | 'MID' | 'DEF';
+export type DirectiveTendency = 'ATK' | 'DEF';
+export type EventHookTrigger = 'onTackle' | 'onIntercept' | 'onBlock' | 'onSave' | 'onLongShotSaved' | 'onPassStreak' | 'onCross' | 'onShot' | 'onCorner' | 'onOffsideTrap' | 'onPossessionTick' | 'onDirectiveEnd' | 'onSubIn' | 'onConcede';
+export type EventHookAction = 'healTeam' | 'drainOppStamina' | 'oppComposureDebuff' | 'cutSkillCd' | 'addShield' | 'addCounter' | 'grantBypassOffside' | 'grantOnTarget' | 'stealTempo' | 'triggerMiniBuff' | 'extendDirective' | 'forceYellowCard' | 'forceCornerProb';
+export interface EventHookRule {
+    trigger: EventHookTrigger;
+    action: EventHookAction;
+    value?: number;
+    streakTarget?: number;
+    minPossession?: number;
+    requireZeroConceded?: boolean;
+    maxPerBuff?: number;
+    miniBuffPreset?: 'pace_burst' | 'shot_burst' | 'counter_burst' | 'tempo_burst';
+}
+export interface ImmunityFlags {
+    preventPenaltyOrRedOnce?: boolean;
+    immuneHighPressTackle?: boolean;
+    noCrossStylePenalty?: boolean;
+}
 export type LegendaryAspectId = string;
 export interface ActiveLegendaryAspect {
     id: LegendaryAspectId;
@@ -105,6 +126,8 @@ export interface TriggerSkillResult {
     isCardBoosted: boolean;
     mutationChoice?: SkillBranchChoice;
     mutationLabel?: string;
+    instantAction?: SkillInstantAction;
+    styleTag?: TacticalStyle;
 }
 export interface CoachMatchReward {
     energyRefund?: number;
@@ -113,7 +136,7 @@ export interface CoachMatchReward {
     bannerText: string;
     tone: string;
 }
-export type ActiveSkillSituation = 'opponent_through_ball' | 'attacking_final_third' | 'counter_opportunity' | 'box_danger' | 'wing_overload' | 'midfield_press' | 'trailing_late' | 'any_possession';
+export type ActiveSkillSituation = 'opponent_through_ball' | 'attacking_final_third' | 'counter_opportunity' | 'box_danger' | 'wing_overload' | 'midfield_press' | 'trailing_late' | 'any_possession' | 'set_piece_moment' | 'leading_late' | 'just_conceded' | 'high_possession';
 export interface EquippedActiveSkill {
     id: string;
     name: string;
@@ -131,11 +154,15 @@ export interface EquippedActiveSkill {
     effectiveRank?: number;
     mutationChoice?: SkillBranchChoice;
     mutationTag?: SkillMutationTag;
+    secondaryMutationTag?: SkillMutationTag;
     mutationLabel?: string;
     instantAction?: SkillInstantAction;
     instantLabel?: string;
     vfxTheme?: SkillVfxTheme;
     linkedElement?: 'press' | 'pass' | 'wing' | 'iron' | 'blitz';
+    styleTag?: TacticalStyle;
+    firstTriggerFreeCd?: boolean;
+    scoutOverclocked?: boolean;
 }
 export interface ActiveSkillPrompt {
     skillId: string;
@@ -165,11 +192,21 @@ export interface TeamSetup {
     perkSynergies?: PerkSkillSynergyFlags;
     teamFamiliarityAvg?: number;
     teamChemistryAvg?: number;
+    scoutCounterLabel?: string;
     gridSlots?: Record<number, {
         col: number;
         row: number;
     }>;
     slotDuties?: Record<number, PlayerDuty>;
+    prologueScripted?: boolean;
+    deckArchetypeGene?: CardGene;
+    v6PassiveHooks?: EventHookRule[];
+    v6ImmunityFlags?: ImmunityFlags;
+    v6TotalFootballMaster?: boolean;
+    v6SkillTempRankBonus?: number;
+    v6SkillDualBranch?: boolean;
+    v6StartingShields?: number;
+    v6MaxCounterStacks?: number;
 }
 export interface PlayerState {
     id: string;
@@ -188,6 +225,9 @@ export interface PlayerState {
     goldTraits?: string[];
     silverTraits?: string[];
     hiddenTrait?: string;
+    secondaryRoles?: PlayerRole[];
+    pa?: number;
+    isStarred?: boolean;
     subbedIn?: boolean;
     fitness: number;
     strainWarning?: boolean;
@@ -229,7 +269,7 @@ export interface BallState {
     restartType: 'kickoff' | 'throw' | 'goalkick' | 'corner' | 'freekick' | 'penalty';
     restartPos: Vec2;
 }
-export type MatchEventType = 'kickoff' | 'pass' | 'shot' | 'goal' | 'save' | 'miss' | 'tackle' | 'interception' | 'foul' | 'yellow_card' | 'red_card' | 'corner' | 'offside' | 'substitution' | 'commentary' | 'halftime' | 'fulltime';
+export type MatchEventType = 'kickoff' | 'pass' | 'shot' | 'goal' | 'save' | 'miss' | 'tackle' | 'interception' | 'foul' | 'injury' | 'yellow_card' | 'red_card' | 'corner' | 'offside' | 'substitution' | 'tactic' | 'commentary' | 'halftime' | 'fulltime';
 export interface MatchEvent {
     id: string;
     tick: number;
@@ -245,6 +285,15 @@ export interface MatchEvent {
     text: string;
     level?: 'critical' | 'important' | 'normal' | 'minor' | 'phase';
     narrativeTag?: 'BRACE' | 'HATTRICK' | 'LATE_WINNER' | 'MOMENTUM' | 'LULL';
+}
+export interface TacticalCallout {
+    id: string;
+    tick: number;
+    playerId: string;
+    team: TeamSide;
+    label: string;
+    kind: 'trait' | 'chemistry' | 'scout' | 'tactic';
+    pos: Vec2;
 }
 export interface TeamMatchStats {
     goals: number;
@@ -265,6 +314,8 @@ export interface TeamMatchStats {
     offsides: number;
     saves: number;
     distanceKm: number;
+    attackShotPatterns?: Record<string, number>;
+    attackGoalPatterns?: Record<string, number>;
 }
 export type CardTargetLine = 'GK' | 'DEF' | 'MID' | 'ATT' | 'ALL';
 export interface CommandCardChain {
@@ -272,6 +323,84 @@ export interface CommandCardChain {
     label: string;
 }
 export type CardMechanic = 'offside_trap' | 'set_piece_nuke' | 'super_sub' | 'high_press_blitz' | 'tiki_taka_flow' | 'gk_counter_launch' | 'wing_overload' | 'long_shot_cannon' | 'iron_wall_block' | 'blood_frenzy';
+export type TeamStance = TacticalStyle;
+export type CardGene = 'press' | 'pass' | 'wing' | 'iron' | 'blitz';
+export type CardAffixKind = 'positive' | 'negative' | 'easter_egg';
+export interface CardAffix {
+    id: string;
+    name: string;
+    kind: CardAffixKind;
+    desc: string;
+    costDelta?: number;
+    usesBonus?: number;
+    innateOpeningHand?: boolean;
+    anyStanceCombo?: boolean;
+    energyRefundBonus?: number;
+    foulRateMul?: number;
+    endFitnessPenalty?: number;
+    lineShiftDelta?: number;
+    defPacePenalty?: number;
+    chemistryPenalty?: number;
+    allPacePenalty?: number;
+    oppThroughPassBonus?: number;
+    passHealEvery6?: number;
+    fergieTime?: boolean;
+    mouBusLeading?: boolean;
+    clutchSetPiece85?: boolean;
+}
+export interface CardTacticalMod extends TacticalMods {
+    shootBias?: number;
+    tempoMul?: number;
+    widthScaleDelta?: number;
+    blockBonus?: number;
+    setPieceXgMul?: number;
+    foulRateMul?: number;
+    cornerRateMul?: number;
+    freeKickRateMul?: number;
+    oppShotXgPenalty?: number;
+    interceptRangeBonus?: number;
+    interceptProbBonus?: number;
+    oppThroughPassBonus?: number;
+    oppLongShotBonus?: number;
+    offsideTrapBonus?: number;
+    oppStaminaDrainPerMin?: number;
+    skillDualBranch?: boolean;
+    skillTempRankBonus?: number;
+}
+export interface CardChemistryMod {
+    scope: 'spine' | 'wings' | 'all';
+    delta: number;
+    setTo100?: boolean;
+}
+export interface CardOppDebuff {
+    oppFitnessDelta?: number;
+    oppComposureDelta?: number;
+    oppPassPenalty?: number;
+}
+export interface CardComboRule {
+    requiresStance?: TeamStance;
+    anyStance?: boolean;
+    energyRefund?: number;
+    durationBonus?: number;
+    extraShooting?: number;
+    extraPace?: number;
+    extraDefending?: number;
+    extraGoalkeeping?: number;
+    extraChemistry?: number;
+    extraBoxCrash?: number;
+    extraXgBonus?: number;
+    fitnessLeech?: number;
+    fitnessGain?: number;
+    extraCornerMul?: number;
+    label: string;
+}
+export type CardTimingCondition = 'trailing' | 'leading' | 'drawing' | 'late_70_not_leading' | 'late_70_leading' | 'late_75_leading' | 'late_75_drawing' | 'late_80_not_leading' | 'late_65_lead_1' | 'early_20' | 'after_60' | 'halftime_45_55' | 'recent_conceded' | 'recent_save' | 'sub_used' | 'sub_used_2' | 'red_card' | 'low_possession' | 'vs_5back' | 'bad_weather' | 'switched_stance_2';
+export interface CardSkillSynergy {
+    targetSkillTags: string[];
+    promptBonusRate?: number;
+    freeCooldownOnce?: boolean;
+    rankBoost?: number;
+}
 export interface CommandCardEffect {
     id: string;
     name: string;
@@ -289,13 +418,42 @@ export interface CommandCardEffect {
     chainEffect?: CommandCardChain;
     mechanic?: CardMechanic;
     forceStyle?: TacticalStyle;
-    element?: 'press' | 'pass' | 'wing' | 'iron' | 'blitz';
+    element?: CardGene;
+    stance?: TeamStance;
+    tacticalMod?: CardTacticalMod;
+    chemistryMod?: CardChemistryMod;
+    oppDebuff?: CardOppDebuff;
+    comboRule?: CardComboRule;
+    timingCondition?: CardTimingCondition;
+    timingDiscount?: number;
+    skillSynergy?: CardSkillSynergy;
+    affix?: CardAffix;
+    endFitnessPenalty?: number;
+    starPlayerTarget?: 'top_shooter' | 'top_passer' | 'fastest_winger' | 'fastest_striker';
+    zone?: DirectiveZone;
+    tendency?: DirectiveTendency;
+    tpCost?: number;
+    benefitSummary?: string;
+    riskSummary?: string;
+    immunityFlags?: ImmunityFlags;
+    eventHooks?: EventHookRule[];
 }
 export interface ActiveCommandBuff {
     team: TeamSide;
     name: string;
     endMinute: number;
     effect: CommandCardEffect;
+    comboActivated?: boolean;
+    endPenaltyApplied?: boolean;
+    startConceded?: number;
+    hookUseCount?: Record<string, number>;
+    startStats?: {
+        shots: number;
+        xG: number;
+        goals: number;
+        tackles: number;
+        passesSuccess: number;
+    };
 }
 export interface MatchState {
     tick: number;
@@ -331,6 +489,17 @@ export interface MatchState {
     };
     pairPasses?: Record<string, number>;
     pairAssists?: Record<string, number>;
+    tacticalStats?: {
+        traitTriggers: number;
+        chemPasses: number;
+        scoutCounters: number;
+    };
+    skillResolution?: {
+        skillName: string;
+        outcomeText: string;
+        isPositive: boolean;
+        expiresTick: number;
+    } | null;
     activeSkillPrompt?: ActiveSkillPrompt | null;
     skillUses?: Record<string, number>;
     skillCooldowns?: Record<string, number>;
@@ -339,6 +508,38 @@ export interface MatchState {
         shieldCharges: number;
         counterCharges: number;
         passSeq: number;
+    };
+    teamStance?: {
+        home?: TeamStance;
+        away?: TeamStance;
+    };
+    stanceSwitchCount?: {
+        home: number;
+        away: number;
+    };
+    lastConcededMin?: {
+        home: number;
+        away: number;
+    };
+    lastSaveMin?: {
+        home: number;
+        away: number;
+    };
+    deckArchetypeGene?: {
+        home?: CardGene;
+        away?: CardGene;
+    };
+    pendingClutchSetPiece?: {
+        home: boolean;
+        away: boolean;
+    };
+    usedDirectiveZones?: {
+        home: DirectiveZone[];
+        away: DirectiveZone[];
+    };
+    totalFootballZoneTriggered?: {
+        home: boolean;
+        away: boolean;
     };
 }
 export interface TacticalStyleConfig {

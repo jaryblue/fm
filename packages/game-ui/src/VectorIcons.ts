@@ -32,7 +32,17 @@ export type IconName =
   | 'book'
   | 'link'
   | 'gear'
-  | 'save';
+  | 'save'
+  | 'stat_pace'
+  | 'stat_shoot'
+  | 'stat_pass'
+  | 'stat_def'
+  | 'stat_gk'
+  | 'stat_pos'
+  | 'stat_calm'
+  | 'stat_fit'
+  | 'stat_fam'
+  | 'stat_assist';
 
 export function drawIcon(
   ctx: CanvasRenderingContext2D,
@@ -375,6 +385,113 @@ export function drawIcon(
       ctx.stroke();
       ctx.strokeRect(cx - r * 0.36, cy - r * 0.62, r * 0.56, r * 0.34);
       ctx.strokeRect(cx - r * 0.38, cy + r * 0.12, r * 0.76, r * 0.50);
+      break;
+    }
+    case 'stat_pace': {
+      ctx.beginPath();
+      ctx.moveTo(cx - r * 0.58, cy - r * 0.48);
+      ctx.lineTo(cx - r * 0.04, cy);
+      ctx.lineTo(cx - r * 0.58, cy + r * 0.48);
+      ctx.moveTo(cx + r * 0.04, cy - r * 0.48);
+      ctx.lineTo(cx + r * 0.58, cy);
+      ctx.lineTo(cx + r * 0.04, cy + r * 0.48);
+      ctx.stroke();
+      break;
+    }
+    case 'stat_shoot': {
+      ctx.beginPath();
+      ctx.arc(cx, cy, r * 0.52, 0, Math.PI * 2);
+      ctx.moveTo(cx - r * 0.82, cy);
+      ctx.lineTo(cx + r * 0.82, cy);
+      ctx.moveTo(cx, cy - r * 0.82);
+      ctx.lineTo(cx, cy + r * 0.82);
+      ctx.stroke();
+      break;
+    }
+    case 'stat_pass': {
+      ctx.beginPath();
+      ctx.moveTo(cx - r * 0.68, cy + r * 0.48);
+      ctx.quadraticCurveTo(cx - r * 0.05, cy - r * 0.72, cx + r * 0.68, cy - r * 0.18);
+      ctx.moveTo(cx + r * 0.34, cy - r * 0.48);
+      ctx.lineTo(cx + r * 0.68, cy - r * 0.18);
+      ctx.lineTo(cx + r * 0.34, cy + r * 0.12);
+      ctx.stroke();
+      break;
+    }
+    case 'stat_def': {
+      ctx.beginPath();
+      ctx.moveTo(cx - r * 0.58, cy - r * 0.58);
+      ctx.lineTo(cx + r * 0.58, cy - r * 0.58);
+      ctx.lineTo(cx + r * 0.58, cy + r * 0.02);
+      ctx.quadraticCurveTo(cx + r * 0.48, cy + r * 0.52, cx, cy + r * 0.76);
+      ctx.quadraticCurveTo(cx - r * 0.48, cy + r * 0.52, cx - r * 0.58, cy + r * 0.02);
+      ctx.closePath();
+      ctx.stroke();
+      break;
+    }
+    case 'stat_gk': {
+      ctx.beginPath();
+      ctx.roundRect(cx - r * 0.52, cy - r * 0.28, r * 1.04, r * 0.92, r * 0.28);
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.moveTo(cx - r * 0.32, cy - r * 0.28);
+      ctx.lineTo(cx - r * 0.32, cy - r * 0.72);
+      ctx.moveTo(cx, cy - r * 0.28);
+      ctx.lineTo(cx, cy - r * 0.80);
+      ctx.moveTo(cx + r * 0.32, cy - r * 0.28);
+      ctx.lineTo(cx + r * 0.32, cy - r * 0.68);
+      ctx.stroke();
+      break;
+    }
+    case 'stat_pos': {
+      ctx.beginPath();
+      ctx.arc(cx, cy - r * 0.15, r * 0.52, Math.PI, 0);
+      ctx.lineTo(cx, cy + r * 0.78);
+      ctx.closePath();
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.arc(cx, cy - r * 0.15, Math.max(1.2, r * 0.16), 0, Math.PI * 2);
+      ctx.fill();
+      break;
+    }
+    case 'stat_calm': {
+      ctx.beginPath();
+      ctx.moveTo(cx - r * 0.82, cy);
+      ctx.lineTo(cx - r * 0.36, cy);
+      ctx.lineTo(cx - r * 0.12, cy - r * 0.54);
+      ctx.lineTo(cx + r * 0.16, cy + r * 0.52);
+      ctx.lineTo(cx + r * 0.38, cy);
+      ctx.lineTo(cx + r * 0.82, cy);
+      ctx.stroke();
+      break;
+    }
+    case 'stat_fit': {
+      ctx.strokeRect(cx - r * 0.72, cy - r * 0.44, r * 1.24, r * 0.88);
+      ctx.fillRect(cx + r * 0.54, cy - r * 0.22, r * 0.22, r * 0.44);
+      ctx.fillRect(cx - r * 0.52, cy - r * 0.24, r * 0.82, r * 0.48);
+      break;
+    }
+    case 'stat_fam': {
+      ctx.beginPath();
+      ctx.moveTo(cx, cy - r * 0.72);
+      ctx.lineTo(cx + r * 0.72, cy);
+      ctx.lineTo(cx, cy + r * 0.72);
+      ctx.lineTo(cx - r * 0.72, cy);
+      ctx.closePath();
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.arc(cx, cy, Math.max(1.3, r * 0.22), 0, Math.PI * 2);
+      ctx.fill();
+      break;
+    }
+    case 'stat_assist': {
+      ctx.beginPath();
+      ctx.moveTo(cx - r * 0.62, cy + r * 0.58);
+      ctx.lineTo(cx + r * 0.62, cy - r * 0.58);
+      ctx.moveTo(cx + r * 0.14, cy - r * 0.60);
+      ctx.lineTo(cx + r * 0.62, cy - r * 0.58);
+      ctx.lineTo(cx + r * 0.60, cy - r * 0.10);
+      ctx.stroke();
       break;
     }
   }

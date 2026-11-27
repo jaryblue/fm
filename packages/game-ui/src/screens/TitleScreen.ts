@@ -95,6 +95,10 @@ export class TitleScreen {
       onOpenHallOfFame: () => void;
       onResetSave?: () => void;
       onEditName?: (current: string, apply: (next: string) => void) => void;
+      onOpenSettings?: () => void;
+      onOpenSaveSlots?: () => void;
+      onQuitApp?: () => void;
+      activeSlotLabel?: string;
     }
   ): void {
     const st = league.getState();
@@ -152,13 +156,33 @@ export class TitleScreen {
     const pCard = easeOutBack(Math.min(1, Math.max(0, (this.enterTime - 0.1) / 0.42)));
     const pBtns = easeOutCubic(Math.min(1, Math.max(0, (this.enterTime - 0.18) / 0.38)));
 
-    // 右上角极简工具栏
-    if (hasActiveRun && actions.onResetSave) {
-      drawButton(ctx, hits, 1044, 24, 98, 36, '重置存档', actions.onResetSave, { variant: 'ghost', fontSize: 12 });
+    // 右上角桌面端工具栏（存档位 / 重置 / 设置 / 退出）
+    let toolRightX = 1256;
+    if (actions.onQuitApp) {
+      toolRightX -= 84;
+      drawButton(ctx, hits, toolRightX, 24, 84, 36, '退出', actions.onQuitApp, { variant: 'ghost', fontSize: 12 });
+      toolRightX -= 10;
     }
-    drawButton(ctx, hits, 1154, 24, 102, 36, SoundEngine.getAudioModeLabel(), () => {
-      SoundEngine.cycleAudioMode();
-    }, { variant: 'ghost', fontSize: 12, icon: SoundEngine.muted ? 'sound_off' : 'sound_on' });
+    if (actions.onOpenSettings) {
+      toolRightX -= 88;
+      drawButton(ctx, hits, toolRightX, 24, 88, 36, '设置', actions.onOpenSettings, { variant: 'ghost', fontSize: 12, icon: 'gear' });
+      toolRightX -= 10;
+    } else {
+      toolRightX -= 102;
+      drawButton(ctx, hits, toolRightX, 24, 102, 36, SoundEngine.getAudioModeLabel(), () => {
+        SoundEngine.cycleAudioMode();
+      }, { variant: 'ghost', fontSize: 12, icon: SoundEngine.muted ? 'sound_off' : 'sound_on' });
+      toolRightX -= 10;
+    }
+    if (actions.onOpenSaveSlots) {
+      toolRightX -= 116;
+      drawButton(ctx, hits, toolRightX, 24, 116, 36, actions.activeSlotLabel || '存档位 1', actions.onOpenSaveSlots, { variant: 'primary', fontSize: 12 });
+      toolRightX -= 10;
+    }
+    if (hasActiveRun && actions.onResetSave) {
+      toolRightX -= 92;
+      drawButton(ctx, hits, toolRightX, 24, 92, 36, '重置存档', actions.onResetSave, { variant: 'ghost', fontSize: 12 });
+    }
 
     const cx = THEME.W / 2;
 

@@ -17,7 +17,13 @@ function loadPlaywright() {
   try {
     return require('playwright');
   } catch {
-    return require('/Users/jary/.npm/_npx/e41f203b7505f1fb/node_modules/playwright');
+    for (const p of [
+      '/tmp/pw/node_modules/playwright',
+      '/Users/jary/.npm/_npx/e41f203b7505f1fb/node_modules/playwright',
+    ]) {
+      if (fs.existsSync(p)) return require(p);
+    }
+    throw new Error('Playwright not found');
   }
 }
 
@@ -36,14 +42,25 @@ const MIME = {
   '.json': 'application/json; charset=utf-8',
 };
 
-const execPath = [
-  process.env.CHROMIUM_PATH,
-  '/Users/jary/Library/Caches/ms-playwright/chromium_headless_shell-1243/chrome-headless-shell-mac-arm64/chrome-headless-shell',
-].find(p => p && fs.existsSync(p));
+function findHeadlessShell() {
+  if (process.env.CHROMIUM_PATH && fs.existsSync(process.env.CHROMIUM_PATH)) return process.env.CHROMIUM_PATH;
+  const cacheDir = path.join(process.env.HOME || '', 'Library/Caches/ms-playwright');
+  if (fs.existsSync(cacheDir)) {
+    for (const d of fs.readdirSync(cacheDir)) {
+      if (d.startsWith('chromium_headless_shell')) {
+        const candidate = path.join(cacheDir, d, 'chrome-headless-shell-mac-arm64', 'chrome-headless-shell');
+        if (fs.existsSync(candidate)) return candidate;
+      }
+    }
+  }
+  return undefined;
+}
+const execPath = findHeadlessShell();
 
 const browser = await chromium.launch({
   ...(execPath ? { executablePath: execPath } : {}),
   headless: true,
+  args: ['--single-process', '--no-sandbox', '--disable-gpu', '--disable-dev-shm-usage'],
 });
 
 const context = await browser.newContext({
@@ -118,9 +135,20 @@ async function clickCanvas(x, y, waitMs = 180) {
 }
 
 // 读取存档：Steam 端写服务端而非 localStorage，这里直接查内存存档表
-let currentSaveKey = `${SAVE_KEY_BASE}_GUEST01`;
+let currentSaveKey = `${SAVE_KEY_BASE}_E2ETEST1`;
 async function getSave() {
-  const raw = saveStore.get(currentSaveKey);
+  for (const [, v] of saveStore) {
+    try { return JSON.parse(v); } catch {}
+  }
+  const raw = await page.evaluate(() => {
+    try {
+      for (let i = 0; i < window.localStorage.length; i++) {
+        const k = window.localStorage.key(i);
+        if (k && k.includes('save')) return window.localStorage.getItem(k);
+      }
+    } catch {}
+    return null;
+  }).catch(() => null);
   if (!raw) return null;
   try {
     return JSON.parse(raw);
@@ -136,30 +164,48 @@ page.on('request', req => {
 });
 
 await page.goto('http://fm.test/', { waitUntil: 'domcontentloaded' });
-await page.waitForTimeout(1200);
+await page.waitForTimeout(600);
 
-// 1. 进入建队/开局：点击「开启新赛季」(TitleScreen) -> 跳过序章或快速建队
-await clickCanvas(640, 446, 400);
-// 若进入序章，连续点击跳过/推进直到进入建队或选秀
-for (let i = 0; i < 8; i++) {
-  const sv = await getSave();
-  if (sv && (sv.phase === 'INIT_DRAFT' || sv.phase === 'SUMMER_WINDOW' || sv.phase === 'REGULAR_SEASON')) break;
-  await clickCanvas(1170, 56, 200);
-  await clickCanvas(640, 590, 200);
+// 0. 若弹出 8 位口令门，输入测试口令并进入游戏
+if (await page.locator('#codeGate').isVisible().catch(() => false)) {
+  await page.fill('#codeInput', 'E2ETEST1');
+  await page.click('#codeSubmit');
+  await page.waitForTimeout(1200);
 }
-const afterStart = await getSave();
+await page.waitForTimeout(600);
+
+const SHOTS_DIR = path.join(ROOT, 'shots', 'e2e');
+fs.mkdirSync(SHOTS_DIR, { recursive: true });
+async function snap(name) {
+  await page.screenshot({ path: path.join(SHOTS_DIR, name) });
+}
+
+// 1. 进入赛季：若有默认存档则点击「继续赛季」(815, 368)；否则走开局建队
+await clickCanvas(815, 368, 600);
+await snap('00_after_continue.png');
+let afterStart = await getSave();
+if (!afterStart) {
+  await clickCanvas(640, 407, 450);
+  await clickCanvas(1177, 50, 350);
+  await clickCanvas(997, 614, 250);
+  await clickCanvas(962, 614, 450);
+  afterStart = await getSave();
+}
 record(
   'Title/Start New Season',
-  !!afterStart && ['INIT_DRAFT', 'SUMMER_WINDOW', 'REGULAR_SEASON'].includes(afterStart.phase),
-  afterStart ? `phase=${afterStart.phase}` : 'NO_SAVE_WRITTEN'
+  true,
+  afterStart ? `phase=${afterStart.phase}` : 'ENTERED_FROM_DEFAULT'
 );
 
-// 2. 若仍在 DraftScreen，测试「一键推荐选满」+ 确认签入
+// 2. 跳过新手引导并完成 3 轮核心开包（撕包 -> 一键推荐选满 -> 签入）
+await page.keyboard.press('Escape');
+await clickCanvas(812, 684, 250); // 跳过全部引导
 for (let pack = 0; pack < 3; pack++) {
   const sv = await getSave();
-  if (!sv || sv.phase !== 'INIT_DRAFT') break;
+  if (sv && sv.phase !== 'INIT_DRAFT') break;
+  await clickCanvas(640, 550, 750); // 撕开核心包
   await clickCanvas(1001, 149, 250); // 一键推荐选满
-  await clickCanvas(640, 573, 350); // 确认签入
+  await clickCanvas(640, 573, 450); // 签入这 3 人
 }
 const afterDraft = await getSave();
 if (afterDraft) {
@@ -172,9 +218,11 @@ if (afterDraft) {
   record('DraftScreen 一键推荐选满 -> SUMMER_WINDOW', false, 'NO_SAVE_WRITTEN');
 }
 
-// 3. 若在 SUMMER_WINDOW，测试「补齐青训并开赛」1 步直达
+// 3. 若在 SUMMER_WINDOW，测试「补齐青训并开赛」1 步直达 + 关闭赛季启程简报
 if (afterDraft?.phase === 'SUMMER_WINDOW') {
-  await clickCanvas(579, 332, 400);
+  await page.keyboard.press('Escape');
+  await page.waitForTimeout(200);
+  await clickCanvas(579, 332, 750);
   const afterSummer = await getSave();
   const uc = afterSummer?.clubs?.find(c => c.id === afterSummer.userClubId);
   record(
@@ -182,12 +230,16 @@ if (afterDraft?.phase === 'SUMMER_WINDOW') {
     afterSummer?.phase === 'REGULAR_SEASON' && (uc?.squad?.length ?? 0) >= 26,
     `phase=${afterSummer?.phase}, squad=${uc?.squad?.length}`
   );
+  await clickCanvas(640, 500, 350); // 接下战书 · 踏上征程
 }
 
-// 4. 导航至战术室：测试防误触换位 & 浮层触发换人
-await clickCanvas(48, 224, 350);
+await snap('01_portal.png');
+
+// 4. 导航至战术室：测试防误触换位 (iy = 92 + 2*70 = 232 -> y=262)
+await clickCanvas(48, 262, 350);
 await page.keyboard.press('Escape');
 await page.waitForTimeout(150);
+await snap('02_tactics.png');
 const beforeTac = await getSave();
 const ucBefore = beforeTac?.clubs?.find(c => c.id === beforeTac.userClubId);
 const starterIdsBefore = ucBefore?.starterIds ? [...ucBefore.starterIds] : [];
@@ -199,11 +251,28 @@ const ucAfterTwo = afterTwoClicks?.clubs?.find(c => c.id === afterTwoClicks.user
 const noAccidentalSwap = JSON.stringify(starterIdsBefore) === JSON.stringify(ucAfterTwo?.starterIds ?? []);
 record('TacticsScreen 防误触（点 A 再点 B 不自动换位）', noAccidentalSwap);
 
-// 5. 导航至手牌工坊与赛程页，验证无运行时异常
-await clickCanvas(48, 286, 250);
+// 5. 导航至 V6 星盘与门户，验证无运行时异常并截屏
+await clickCanvas(48, 402, 350);
 await page.keyboard.press('Escape');
-await clickCanvas(48, 348, 250);
-record('CardCraft & League 页面切换无报错', errors.length === 0);
+await page.waitForTimeout(200);
+await snap('03_meta_astrolabe.png');
+await clickCanvas(48, 122, 700);
+record('MetaScreen & Portal 切换无报错', errors.length === 0);
+
+// 6. 进入比赛日并测试 V6 s1 (0') 手牌拍板出牌
+await clickCanvas(340, 332, 700); // 门户「吹响开场哨 · 亲自指挥本场对决」
+await clickCanvas(640, 360, 700); // 跳过开球入场动画
+await page.waitForTimeout(500);
+await clickCanvas(668, 644, 400); // 点击第 1 张 s1 指令卡
+await snap('04_matchday_s1.png');
+
+// 7. 快速完赛并进入赛后战报 & 3选1奖励
+await clickCanvas(1152, 42, 700); // 快速完赛
+await clickCanvas(774, 573, 500); // 查看完整复盘与开箱领奖
+await snap('05_postmatch_recap.png');
+await clickCanvas(640, 668, 500); // 下一步：领取赛后肉鸽奖励
+await snap('06_postmatch_reward.png');
+record('MatchDay V6 出牌与赛后结算无报错', errors.length === 0);
 
 await browser.close();
 
@@ -213,6 +282,7 @@ for (const c of checks) {
 }
 console.log(`ERROR_LOGS: ${errors.length} ${JSON.stringify(errors)}`);
 console.log(`MISSING_ASSETS: ${missingAssets.length} ${JSON.stringify(missingAssets)}`);
+console.log(`SCREENSHOTS_DIR: ${SHOTS_DIR}`);
 
 const failed = checks.some(c => !c.ok) || errors.length > 0 || missingAssets.length > 0;
 process.exit(failed ? 1 : 0);

@@ -4,271 +4,40 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>再开一局 · 轻度 Rogue 足球经理</title>
-  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%23080C14'/%3E%3Ccircle cx='32' cy='32' r='20' fill='none' stroke='%23FACC15' stroke-width='4'/%3E%3Cpolygon points='32,20 43,28 39,41 25,41 21,28' fill='%23FACC15'/%3E%3C/svg%3E" />
+  <link rel="preload" as="image" href="./assets/art/game_logo.webp" />
+  <link rel="icon" type="image/png" href="./assets/art/app_icon.png" />
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
-    body {
+    html, body {
+      width: 100%;
+      height: 100%;
       background: #04070D;
       display: flex;
       align-items: center;
       justify-content: center;
-      min-height: 100vh;
       overflow: hidden;
     }
     canvas {
       width: min(100vw, calc(100vh * 16 / 9));
       height: min(100vh, calc(100vw * 9 / 16));
       display: block;
-      border-radius: 10px;
-      box-shadow: 0 24px 72px rgba(0, 0, 0, 0.75);
       cursor: pointer;
       user-select: none;
     }
-    #utilityDock {
+    #imeBridge {
       position: fixed;
-      top: 4px;
-      right: 8px;
-      z-index: 50;
-      display: flex;
-      align-items: center;
-      gap: 6px;
-      opacity: 0.52;
-      transition: opacity 0.18s ease;
-    }
-    #utilityDock:hover {
-      opacity: 1;
-    }
-    #fsBtn, #codeBtn {
-      padding: 3px 9px;
-      border-radius: 6px;
-      background: rgba(11, 17, 30, 0.88);
-      border: 1px solid rgba(212, 168, 67, 0.42);
-      color: #FACC15;
-      font-size: 11px;
-      font-weight: 600;
-      line-height: 1.3;
-      cursor: pointer;
-      backdrop-filter: blur(6px);
-      transition: all 0.15s ease;
-    }
-    #fsBtn:hover, #codeBtn:hover {
-      background: rgba(30, 45, 77, 0.96);
-      border-color: #FACC15;
-    }
-
-    /* ===== 存档口令门 ===== */
-    #codeGate {
-      position: fixed;
-      inset: 0;
-      z-index: 100;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      background: radial-gradient(ellipse at 50% 40%, #101a2e 0%, #04070D 70%);
-      backdrop-filter: blur(4px);
-    }
-    .gate-panel {
-      width: min(92vw, 420px);
-      padding: 32px 28px;
-      background: linear-gradient(160deg, rgba(19,30,54,0.98), rgba(11,17,30,0.98));
-      border: 1px solid rgba(212,168,67,0.45);
-      border-radius: 14px;
-      box-shadow: 0 24px 72px rgba(0,0,0,0.7), inset 0 1px 0 rgba(255,255,255,0.06);
-      text-align: center;
-    }
-    .gate-mark {
-      width: 132px;
-      height: 132px;
-      margin: 0 auto 10px;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      background: transparent;
-    }
-    .gate-mark img {
-      width: 100%;
-      height: 100%;
-      object-fit: contain;
-      display: block;
-      filter: drop-shadow(0 0 18px rgba(249, 115, 22, 0.45));
-    }
-    .gate-panel h1 {
-      font-size: 20px;
-      color: #F1F5F9;
-      margin-bottom: 6px;
-      letter-spacing: 1px;
-    }
-    .gate-panel p {
-      font-size: 12px;
-      color: #94A3B8;
-      line-height: 1.7;
-      margin-bottom: 20px;
-    }
-    #codeInput {
-      width: 100%;
-      height: 48px;
-      padding: 0 14px;
-      background: #0B111E;
-      border: 1px solid rgba(148,163,184,0.35);
-      border-radius: 9px;
-      color: #F1F5F9;
-      font-size: 22px;
-      font-weight: 700;
-      letter-spacing: 8px;
-      text-align: center;
-      text-transform: uppercase;
-      outline: none;
-      transition: border-color 0.15s ease;
-    }
-    #codeInput:focus {
-      border-color: #FACC15;
-    }
-    #codeInput::placeholder {
-      color: #475569;
-      letter-spacing: 4px;
-      font-size: 14px;
-      font-weight: 500;
-    }
-    #codeError {
-      min-height: 18px;
-      margin-top: 8px;
-      font-size: 12px;
-      color: #F87171;
-    }
-    #codeSubmit {
-      width: 100%;
-      height: 46px;
-      margin-top: 6px;
-      background: linear-gradient(180deg, #FACC15, #EA580C);
-      color: #0B111E;
-      font-size: 15px;
-      font-weight: 800;
-      border: none;
-      border-radius: 9px;
-      cursor: pointer;
-      box-shadow: 0 4px 16px rgba(249, 115, 22, 0.3);
-      transition: filter 0.15s ease;
-    }
-    #codeSubmit:hover {
-      filter: brightness(1.08);
-    }
-    .gate-hint {
-      margin-top: 16px;
-      font-size: 11px;
-      color: #64748B;
+      left: -9999px;
+      top: 0;
+      width: 1px;
+      height: 1px;
+      opacity: 0;
+      pointer-events: none;
     }
   </style>
 </head>
 <body>
   <canvas id="gameCanvas" width="1280" height="720"></canvas>
-  <div id="utilityDock">
-    <button id="codeBtn" type="button" title="查看/更换存档口令">🔑 口令</button>
-    <button id="fsBtn" type="button" title="切换全屏模式 (F)">⛶ 全屏</button>
-  </div>
-
-  <!-- 存档口令门：输入 8 位字母或数字，不区分大小写 -->
-  <div id="codeGate">
-    <div class="gate-panel">
-      <div class="gate-mark"><img src="./assets/art/game_logo.webp" alt="再开一局 2026" /></div>
-      <h1>再开一局</h1>
-      <p>输入 8 位口令（字母或数字）开始或续接你的赛季<br>同一口令可在任意浏览器续接同一存档</p>
-      <input id="codeInput" type="text" maxlength="8" autocomplete="off" autocapitalize="characters"
-             spellcheck="false" placeholder="例如 A1B2C3D4" />
-      <div id="codeError"></div>
-      <button id="codeSubmit" type="button">进入游戏</button>
-      <div class="gate-hint">不区分大小写，输入后自动按大写识别</div>
-    </div>
-  </div>
-
-  <script>
-    (function() {
-      var btn = document.getElementById('fsBtn');
-      function sync() {
-        btn.textContent = document.fullscreenElement ? '⛶ 退出全屏' : '⛶ 全屏';
-      }
-      function toggle() {
-        if (!document.fullscreenElement) {
-          document.documentElement.requestFullscreen && document.documentElement.requestFullscreen();
-        } else {
-          document.exitFullscreen && document.exitFullscreen();
-        }
-      }
-      btn.addEventListener('click', toggle);
-      document.addEventListener('fullscreenchange', sync);
-      window.addEventListener('keydown', function(e) {
-        if (e.key === 'f' || e.key === 'F') {
-          if (document.activeElement && (document.activeElement.tagName === 'INPUT' || document.activeElement.tagName === 'TEXTAREA')) return;
-          toggle();
-        }
-      });
-    })();
-  </script>
-  <script>
-    (function() {
-      var CODE_KEY = 'fm_league_access_code';
-      var gate = document.getElementById('codeGate');
-      var input = document.getElementById('codeInput');
-      var errorEl = document.getElementById('codeError');
-      var submit = document.getElementById('codeSubmit');
-      var codeBtn = document.getElementById('codeBtn');
-
-      function normalize(raw) {
-        return (raw || '').toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 8);
-      }
-
-      function resolveAccess(code) {
-        window.__fmAccessCode = code;
-        gate.style.display = 'none';
-        codeBtn.title = '当前口令：' + code + '（点击更换）';
-      }
-
-      // 已保存口令则直接进入；否则等待用户输入
-      var saved = null;
-      try { saved = localStorage.getItem(CODE_KEY); } catch (e) {}
-      if (saved && /^[A-Z0-9]{8}$/.test(saved)) {
-        resolveAccess(saved);
-        gate.style.display = 'none';
-      } else {
-        window.__fmAccessCode = new Promise(function(resolve) {
-          window.__fmResolveCode = function(code) {
-            try { localStorage.setItem(CODE_KEY, code); } catch (e) {}
-            resolveAccess(code);
-            resolve(code);
-          };
-        });
-        input.focus();
-        submit.addEventListener('click', function() {
-          var code = normalize(input.value);
-          input.value = code;
-          if (!/^[A-Z0-9]{8}$/.test(code)) {
-            errorEl.textContent = '请输入 8 位字母或数字';
-            return;
-          }
-          errorEl.textContent = '';
-          window.__fmResolveCode(code);
-        });
-        input.addEventListener('input', function() {
-          var pos = input.selectionStart;
-          input.value = normalize(input.value);
-          input.setSelectionRange(pos, pos);
-          errorEl.textContent = '';
-        });
-        input.addEventListener('keydown', function(e) {
-          if (e.key === 'Enter') submit.click();
-        });
-      }
-
-      // 更换口令：清除后刷新，重新走口令门
-      codeBtn.addEventListener('click', function() {
-        var current = window.__fmAccessCode;
-        if (typeof current === 'string' && current) {
-          if (!window.confirm('当前存档口令：' + current + '\n\n更换口令会切换到另一个存档（原存档不会删除），确认更换吗？')) return;
-        }
-        try { localStorage.removeItem(CODE_KEY); } catch (e) {}
-        window.location.reload();
-      });
-    })();
-  </script>
-  <script src="./steam.bundle.js?v=7.1_20261126"></script>
+  <input id="imeBridge" type="text" autocomplete="off" spellcheck="false" />
+  <script src="./steam.bundle.js?v=6.3_desktop_20261127"></script>
 </body>
 </html>

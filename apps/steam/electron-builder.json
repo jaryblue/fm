@@ -1,0 +1,30 @@
+{
+  "appId": "com.zaikaiyiju.fmleague",
+  "productName": "再开一局",
+  "directories": {
+    "output": "dist-desktop"
+  },
+  "files": [
+    "apps/steam/index.html",
+    "apps/steam/steam.bundle.js",
+    "apps/steam/engine.iife.js",
+    "apps/steam/assets/**/*",
+    "apps/steam/electron/**/*"
+  ],
+  "extraMetadata": {
+    "main": "apps/steam/electron/main.cjs"
+  },
+  "mac": {
+    "icon": "apps/steam/assets/art/app_icon.png",
+    "category": "public.app-category.sports-games",
+    "target": ["dmg", "zip"]
+  },
+  "win": {
+    "icon": "apps/steam/assets/art/app_icon.png",
+    "target": ["nsis", "portable"]
+  },
+  "linux": {
+    "icon": "apps/steam/assets/art/app_icon.png",
+    "target": ["AppImage"]
+  }
+}

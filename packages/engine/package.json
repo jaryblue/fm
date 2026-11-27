@@ -6,6 +6,6 @@
   "types": "dist/index.d.ts",
   "scripts": {
     "build": "tsc",
-    "sim:100": "tsc && node dist/sim-100.js"
+    "sim:100": "tsc && npx esbuild src/sim-100.ts --bundle --platform=node --outfile=dist/sim-100.cjs && node dist/sim-100.cjs"
   }
 }

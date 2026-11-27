@@ -1,4 +1,9 @@
-import { inferCardElement } from '../packages/core/src/CommandCards';
+import {
+  canCardEnterReactor,
+  CommandCard,
+  evaluateCardEffectiveCost,
+  inferCardElement,
+} from '../packages/core/src/CommandCards';
 import { LeagueManager } from '../packages/core/src/LeagueManager';
 import { FormationName, TacticalStyle } from '../packages/engine/src/types';
 
@@ -24,6 +29,15 @@ function parseArgs(argv: string[]) {
   return { matches, seasons, strategy, formation, style, json };
 }
 
+function shuffleArr<T>(arr: T[]): T[] {
+  const out = [...arr];
+  for (let i = out.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [out[i], out[j]] = [out[j], out[i]];
+  }
+  return out;
+}
+
 interface MatchTelemetry {
   round: number;
   opponent: string;
@@ -37,6 +51,9 @@ interface MatchTelemetry {
   scoutedCorrect: boolean;
   energyCurve: number[];
   cardsPlayed: number;
+  combosTriggered: number;
+  timingDiscounts: number;
+  cardsDepleted: number;
   skillsOffered: number;
   skillsActivated: number;
   subsMade: number;
@@ -54,7 +71,6 @@ mgr.startNewSeason('club_star', cfg.formation, cfg.style, false);
 mgr.autoCompleteDraft();
 mgr.confirmInitialDraft();
 
-// 检查首发阵容 CA 均值是否有 NaN
 const squad = mgr.getUserClub().squad;
 const avgCA = squad.length > 0 ? Math.round(squad.reduce((s, p) => s + p.ca, 0) / squad.length) : 0;
 const nanFields: string[] = [];
@@ -64,7 +80,12 @@ for (const p of squad) {
 }
 
 const logs: MatchTelemetry[] = [];
-let cardsFused = 0;
+let reactorCrafts = 0;
+let tier3Crafts = 0;
+let affixesRolled = { positive: 0, negative: 0, easter_egg: 0 };
+let cardsRecycled = 0;
+let shopBuys = 0;
+let totalCardsDepleted = 0;
 let devilTrains = 0;
 let metaUpgrades = 0;
 const winterWindowBlocks: string[] = [];
@@ -105,215 +126,341 @@ for (let sIdx = 0; sIdx < cfg.seasons; sIdx++) {
     mgr.finishSummerWindowAndStartSeason();
   }
 
-for (let r = 0; r < cfg.matches; r++) {
-  const st = mgr.getState();
-  // 赛季已结算：跳出比赛循环，让末尾的赛季结算收尾代码（领奖/新秀/Meta）执行
-  if (st.phase === 'SEASON_END') break;
-  if (st.pendingStoryEvent) {
-    mgr.resolveStoryEvent(st.pendingStoryEvent.options[0].id);
-  }
-  if (st.phase === 'RE_DRAFT' && st.reDraft) {
-    if (!st.reDraft.perkChosen && st.reDraft.perkChoices.length > 0) {
-      mgr.chooseReDraftPerk(st.reDraft.perkChoices[0].id);
+  for (let r = 0; r < cfg.matches; r++) {
+    const st = mgr.getState();
+    if (st.phase === 'SEASON_END') break;
+    if (st.pendingStoryEvent) {
+      mgr.resolveStoryEvent(st.pendingStoryEvent.options[0].id);
     }
-    mgr.finishReDraft();
-  }
-  // 半程冬季转会窗：先免签补齐大名单（26人）再关窗，赛程推进到 midRound+1
-  if (mgr.getState().phase === 'WINTER_WINDOW') {
-    mgr.signFreeAcademyFill(true);
-    const cw = mgr.closeWinterWindow();
-    if (!cw.ok) winterWindowBlocks.push(cw.reason ?? '未知原因');
-    continue;
-  }
-
-  // 转会窗开放时测试私教魔鬼特训；卡库有同级卡时测试二合一融合升阶
-  if (cfg.strategy === 'full_roguelike') {
-    const tw = mgr.getTransferWindowState();
-    if (tw.isOpen && tw.privateTrainCount < 2 && mgr.getClubFunds() >= 350) {
-      const topP = [...mgr.getUserClub().squad].sort((a, b) => b.ca - a.ca)[0];
-      if (topP && mgr.privateDevilTraining(topP.id).ok) devilTrains++;
-    }
-    const deck = mgr.getCoachDeck();
-    const lv1s = deck.filter(c => (c.level ?? 1) === 1);
-    if (lv1s.length >= 2) {
-      if (mgr.fuseCoachCards(lv1s[0].id, lv1s[1].id).ok) cardsFused++;
-    }
-  }
-
-  const fx = mgr.getUserCurrentFixture();
-  if (!fx) break;
-  const userClub = mgr.getUserClub();
-  const oppClubId = fx.homeClubId === userClub.id ? fx.awayClubId : fx.homeClubId;
-  const oppName = st.clubs.find(c => c.id === oppClubId)?.name ?? 'Opponent';
-
-  // 1. 赛前侦察 + 备战 + 合成配卡
-  let scoutedCorrect = false;
-  if (cfg.strategy !== 'baseline') {
-    const intel = mgr.getInterMatchPrep()?.matchupIntel;
-    if (intel) {
-      for (const z of intel.zones ?? []) {
-        if (!z.scanned) mgr.scanOpponentZone(z.id);
+    if (st.phase === 'RE_DRAFT' && st.reDraft) {
+      if (!st.reDraft.perkChosen && st.reDraft.perkChoices.length > 0) {
+        mgr.chooseReDraftPerk(st.reDraft.perkChoices[0].id);
       }
-      if (intel.clues.some(c => c.isSmoke && !c.debunked)) {
-        mgr.debunkSmokeClue();
-      }
-      const correctCounter = intel.counters.find(c => c.isCorrect);
-      if (correctCounter && !intel.spotCorrect) {
-        const spot = mgr.chooseOpponentCounter(correctCounter.id);
-        scoutedCorrect = !!spot.correct;
-        if (scoutedCorrect) mgr.chooseScoutReward('buff_debuff');
-      }
+      mgr.finishReDraft();
     }
-    if ((mgr.getInterMatchPrep()?.actionsLeft ?? 0) > 0) {
-      mgr.applyPrepTraining('tactical');
+    if (mgr.getState().phase === 'WINTER_WINDOW') {
+      mgr.signFreeAcademyFill(true);
+      const cw = mgr.closeWinterWindow();
+      if (!cw.ok) winterWindowBlocks.push(cw.reason ?? '未知原因');
+      continue;
     }
+
+    // V5 战前卡组运营：反应釜合成 + 残血回收 + 商店补卡 + 私教特训
     if (cfg.strategy === 'full_roguelike') {
-      const inv = mgr.getElementInventory();
-      const elems = (Object.keys(inv) as Array<keyof typeof inv>).filter(k => (inv[k] ?? 0) > 0);
-      if (elems.length >= 2 && mgr.getCoachDeck().length < 12) {
-        mgr.craftChemistryCard([elems[0], elems[1]], 'balanced', true);
+      const tw = mgr.getTransferWindowState();
+      if (tw.isOpen && (mgr.getTransferMarketState().privateTrainCount ?? 0) < 2 && mgr.getClubFunds() >= 350) {
+        const topP = [...mgr.getUserClub().squad].sort((a, b) => b.ca - a.ca)[0];
+        if (topP && mgr.privateDevilTraining(topP.id).ok) devilTrains++;
+      }
+
+      // 1) 残血卡回收（仅剩 1 次耐久且背包充足时回收换资金）
+      const deckForRecycle = mgr.getCoachDeck();
+      if (deckForRecycle.length > 8) {
+        const damaged = deckForRecycle.find(c => !c.isBase && (c.remainingUses ?? 2) === 1);
+        if (damaged && mgr.recycleDamagedCard(damaged.id).ok) {
+          cardsRecycled++;
+        }
+      }
+
+      // 2) V5 化学反应釜合成（第 6 级起解锁；优先 2 张 1 阶合 2 阶神卡，背包富裕时 3 卡合 3 阶传说）
+      if (mgr.isReactorUnlocked()) {
+        const craftableT1 = mgr.getCoachDeck().filter(c => (c.tier ?? 1) === 1 && canCardEnterReactor(c).ok);
+        if (craftableT1.length >= 6) {
+          const pick3 = craftableT1.slice(0, 3).map(c => c.id);
+          const cr = mgr.craftV5ReactorCards(pick3);
+          if (cr.ok && cr.card) {
+            reactorCrafts++;
+            if ((cr.card.tier ?? 1) >= 3) tier3Crafts++;
+            if (cr.affix) affixesRolled[cr.affix.kind]++;
+          }
+        } else if (craftableT1.length >= 4) {
+          const a = craftableT1[0];
+          const b = craftableT1.find(c => inferCardElement(c) !== inferCardElement(a)) ?? craftableT1[1];
+          const cr = mgr.craftV5ReactorCards([a.id, b.id]);
+          if (cr.ok && cr.card) {
+            reactorCrafts++;
+            if (cr.affix) affixesRolled[cr.affix.kind]++;
+          }
+        }
+      }
+
+      // 3) 卡牌商店补货（资金充裕且背包 < 12）
+      if (mgr.getClubFunds() >= 500 && mgr.getCoachDeck().length < 12) {
+        const offers = mgr.getCardShopOffers();
+        const avail = offers.find(o => !o.sold && mgr.getClubFunds() >= o.price);
+        if (avail && mgr.buyCardFromShop(avail.id).ok) {
+          shopBuys++;
+        }
       }
     }
-  }
 
-  // 2. 逐 Tick 实机模拟比赛（含能量曲线、减费手牌、主动技、换人、Callouts）
-  const engine = mgr.createUserMatchEngine();
-  const ms = engine.getState();
-  const userSide = fx.homeClubId === userClub.id ? 'home' : 'away';
-  const oppSide = userSide === 'home' ? 'away' : 'home';
+    const fx = mgr.getUserCurrentFixture();
+    if (!fx) break;
+    const userClub = mgr.getUserClub();
+    const oppClubId = fx.homeClubId === userClub.id ? fx.awayClubId : fx.homeClubId;
+    const oppName = st.clubs.find(c => c.id === oppClubId)?.name ?? 'Opponent';
 
-  const prepEnergy = mgr.getInterMatchPrep()?.nextMatchBuff?.energyBonus ?? 0;
-  const perkEnergy = (userClub.perks ?? []).reduce((s, pk) => s + (pk.effect.startEnergyBonus ?? 0), 0);
-  let energy = Math.min(5, 3 + prepEnergy + perkEnergy);
-  const energyCurve: number[] = [energy];
-
-  const loadout = mgr.getMatchLoadout();
-  const counterSet = new Set(mgr.getInterMatchPrep()?.matchupIntel?.counterElements ?? []);
-  const usedCards = new Set<string>();
-  let cardsPlayed = 0;
-  let skillsOffered = 0;
-  let skillsActivated = 0;
-  let subsMade = 0;
-  let lastPromptId: string | null = null;
-  let halftimeRestored = false;
-
-  while (ms.phase !== 'full_time') {
-    engine.step();
-
-    if (ms.phase === 'half_time' && !halftimeRestored) {
-      halftimeRestored = true;
-      energy = Math.min(5, energy + 1);
-      energyCurve.push(energy);
+    // 1. 赛前侦察 + 备战
+    let scoutedCorrect = false;
+    if (cfg.strategy !== 'baseline') {
+      const intel = mgr.getInterMatchPrep()?.matchupIntel;
+      if (intel) {
+        for (const z of intel.zones ?? []) {
+          if (!z.scanned) mgr.scanOpponentZone(z.id);
+        }
+        if (intel.clues.some(c => c.isSmoke && !c.debunked)) {
+          mgr.debunkSmokeClue();
+        }
+        const correctCounter = intel.counters.find(c => c.isCorrect);
+        if (correctCounter && !intel.spotCorrect) {
+          const spot = mgr.chooseOpponentCounter(correctCounter.id);
+          scoutedCorrect = !!spot.correct;
+          if (scoutedCorrect) mgr.chooseScoutReward('buff_debuff');
+        }
+      }
+      if ((mgr.getInterMatchPrep()?.actionsLeft ?? 0) > 0) {
+        mgr.applyPrepTraining('tactical');
+      }
     }
 
-    // 主动技检测与释放
-    if (ms.activeSkillPrompt) {
-      const pKey = `${ms.activeSkillPrompt.skillId}_${ms.activeSkillPrompt.expiresTick}`;
-      if (pKey !== lastPromptId) {
-        lastPromptId = pKey;
-        skillsOffered++;
-        if (cfg.strategy !== 'baseline') {
-          const act = engine.triggerActiveSkill(userSide, ms.activeSkillPrompt.skillId);
-          if (act.triggered || act.ok) {
-            skillsActivated++;
-            const refund = (act as { energyRefund?: number }).energyRefund;
-            if (refund) {
-              energy = Math.min(5, energy + refund);
-              energyCurve.push(energy);
+    // 2. 逐 Tick 实机模拟比赛（V5 8~12 张动态牌库 + 抽弃牌堆 + 能量节奏 + 耐久扣减）
+    const engine = mgr.createUserMatchEngine();
+    const ms = engine.getState();
+    const userSide = fx.homeClubId === userClub.id ? 'home' : 'away';
+    const oppSide = userSide === 'home' ? 'away' : 'home';
+
+    const prepEnergy = mgr.getInterMatchPrep()?.nextMatchBuff?.energyBonus ?? 0;
+    const perkEnergy = (userClub.perks ?? []).reduce((s, pk) => s + (pk.effect.startEnergyBonus ?? 0), 0);
+    let energy = Math.min(5, 2 + prepEnergy + perkEnergy);
+    const energyCurve: number[] = [energy];
+
+    const matchDeck = mgr.getActiveMatchDeck();
+    const innateCards = matchDeck.filter(c => c.affix?.innateOpeningHand);
+    const normalCards = shuffleArr(matchDeck.filter(c => !c.affix?.innateOpeningHand));
+    let drawPile: CommandCard[] = [...innateCards, ...normalCards];
+    let discardPile: CommandCard[] = [];
+    const hand: CommandCard[] = [];
+
+    const drawCards = (n: number) => {
+      for (let i = 0; i < n; i++) {
+        if (hand.length >= 4) break;
+        if (drawPile.length === 0 && discardPile.length > 0) {
+          drawPile = shuffleArr(discardPile);
+          discardPile = [];
+        }
+        const top = drawPile.shift();
+        if (top) hand.push(top);
+      }
+    };
+    drawCards(3); // 开球抽 3 张
+
+    const counterSet = new Set(mgr.getInterMatchPrep()?.matchupIntel?.counterElements ?? []);
+    const playedCardIds: string[] = [];
+    let cardsPlayed = 0;
+    let combosTriggered = 0;
+    let timingDiscounts = 0;
+    let skillsOffered = 0;
+    let skillsActivated = 0;
+    let subsMade = 0;
+    let lastPromptId: string | null = null;
+    let halftimeRestored = false;
+    const firedMinuteMarks = new Set<number>();
+    let lastOppGoals = 0;
+    let lastMySaves = 0;
+    let gkSaveDrawFirstHalf = false;
+    let gkSaveDrawSecondHalf = false;
+    let subDrawCount = 0;
+    let lastCardPlayMin = -10;
+
+    while (ms.phase !== 'full_time') {
+      engine.step();
+
+      if (ms.phase === 'half_time' && !halftimeRestored) {
+        halftimeRestored = true;
+        energy = Math.min(5, energy + 1);
+        energyCurve.push(energy);
+        drawCards(2);
+      }
+
+      // 每 15 分钟自然回能 +1 与抽 1 张牌
+      for (const mark of [15, 30, 60, 75]) {
+        if (ms.minute >= mark && !firedMinuteMarks.has(mark)) {
+          firedMinuteMarks.add(mark);
+          energy = Math.min(5, energy + 1);
+          energyCurve.push(energy);
+          drawCards(1);
+        }
+      }
+
+      // 关键事件抽牌：丢球立即抽 1、门将扑救每半场最多抽 1
+      const curOppGoals = userSide === 'home' ? ms.awayScore : ms.homeScore;
+      if (curOppGoals > lastOppGoals) {
+        lastOppGoals = curOppGoals;
+        drawCards(1);
+      }
+      const curMySaves = ms.stats[userSide].saves;
+      if (curMySaves > lastMySaves) {
+        lastMySaves = curMySaves;
+        if (ms.phase === 'first_half' && !gkSaveDrawFirstHalf) {
+          gkSaveDrawFirstHalf = true;
+          drawCards(1);
+        } else if (ms.phase === 'second_half' && !gkSaveDrawSecondHalf) {
+          gkSaveDrawSecondHalf = true;
+          drawCards(1);
+        }
+      }
+
+      // 主动技检测与释放
+      if (ms.activeSkillPrompt) {
+        const pKey = `${ms.activeSkillPrompt.skillId}_${ms.activeSkillPrompt.expiresTick}`;
+        if (pKey !== lastPromptId) {
+          lastPromptId = pKey;
+          skillsOffered++;
+          if (cfg.strategy !== 'baseline') {
+            const act = engine.triggerActiveSkill(userSide, ms.activeSkillPrompt.skillId);
+            if (act.triggered || act.ok) {
+              skillsActivated++;
+              const refund = (act as { energyRefund?: number }).energyRefund;
+              if (refund) {
+                energy = Math.min(5, energy + refund);
+                energyCurve.push(energy);
+              }
+            }
+          }
+        }
+      }
+
+      // V5 动态出牌：优先打出连击/减费牌，每 10~14 分钟出 1 张（控节奏不刷牌）
+      if (cfg.strategy !== 'baseline' && ms.minute >= 8 && ms.minute - lastCardPlayMin >= 11 && hand.length > 0) {
+        const curStance = ms.teamStance?.[userSide];
+        let bestIdx = -1;
+        let bestScore = -999;
+        let bestEffCost = 0;
+        let bestDiscounted = false;
+        let bestResonant = false;
+
+        for (let i = 0; i < hand.length; i++) {
+          const card = hand[i];
+          const el = inferCardElement(card);
+          const isResonant = scoutedCorrect && counterSet.has(el);
+          const evalRes = evaluateCardEffectiveCost(card, ms, userSide, isResonant);
+          if (energy < evalRes.cost) continue;
+          let sc = (card.tier ?? 0) * 10 - evalRes.cost * 3;
+          if (card.comboRule && (card.comboRule.anyStance || card.comboRule.requiresStance === curStance)) sc += 20;
+          if (evalRes.discounted) sc += 12;
+          if (sc > bestScore) {
+            bestScore = sc;
+            bestIdx = i;
+            bestEffCost = evalRes.cost;
+            bestDiscounted = evalRes.discounted;
+            bestResonant = isResonant;
+          }
+        }
+
+        if (bestIdx >= 0) {
+          const chosen = hand.splice(bestIdx, 1)[0];
+          const el = inferCardElement(chosen);
+          energy -= bestEffCost;
+          lastCardPlayMin = ms.minute;
+          const res = engine.applyCommandCard(userSide, {
+            ...chosen,
+            durationMinutes: chosen.durationMinutes + (bestResonant ? 4 : 0),
+            element: el,
+          });
+          if (res.ok) {
+            playedCardIds.push(chosen.id);
+            cardsPlayed++;
+            if (res.comboActivated) combosTriggered++;
+            if (bestDiscounted) timingDiscounts++;
+            if (res.energyRefund) energy = Math.min(5, energy + res.energyRefund);
+            energyCurve.push(energy);
+          }
+          // 非 3 阶一次消耗卡进入弃牌堆，可在本场后续循环抽到
+          if ((chosen.tier ?? 0) < 3) {
+            discardPile.push(chosen);
+          }
+        }
+      }
+
+      // 62'~82' 自动体能换人（换人抽 1 张牌，全场最多 2 次）
+      if (cfg.strategy === 'full_roguelike' && ms.minute >= 62 && ms.minute <= 82 && subsMade < 3) {
+        const subsUsed = userSide === 'home' ? ms.homeSubsUsed : ms.awaySubsUsed;
+        if (subsUsed < 5) {
+          const starters = ms.players
+            .filter(p => p.team === userSide && !p.redCard && p.role !== 'GK' && p.fitness < 72)
+            .sort((a, b) => a.fitness - b.fitness);
+          const bench = userSide === 'home' ? ms.homeSubs : ms.awaySubs;
+          if (starters.length > 0 && bench.length > 0) {
+            const outP = starters[0];
+            const inP = bench.find(b => b.role === outP.role || b.secondaryRoles?.includes(outP.role)) ?? bench[0];
+            if (inP && engine.substitute(userSide, outP.id, inP.id).ok) {
+              subsMade++;
+              if (subDrawCount < 2) {
+                subDrawCount++;
+                drawCards(1);
+              }
             }
           }
         }
       }
     }
 
-    // 打出教练手牌
-    if (cfg.strategy !== 'baseline' && ms.minute >= 12 && ms.minute % 18 === 0) {
-      const nextCard = loadout.find(c => !usedCards.has(c.id));
-      if (nextCard) {
-        const el = inferCardElement(nextCard);
-        const isResonant = scoutedCorrect && counterSet.has(el);
-        const effCost = Math.max(0, nextCard.cost - (isResonant ? 1 : 0));
-        if (energy >= effCost) {
-          energy -= effCost;
-          usedCards.add(nextCard.id);
-          const res = engine.applyCommandCard(userSide, {
-            ...nextCard,
-            durationMinutes: nextCard.durationMinutes + (isResonant ? 5 : 0),
-            element: el,
-          });
-          if (res.energyRefund) energy = Math.min(5, energy + res.energyRefund);
-          energyCurve.push(energy);
-          cardsPlayed++;
-        }
-      }
-    }
+    // V5 赛后结算：仅扣减实际打出的消耗卡耐久
+    const useRes = mgr.consumePlayedCardUses(playedCardIds);
+    totalCardsDepleted += useRes.depletedNames.length;
 
-    // 62'~78' 自动体能换人
-    if (cfg.strategy === 'full_roguelike' && ms.minute >= 62 && ms.minute <= 82 && subsMade < 3) {
-      const subsUsed = userSide === 'home' ? ms.homeSubsUsed : ms.awaySubsUsed;
-      if (subsUsed < 5) {
-        const starters = ms.players
-          .filter(p => p.team === userSide && !p.redCard && p.role !== 'GK' && p.fitness < 72)
-          .sort((a, b) => a.fitness - b.fitness);
-        const bench = userSide === 'home' ? ms.homeSubs : ms.awaySubs;
-        if (starters.length > 0 && bench.length > 0) {
-          const outP = starters[0];
-          const inP = bench.find(b => b.role === outP.role || b.secondaryRoles?.includes(outP.role)) ?? bench[0];
-          if (inP && engine.substitute(userSide, outP.id, inP.id).ok) {
-            subsMade++;
-          }
-        }
+    mgr.completeCurrentRoundWithUserResult(ms);
+
+    const myGoals = userSide === 'home' ? ms.homeScore : ms.awayScore;
+    const oppGoals = userSide === 'home' ? ms.awayScore : ms.homeScore;
+    const myStats = ms.stats[userSide];
+    const oppStats = ms.stats[oppSide];
+    const tStats = ms.tacticalStats ?? { traitTriggers: 0, chemPasses: 0, scoutCounters: 0 };
+
+    logs.push({
+      round: fx.round,
+      opponent: oppName,
+      score: `${myGoals}:${oppGoals}`,
+      result: myGoals > oppGoals ? 'W' : myGoals === oppGoals ? 'D' : 'L',
+      myXG: Number(myStats.xG.toFixed(2)),
+      oppXG: Number(oppStats.xG.toFixed(2)),
+      myShotsOnTarget: myStats.shotsOnTarget,
+      oppShotsOnTarget: oppStats.shotsOnTarget,
+      mySaves: myStats.saves,
+      scoutedCorrect,
+      energyCurve,
+      cardsPlayed,
+      combosTriggered,
+      timingDiscounts,
+      cardsDepleted: useRes.depletedNames.length,
+      skillsOffered,
+      skillsActivated,
+      subsMade,
+      traitTriggers: tStats.traitTriggers,
+      chemPasses: tStats.chemPasses,
+      scoutCounters: tStats.scoutCounters,
+      hiddenTraitsAwakened: (ms.unlockedHiddenTraits || []).filter(u => u.team === userSide).length,
+      review: mgr.getState().lastMatchReview || '',
+    });
+
+    // 3. 赛后领奖推进下一轮
+    const rw = mgr.getState().pendingPostMatchReward;
+    if (rw?.tutorialCardUnlock && !rw.tutorialCardUnlock.claimed) {
+      mgr.claimTutorialCardUnlock();
+    }
+    if (rw && !rw.completed) {
+      const cats = rw.categories ?? ['event'];
+      const preferCat = cats.includes('craft_card') ? 'craft_card' : cats[0];
+      mgr.pickPostMatchRewardCategory(preferCat);
+      const opt = mgr.getState().pendingPostMatchReward?.options[0];
+      if (opt) {
+        const targetId = mgr.getUserClub().squad[0]?.id;
+        mgr.applyPostMatchRewardOption(opt.id, targetId);
       }
     }
   }
 
-  mgr.completeCurrentRoundWithUserResult(ms);
-
-  const myGoals = userSide === 'home' ? ms.homeScore : ms.awayScore;
-  const oppGoals = userSide === 'home' ? ms.awayScore : ms.homeScore;
-  const myStats = ms.stats[userSide];
-  const oppStats = ms.stats[oppSide];
-  const tStats = ms.tacticalStats ?? { traitTriggers: 0, chemPasses: 0, scoutCounters: 0 };
-
-  logs.push({
-    round: fx.round,
-    opponent: oppName,
-    score: `${myGoals}:${oppGoals}`,
-    result: myGoals > oppGoals ? 'W' : myGoals === oppGoals ? 'D' : 'L',
-    myXG: Number(myStats.xG.toFixed(2)),
-    oppXG: Number(oppStats.xG.toFixed(2)),
-    myShotsOnTarget: myStats.shotsOnTarget,
-    oppShotsOnTarget: oppStats.shotsOnTarget,
-    mySaves: myStats.saves,
-    scoutedCorrect,
-    energyCurve,
-    cardsPlayed,
-    skillsOffered,
-    skillsActivated,
-    subsMade,
-    traitTriggers: tStats.traitTriggers,
-    chemPasses: tStats.chemPasses,
-    scoutCounters: tStats.scoutCounters,
-    hiddenTraitsAwakened: (ms.unlockedHiddenTraits || []).filter(u => u.team === userSide).length,
-    review: mgr.getState().lastMatchReview || '',
-  });
-
-  // 3. 赛后领奖推进下一轮
-  const rw = mgr.getState().pendingPostMatchReward;
-  if (rw && !rw.completed) {
-    const cats = rw.categories ?? ['pack'];
-    mgr.pickPostMatchRewardCategory(cats[0]);
-    const opt = mgr.getState().pendingPostMatchReward?.options[0];
-    if (opt) {
-      const targetId = mgr.getUserClub().squad[0]?.id;
-      mgr.applyPostMatchRewardOption(opt.id, targetId);
-    }
-  }
-}
-
-  // 赛季末结算：领赛季奖励、新秀入队/交换、Meta 天赋升级
   const endSt = mgr.getState();
-  // 新版本结算字段为 lastSummary（旧的 seasonSummary 已移除）
   if (endSt.phase === 'SEASON_END' && endSt.lastSummary) {
     const sm = endSt.lastSummary;
     const metaBefore = mgr.getState().metaPointsTotal ?? 0;
@@ -334,7 +481,6 @@ for (let r = 0; r < cfg.matches; r++) {
       rewardDraftsSigned: 0,
     });
 
-    // 赛季奖励三选一（新字段：seasonBonusOptions / seasonBonusClaimedId）
     if (!sm.seasonBonusClaimedId && sm.seasonBonusOptions?.length) {
       const r = mgr.pickSeasonBonusReward(sm.seasonBonusOptions[0].id);
       if (r.ok) {
@@ -346,7 +492,6 @@ for (let r = 0; r < cfg.matches; r++) {
       }
     }
 
-    // 赛季新秀入队（新字段：seasonRewardDrafts）
     const drafts = endSt.seasonRewardDrafts ?? [];
     let signed = 0;
     for (const d of drafts) {
@@ -356,7 +501,6 @@ for (let r = 0; r < cfg.matches; r++) {
     }
     if (seasonSummaries.length > 0) seasonSummaries[seasonSummaries.length - 1].rewardDraftsSigned = signed;
 
-    // Meta 基建升级（需要资金 + 曾达联赛级别解锁）
     for (const br of ['academy', 'scout', 'finance', 'transfer', 'medical', 'training_ground', 'stadium', 'analytics'] as const) {
       const u = mgr.upgradeMetaBranch(br);
       if (u.ok) {
@@ -370,8 +514,6 @@ for (let r = 0; r < cfg.matches; r++) {
     metaPointsDelta = metaAfter - metaBefore;
     metaLevelsSnapshot = { ...(mgr.getState().metaLevels ?? {}) } as Record<string, number>;
     clubFundsSnapshot = mgr.getState().clubFunds ?? 0;
-
-    // 退役老将 / 记忆留存（跨赛季继承取证）
     seasonMemories = (sm.memories ?? []).slice(0, 5).map(m => `${m.title ?? ''}`);
     retiredLegend = sm.retiredLegend?.name ?? '';
   }
@@ -382,6 +524,9 @@ const totals = logs.reduce(
     if (l.result === 'W') acc.w++;
     else if (l.result === 'D') acc.d++;
     else acc.l++;
+    acc.cardsPlayed += l.cardsPlayed;
+    acc.combos += l.combosTriggered;
+    acc.timingDiscounts += l.timingDiscounts;
     acc.skillsOffered += l.skillsOffered;
     acc.skillsActivated += l.skillsActivated;
     acc.subs += l.subsMade;
@@ -390,9 +535,10 @@ const totals = logs.reduce(
     acc.scout += l.scoutCounters;
     return acc;
   },
-  { w: 0, d: 0, l: 0, skillsOffered: 0, skillsActivated: 0, subs: 0, traits: 0, chem: 0, scout: 0 }
+  { w: 0, d: 0, l: 0, cardsPlayed: 0, combos: 0, timingDiscounts: 0, skillsOffered: 0, skillsActivated: 0, subs: 0, traits: 0, chem: 0, scout: 0 }
 );
 
+const finalInventorySize = mgr.getCoachDeck().length;
 const flags: string[] = [];
 if (nanFields.length > 0) flags.push(`CRITICAL: NaN detected in ${nanFields.join(', ')}`);
 if (winterWindowBlocks.length > 0) flags.push(`WARN: 冬季转会窗未能关闭 (${winterWindowBlocks.length} 次): ${winterWindowBlocks[0]}`);
@@ -400,6 +546,7 @@ if (cfg.seasons > 1 && seasonSummaries.length < cfg.seasons) {
   flags.push(`WARN: 赛季结算数不足 (${seasonSummaries.length}/${cfg.seasons})，赛季未能完整走完`);
 }
 if (totals.chem === 0) flags.push('WARN: 默契连线触发为 0 次（请检查阈值或连线条件）');
+if (cfg.strategy !== 'baseline' && totals.cardsPlayed === 0) flags.push('WARN: V5 卡牌打出数为 0');
 if (totals.skillsOffered < Math.ceil(logs.length * 0.5)) {
   flags.push(`WARN: 主动技弹窗触发偏少 (${totals.skillsOffered}/${logs.length}场)`);
 }
@@ -410,14 +557,51 @@ if (logs.length >= 4 && maxDupReview >= Math.ceil(logs.length * 0.6)) {
   flags.push(`WARN: 赛后复盘文案重复率过高 (${maxDupReview}/${logs.length})`);
 }
 
-  if (cfg.json) {
-    console.log(JSON.stringify({ cfg, avgCA, totals, cardsFused, devilTrains, metaUpgrades, metaPointsDelta, metaLevelsSnapshot, clubFundsSnapshot, seasonBonusSummary, retiredLegend, seasonMemories, winterWindowBlocks, seasonBonusErrors, metaUpgradeDetails, metaUpgradeBlocks, seasonSummaries, flags, logs }, null, 2));
-  } else {
-  console.log(`\n=== FM-League CLI 自动游玩与诊断报告 ===`);
+if (cfg.json) {
+  console.log(
+    JSON.stringify(
+      {
+        cfg,
+        avgCA,
+        totals,
+        v5Telemetry: {
+          reactorCrafts,
+          tier3Crafts,
+          affixesRolled,
+          cardsRecycled,
+          shopBuys,
+          totalCardsDepleted,
+          finalInventorySize,
+        },
+        devilTrains,
+        metaUpgrades,
+        metaPointsDelta,
+        metaLevelsSnapshot,
+        clubFundsSnapshot,
+        seasonBonusSummary,
+        retiredLegend,
+        seasonMemories,
+        winterWindowBlocks,
+        seasonBonusErrors,
+        metaUpgradeDetails,
+        metaUpgradeBlocks,
+        seasonSummaries,
+        flags,
+        logs,
+      },
+      null,
+      2
+    )
+  );
+} else {
+  console.log(`\n=== FM-League V5 卡牌体系 CLI 自动游玩与诊断报告 ===`);
   console.log(`策略: ${cfg.strategy} | 赛季数: ${cfg.seasons} | 阵型: ${cfg.formation} | 风格: ${cfg.style} | 阵容均评: ${avgCA}`);
   console.log(`战绩 (${logs.length}场): ${totals.w}胜 ${totals.d}平 ${totals.l}负`);
   console.log(
-    `机制总计: 主动技弹窗 ${totals.skillsOffered} 次 / 触发 ${totals.skillsActivated} 次 | 换人 ${totals.subs} 次 | 特质 ${totals.traits} | 默契连线 ${totals.chem} | 破绽压制 ${totals.scout} | 融合 ${cardsFused} | 魔鬼特训 ${devilTrains} | Meta升级 ${metaUpgrades}`
+    `V5 卡牌遥测: 出牌 ${totals.cardsPlayed} 张 (场均 ${(totals.cardsPlayed / Math.max(1, logs.length)).toFixed(1)}) | 连击 ${totals.combos} 次 | 时机减费 ${totals.timingDiscounts} 次 | 耐久耗尽 ${totalCardsDepleted} 张 | 反应釜合成 ${reactorCrafts} 次 (3阶 ${tier3Crafts}) | 词条(正${affixesRolled.positive}/负${affixesRolled.negative}/彩蛋${affixesRolled.easter_egg}) | 残血回收 ${cardsRecycled} | 商店购卡 ${shopBuys} | 末期背包 ${finalInventorySize} 张`
+  );
+  console.log(
+    `引擎机制总计: 主动技 ${totals.skillsActivated}/${totals.skillsOffered} | 换人 ${totals.subs} | 特质 ${totals.traits} | 默契连线 ${totals.chem} | 破绽压制 ${totals.scout} | 魔鬼特训 ${devilTrains} | Meta升级 ${metaUpgrades}`
   );
   if (seasonSummaries.length > 0) {
     for (const ss of seasonSummaries) {
@@ -428,24 +612,19 @@ if (logs.length >= 4 && maxDupReview >= Math.ceil(logs.length * 0.6)) {
           ` | Meta+${ss.metaPointsEarned} | 赛季奖励${ss.seasonBonusClaimed ? '已领' : '未领'} | 新秀入队 ${ss.rewardDraftsSigned}`
       );
     }
-    console.log(`Meta 累计升级 ${metaUpgrades} 次: ${metaUpgradeDetails.join(' / ') || '无'}`);
-    console.log(`Meta 等级快照: ${JSON.stringify(metaLevelsSnapshot)} | 俱乐部资金 ¥${clubFundsSnapshot}`);
-    if (seasonBonusSummary) console.log(`赛季奖励: ${seasonBonusSummary}`);
-    if (retiredLegend) console.log(`退役老将: ${retiredLegend}`);
-    if (seasonMemories.length > 0) console.log(`赛季记忆: ${seasonMemories.join(' / ')}`);
   }
   console.log('');
-  console.log('| 轮次 | 对手 | 比分 | xG | 射正 | 侦察 | 能量曲线 | 主动技 | 换人 | 特质/默契/破绽 | 赛后复盘 |');
-  console.log('|---|---|---|---|---|---|---|---|---|---|---|');
+  console.log('| 轮次 | 对手 | 比分 | xG | 侦察 | 出牌/连击/耗尽 | 主动技 | 换人 | 赛后复盘 |');
+  console.log('|---|---|---|---|---|---|---|---|---|');
   for (const l of logs) {
     console.log(
-      `| R${l.round} | ${l.opponent} | ${l.score}(${l.result}) | ${l.myXG}:${l.oppXG} | ${l.myShotsOnTarget}:${l.oppShotsOnTarget} | ${l.scoutedCorrect ? '命中' : '未'} | ${l.energyCurve.join('->')} | ${l.skillsActivated}/${l.skillsOffered} | ${l.subsMade} | ${l.traitTriggers}/${l.chemPasses}/${l.scoutCounters} | ${l.review} |`
+      `| R${l.round} | ${l.opponent} | ${l.score}(${l.result}) | ${l.myXG}:${l.oppXG} | ${l.scoutedCorrect ? '命中' : '未'} | ${l.cardsPlayed}/${l.combosTriggered}/${l.cardsDepleted} | ${l.skillsActivated}/${l.skillsOffered} | ${l.subsMade} | ${l.review} |`
     );
   }
   console.log('');
   console.log('=== 自动化体检结论 ===');
   if (flags.length === 0) {
-    console.log('PASS: 全部机制链路激活正常，无死机制、无 NaN、无高频重复复盘。');
+    console.log('PASS: 全部 V5 卡牌与比赛引擎机制链路激活正常，无死机制、无 NaN。');
   } else {
     for (const f of flags) console.log(`- ${f}`);
   }

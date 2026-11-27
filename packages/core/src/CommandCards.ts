@@ -1,12 +1,35 @@
 /**
- * 教练场外指挥卡牌与以撒风格无限化学合成系统
- * - 1 级基础卡：数量拓展至 10 种，严格限定单一位置（门将/后卫/中场/前锋），无连锁
- * - 2~4 元素自由化学反应釜：支持无限种组合，存在双刃剑/负面反噬与超临界反应
- * - 3~4 级高级卡：解锁跨线传导、能量返还、体能虹吸、连续打牌共鸣等连锁效果
- * - 每场比赛最多携带 4 张卡出战，卡库最多收藏 12 张，支持以卡融卡升阶
+ * 《再开一局》V5 战术卡牌与去元素化“卡合卡”化学反应釜核心
+ * - 97 张高区分度卡（CardCatalog.ts 单一数据源）+ 15 条正/负/彩蛋异变词条
+ * - 0 阶基础常备卡：永不消耗、不可入炉；1~2 阶消耗卡：仅剩耐久 ≥2 次可入炉
+ * - 保留旧版导出签名以保证 Phase 4 UI 改造前全仓零报错构建
  */
 
-import { CardMechanic, CardTargetLine, CommandCardChain, CommandCardEffect } from '../../engine/src/types';
+import {
+  CardAffix,
+  CardGene,
+  CardMechanic,
+  CardTargetLine,
+  CommandCardChain,
+  CommandCardEffect,
+  MatchState,
+  TacticalStyle,
+  TeamSide,
+} from '../../engine/src/types';
+import {
+  CardTier,
+  EASTER_EGG_AFFIXES,
+  NEGATIVE_AFFIXES,
+  POSITIVE_AFFIXES,
+  V5_ALL_CARD_TEMPLATES,
+  V5_BASE_CARDS,
+  V5_CATALOG_MAP,
+  V5_CHEMICAL_CARDS,
+  V5_STYLE_CARDS,
+  V5CardTemplate,
+} from './CardCatalog';
+
+export * from './CardCatalog';
 
 export const MECHANIC_LABELS: Record<CardMechanic, string> = {
   offside_trap: '造越位返还1能量',
@@ -21,7 +44,7 @@ export const MECHANIC_LABELS: Record<CardMechanic, string> = {
   blood_frenzy: '落后时全队+8射/速',
 };
 
-export type ElementId = 'press' | 'pass' | 'wing' | 'iron' | 'blitz';
+export type ElementId = CardGene;
 export type CraftFocus = 'balanced' | 'endure' | 'surge';
 
 export interface ElementDef {
@@ -33,20 +56,46 @@ export interface ElementDef {
 }
 
 export const TACTICAL_ELEMENTS: ElementDef[] = [
-  { id: 'press', name: '高压', symbol: 'Pr', color: '#EF4444', desc: '跑动压迫与抢断倾向（偏中场/防线，过量易透支体能）' },
-  { id: 'pass',  name: '短传', symbol: 'Ps', color: '#38BDF8', desc: '传控组织与冷静度（偏中场/前腰，稳定化学反应）' },
-  { id: 'wing',  name: '边路', symbol: 'Wg', color: '#F59E0B', desc: '边路速度与冲击力（偏边锋/边卫，可催化连锁）' },
-  { id: 'iron',  name: '铁血', symbol: 'Fe', color: '#22C55E', desc: '稳固防线与体能恢复（偏后卫/门将，中和不稳定度）' },
-  { id: 'blitz', name: '奇袭', symbol: 'Bz', color: '#A855F7', desc: '门前终结与射门威胁（偏前锋，极易触发高危双刃剑）' },
+  { id: 'press', name: '高压', symbol: 'Pr', color: '#EF4444', desc: '激进因子：逼抢/抢断/造越位，拉高爆发与负面风险' },
+  { id: 'pass',  name: '短传', symbol: 'Ps', color: '#38BDF8', desc: '稳定剂：传控/默契/冷静，显著降低负面异变率' },
+  { id: 'wing',  name: '边路', symbol: 'Wg', color: '#F59E0B', desc: '联动因子：宽度/速度/传中/造角球' },
+  { id: 'iron',  name: '铁血', symbol: 'Fe', color: '#22C55E', desc: '中和剂：防守/扑救/体能，中和激进反噬' },
+  { id: 'blitz', name: '奇袭', symbol: 'Bz', color: '#A855F7', desc: '催化剂：射门/直塞/远射/造任意球，拉高爆发与彩蛋率' },
 ];
 
+export const GENE_LABELS: Record<CardGene, string> = {
+  press: '高压',
+  pass: '短传',
+  wing: '边路',
+  iron: '铁血',
+  blitz: '奇袭',
+};
+
+export const STANCE_LABELS: Record<TacticalStyle, string> = {
+  tiki_taka: '传控',
+  gegenpress: '绞杀',
+  wing_play: '两翼',
+  counter: '防反',
+  park_bus: '铁桶',
+  balanced: '阵地',
+};
+
 export interface CommandCard extends CommandCardEffect {
-  cost: number;           // 比赛日战术能量消耗 (1 ~ 3)
-  summary: string;        // 简短效果说明
-  recipeKey?: string;     // 化学分子式，如 "press+wing+blitz"
-  level: number;          // 卡牌等级 1 ~ 4 (Lv.1 基础单位置，Lv.3+ 解锁连锁)
+  cost: number;              // 能量消耗 (0 ~ 3)
+  summary: string;           // 简短效果说明
+  recipeKey?: string;        // 基因分子式
+  level: number;             // 兼容旧 UI：映射到 tier + 1 (1~4)
   focus?: CraftFocus;
-  isCorrupted?: boolean;  // 是否包含负面反噬/污染
+  isCorrupted?: boolean;     // 兼容旧 UI：存在负面异变词条时为 true
+  // V5 核心字段
+  catalogId?: string;
+  tier?: CardTier;           // 0=常备, 1=实用(3次), 2=王牌/神卡(2次), 3=传说(1次)
+  gene?: CardGene;           // 5 色基因标
+  styleTag?: TacticalStyle;  // 归属风格
+  maxUses?: number;          // undefined 表示 0 阶永不消耗
+  remainingUses?: number;    // 仅实际打出扣 1
+  isBase?: boolean;
+  isChemical?: boolean;
 }
 
 export const LINE_LABELS: Record<CardTargetLine, string> = {
@@ -57,8 +106,10 @@ export const LINE_LABELS: Record<CardTargetLine, string> = {
   ALL: '全队通用',
 };
 
+let cardInstanceSeq = 0;
+
 export function getElementLabel(id: ElementId): string {
-  return TACTICAL_ELEMENTS.find(e => e.id === id)?.name ?? id;
+  return GENE_LABELS[id] ?? id;
 }
 
 export function getElementSymbol(id: ElementId): string {
@@ -72,248 +123,331 @@ export function formatRecipeChinese(key: string): string {
     .join(' + ');
 }
 
-export function formatCardSummary(
-  card: Pick<
-    CommandCard,
-    | 'durationMinutes'
-    | 'targetLine'
-    | 'passingDelta'
-    | 'shootingDelta'
-    | 'defendingDelta'
-    | 'paceDelta'
-    | 'composureDelta'
-    | 'goalkeepingDelta'
-    | 'fitnessInstantDelta'
-    | 'penaltyFitnessDelta'
-    | 'penaltyAllDefDelta'
-    | 'chainEffect'
-    | 'mechanic'
-  >
-): string {
-  const parts: string[] = [];
-  if (card.targetLine && card.targetLine !== 'ALL') {
-    parts.push(`[${LINE_LABELS[card.targetLine]}]`);
-  }
-  if (card.fitnessInstantDelta) parts.push(`体能+${card.fitnessInstantDelta}%`);
-  if (card.goalkeepingDelta) parts.push(`扑救+${card.goalkeepingDelta}`);
-  if (card.paceDelta) parts.push(`速度${card.paceDelta >= 0 ? '+' : ''}${card.paceDelta}`);
-  if (card.shootingDelta) parts.push(`射门${card.shootingDelta >= 0 ? '+' : ''}${card.shootingDelta}`);
-  if (card.passingDelta) parts.push(`传球${card.passingDelta >= 0 ? '+' : ''}${card.passingDelta}`);
-  if (card.defendingDelta) parts.push(`防守${card.defendingDelta >= 0 ? '+' : ''}${card.defendingDelta}`);
-  if (card.composureDelta) parts.push(`冷静${card.composureDelta >= 0 ? '+' : ''}${card.composureDelta}`);
-  if (card.penaltyFitnessDelta) parts.push(`反噬:全队体能${card.penaltyFitnessDelta}%`);
-  if (card.penaltyAllDefDelta) parts.push(`反噬:防线${card.penaltyAllDefDelta}`);
-  if (card.mechanic) parts.push(`机制:${MECHANIC_LABELS[card.mechanic]}`);
-  if (card.chainEffect) parts.push(`连锁:${card.chainEffect.label}`);
-  return `${card.durationMinutes}分 ${parts.join(' ')}`;
+export function instantiateV5Card(tpl: V5CardTemplate, affix?: CardAffix): CommandCard {
+  const id = tpl.isBase
+    ? (tpl.catalogId === 'card_captain_roar' ? 'card_captain_roar' : `v5_base_${tpl.catalogId}`)
+    : `v5_${tpl.catalogId}_${++cardInstanceSeq}_${Date.now().toString(36)}`;
+  const costDelta = affix?.costDelta ?? 0;
+  const usesBonus = affix?.usesBonus ?? 0;
+  const finalCost = Math.max(0, tpl.cost + costDelta);
+  const finalMaxUses = tpl.maxUses !== undefined ? tpl.maxUses + usesBonus : undefined;
+  const affixTag = affix ? ` [${affix.name}]` : '';
+
+  const card: CommandCard = {
+    ...tpl,
+    id,
+    cost: finalCost,
+    element: tpl.gene,
+    level: Math.min(4, tpl.tier + 1),
+    maxUses: finalMaxUses,
+    remainingUses: finalMaxUses,
+    affix,
+    isCorrupted: affix?.kind === 'negative',
+    recipeKey: tpl.recipeGenes ? [...tpl.recipeGenes].sort().join('+') : tpl.gene,
+    summary: `${tpl.summary}${affixTag}`,
+  };
+  return card;
 }
 
-export function formatCardHumanIntent(
-  card: Pick<
-    CommandCard,
-    | 'targetLine'
-    | 'passingDelta'
-    | 'shootingDelta'
-    | 'defendingDelta'
-    | 'paceDelta'
-    | 'composureDelta'
-    | 'goalkeepingDelta'
-    | 'fitnessInstantDelta'
-    | 'mechanic'
-    | 'forceStyle'
-  >
-): string {
-  if (card.mechanic === 'set_piece_nuke') return '定位球核武，大幅拉高角球与任意球破门率';
-  if (card.mechanic === 'long_shot_cannon') return '解放禁区外重炮远射，强破对手密集铁桶阵';
-  if (card.mechanic === 'wing_overload') return '两翼强行起速传中，重点轰炸对方边路空当';
-  if (card.mechanic === 'high_press_blitz') return '前场疯狂反抢压迫，力争断球后就地打反击';
-  if (card.mechanic === 'iron_wall_block') return '全线收缩扎紧铁闸，死守禁区与门线绝险';
-  if (card.mechanic === 'blood_frenzy') return '落后搏命总攻，全员提速前插强抢绝平机会';
-  if (card.mechanic === 'tiki_taka_flow') return '中场高频短传控场，稳步渗透同时省力回体';
-  if (card.mechanic === 'gk_counter_launch') return '门将扑救后立刻长传发动闪电反击';
-  if ((card.shootingDelta ?? 0) >= 5 || card.targetLine === 'ATT') return '全线加强进攻渗透，显著提升禁区射门与威胁值';
-  if ((card.passingDelta ?? 0) >= 5 || card.targetLine === 'MID') return '抢回中场控制权，提升直塞穿透与前插创造机会';
-  if ((card.defendingDelta ?? 0) >= 5 || (card.goalkeepingDelta ?? 0) >= 5 || card.targetLine === 'DEF' || card.targetLine === 'GK') {
-    return '稳固后防与门线，大幅降低对手禁区内射门质量';
-  }
-  if ((card.fitnessInstantDelta ?? 0) > 0) return '紧急唤醒全队体能，防止末段跑不动丢球';
-  return '全面提升场上专注度与攻防转换效率';
+export function getStyleBaseCards(style: TacticalStyle): CommandCard[] {
+  return V5_BASE_CARDS
+    .filter(c => c.styleTag === style)
+    .map(tpl => instantiateV5Card(tpl));
 }
+
+export function createStarterCoachDeck(style: TacticalStyle = 'tiki_taka'): CommandCard[] {
+  // V5：开局赠送 4 张当前风格 1 阶消耗卡 + 2 张跨风格 1 阶卡（基础 0 阶 4 张随风格自动带入）
+  const sameStyle = V5_STYLE_CARDS.filter(c => c.styleTag === style && c.tier === 1).slice(0, 4);
+  const otherStyle = V5_STYLE_CARDS.filter(c => c.styleTag !== style && c.tier === 1).slice(0, 2);
+  return [...sameStyle, ...otherStyle].map(tpl => instantiateV5Card(tpl));
+}
+
+export function createCaptainRoarCard(): CommandCard {
+  const tpl = V5_CATALOG_MAP.get('card_captain_roar') ?? V5_BASE_CARDS[V5_BASE_CARDS.length - 1];
+  return instantiateV5Card(tpl);
+}
+
+/**
+ * 按 60% 当前流派 + 40% 跨流派权重随机抽取 1~2 阶消耗卡（可选指定基因）
+ */
+export function rollStyleConsumableCard(
+  style: TacticalStyle,
+  tier: 1 | 2 = 1,
+  preferredGene?: CardGene
+): CommandCard {
+  let pool = V5_STYLE_CARDS.filter(c => c.tier === tier);
+  if (preferredGene) {
+    const genePool = pool.filter(c => c.gene === preferredGene);
+    if (genePool.length > 0) pool = genePool;
+  }
+  const samePool = pool.filter(c => c.styleTag === style);
+  const pickSame = samePool.length > 0 && Math.random() < 0.65;
+  const finalPool = pickSame ? samePool : pool;
+  const tpl = finalPool[Math.floor(Math.random() * finalPool.length)] ?? V5_STYLE_CARDS[0];
+  return instantiateV5Card(tpl);
+}
+
+/**
+ * 统计出战卡组的主导基因色标（某基因 ≥4 张时触发卡组基因共鸣）
+ */
+export function computeDeckArchetypeGene(cards: CommandCard[]): CardGene | undefined {
+  const counts: Record<CardGene, number> = { press: 0, pass: 0, wing: 0, iron: 0, blitz: 0 };
+  for (const c of cards) {
+    const g = inferCardElement(c);
+    counts[g] = (counts[g] ?? 0) + 1;
+  }
+  let best: CardGene | undefined;
+  let max = 0;
+  for (const g of Object.keys(counts) as CardGene[]) {
+    if (counts[g] > max) {
+      max = counts[g];
+      best = g;
+    }
+  }
+  return max >= 4 ? best : undefined;
+}
+
+// ==================== V5 化学反应釜：实时预览 & 词条附魔 ====================
+
+export interface ReactorAffixOdds {
+  purePct: number;
+  positivePct: number;
+  negativePct: number;
+  easterEggPct: number;
+}
+
+export interface ReactorPreview {
+  valid: boolean;
+  reason?: string;
+  mode?: 'chemical_exact' | 'same_gene_tier2' | 'tier3_legend';
+  targetCard?: V5CardTemplate;
+  sameGenePool?: V5CardTemplate[];
+  odds: ReactorAffixOdds;
+  genes: CardGene[];
+}
+
+export function canCardEnterReactor(card: CommandCard): { ok: boolean; reason?: string } {
+  const tier = card.tier ?? (card.isBase ? 0 : 1);
+  if (card.isBase || tier === 0) {
+    return { ok: false, reason: '0 阶基础常备卡不可投入反应釜' };
+  }
+  if (tier >= 3) {
+    return { ok: false, reason: '3 阶传说神卡已达巅峰，不可再次入炉' };
+  }
+  const rem = card.remainingUses ?? card.maxUses ?? 0;
+  if (rem < 2) {
+    return { ok: false, reason: '剩余耐久不足 2 次（残血卡仅可打完或回收资金）' };
+  }
+  return { ok: true };
+}
+
+function computeReactorOdds(genes: CardGene[], isTier3: boolean): ReactorAffixOdds {
+  const counts: Record<CardGene, number> = { press: 0, pass: 0, wing: 0, iron: 0, blitz: 0 };
+  for (const g of genes) counts[g]++;
+
+  // 同色 2 张 1 阶卡保底 0% 负面
+  if (!isTier3 && genes.length === 2 && genes[0] === genes[1]) {
+    return { purePct: 75, positivePct: 25, negativePct: 0, easterEggPct: 0 };
+  }
+
+  let neg = counts.press * 12 + counts.blitz * 14 - counts.pass * 14 - counts.iron * 12;
+  if (counts.press > 0 && counts.iron > 0) neg += 8;
+  if (isTier3) neg += 10;
+  const negativePct = Math.max(0, Math.min(45, Math.round(neg)));
+
+  const easterEggPct = isTier3
+    ? Math.min(12, 6 + counts.blitz * 3)
+    : Math.min(8, counts.blitz > 0 || counts.pass > 0 ? 5 : 3);
+
+  const positivePct = Math.min(28, 16 + counts.pass * 4 + (isTier3 ? 4 : 0));
+  const purePct = Math.max(15, 100 - negativePct - easterEggPct - positivePct);
+  const sum = purePct + positivePct + negativePct + easterEggPct;
+  const adjPure = purePct + (100 - sum);
+  return { purePct: adjPure, positivePct, negativePct, easterEggPct };
+}
+
+function matchTier3Chemical(genes: CardGene[]): V5CardTemplate {
+  const counts: Record<CardGene, number> = { press: 0, pass: 0, wing: 0, iron: 0, blitz: 0 };
+  for (const g of genes) counts[g]++;
+  if (counts.press + counts.blitz >= 2 && counts.blitz >= 1) {
+    return V5_CATALOG_MAP.get('ch_doomsday_attack')!;
+  }
+  if (counts.pass >= 1 && counts.iron >= 1 && counts.wing >= 1) {
+    return V5_CATALOG_MAP.get('ch_golden_chem')!;
+  }
+  return V5_CATALOG_MAP.get('ch_total_football')!;
+}
+
+export function previewReactor(cards: CommandCard[]): ReactorPreview {
+  const emptyOdds: ReactorAffixOdds = { purePct: 100, positivePct: 0, negativePct: 0, easterEggPct: 0 };
+  if (cards.length < 2 || cards.length > 3) {
+    return { valid: false, reason: '请投入 2 或 3 张可入炉的消耗卡', odds: emptyOdds, genes: [] };
+  }
+  const seen = new Set<string>();
+  for (const c of cards) {
+    if (seen.has(c.id)) return { valid: false, reason: '不能重复投入同一张卡', odds: emptyOdds, genes: [] };
+    seen.add(c.id);
+    const chk = canCardEnterReactor(c);
+    if (!chk.ok) return { valid: false, reason: chk.reason, odds: emptyOdds, genes: [] };
+  }
+
+  const genes = cards.map(c => inferCardElement(c));
+  const tiers = cards.map(c => c.tier ?? 1);
+
+  // 禁止 1张1阶 + 1张2阶 直接 2 卡合成
+  if (cards.length === 2 && tiers[0] !== tiers[1]) {
+    return {
+      valid: false,
+      reason: '1 阶与 2 阶混搭需再补 1 张卡（凑满 3 张合成 3 阶传说神卡）',
+      odds: emptyOdds,
+      genes,
+    };
+  }
+
+  // 3 张消耗卡 或 2 张 2 阶卡 -> 3 阶传说神卡
+  if (cards.length === 3 || (cards.length === 2 && tiers[0] === 2 && tiers[1] === 2)) {
+    const target = matchTier3Chemical(genes);
+    const odds = computeReactorOdds(genes, true);
+    return { valid: true, mode: 'tier3_legend', targetCard: target, odds, genes };
+  }
+
+  // 2 张 1 阶卡：同色兜底 vs 异色精确化学神卡
+  const sortedKey = [...genes].sort().join('+');
+  if (genes[0] === genes[1]) {
+    const pool = V5_STYLE_CARDS.filter(c => c.tier === 2 && c.gene === genes[0]);
+    const fallbackPool = pool.length > 0 ? pool : V5_STYLE_CARDS.filter(c => c.tier === 2);
+    const odds = computeReactorOdds(genes, false);
+    return {
+      valid: true,
+      mode: 'same_gene_tier2',
+      targetCard: fallbackPool[0],
+      sameGenePool: fallbackPool,
+      odds,
+      genes,
+    };
+  }
+
+  const exact = V5_CHEMICAL_CARDS.find(
+    c => c.tier === 2 && c.recipeGenes && [...c.recipeGenes].sort().join('+') === sortedKey
+  );
+  const target =
+    exact ??
+    (sortedKey === 'pass+wing' ? V5_CATALOG_MAP.get('ch_wingback_wall')! : V5_CHEMICAL_CARDS[0]);
+  const odds = computeReactorOdds(genes, false);
+  return { valid: true, mode: 'chemical_exact', targetCard: target, odds, genes };
+}
+
+export function craftFromReactor(
+  cards: CommandCard[],
+  preferredSameGeneCatalogId?: string
+): { ok: boolean; card?: CommandCard; affix?: CardAffix; reason?: string } {
+  const prev = previewReactor(cards);
+  if (!prev.valid || !prev.targetCard) {
+    return { ok: false, reason: prev.reason || '当前组合无法发生化学反应' };
+  }
+
+  let tpl = prev.targetCard;
+  if (prev.mode === 'same_gene_tier2' && prev.sameGenePool && prev.sameGenePool.length > 0) {
+    const chosen = preferredSameGeneCatalogId
+      ? prev.sameGenePool.find(c => c.catalogId === preferredSameGeneCatalogId)
+      : undefined;
+    tpl = chosen ?? prev.sameGenePool[Math.floor(Math.random() * prev.sameGenePool.length)];
+  }
+
+  // 按实时预览概率抽取异变词条
+  const roll = Math.random() * 100;
+  let affix: CardAffix | undefined;
+  if (roll < prev.odds.easterEggPct) {
+    affix = EASTER_EGG_AFFIXES[Math.floor(Math.random() * EASTER_EGG_AFFIXES.length)];
+  } else if (roll < prev.odds.easterEggPct + prev.odds.positivePct) {
+    affix = POSITIVE_AFFIXES[Math.floor(Math.random() * POSITIVE_AFFIXES.length)];
+  } else if (roll < prev.odds.easterEggPct + prev.odds.positivePct + prev.odds.negativePct) {
+    affix = NEGATIVE_AFFIXES[Math.floor(Math.random() * NEGATIVE_AFFIXES.length)];
+  }
+
+  const card = instantiateV5Card(tpl, affix);
+  return { ok: true, card, affix };
+}
+
+// ==================== V5 局内时机减费判定（6~8 分钟宽容窗口） ====================
+
+export function evaluateCardEffectiveCost(
+  card: CommandCard,
+  ms: MatchState,
+  side: TeamSide,
+  scoutResonant = false
+): { cost: number; discounted: boolean; reason?: string } {
+  const myGoals = side === 'home' ? ms.homeScore : ms.awayScore;
+  const oppGoals = side === 'home' ? ms.awayScore : ms.homeScore;
+  const mySubs = side === 'home' ? ms.homeSubsUsed : ms.awaySubsUsed;
+  const oppForm = side === 'home' ? ms.awayFormation : ms.homeFormation;
+  const myStats = ms.stats[side];
+  const oppStats = ms.stats[side === 'home' ? 'away' : 'home'];
+  const totPoss = myStats.possessionTicks + oppStats.possessionTicks || 1;
+  const myPossPct = (myStats.possessionTicks / totPoss) * 100;
+  const hasRed = ms.players.some(p => p.team === side && p.redCard);
+  const lastConceded = ms.lastConcededMin?.[side] ?? -99;
+  const lastSave = ms.lastSaveMin?.[side] ?? -99;
+  const switches = ms.stanceSwitchCount?.[side] ?? 0;
+
+  // 彩蛋词条：【弗格森时间】80' 后打出 0 费
+  if (card.affix?.fergieTime && ms.minute >= 80) {
+    return { cost: 0, discounted: true, reason: '弗格森时间 0 费' };
+  }
+
+  let discount = scoutResonant ? 1 : 0;
+  let reason = scoutResonant ? '破绽共振 -1费' : undefined;
+
+  if (card.timingCondition && (card.timingDiscount ?? 0) > 0) {
+    let met = false;
+    switch (card.timingCondition) {
+      case 'trailing': met = myGoals < oppGoals; break;
+      case 'leading': met = myGoals > oppGoals; break;
+      case 'drawing': met = myGoals === oppGoals; break;
+      case 'late_70_not_leading': met = ms.minute >= 70 && myGoals <= oppGoals; break;
+      case 'late_70_leading': met = ms.minute >= 70 && myGoals > oppGoals; break;
+      case 'late_75_leading': met = ms.minute >= 75 && myGoals > oppGoals; break;
+      case 'late_75_drawing': met = ms.minute >= 75 && myGoals === oppGoals; break;
+      case 'late_80_not_leading': met = ms.minute >= 80 && myGoals <= oppGoals; break;
+      case 'late_65_lead_1': met = ms.minute >= 65 && myGoals - oppGoals === 1; break;
+      case 'early_20': met = ms.minute <= 20; break;
+      case 'after_60': met = ms.minute >= 60; break;
+      case 'halftime_45_55': met = ms.minute >= 45 && ms.minute <= 55; break;
+      case 'recent_conceded': met = ms.minute - lastConceded >= 0 && ms.minute - lastConceded <= 8; break;
+      case 'recent_save': met = ms.minute - lastSave >= 0 && ms.minute - lastSave <= 7; break;
+      case 'sub_used': met = mySubs >= 1; break;
+      case 'sub_used_2': met = mySubs >= 2; break;
+      case 'red_card': met = hasRed; break;
+      case 'low_possession': met = myPossPct <= 45; break;
+      case 'vs_5back': met = oppForm.startsWith('5-'); break;
+      case 'bad_weather': met = !!ms.weather && ms.weather !== 'sunny'; break;
+      case 'switched_stance_2': met = switches >= 2; break;
+    }
+    if (met) {
+      discount += card.timingDiscount!;
+      reason = '时机触发减费';
+    }
+  }
+
+  const finalCost = Math.max(0, card.cost - discount);
+  return { cost: finalCost, discounted: finalCost < card.cost, reason };
+}
+
+// ==================== 兼容旧 UI 导出（供 Phase 4 过渡前保持零报错） ====================
 
 export function createInitialElements(): Record<ElementId, number> {
-  return { press: 2, pass: 2, wing: 1, iron: 2, blitz: 1 };
+  return { press: 0, pass: 0, wing: 0, iron: 0, blitz: 0 };
 }
 
-/**
- * 拓展后的 Lv.1 基础位置卡池（10 种基础卡，均严格限定单一位置、无连锁）
- */
-export const LV1_BASE_CARDS: Array<Omit<CommandCard, 'id'>> = [
-  {
-    name: '门线铁壁',
-    cost: 1,
-    durationMinutes: 12,
-    targetLine: 'GK',
-    goalkeepingDelta: 10,
-    composureDelta: 8,
-    mechanic: 'iron_wall_block',
-    level: 1,
-    recipeKey: 'iron',
-    summary: '',
-  },
-  {
-    name: '手抛快发',
-    cost: 1,
-    durationMinutes: 10,
-    targetLine: 'GK',
-    goalkeepingDelta: 6,
-    passingDelta: 10,
-    mechanic: 'gk_counter_launch',
-    level: 1,
-    recipeKey: 'pass',
-    summary: '',
-  },
-  {
-    name: '铁闸联防',
-    cost: 1,
-    durationMinutes: 12,
-    targetLine: 'DEF',
-    defendingDelta: 10,
-    composureDelta: 6,
-    mechanic: 'set_piece_nuke',
-    level: 1,
-    recipeKey: 'iron',
-    summary: '',
-  },
-  {
-    name: '边卫插上',
-    cost: 1,
-    durationMinutes: 10,
-    targetLine: 'DEF',
-    defendingDelta: 6,
-    paceDelta: 10,
-    mechanic: 'super_sub',
-    level: 1,
-    recipeKey: 'wing',
-    summary: '',
-  },
-  {
-    name: '贴身紧盯',
-    cost: 1,
-    durationMinutes: 10,
-    targetLine: 'DEF',
-    defendingDelta: 8,
-    paceDelta: 6,
-    mechanic: 'offside_trap',
-    level: 1,
-    recipeKey: 'press',
-    summary: '',
-  },
-  {
-    name: '中场节拍器',
-    cost: 1,
-    durationMinutes: 12,
-    targetLine: 'MID',
-    passingDelta: 10,
-    composureDelta: 8,
-    mechanic: 'tiki_taka_flow',
-    level: 1,
-    recipeKey: 'pass',
-    summary: '',
-  },
-  {
-    name: '疯狗扫荡',
-    cost: 1,
-    durationMinutes: 10,
-    targetLine: 'MID',
-    defendingDelta: 8,
-    paceDelta: 8,
-    mechanic: 'high_press_blitz',
-    level: 1,
-    recipeKey: 'press',
-    summary: '',
-  },
-  {
-    name: '前腰手术刀',
-    cost: 1,
-    durationMinutes: 10,
-    targetLine: 'MID',
-    passingDelta: 8,
-    shootingDelta: 6,
-    mechanic: 'long_shot_cannon',
-    level: 1,
-    recipeKey: 'blitz',
-    summary: '',
-  },
-  {
-    name: '禁区猎手',
-    cost: 1,
-    durationMinutes: 10,
-    targetLine: 'ATT',
-    shootingDelta: 10,
-    composureDelta: 8,
-    mechanic: 'blood_frenzy',
-    level: 1,
-    recipeKey: 'blitz',
-    summary: '',
-  },
-  {
-    name: '边锋爆破',
-    cost: 1,
-    durationMinutes: 10,
-    targetLine: 'ATT',
-    paceDelta: 12,
-    shootingDelta: 6,
-    mechanic: 'wing_overload',
-    level: 1,
-    recipeKey: 'wing',
-    summary: '',
-  },
-];
-
-let craftSeq = 0;
-
-export function createStarterCoachDeck(): CommandCard[] {
-  // 开局赠送 4 张覆盖 门将/后卫/中场/前锋 的 Lv.1 基础卡，刚好填满 4 个出战卡槽
-  const picks = [LV1_BASE_CARDS[0], LV1_BASE_CARDS[2], LV1_BASE_CARDS[5], LV1_BASE_CARDS[8]];
-  return picks.map((tpl, idx) => {
-    const c: CommandCard = {
-      ...tpl,
-      id: `card_lv1_starter_${idx}`,
-    };
-    c.summary = formatCardSummary(c);
-    return c;
-  });
+export function formatCardSummary(card: Pick<CommandCard, 'summary' | 'durationMinutes'>): string {
+  return card.summary || `${card.durationMinutes}分 战术指令`;
 }
 
-/**
- * 序章通关专属传承指挥卡：【老队长的怒吼】
- */
-export function createCaptainRoarCard(): CommandCard {
-  const c: CommandCard = {
-    id: 'card_captain_roar',
-    name: '老队长的怒吼',
-    cost: 1,
-    durationMinutes: 12,
-    targetLine: 'ALL',
-    paceDelta: 6,
-    shootingDelta: 6,
-    composureDelta: 10,
-    fitnessInstantDelta: 10,
-    mechanic: 'blood_frenzy',
-    recipeKey: 'blitz',
-    level: 2,
-    summary: '',
-  };
-  c.summary = formatCardSummary(c);
-  return c;
+export function formatCardHumanIntent(card: Pick<CommandCard, 'summary' | 'mechanic' | 'targetLine'>): string {
+  if (card.summary) return card.summary;
+  if (card.mechanic && MECHANIC_LABELS[card.mechanic]) return MECHANIC_LABELS[card.mechanic];
+  return '阶段性改变球队攻防偏好与场上属性';
 }
-
-const CHAIN_POOL: CommandCardChain[] = [
-  { type: 'spread_all', label: '全线传导(其余位置+4传/冷)' },
-  { type: 'energy_refund', label: '战术回响(打出返还1能量)' },
-  { type: 'synergy_boost', label: '连携共鸣(有激活卡时全队+6速/射)' },
-  { type: 'fitness_leech', label: '体能虹吸(吸取对手8%体能)' },
-];
 
 export interface ChemistryPreview {
   card: CommandCard;
@@ -322,261 +456,173 @@ export interface ChemistryPreview {
   formula: string;
 }
 
-/**
- * 以撒风格无限化学合成推演：
- * - 1 个元素：提炼对应定位的 Lv.1 基础卡（严格单位置）
- * - 2 个元素：合成 Lv.2 进阶卡（高属性单位置，存在冲突时可能带轻微反噬）
- * - 3 个元素：合成 Lv.3 高级连锁卡（解锁 1 条连锁效果 + 跨线或高数值）
- * - 4 个元素：合成 Lv.4 传奇反应卡（全队/高爆发 + 强力连锁，但极高概率触发以撒式高收益高反噬）
- */
 export function synthesizeChemistry(
   elements: ElementId[],
-  focus: CraftFocus = 'balanced',
+  _focus: CraftFocus = 'balanced',
   commit = false
 ): ChemistryPreview {
-  const counts: Record<ElementId, number> = { press: 0, pass: 0, wing: 0, iron: 0, blitz: 0 };
-  for (const e of elements) counts[e]++;
-
-  const formula = elements.map(getElementSymbol).join('·');
-  const recipeKey = [...elements].sort().join('+');
-  const len = elements.length;
-
-  // 1 个元素 -> 从 Lv.1 基础位置卡池精确提炼
-  if (len <= 1) {
-    const e0 = elements[0] || 'pass';
-    const candidates = LV1_BASE_CARDS.filter(c => c.recipeKey === e0);
-    const tpl = candidates[commit ? Math.floor(Math.random() * candidates.length) : 0] || LV1_BASE_CARDS[5];
-    const card: CommandCard = {
-      ...tpl,
-      id: commit ? `card_chem_${++craftSeq}_${Date.now().toString(36)}` : 'preview',
-    };
-    if (focus === 'endure') card.durationMinutes += 4;
-    if (focus === 'surge') card.fitnessInstantDelta = (card.fitnessInstantDelta ?? 0) + 6;
-    card.summary = formatCardSummary(card);
-    return { card, stability: '稳定', stabilityColor: '#22C55E', formula };
-  }
-
-  // 计算化学向量
-  let passing = counts.pass * 6 + counts.wing * 2;
-  let shooting = counts.blitz * 6 + counts.wing * 2;
-  let defending = counts.iron * 6 + counts.press * 3;
-  let pace = counts.wing * 6 + counts.press * 4 + counts.blitz * 2;
-  let composure = counts.pass * 4 + counts.iron * 3 - Math.max(0, counts.blitz - 1) * 3;
-  let goalkeeping = counts.iron >= 2 && counts.pass >= 1 ? counts.iron * 5 : 0;
-  let fitnessInstant = counts.iron * 5 - Math.max(0, counts.press - 1) * 4;
-
-  // 确定目标位置：Lv.2 严格单位置；Lv.3 偏进攻/中后场；Lv.4 可全队通用
-  let targetLine: CardTargetLine = 'MID';
-  if (len <= 2) {
-    if (counts.iron >= 2 && counts.pass === 0 && counts.blitz === 0) targetLine = 'GK';
-    else if (counts.iron + counts.press >= 2 && counts.blitz === 0) targetLine = 'DEF';
-    else if (counts.blitz >= 1 && counts.wing + counts.blitz >= 2) targetLine = 'ATT';
-    else if (counts.blitz >= 2) targetLine = 'ATT';
-    else targetLine = 'MID';
-  } else if (len === 3) {
-    targetLine = counts.blitz >= 2 ? 'ATT' : counts.iron >= 2 ? 'DEF' : 'MID';
-  } else {
-    targetLine = 'ALL';
-  }
-
-  // 不稳定度评估（激进元素堆叠 + 冲突元素 press vs iron）
-  const aggression = counts.press + counts.blitz * 1.4;
-  const conflict = counts.press > 0 && counts.iron > 0 ? 1 : 0;
-  const rawInstability = aggression + conflict - counts.pass * 0.6;
-
-  let penaltyFitnessDelta: number | undefined;
-  let penaltyAllDefDelta: number | undefined;
-  let isCorrupted = false;
-  let stability: ChemistryPreview['stability'] = '稳定';
-  let stabilityColor = '#22C55E';
-
-  if (rawInstability >= 3.2) {
-    stability = '高危反噬';
-    stabilityColor = '#EF4444';
-    isCorrupted = true;
-    // 以撒式高风险高回报：进攻/速度大幅飙升，但付出体能与轻微防线代价
-    shooting += 8;
-    pace += 7;
-    penaltyFitnessDelta = -4;
-    if (counts.blitz >= 2) penaltyAllDefDelta = -1;
-  } else if (rawInstability >= 2.0 || len >= 3) {
-    stability = '双刃剑';
-    stabilityColor = '#F59E0B';
-    isCorrupted = counts.press >= 2 || counts.blitz >= 2;
-    if (counts.press >= 2) penaltyFitnessDelta = -3;
-  }
-
-  // 等级与能量消耗
-  const level = Math.min(4, len);
-  let cost = len >= 4 ? 3 : len === 3 ? 2 : 1;
-
-  // 自由倾向修正
-  if (focus === 'endure') {
-    // 持久掌控
-  } else if (focus === 'surge') {
-    if (cost > 1) cost -= 1;
-    else fitnessInstant += 6;
-  }
-
-  // Lv.3+ 解锁连锁效果（根据主元素确定性地选出专属连锁，确保玩家可构筑可预期！）
-  let chainEffect: CommandCardChain | undefined;
-  if (level >= 3) {
-    const chainIdx =
-      counts.pass >= 2 ? 0 :
-      counts.wing >= 1 && counts.pass >= 1 ? 1 :
-      counts.blitz >= 1 ? 2 :
-      counts.iron >= 1 ? 3 :
-      (elements.length + counts.press) % CHAIN_POOL.length;
-    chainEffect = CHAIN_POOL[chainIdx];
-  }
-
-  // 化学反应命名
-  const prefix =
-    level === 4 ? (isCorrupted ? '超临界·' : '传奇反应·') :
-    level === 3 ? (isCorrupted ? '狂暴连锁·' : '高阶共鸣·') :
-    isCorrupted ? '过载·' : '精炼·';
-  const coreName =
-    counts.blitz >= 2 ? '核爆突袭' :
-    counts.press >= 2 ? '窒息狂潮' :
-    counts.iron >= 2 ? '绝对壁垒' :
-    counts.pass >= 2 ? '量子传控' :
-    counts.wing >= 2 ? '超音速两翼' :
-    targetLine === 'ATT' ? '终结连携' :
-    targetLine === 'DEF' ? '铁血防线' :
-    targetLine === 'GK' ? '神盾守望' : '全能枢纽';
-
-  let mechanic: CommandCard['mechanic'];
-  if (counts.iron >= 2 && counts.pass === 0 && counts.blitz === 0) mechanic = 'iron_wall_block';
-  else if (counts.iron >= 1 && counts.press >= 1 && counts.blitz === 0) mechanic = 'offside_trap';
-  else if (counts.iron >= 1 && counts.blitz >= 1) mechanic = 'set_piece_nuke';
-  else if (counts.iron >= 1 && counts.pass >= 1) mechanic = 'gk_counter_launch';
-  else if (counts.pass >= 2 && counts.blitz >= 1) mechanic = 'long_shot_cannon';
-  else if (counts.pass >= 2) mechanic = 'tiki_taka_flow';
-  else if (counts.wing >= 2 || (counts.wing >= 1 && counts.pass >= 1)) mechanic = 'wing_overload';
-  else if (counts.wing >= 1 && counts.blitz >= 1) mechanic = 'super_sub';
-  else if (counts.blitz >= 2) mechanic = 'blood_frenzy';
-  else if (counts.press >= 2 || counts.press >= 1) mechanic = 'high_press_blitz';
-
-  const card: CommandCard = {
-    id: commit ? `card_chem_${++craftSeq}_${Date.now().toString(36)}` : 'preview',
-    name: `${prefix}${coreName}`,
-    cost,
-    durationMinutes: (level >= 4 ? 18 : level === 3 ? 16 : 11) + (focus === 'endure' ? 5 : 0),
-    targetLine,
-    passingDelta: passing > 0 ? passing : undefined,
-    shootingDelta: shooting > 0 ? shooting : undefined,
-    defendingDelta: defending > 0 ? defending : undefined,
-    paceDelta: pace > 0 ? pace : undefined,
-    composureDelta: composure !== 0 ? composure : undefined,
-    goalkeepingDelta: goalkeeping > 0 ? goalkeeping : undefined,
-    fitnessInstantDelta: fitnessInstant > 0 ? fitnessInstant : undefined,
-    penaltyFitnessDelta,
-    penaltyAllDefDelta,
-    chainEffect,
-    mechanic,
-    recipeKey,
-    level,
-    focus,
-    isCorrupted,
-    summary: '',
+  const genes: CardGene[] = elements.length >= 2 ? elements.slice(0, 3) : [elements[0] ?? 'pass', elements[0] ?? 'pass'];
+  const mockCards = genes.map((g, i) => ({
+    ...instantiateV5Card(V5_STYLE_CARDS.find(c => c.gene === g && c.tier === 1) ?? V5_STYLE_CARDS[0]),
+    id: `mock_${i}`,
+  }));
+  const prev = previewReactor(mockCards);
+  const card = commit
+    ? (craftFromReactor(mockCards).card ?? instantiateV5Card(V5_CHEMICAL_CARDS[0]))
+    : instantiateV5Card(prev.targetCard ?? V5_CHEMICAL_CARDS[0]);
+  const stability: ChemistryPreview['stability'] =
+    prev.odds.negativePct >= 25 ? '高危反噬' : prev.odds.negativePct > 0 ? '双刃剑' : '稳定';
+  const stabilityColor =
+    stability === '高危反噬' ? '#EF4444' : stability === '双刃剑' ? '#F59E0B' : '#22C55E';
+  return {
+    card,
+    stability,
+    stabilityColor,
+    formula: genes.map(getElementSymbol).join('·'),
   };
-  card.summary = formatCardSummary(card);
-  return { card, stability, stabilityColor, formula };
 }
 
-/**
- * 升级卡牌等级（Lv.1→Lv.2→Lv.3→Lv.4），到达 Lv.3 自动觉醒连锁效果！
- */
-export function upgradeCommandCard(card: CommandCard): boolean {
-  const curLv = card.level ?? 1;
-  if (curLv >= 4) return false;
-  card.level = curLv + 1;
-  card.durationMinutes += 2;
-  if (card.passingDelta) card.passingDelta += 3;
-  if (card.shootingDelta) card.shootingDelta += 3;
-  if (card.defendingDelta) card.defendingDelta += 3;
-  if (card.paceDelta) card.paceDelta += 3;
-  if (card.goalkeepingDelta) card.goalkeepingDelta += 3;
-  if (card.composureDelta) card.composureDelta += 2;
-  if (card.fitnessInstantDelta) card.fitnessInstantDelta += 4;
-
-  // 升至 Lv.3 时觉醒连锁效果；升至 Lv.4 时开放全队生效
-  if (card.level === 3 && !card.chainEffect) {
-    const idx = card.name.length % CHAIN_POOL.length;
-    card.chainEffect = CHAIN_POOL[idx];
-  }
-  if (card.level >= 4) {
-    card.targetLine = 'ALL';
-  }
-  card.summary = formatCardSummary(card);
-  return true;
+export function upgradeCommandCard(_card: CommandCard): boolean {
+  return false;
 }
 
-/**
- * 以卡融卡：将两张现有卡牌融合成高一阶卡牌（最高 Lv.4），继承较高数值并觉醒连锁
- */
 export function fuseTwoCards(a: CommandCard, b: CommandCard): CommandCard {
-  const nextLv = Math.min(4, Math.max(a.level ?? 1, b.level ?? 1) + 1);
-  const chain = a.chainEffect || b.chainEffect || (nextLv >= 3 ? CHAIN_POOL[(a.name.length + b.name.length) % CHAIN_POOL.length] : undefined);
-  const capFuse = (v: number) => (v > 0 ? Math.min(14, v) : undefined);
-  const card: CommandCard = {
-    id: `card_fuse_${++craftSeq}_${Date.now().toString(36)}`,
-    name: `融合·${a.name.slice(0, 3)}${b.name.slice(0, 3)}`,
-    cost: Math.min(3, Math.max(a.cost, b.cost)),
-    durationMinutes: Math.max(a.durationMinutes, b.durationMinutes) + 2,
-    targetLine: nextLv >= 4 ? 'ALL' : (a.targetLine === b.targetLine ? a.targetLine : 'MID'),
-    passingDelta: capFuse((a.passingDelta ?? 0) + Math.ceil((b.passingDelta ?? 0) * 0.5)),
-    shootingDelta: capFuse((a.shootingDelta ?? 0) + Math.ceil((b.shootingDelta ?? 0) * 0.5)),
-    defendingDelta: capFuse((a.defendingDelta ?? 0) + Math.ceil((b.defendingDelta ?? 0) * 0.5)),
-    paceDelta: capFuse((a.paceDelta ?? 0) + Math.ceil((b.paceDelta ?? 0) * 0.5)),
-    composureDelta: capFuse((a.composureDelta ?? 0) + Math.ceil((b.composureDelta ?? 0) * 0.5)),
-    goalkeepingDelta: capFuse((a.goalkeepingDelta ?? 0) + Math.ceil((b.goalkeepingDelta ?? 0) * 0.5)),
-    fitnessInstantDelta: capFuse((a.fitnessInstantDelta ?? 0) + (b.fitnessInstantDelta ?? 0)),
-    penaltyFitnessDelta: a.penaltyFitnessDelta || b.penaltyFitnessDelta,
-    penaltyAllDefDelta: a.penaltyAllDefDelta || b.penaltyAllDefDelta,
-    chainEffect: chain,
-    recipeKey: [a.recipeKey, b.recipeKey].filter(Boolean).join('+'),
-    level: nextLv,
-    isCorrupted: !!(a.isCorrupted || b.isCorrupted),
-    summary: '',
-  };
-  card.summary = formatCardSummary(card);
-  return card;
+  const res = craftFromReactor([a, b]);
+  return res.card ?? instantiateV5Card(V5_CHEMICAL_CARDS[0]);
 }
 
-const VALID_ELEMENTS = new Set<ElementId>(['press', 'pass', 'wing', 'iron', 'blitz']);
+const VALID_ELEMENTS = new Set<CardGene>(['press', 'pass', 'wing', 'iron', 'blitz']);
 
-/**
- * 推导指挥卡的主导元素属性，用于触发技能树要素过载与三方联动
- */
 export function inferCardElement(card: {
-  element?: ElementId;
+  gene?: CardGene;
+  element?: CardGene;
   recipeKey?: string;
   mechanic?: CardMechanic;
-}): ElementId {
-  if (card.element && VALID_ELEMENTS.has(card.element)) {
-    return card.element;
-  }
+}): CardGene {
+  if (card.gene && VALID_ELEMENTS.has(card.gene)) return card.gene;
+  if (card.element && VALID_ELEMENTS.has(card.element)) return card.element;
   if (card.recipeKey) {
-    const first = card.recipeKey.split('+')[0] as ElementId;
+    const first = card.recipeKey.split('+')[0] as CardGene;
     if (VALID_ELEMENTS.has(first)) return first;
   }
   switch (card.mechanic) {
-    case 'high_press_blitz':
-      return 'press';
-    case 'wing_overload':
-      return 'wing';
+    case 'high_press_blitz': return 'press';
+    case 'wing_overload': return 'wing';
     case 'iron_wall_block':
     case 'offside_trap':
-    case 'gk_counter_launch':
-      return 'iron';
+    case 'gk_counter_launch': return 'iron';
     case 'long_shot_cannon':
     case 'blood_frenzy':
-    case 'set_piece_nuke':
-      return 'blitz';
-    case 'tiki_taka_flow':
-    case 'super_sub':
-    default:
-      return 'pass';
+    case 'set_piece_nuke': return 'blitz';
+    default: return 'pass';
   }
+}
+
+export interface AdjacencySynergy {
+  active: boolean;
+  kind?: 'combo' | 'setup' | 'gene';
+  label?: string;
+  detail?: string;
+  color?: string;
+}
+
+export function evaluateAdjacencySynergy(
+  left: CommandCard,
+  right: CommandCard,
+  clubStyle: TacticalStyle
+): AdjacencySynergy {
+  const leftStance = left.stance ?? left.styleTag ?? clubStyle;
+  if (
+    right.comboRule &&
+    (right.comboRule.anyStance ||
+      right.affix?.anyStanceCombo ||
+      right.comboRule.requiresStance === leftStance)
+  ) {
+    return {
+      active: true,
+      kind: 'combo',
+      label: '连击',
+      detail: right.comboRule.label || '态势连击触发增效',
+      color: '#C084FC',
+    };
+  }
+  const leftCreates = !!(
+    left.tacticalMod?.cornerRateMul ||
+    left.tacticalMod?.freeKickRateMul ||
+    left.tacticalMod?.crossBias ||
+    left.tacticalMod?.throughPassBias
+  );
+  const rightPayoff = !!(
+    right.skillSynergy ||
+    right.tacticalMod?.longShotBias ||
+    right.tacticalMod?.setPieceXgMul ||
+    right.tacticalMod?.boxCrashBonus ||
+    (right.shootingDelta ?? 0) >= 6
+  );
+  if (leftCreates && rightPayoff) {
+    return {
+      active: true,
+      kind: 'setup',
+      label: '造势',
+      detail: '造势后优先摸取并延长 +2 分',
+      color: '#FACC15',
+    };
+  }
+  if (inferCardElement(left) === inferCardElement(right)) {
+    return {
+      active: true,
+      kind: 'gene',
+      label: '共鸣',
+      detail: '同基因串联 · 下张持续 +2 分',
+      color: '#38BDF8',
+    };
+  }
+  return { active: false };
+}
+
+export function pickStyleOnboardingCard(
+  style: TacticalStyle,
+  stage: 'combo' | 'timing' | 'skill',
+  excludeCatalogIds?: Set<string>
+): { card: CommandCard; tip: string; stage: 'combo' | 'timing' | 'skill'; openerName: string } | null {
+  const baseCards = getStyleBaseCards(style);
+  const openerName = baseCards[0]?.name ?? '主力态势卡';
+  const stylePool = V5_STYLE_CARDS.filter(
+    t => t.styleTag === style && !excludeCatalogIds?.has(t.catalogId)
+  );
+  const allPool = V5_STYLE_CARDS.filter(t => !excludeCatalogIds?.has(t.catalogId));
+
+  let tpl: V5CardTemplate | undefined;
+  let tip = '';
+  if (stage === 'combo') {
+    tpl =
+      stylePool.find(t => !!t.comboRule) ??
+      allPool.find(t => !!t.comboRule);
+    if (tpl) {
+      tip = `先打【${openerName}】切出态势，再打【${tpl.name}】即可触发【${tpl.comboRule?.label ?? '态势连击'}】！入队后会自动排在【${openerName}】后面。`;
+    }
+  } else if (stage === 'timing') {
+    tpl =
+      stylePool.find(t => !!t.timingCondition && !t.comboRule) ??
+      stylePool.find(t => !!t.timingCondition) ??
+      allPool.find(t => !!t.timingCondition);
+    if (tpl) {
+      tip = `开局先捏在手里别急着出！等场上满足条件时卡片会亮绿，此时点击即可【0 费白嫖】打出！`;
+    }
+  } else {
+    tpl =
+      stylePool.find(t => !!t.skillSynergy) ??
+      allPool.find(t => !!t.skillSynergy);
+    if (tpl) {
+      tip = `在需要破局时打出【${tpl.name}】，可大幅加速弹出对应的子弹时间主动大招！`;
+    }
+  }
+
+  if (!tpl) return null;
+  return {
+    card: instantiateV5Card(tpl),
+    tip,
+    stage,
+    openerName,
+  };
 }

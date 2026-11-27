@@ -7,4 +7,5 @@ export * from './Achievements';
 export * from './PlayerPool';
 export * from './ShuffleDraft';
 export * from './LeagueScheduler';
+export * from './v6';
 export { LeagueManager } from './LeagueManager';

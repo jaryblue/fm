@@ -22,9 +22,17 @@ import {
   getOffsideLineX,
 } from './evaluator';
 
+export type AttackPatternTag =
+  | 'byline_cross'
+  | 'early_cross'
+  | 'cutback'
+  | 'through_ball'
+  | 'short_combo'
+  | 'long_switch';
+
 export type OnBallAction =
   | { type: 'shoot'; xG: number }
-  | { type: 'pass'; target: PlayerState; passType: 'short' | 'through' | 'cross' | 'long' }
+  | { type: 'pass'; target: PlayerState; passType: 'short' | 'through' | 'cross' | 'long'; patternTag?: AttackPatternTag }
   | { type: 'dribble'; targetPos: Vec2 };
 
 const WIDE_ROLES = new Set(['LW', 'RW', 'LM', 'RM', 'LB', 'RB', 'LWB', 'RWB']);
@@ -60,14 +68,17 @@ export function decideOnBall(
       });
       if (safeLong) return { type: 'pass', target: safeLong, passType: 'long' };
     }
-    for (const m of mates) {
+    // 现代足球门将优先分边找 30m 内空当边后卫出球，其次找中后卫或安全中场（避免对 40m+ 翼卫盲目长传）
+    const nearWideFBs = mates.filter(m => (m.role === 'LB' || m.role === 'RB' || m.role === 'LWB' || m.role === 'RWB') && dist2D(holder.pos, m.pos) <= 30);
+    const orderedMates = [...nearWideFBs, ...mates.filter(m => !nearWideFBs.includes(m))];
+    for (const m of orderedMates) {
       const d = dist2D(holder.pos, m.pos);
       if (d < 10) continue; // 避免在禁区内极近距离短传造成弹球
       const oppNear = players.some(o => o.team !== holder.team && !o.redCard && dist2D(o.pos, m.pos) < 5);
       if (oppNear) continue;
       const prob = evaluatePassCompletion(holder, m, players, false);
-      if (prob > 0.65) {
-        return { type: 'pass', target: m, passType: d > 25 ? 'long' : 'short' };
+      if (prob > 0.62) {
+        return { type: 'pass', target: m, passType: d > 25 ? 'long' : 'short', patternTag: 'short_combo' };
       }
     }
     const forwardMate = mates[mates.length - 1] || mates[0];
@@ -100,26 +111,34 @@ export function decideOnBall(
       distToGoal < 12 ? 0.46 :
       distToGoal < 17 ? 0.34 :
       distToGoal < 21 ? 0.06 : -0.18;
-    // 战术驱动内切起脚与中场后插上射门
+    // 战术驱动内切起脚与中场后插上射门（边路窄角度鼓励传中/倒三角，进肋部/中路后鼓励内切爆射）
+    const inCentralOrHalfSpace = Math.abs(holder.pos.y - PITCH.HALF_Y) < 16;
     const wingCutInBonus =
-      isWideAttacker && relX >= 68
-        ? style === 'tiki_taka' ? 0.24
-        : style === 'gegenpress' ? 0.22
-        : style === 'counter' ? 0.20
-        : style === 'wing_play' ? 0.14
-        : 0.18
+      isWideAttacker && relX >= 70 && inCentralOrHalfSpace
+        ? style === 'tiki_taka' ? 0.34
+        : style === 'gegenpress' ? 0.32
+        : style === 'counter' ? 0.28
+        : style === 'wing_play' ? 0.24
+        : 0.28
+        : isWideAttacker && relX >= 74 && !inCentralOrHalfSpace
+        ? -0.14
         : 0;
     const midCrashBonus =
-      isMidCrasher && relX >= 70
-        ? (style === 'tiki_taka' || style === 'gegenpress' ? 0.22 : 0.14)
+      (holder.role === 'CAM' || isMidCrasher) && relX >= 68
+        ? (style === 'tiki_taka' || style === 'gegenpress' ? 0.34 : 0.26)
         : 0;
-    const longShotMod = distToGoal >= 18 ? longShotDelta : 0;
+    const stSoloTrim = holder.role === 'ST' && distToGoal > 14 ? -0.10 : 0;
+    const styleLongShotTrim =
+      longShotDelta <= 0.04
+        ? (style === 'tiki_taka' && distToGoal >= 17.5 ? -0.24 : style === 'gegenpress' && distToGoal >= 18.5 ? -0.18 : 0)
+        : 0;
+    const longShotMod = (distToGoal >= 18 ? longShotDelta : 0) + styleLongShotTrim;
     const dutyShootBonus =
       holder.duty === 'poacher' ? 0.20 :
-      holder.duty === 'inside_forward' ? 0.18 :
+      holder.duty === 'inside_forward' ? 0.22 :
       holder.duty === 'target_man' ? 0.10 :
       holder.duty === 'false_nine' || holder.duty === 'regista' ? -0.10 : 0;
-    const shootScore = (0.20 + xG * 3.8 + boxBonus) * preset.shootBias * roleShootMul + longShotMod + wingCutInBonus + midCrashBonus + dutyShootBonus;
+    const shootScore = (0.20 + xG * 3.8 + boxBonus) * preset.shootBias * roleShootMul + longShotMod + wingCutInBonus + midCrashBonus + stSoloTrim + dutyShootBonus;
     if (xG >= minShootXG && shootScore > bestScore) {
       bestScore = shootScore;
       bestAction = { type: 'shoot', xG };
@@ -142,14 +161,32 @@ export function decideOnBall(
     if (d < 3.5) continue;
 
     const mateRelX = toRelativeX(mate.pos.x, attackDir);
-    const crossMinX = style === 'wing_play' || (mods?.crossBias ?? 0) > 0.03 ? 60 : 66;
-    const crossMateMinX = style === 'wing_play' || (mods?.crossBias ?? 0) > 0.03 ? 72 : 78;
-    const isCross =
-      relX > crossMinX &&
-      (holder.pos.y < 20 || holder.pos.y > PITCH.WIDTH - 20) &&
+    const holderWide = holder.pos.y < 19 || holder.pos.y > PITCH.WIDTH - 19;
+    const crossMinX = style === 'wing_play' || (mods?.crossBias ?? 0) > 0.03 ? 58 : 63;
+    const crossMateMinX = style === 'wing_play' || (mods?.crossBias ?? 0) > 0.03 ? 72 : 76;
+    const isBylineCross =
+      relX >= 83 &&
+      holderWide &&
+      Math.abs(mate.pos.y - PITCH.HALF_Y) < 16 &&
+      mateRelX >= 84;
+    const isEarlyCross =
+      relX >= crossMinX &&
+      relX < 83 &&
+      holderWide &&
       Math.abs(mate.pos.y - PITCH.HALF_Y) < 18 &&
-      mateRelX > crossMateMinX;
+      mateRelX >= crossMateMinX &&
+      mateRelX - relX >= 8;
+    const isCross = isBylineCross || isEarlyCross;
+    const isCutback =
+      relX >= 82 &&
+      holderWide &&
+      mateRelX >= 74 &&
+      mateRelX <= 88 &&
+      Math.abs(mate.pos.y - PITCH.HALF_Y) < 16 &&
+      mate.role !== 'CB' &&
+      mate.role !== 'GK';
     const isThrough =
+      !isCutback &&
       mateRelX - relX > 10 &&
       mateRelX > 58 &&
       d > 13;
@@ -204,19 +241,38 @@ export function decideOnBall(
     );
     const antiPingPong = ball.lastPasserId === mate.id ? (relX >= 64 ? -0.26 : -0.14) : 0;
     const avoidGK = mate.role === 'GK' ? (style === 'tiki_taka' ? -0.06 : -0.16) : 0;
+    // 激活边后卫/翼卫在后场出球与中前场套边接应，抑制后卫线直接越级长找 ST
+    const isFBTarget = mate.role === 'LB' || mate.role === 'RB' || mate.role === 'LWB' || mate.role === 'RWB';
+    const isBackBuildupHolder = holder.role === 'CB' || holder.role === 'CDM' || holder.role === 'CM';
+    const fbOutletBonus =
+      isFBTarget && relX < 62 && mateRelX >= relX - 6 && pComp > 0.60
+        ? (isBackBuildupHolder ? 0.38 : 0.24)
+        : 0;
+    const skipLinePenalty =
+      (holder.role === 'CB' || holder.role === 'CDM') &&
+      relX < 44 &&
+      mate.role === 'ST' &&
+      mateRelX > 66 &&
+      style !== 'counter' &&
+      style !== 'park_bus'
+        ? -0.22
+        : 0;
 
-    // 抑制前场三区(relX>=68)无意义来回横传与回传倒脚，鼓励渗透直塞与禁区接应
+    // 前场三区(relX>=68)：豁免“下底倒三角回传”，鼓励下底传中、45°斜传与中路肋部穿插
     let finalThirdMod = 0;
-    if (relX >= 68) {
+    if (isCutback) {
+      finalThirdMod = style === 'tiki_taka' || style === 'gegenpress' ? 0.40 : 0.34;
+    } else if (relX >= 68) {
       const dxRel = mateRelX - relX;
       if (dxRel < -3.5) {
         finalThirdMod = -0.19;
       } else if (Math.abs(dxRel) <= 3.5 && mateRelX < 84) {
-        finalThirdMod = style === 'tiki_taka' ? -0.05 : -0.13;
+        finalThirdMod = style === 'tiki_taka' ? 0.05 : -0.13;
       } else if (dxRel > 4 && mateRelX >= 76) {
         finalThirdMod = 0.11;
       }
-      if (isCross && mateRelX >= 76) finalThirdMod += 0.12;
+      if (isBylineCross) finalThirdMod += 0.34;
+      else if (isEarlyCross) finalThirdMod += (style === 'counter' || style === 'park_bus' || style === 'wing_play' ? 0.28 : 0.16);
       if (isThrough && mateRelX >= 74) finalThirdMod += 0.10;
     }
 
@@ -228,13 +284,22 @@ export function decideOnBall(
       wingTraitBonus +
       throughTraitBonus +
       dutyPassBonus +
+      fbOutletBonus +
+      skipLinePenalty +
       antiPingPong +
       avoidGK +
       finalThirdMod;
 
+    const patternTag: AttackPatternTag =
+      isBylineCross ? 'byline_cross' :
+      isEarlyCross ? 'early_cross' :
+      isCutback ? 'cutback' :
+      isThrough ? 'through_ball' :
+      passType === 'long' ? 'long_switch' : 'short_combo';
+
     if (passScore > bestScore) {
       bestScore = passScore;
-      bestAction = { type: 'pass', target: mate, passType };
+      bestAction = { type: 'pass', target: mate, passType, patternTag };
     }
   }
 
@@ -273,10 +338,11 @@ export function decideOnBall(
   const dribbleSkill = holder.attributes.dribbling / 99;
   const spaceBonus = nearestFrontOpp > 7.5 ? 0.12 : nearestFrontOpp < 3.2 ? -0.22 : -0.01;
   const finalThirdDriveBonus = relX >= 62 && relX < 88 && nearestFrontOpp > 3.5 && holder.role !== 'CB' ? 0.12 : 0;
+  const isFBHolder = holder.role === 'LB' || holder.role === 'RB' || holder.role === 'LWB' || holder.role === 'RWB';
   const roleDribbleBias =
     holder.role === 'LW' || holder.role === 'RW' || holder.role === 'CAM' ||
-    ((holder.role === 'LM' || holder.role === 'RM' || holder.role === 'LWB' || holder.role === 'RWB') && relX > 52)
-      ? 0.08
+    ((holder.role === 'LM' || holder.role === 'RM' || isFBHolder) && relX < 74)
+      ? (isFBHolder && nearestFrontOpp > 4.2 ? 0.15 : 0.08)
       : holder.role === 'CB' || holder.role === 'CDM'
       ? -0.18
       : -0.05;
@@ -430,19 +496,32 @@ export function updateOffBallTargets(
       const isCounterStyle = style === 'park_bus' || style === 'counter' || getDefenseSystem(formation) === '5-back';
       const triggerRelX = isCounterStyle ? 24 : 46;
       const isSingleStrikerForm = formation === '5-4-1' || formation === '4-1-4-1' || formation === '4-4-1-1';
+      const isThreeBack = getDefenseSystem(formation) === '3-back';
+      const isFB = p.role === 'LB' || p.role === 'RB';
+      const sameFlankFB =
+        isFB &&
+        style !== 'park_bus' &&
+        holderRelX > 54 &&
+        ((p.role === 'LB' && holder.pos.y < PITCH.HALF_Y + 6) || (p.role === 'RB' && holder.pos.y > PITCH.HALF_Y - 6) || !!teamMods?.dualOverlap);
       const isAttRole =
         p.role === 'ST' || p.role === 'CAM' || p.role === 'LW' || p.role === 'RW' ||
         p.role === 'LM' || p.role === 'RM' ||
-        ((isCounterStyle || style === 'wing_play') && (p.role === 'LWB' || p.role === 'RWB')) ||
-        ((isSingleStrikerForm || style === 'balanced' || style === 'tiki_taka' || (teamMods?.boxCrashBonus ?? 0) > 0) && p.role === 'CM');
+        sameFlankFB ||
+        ((isCounterStyle || style === 'wing_play' || isThreeBack) && (p.role === 'LWB' || p.role === 'RWB')) ||
+        ((isSingleStrikerForm || style === 'balanced' || style === 'tiki_taka' || style === 'gegenpress' || isThreeBack || (teamMods?.boxCrashBonus ?? 0) > 0) && p.role === 'CM');
       if (isAttRole && holderRelX > triggerRelX) {
-        tx += dir * (isCounterStyle ? 12 : p.role === 'LM' || p.role === 'RM' || p.role === 'CM' ? 10 : 8);
+        tx += dir * (sameFlankFB ? 13 : isCounterStyle ? 12 : (p.role === 'CAM' || p.role === 'LW' || p.role === 'RW') ? 12 : (p.role === 'LM' || p.role === 'RM' || p.role === 'CM') ? 13 : 8);
         if (holderRelX > 64) {
-          // 进攻三区弱侧边路与中前卫向禁区肋部/后点靠拢争抢门前接应点
-          const targetInwardY = style === 'wing_play' && (p.role === 'LW' || p.role === 'RW') && Math.abs(holder.pos.y - p.pos.y) < 16
-            ? ty
-            : PITCH.HALF_Y + (ty - PITCH.HALF_Y) * 0.48;
-          ty = targetInwardY;
+          // 进攻三区：持球侧边后卫沿边线套上，弱侧边锋/前腰/中前卫内收肋部与点球点接应倒三角/后点传中
+          if (sameFlankFB) {
+            ty = p.role === 'LB' ? Math.min(ty, 11) : Math.max(ty, PITCH.WIDTH - 11);
+          } else {
+            const isWeakWing = (p.role === 'LW' || p.role === 'RW') && Math.abs(holder.pos.y - p.pos.y) > 18;
+            const shrink = isWeakWing || p.role === 'CAM' || p.role === 'CM' ? 0.34 : 0.44;
+            ty = style === 'wing_play' && (p.role === 'LW' || p.role === 'RW') && Math.abs(holder.pos.y - p.pos.y) < 16
+              ? ty
+              : PITCH.HALF_Y + (ty - PITCH.HALF_Y) * shrink;
+          }
         }
       }
     }

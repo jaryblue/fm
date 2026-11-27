@@ -1,11 +1,8 @@
-"use strict";
 /**
  * @fm-league/engine - 核心类型与球场常量定义
  * 零平台依赖，适用于 Node / 浏览器 / Steam / 微信小游戏
  */
-Object.defineProperty(exports, "__esModule", { value: true });
-exports.TACTICAL_PRESETS = exports.SIM_CONFIG = exports.PITCH = void 0;
-exports.PITCH = {
+export const PITCH = {
     LENGTH: 105,
     WIDTH: 68,
     HALF_X: 52.5,
@@ -17,12 +14,12 @@ exports.PITCH = {
     SIX_YARD_DEPTH: 5.5,
     PENALTY_SPOT: 11,
 };
-exports.SIM_CONFIG = {
+export const SIM_CONFIG = {
     TICK_DT: 0.1, // 每 tick 物理时间 0.1 秒 (10Hz)
     TICKS_PER_MINUTE: 30, // 30 ticks = 1 比赛分钟 (90分钟 = 2700 ticks)
     DECISION_INTERVAL: 3, // 持球决策节拍：每 3 ticks (0.3s) 评估一次核心动作
 };
-exports.TACTICAL_PRESETS = {
+export const TACTICAL_PRESETS = {
     balanced: {
         name: '均衡阵地',
         lineHeight: 0,

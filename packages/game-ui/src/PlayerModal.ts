@@ -2,7 +2,7 @@
  * 通用球员完整属性详情弹窗（10维能力条 + 实装词条效果 + 赛季数据）
  */
 
-import { PlayerAttributes } from '../../../engine/src/types';
+import { PlayerAttributes } from '../../engine/src/types';
 import { LeagueManager } from '../../core/src/LeagueManager';
 import { TRAIT_DESCRIPTIONS } from '../../core/src/PlayerPool';
 import { DraftPlayer } from '../../core/src/types';

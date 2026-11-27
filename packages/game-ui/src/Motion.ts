@@ -226,84 +226,12 @@ export function drawGameLogoEmblem(
     return;
   }
 
-  // 矢量金盾底板
+  // 图片仍在解码前几帧时仅绘制轻量旋转金色光环，避免闪现旧占位盾牌
+  ctx.strokeStyle = 'rgba(250, 204, 21, 0.38)';
+  ctx.lineWidth = 2.2;
   ctx.beginPath();
-  ctx.moveTo(0, -r * 0.96);
-  ctx.lineTo(r * 0.84, -r * 0.62);
-  ctx.quadraticCurveTo(r * 0.86, r * 0.34, 0, r * 0.96);
-  ctx.quadraticCurveTo(-r * 0.86, r * 0.34, -r * 0.84, -r * 0.62);
-  ctx.closePath();
-  const shieldGrad = ctx.createLinearGradient(0, -r, 0, r);
-  shieldGrad.addColorStop(0, '#162442');
-  shieldGrad.addColorStop(0.55, '#0B1325');
-  shieldGrad.addColorStop(1, '#060A12');
-  ctx.fillStyle = shieldGrad;
-  ctx.fill();
-  ctx.lineWidth = 2.4;
-  ctx.strokeStyle = THEME.GOLD_LIGHT;
+  ctx.arc(0, 0, r * 0.52, timeSec * 2.4, timeSec * 2.4 + Math.PI * 1.4);
   ctx.stroke();
-
-  // 旋转「再开一局」金色回环箭头
-  ctx.save();
-  ctx.rotate(timeSec * 0.35);
-  ctx.strokeStyle = '#FACC15';
-  ctx.lineWidth = Math.max(2.2, size * 0.045);
-  ctx.lineCap = 'round';
-  ctx.beginPath();
-  ctx.arc(0, -r * 0.04, r * 0.56, -Math.PI * 0.72, Math.PI * 0.92);
-  ctx.stroke();
-  const tipAng = Math.PI * 0.92;
-  const tx = Math.cos(tipAng) * r * 0.56;
-  const ty = -r * 0.04 + Math.sin(tipAng) * r * 0.56;
-  ctx.fillStyle = '#FEF08A';
-  ctx.beginPath();
-  ctx.moveTo(tx + Math.cos(tipAng + 1.4) * r * 0.18, ty + Math.sin(tipAng + 1.4) * r * 0.18);
-  ctx.lineTo(tx + Math.cos(tipAng - 0.55) * r * 0.16, ty + Math.sin(tipAng - 0.55) * r * 0.16);
-  ctx.lineTo(tx + Math.cos(tipAng + 2.55) * r * 0.15, ty + Math.sin(tipAng + 2.55) * r * 0.15);
-  ctx.closePath();
-  ctx.fill();
-  ctx.restore();
-
-  // 中心几何足球
-  const br = r * 0.31;
-  const ballY = -r * 0.04;
-  const ballGrad = ctx.createRadialGradient(-br * 0.3, ballY - br * 0.3, br * 0.1, 0, ballY, br);
-  ballGrad.addColorStop(0, '#FFFFFF');
-  ballGrad.addColorStop(0.75, '#CBD5E1');
-  ballGrad.addColorStop(1, '#64748B');
-  ctx.fillStyle = ballGrad;
-  ctx.beginPath();
-  ctx.arc(0, ballY, br, 0, Math.PI * 2);
-  ctx.fill();
-  ctx.strokeStyle = '#0F172A';
-  ctx.lineWidth = 1.4;
-  ctx.stroke();
-
-  // 中心五边形球皮
-  ctx.fillStyle = '#0F172A';
-  ctx.beginPath();
-  for (let i = 0; i < 5; i++) {
-    const a = -Math.PI / 2 + (i * Math.PI * 2) / 5;
-    const px = Math.cos(a) * br * 0.44;
-    const py = ballY + Math.sin(a) * br * 0.44;
-    if (i === 0) ctx.moveTo(px, py);
-    else ctx.lineTo(px, py);
-  }
-  ctx.closePath();
-  ctx.fill();
-
-  // 底部 2026 小徽标
-  const pillW = r * 0.72;
-  const pillH = Math.max(12, r * 0.24);
-  drawRoundRect(ctx, -pillW / 2, r * 0.54, pillW, pillH, 4, '#0B111E', '#D4A843', 1.2);
-  drawText(ctx, '2026', 0, r * 0.54 + pillH / 2 + 0.5, {
-    size: Math.max(8, Math.round(r * 0.17)),
-    bold: true,
-    color: '#FACC15',
-    align: 'center',
-    mono: true,
-  });
-
   ctx.restore();
 }
 
@@ -347,12 +275,13 @@ export class BootIntro {
     if (this.state === 'loading') {
       const prog = AssetLoader.getProgress();
       const target = prog.total > 0 ? Math.min(1, prog.loaded / prog.total) : 1;
+      const logoReady = !!AssetLoader.get('game_logo');
       // 即使本地秒加载也保留平滑动画推进感
       const timeGate = Math.min(1, this.elapsed / this.minLoadSec);
       const effectiveTarget = Math.min(target, timeGate);
       this.smoothProgress += (effectiveTarget - this.smoothProgress) * Math.min(1, dtSec * 8);
 
-      if (this.elapsed >= this.minLoadSec && (target >= 0.95 || this.elapsed >= 2.2)) {
+      if (this.elapsed >= this.minLoadSec && ((logoReady && target >= 0.85) || this.elapsed >= 2.4)) {
         this.smoothProgress = 1;
         this.state = 'opening';
         this.openTimer = 0;

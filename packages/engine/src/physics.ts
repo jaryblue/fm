@@ -167,12 +167,10 @@ export function stepPlayersPhysics(players: PlayerState[], ball: BallState): voi
     }
     if (p.decisionCooldown > 0) p.decisionCooldown--;
 
-    // 持球人略微降速 (带球比无球慢约 12%)；体能低于 65% 后速度明显下滑，凸显换人价值
+    // 持球人略微降速 (带球比无球慢约 12%)；平滑体能衰减曲线（无断崖暴毙）
     const baseMaxSpeed = 6.2 + (p.attributes.pace / 99) * 2.6; // 6.2 ~ 8.8 m/s
-    const fatigueFactor =
-      p.fitness >= 65
-        ? 0.90 + ((p.fitness - 65) / 35) * 0.10
-        : 0.58 + (p.fitness / 65) * 0.32;
+    const fitNorm = Math.max(0, Math.min(1, (100 - p.fitness) / 80));
+    const fatigueFactor = 1.0 - 0.14 * Math.pow(fitNorm, 1.35);
     const ballCarryFactor = p.hasBall ? 0.88 : 1.0;
     const maxSpeed = baseMaxSpeed * fatigueFactor * ballCarryFactor;
 

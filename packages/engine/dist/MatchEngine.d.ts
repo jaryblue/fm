@@ -6,7 +6,7 @@
  * - 支持 step() 逐帧驱动（小游戏/PC 60fps 插值渲染）与 simulateMatch() 整场快跑
  * - 零平台依赖，可直接打包至微信小游戏与 Steam
  */
-import { CoachMatchReward, CommandCardEffect, FormationName, MatchState, TacticalStyle, TeamSetup, TeamSide, TriggerSkillResult } from './types';
+import { CoachMatchReward, CommandCardEffect, FormationName, MatchState, TacticalCallout, TacticalStyle, TeamSetup, TeamSide, TriggerSkillResult } from './types';
 export declare class MatchEngine {
     private state;
     private eventSeq;
@@ -15,6 +15,10 @@ export declare class MatchEngine {
     private lastPassTimestamp;
     private commentary;
     private lastShotType;
+    private lastShotOriginPos;
+    private lastPassPattern;
+    private lastShotAttackPattern;
+    private inMatchInjuriesThisMatch;
     private isKickoffFirst;
     private homeMods;
     private awayMods;
@@ -33,17 +37,61 @@ export declare class MatchEngine {
     private guaranteeShotOnTargetTicks;
     private oppTempoDrainTicks;
     private aspectRefreshUsedThisMatch;
+    private prologueScriptedMode;
+    private prologueSkillTriggered;
+    private prologueStage;
+    private prologueWaitingForCard;
+    private prologueWaitingForSub;
+    private prologuePendingForcedGoal;
+    private prologueGuaranteedGoal;
+    private prologueAllowAwayGoal;
+    private prologueAwayGoalCount;
+    private prologueGoalDelayTicks;
+    private prologueScriptTicks;
+    private pendingTacticalCallouts;
+    private userScoutCounterLabel;
+    private lastScoutCalloutMin;
+    private lastSkillPromptMinute;
+    private teamSkillGcdMinute;
+    private firstHalfSkillTriggers;
+    private calloutSeq;
+    private pendingSkillResolution;
+    private subTrackers;
+    private v6PassiveHooks;
+    private v6ImmunityFlags;
+    private v6PreventPenRedUsed;
+    private v6TotalFootballMaster;
+    private v6SkillTempRankBonus;
+    private v6SkillDualBranch;
+    private v6StartingShields;
+    private v6MaxCounterStacks;
+    private v6ForcedCornerProb;
+    private v6PassStreak;
     private hasActiveMechanic;
+    private hasImmunity;
+    private getEffectiveMods;
+    private getEffectiveChemDelta;
     private hasUserAspect;
     private getShieldCap;
     private getCounterCap;
+    /** V6 数据驱动事件总线：统一派发 14 个比赛触发点 × 13 种原子动作 */
+    private dispatchHook;
     private pushCoachReward;
+    private pushTacticalCallout;
+    consumeTacticalCallouts(): TacticalCallout[];
     consumeCoachRewards(): CoachMatchReward[];
     private reduceEquippedCooldowns;
     private isTrailing;
     constructor(home: TeamSetup, away: TeamSetup);
     private initState;
     getState(): MatchState;
+    getPrologueTutorialState(): {
+        isPrologue: boolean;
+        stage: number;
+        waitingForCard: 1 | 2 | null;
+        waitingForSub: boolean;
+        waitingForSkill: boolean;
+    };
     /**
      * 实时修改战术风格或阵型（支持玩家临场 Tactical Tweaks）
      */
@@ -64,6 +112,7 @@ export declare class MatchEngine {
     applyCommandCard(team: TeamSide, card: CommandCardEffect): {
         ok: boolean;
         energyRefund?: number;
+        comboActivated?: boolean;
     };
     /**
      * 比赛日临场换人（每队最多 5 次）
@@ -72,6 +121,8 @@ export declare class MatchEngine {
         ok: boolean;
         reason?: string;
     };
+    private scoreScriptedPrologueGoal;
+    private stepPrologueScripted;
     /**
      * 单步推进 1 个 tick (0.1s 物理时间)
      */
@@ -105,6 +156,7 @@ export declare class MatchEngine {
     private setDeadBall;
     private tryRevealHiddenTrait;
     private expireCommandBuffs;
+    private updateAiAutoSubstitutions;
     private drainFitness;
     private finalizeStats;
     private pushEvent;

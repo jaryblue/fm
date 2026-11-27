@@ -1,29 +1,51 @@
 /**
- * 局外养成中枢：124 节点「三大防线体系 × 16 阵型 × 六大战术」融合星图 + 俱乐部基建
- * - 星图铺满全宽 (1168px / 1232px)，撤除常驻 378px 右侧详情栏
- * - 点击星图节点滑出半透明详情浮层（支持关闭与 Esc 收起），顶部新增「引擎修正与重置」入口
+ * V6 局外养成中枢：锁定式双环八卦战术星盘 + 0'/25'/50'/70' 临场指令配装栏 + 俱乐部基建
+ * - 5 层同心八卦星盘：外环 6×60° 流派(48数值被动+36主动技+72手牌) × 内环 3×120° 防线与16阵型(12防线被动+32阵型被动+32手牌+16主动技)
+ *   × 6正对融合奇点(18选6+18王牌手牌) × 6宗师印(+6终极技) × 圆心【★超级宗师】(+全军破限)
+ * - 完整星宿连线拓扑与防跨级解锁校验，优先渲染高精透明雕纹美术素材（drawSkillGlyph）
+ * - 顶部常驻临场指令池配装栏（0'/25'/50'/70' × 4张手牌 + 4个 F 键主动技槽），保留「俱乐部基建 (8×8 · 资金)」
  */
 
 import { LeagueManager } from '../../../core/src/LeagueManager';
 import {
-  getFormationMasteryInfo,
-  getMetaUpgradeCost,
   getMetaUpgradeRequirement,
-  getStyleMasteryInfo,
   INFRA_MIN_TIERS,
   META_BRANCHES,
 } from '../../../core/src/MetaTree';
-import {
-  canUnlockNode,
-  computeSkillWebMods,
-  getSkillWebEdges,
-  getSkillWebSummaryStats,
-  isNodeResonating,
-  SKILL_WEB_NODES,
-  SkillWebNode,
-} from '../../../core/src/SkillWeb';
 import { MetaBranch } from '../../../core/src/types';
-import { DefenseSystem, TACTICAL_PRESETS, TacticalStyle } from '../../../engine/src/types';
+import {
+  calcRefundablePoints,
+  canUnlockCore,
+  canUnlockMasterySeal,
+  canUnlockV6Node,
+  getAlignedFusions,
+  getV6NodePrerequisites,
+  INNER_RING_SYSTEMS,
+  isStyleVisibleInFog,
+  OUTER_RING_STYLES,
+  STYLE_LABELS,
+  STYLE_ORIGIN_PASSIVE,
+  SYSTEM_FORMATIONS,
+  SYSTEM_LABELS,
+  SYSTEM_ORIGIN_PASSIVE,
+  V6_ACTIVE_SKILL_MAP,
+  V6_ACTIVE_SKILLS,
+  V6_ALL_PASSIVES,
+  V6_DIRECTIVE_MAP,
+  V6_DIRECTIVES,
+  V6_FUSION_MAP,
+  V6_MASTERY_SEAL_MAP,
+  V6_MASTERY_SEALS,
+  V6_PASSIVE_MAP,
+  V6_SEGMENTS,
+  V6_STYLE_PASSIVES,
+  V6_SYSTEM_PASSIVES,
+  type V6CheckpointKey,
+  type V6DirectiveDef,
+  type V6PassiveDef,
+  type V6SatelliteKey,
+} from '../../../core/src/v6';
+import { DefenseSystem, FormationName, TacticalStyle } from '../../../engine/src/types';
 import { AssetLoader } from '../AssetLoader';
 import {
   drawBadge,
@@ -34,12 +56,13 @@ import {
   drawRoundRect,
   drawText,
   drawWrappedText,
+  fitText,
   HitRegistry,
   NavRailTab,
 } from '../CanvasKit';
 import { SoundEngine } from '../SoundEngine';
 import { THEME } from '../Theme';
-import { drawIcon, drawSkillGlyph, getNodeGlyphKind, IconName } from '../VectorIcons';
+import { drawIcon, drawSkillGlyph, IconName, SkillGlyphKind } from '../VectorIcons';
 
 const BRANCH_ICON: Record<MetaBranch, IconName> = {
   academy: 'star',
@@ -52,46 +75,111 @@ const BRANCH_ICON: Record<MetaBranch, IconName> = {
   analytics: 'tactics',
 };
 
-type WebFilter = 'ALL' | 'ACTIVE' | DefenseSystem | TacticalStyle;
+const STYLE_GLYPH: Record<TacticalStyle, SkillGlyphKind> = {
+  tiki_taka: 'tiki',
+  gegenpress: 'press',
+  wing_play: 'wing',
+  counter: 'counter',
+  park_bus: 'bus',
+  balanced: 'balanced',
+};
 
-const WEB_FILTERS: Array<[WebFilter, string]> = [
-  ['ALL', '全图'],
-  ['ACTIVE', '主动技'],
-  ['4-back', '4后卫'],
-  ['3-back', '3后卫'],
-  ['5-back', '5后卫'],
-  ['tiki_taka', '传控'],
-  ['gegenpress', '高压'],
-  ['wing_play', '两翼'],
-  ['counter', '反击'],
-  ['park_bus', '铁桶'],
-  ['balanced', '均衡'],
-];
+const SYSTEM_GLYPH: Record<DefenseSystem, SkillGlyphKind> = {
+  '4-back': 'sys_4back',
+  '3-back': 'sys_3back',
+  '5-back': 'sys_5back',
+};
+
+function getPassiveStatGlyph(p: V6PassiveDef): SkillGlyphKind {
+  if (p.tier === 'origin') {
+    if (p.style) return STYLE_GLYPH[p.style];
+    if (p.system) return SYSTEM_GLYPH[p.system];
+  }
+  const sd = p.statDelta;
+  const tm = p.tacticalMod;
+  if (sd?.shooting || tm?.longShotBias || tm?.boxCrashBonus) return 'stat_shoot';
+  if (sd?.passing || sd?.composure || tm?.shortPassBias || tm?.throughPassBias) return 'stat_pass';
+  if (sd?.defending || sd?.goalkeeping || p.blockBonus || p.oppShotXgPenalty || p.startingShields || (tm?.lineShift ?? 0) < 0) {
+    return 'stat_def';
+  }
+  if (sd?.pace || tm?.crossBias || tm?.overlapDepthBonus || tm?.dualOverlap || tm?.pressDistBonus) return 'stat_pace';
+  return 'stat_fit';
+}
+
+type SelectedTarget =
+  | { kind: 'core' }
+  | { kind: 'seal'; id: string }
+  | { kind: 'fusion'; id: string }
+  | { kind: 'formation'; formation: FormationName }
+  | { kind: 'directive'; id: string }
+  | { kind: 'skill'; id: string }
+  | { kind: 'passive'; id: string }
+  | { kind: 'catalog_directives' }
+  | { kind: 'catalog_skills' };
+
+const ZONE_COLOR: Record<'ATT' | 'MID' | 'DEF', string> = {
+  ATT: '#F43F5E',
+  MID: '#38BDF8',
+  DEF: '#22C55E',
+};
+
+const ZONE_LABEL: Record<'ATT' | 'MID' | 'DEF', string> = {
+  ATT: '前场',
+  MID: '中场',
+  DEF: '后场',
+};
+
+const CHECKPOINT_TABS: Array<{ key: V6CheckpointKey; label: string }> = V6_SEGMENTS.map(s => ({
+  key: s.key,
+  label: s.shortLabel,
+}));
+
+interface CanvasNodePos {
+  x: number;
+  y: number;
+  unlocked: boolean;
+  reachable: boolean;
+  color: string;
+}
 
 export class MetaScreen {
-  private tab: 'web' | 'talents' = 'web';
-  private selectedNodeId = 'core_master';
-  private nodeDrawerOpen = false;
-  private summaryModalOpen = false;
-  private webFilter: WebFilter = 'ALL';
-  private zoom = 1.85;
+  private tab: 'astrolabe' | 'talents' = 'astrolabe';
+  private selected: SelectedTarget = { kind: 'core' };
+  private drawerOpen = false;
+  private activeCheckpoint: V6CheckpointKey = 's1';
+  private catalogFilterStyle: 'ALL' | TacticalStyle | 'formation' | 'fusion' = 'ALL';
+  private catalogPage = 0;
+
+  private zoom = 0.96;
   private panX = 0;
   private panY = 0;
   private animTime = 0;
+  private outerRotOffset = 0;
+  private outerRotVel = 0;
+  private innerRotOffset = 0;
+  private innerRotVel = 0;
+  private rotFlashTimer = 0;
+  private rotFlashRing: 'outer' | 'inner' = 'outer';
   private dragging = false;
   private dragLastX = 0;
   private dragLastY = 0;
-  private lastMapRect = { x: 96, y: 156, w: 1168, h: 548 };
-  private lastDrawerRect = { x: 872, y: 168, w: 380, h: 524 };
-  private notice = '拖拽平移 · 滚轮缩放 · 点击任意星图节点弹出详情与加点浮层';
+  private lastMapRect = { x: 96, y: 112, w: 1168, h: 592 };
+  private lastDrawerRect = { x: 846, y: 122, w: 408, h: 572 };
+  private notice = '宏观罗盘可用两侧星轨拨盘旋转双环碰撞 6 大融合奇点 · 点击流派纹章或滚轮放大进入星宿特写';
+
+  public isAnimating(): boolean {
+    return (
+      Math.abs(this.outerRotOffset) > 0.002 ||
+      Math.abs(this.outerRotVel) > 0.002 ||
+      Math.abs(this.innerRotOffset) > 0.002 ||
+      Math.abs(this.innerRotVel) > 0.002 ||
+      this.rotFlashTimer > 0
+    );
+  }
 
   public handleEscape(): boolean {
-    if (this.summaryModalOpen) {
-      this.summaryModalOpen = false;
-      return true;
-    }
-    if (this.nodeDrawerOpen) {
-      this.nodeDrawerOpen = false;
+    if (this.drawerOpen) {
+      this.drawerOpen = false;
       return true;
     }
     return false;
@@ -103,18 +191,43 @@ export class MetaScreen {
   }
 
   private inDrawer(x: number, y: number): boolean {
-    if (!this.nodeDrawerOpen) return false;
+    if (!this.drawerOpen) return false;
     const d = this.lastDrawerRect;
     return x >= d.x && x <= d.x + d.w && y >= d.y && y <= d.y + d.h;
   }
 
   public update(dtSec: number): void {
-    this.animTime += dtSec;
+    const dt = Math.min(0.05, Math.max(0.001, dtSec));
+    this.animTime += dt;
+    // 欠阻尼机械弹簧：丝滑旋转 + 轻微落锁回弹质感
+    const stiffness = 175;
+    const damping = 18.5;
+    if (Math.abs(this.outerRotOffset) > 0.0005 || Math.abs(this.outerRotVel) > 0.0005) {
+      const acc = -stiffness * this.outerRotOffset - damping * this.outerRotVel;
+      this.outerRotVel += acc * dt;
+      this.outerRotOffset += this.outerRotVel * dt;
+      if (Math.abs(this.outerRotOffset) < 0.0015 && Math.abs(this.outerRotVel) < 0.015) {
+        this.outerRotOffset = 0;
+        this.outerRotVel = 0;
+      }
+    }
+    if (Math.abs(this.innerRotOffset) > 0.0005 || Math.abs(this.innerRotVel) > 0.0005) {
+      const acc = -stiffness * this.innerRotOffset - damping * this.innerRotVel;
+      this.innerRotVel += acc * dt;
+      this.innerRotOffset += this.innerRotVel * dt;
+      if (Math.abs(this.innerRotOffset) < 0.0015 && Math.abs(this.innerRotVel) < 0.015) {
+        this.innerRotOffset = 0;
+        this.innerRotVel = 0;
+      }
+    }
+    if (this.rotFlashTimer > 0) {
+      this.rotFlashTimer = Math.max(0, this.rotFlashTimer - dt);
+    }
   }
 
   public onPointerDown(x: number, y: number): void {
-    if (this.summaryModalOpen || this.inDrawer(x, y)) return;
-    if (this.tab === 'web' && this.inMap(x, y)) {
+    if (this.inDrawer(x, y)) return;
+    if (this.tab === 'astrolabe' && this.inMap(x, y)) {
       this.dragging = true;
       this.dragLastX = x;
       this.dragLastY = y;
@@ -127,8 +240,8 @@ export class MetaScreen {
     const dy = y - this.dragLastY;
     this.dragLastX = x;
     this.dragLastY = y;
-    this.panX = Math.max(-700, Math.min(700, this.panX + dx));
-    this.panY = Math.max(-700, Math.min(700, this.panY + dy));
+    this.panX = Math.max(-560, Math.min(560, this.panX + dx));
+    this.panY = Math.max(-560, Math.min(560, this.panY + dy));
   }
 
   public onPointerUp(): void {
@@ -136,29 +249,27 @@ export class MetaScreen {
   }
 
   public onWheel(deltaY: number, x: number, y: number): boolean {
-    if (this.tab !== 'web' || this.summaryModalOpen || this.inDrawer(x, y) || !this.inMap(x, y)) return false;
+    if (this.tab !== 'astrolabe') return false;
+    if (this.inDrawer(x, y)) {
+      if (this.selected.kind === 'catalog_directives' || this.selected.kind === 'catalog_skills') {
+        this.catalogPage = Math.max(0, this.catalogPage + (deltaY > 0 ? 1 : -1));
+        return true;
+      }
+      return false;
+    }
+    if (!this.inMap(x, y)) return false;
     const oldZoom = this.zoom;
     const factor = deltaY < 0 ? 1.15 : 0.87;
-    const nextZoom = Math.max(0.72, Math.min(2.8, Math.round(oldZoom * factor * 100) / 100));
+    const nextZoom = Math.max(0.75, Math.min(2.6, Math.round(oldZoom * factor * 100) / 100));
     if (nextZoom === oldZoom) return true;
     const r = this.lastMapRect;
     const cx = r.x + r.w / 2;
     const cy = r.y + r.h / 2;
     const ratio = nextZoom / oldZoom;
-    this.panX = Math.max(-700, Math.min(700, (x - cx) - ((x - cx) - this.panX) * ratio));
-    this.panY = Math.max(-700, Math.min(700, (y - cy) - ((y - cy) - this.panY) * ratio));
+    this.panX = Math.max(-560, Math.min(560, (x - cx) - ((x - cx) - this.panX) * ratio));
+    this.panY = Math.max(-560, Math.min(560, (y - cy) - ((y - cy) - this.panY) * ratio));
     this.zoom = nextZoom;
     return true;
-  }
-
-  private matchWebFilter(node: SkillWebNode): boolean {
-    if (this.webFilter === 'ALL') return true;
-    if (this.webFilter === 'ACTIVE') return !!node.activeSkill;
-    if (node.id === 'core_master') return true;
-    if (this.webFilter === '4-back' || this.webFilter === '3-back' || this.webFilter === '5-back') {
-      return node.systemTag === this.webFilter;
-    }
-    return node.styleTag === this.webFilter;
   }
 
   public render(
@@ -172,17 +283,15 @@ export class MetaScreen {
     }
   ): void {
     const st = league.getState();
-    const levels = league.getMetaLevels();
+    const club = league.getUserClub();
+    const ast = league.getV6Astrolabe();
     const hasRail = !!actions.onNavigate;
 
     drawBroadcastHeader(ctx, hits, {
-      kicker: 'META PROGRESSION · 124-NODE TACTICAL SKILL WEB',
-      title: '教练战术技能网与俱乐部基建',
-      club: hasRail ? league.getUserClub() : undefined,
+      kicker: 'V6 UNIFIED BAGUA ASTROLABE · 92 PASSIVES · 122 DIRECTIVES · 59 SKILLS',
+      title: '双环八卦战术星盘与临场指令配装',
+      club: hasRail ? club : undefined,
       onBack: hasRail ? undefined : actions.onBack,
-      rightAction: hasRail
-        ? { label: '返回门户', variant: 'ghost', onClick: actions.onBack }
-        : undefined,
       metaPoints: st.metaPointsTotal,
       clubFunds: league.getClubFunds(),
       showSoundToggle: true,
@@ -195,518 +304,1254 @@ export class MetaScreen {
     const baseX = hasRail ? 96 : 24;
     const totalW = hasRail ? 1168 : 1232;
 
-    const webStats = getSkillWebSummaryStats();
-    // 顶部 Tab 切换 + 引擎修正总览入口
-    drawButton(ctx, hits, baseX, 76, 240, 32, `战术星图 (${webStats.activeCount}主动+${webStats.modifierCount}改造)`, () => {
-      this.tab = 'web';
-    }, { active: this.tab === 'web', fontSize: 12, icon: 'tactics' });
-    drawButton(ctx, hits, baseX + 248, 76, 204, 32, '俱乐部基建 (8×8 · 资金)', () => {
+    // 顶部主导航与星盘锁盘/旋转栏 (y: 74, h: 30)
+    drawButton(ctx, hits, baseX, 74, 178, 30, '八卦战术星盘 (V6)', () => {
+      this.tab = 'astrolabe';
+    }, { active: this.tab === 'astrolabe', fontSize: 12, icon: 'tactics' });
+
+    drawButton(ctx, hits, baseX + 184, 74, 166, 30, '俱乐部基建 (8×8)', () => {
       this.tab = 'talents';
-      this.nodeDrawerOpen = false;
+      this.drawerOpen = false;
     }, { active: this.tab === 'talents', fontSize: 12, icon: 'talent' });
 
-    if (this.tab === 'web') {
-      drawText(ctx, this.notice, baseX + 468, 92, { size: 11.5, color: '#7DD3FC' });
-      drawButton(ctx, hits, baseX + totalW - 310, 76, 160, 32, '引擎修正与熟练度', () => {
-        this.summaryModalOpen = true;
-      }, { variant: 'primary', fontSize: 11.5, icon: 'chart' });
-      drawButton(ctx, hits, baseX + totalW - 142, 76, 142, 32, this.nodeDrawerOpen ? '收起节点详情' : '当前节点详情', () => {
-        this.nodeDrawerOpen = !this.nodeDrawerOpen;
-      }, { active: this.nodeDrawerOpen, fontSize: 11.5 });
-    } else {
-      drawText(
-        ctx,
-        `${this.notice} · 历史最高第 ${league.getBestTierReached()} 级`,
-        baseX + 468,
-        92,
-        { size: 11.5, color: '#7DD3FC' }
-      );
-    }
-
     if (this.tab === 'talents') {
-      const cardGap = 12;
-      const cardW = (totalW - cardGap * 3) / 4;
-      const cardH = 286;
-      const clubFunds = league.getClubFunds();
-      const bestTier = league.getBestTierReached();
-
-      META_BRANCHES.forEach((branch, idx) => {
-        const col = idx % 4;
-        const row = Math.floor(idx / 4);
-        const bx = baseX + col * (cardW + cardGap);
-        const by = 120 + row * (cardH + 12);
-
-        const curLv = levels[branch.id] ?? 0;
-        const nextLv = curLv + 1;
-        const req = getMetaUpgradeRequirement(branch.id, curLv);
-        const nextCost = req?.cost ?? null;
-        const reqTier = req?.minTier ?? 7;
-        const tierLocked = nextCost !== null && bestTier > reqTier;
-        const canAfford = nextCost !== null && !tierLocked && clubFunds >= nextCost;
-
-        drawChamferPanel(
-          ctx,
-          bx,
-          by,
-          cardW,
-          cardH,
-          12,
-          'rgba(14, 22, 40, 0.92)',
-          curLv > 0 ? branch.accent : THEME.BORDER,
-          curLv > 0 ? 1.5 : 1,
-          curLv > 0 ? branch.accent : undefined
-        );
-        drawIcon(ctx, BRANCH_ICON[branch.id], bx + 22, by + 24, 15, branch.accent);
-        drawText(ctx, branch.name, bx + 38, by + 24, { size: 15.5, bold: true, color: branch.accent });
-        drawBadge(ctx, bx + cardW - 76, by + 13, 62, 20, `Lv.${curLv}/${branch.maxLevel}`, '#1E293B', THEME.GOLD_LIGHT);
-
-        // 8 级进度条胶囊
-        for (let lvDot = 0; lvDot < branch.maxLevel; lvDot++) {
-          const dw = Math.floor((cardW - 36 - 7 * 3) / 8);
-          const dx = bx + 18 + lvDot * (dw + 3);
-          const lit = curLv > lvDot;
-          const lockedDot = lvDot >= 5 && bestTier > (INFRA_MIN_TIERS[lvDot] ?? 7);
-          drawRoundRect(
-            ctx,
-            dx,
-            by + 44,
-            dw,
-            5,
-            2,
-            lit ? branch.accent : lockedDot ? '#334155' : '#1E293B'
-          );
-        }
-
-        const startLv = Math.max(0, Math.min(branch.maxLevel - 3, curLv > 0 ? curLv - 1 : 0));
-        for (let li = startLv; li < Math.min(branch.maxLevel, startLv + 3); li++) {
-          const rowIdx = li - startLv;
-          const ly = by + 58 + rowIdx * 56;
-          const unlocked = curLv >= li + 1;
-          const lvReq = INFRA_MIN_TIERS[li] ?? 7;
-          const isLvLocked = !unlocked && bestTier > lvReq;
-          drawRoundRect(
-            ctx,
-            bx + 14,
-            ly,
-            cardW - 28,
-            50,
-            7,
-            unlocked ? 'rgba(34,197,94,0.12)' : THEME.BG_CARD,
-            unlocked ? THEME.GREEN : isLvLocked ? '#475569' : THEME.BORDER
-          );
-          drawBadge(
-            ctx,
-            bx + 20,
-            ly + 15,
-            38,
-            20,
-            `Lv.${li + 1}`,
-            unlocked ? THEME.GREEN : isLvLocked ? '#1E293B' : '#334155',
-            unlocked ? '#080C14' : isLvLocked ? '#FCA5A5' : THEME.TX2
-          );
-          drawWrappedText(ctx, branch.levelDescriptions[li], bx + 64, ly + 10, cardW - 126, 14, {
-            size: 10.5,
-            color: unlocked ? THEME.TX1 : THEME.TX2,
-            maxLines: 2,
-          });
-          drawText(
-            ctx,
-            unlocked ? '已建' : isLvLocked ? `需T${lvReq}` : `¥${branch.costs[li]}万`,
-            bx + cardW - 20,
-            ly + 25,
-            {
-              size: 10,
-              bold: true,
-              color: unlocked ? THEME.GREEN : isLvLocked ? '#FCA5A5' : THEME.GOLD_LIGHT,
-              align: 'right',
-              mono: !unlocked,
-            }
-          );
-        }
-
-        if (nextCost === null) {
-          drawBadge(ctx, bx + 14, by + cardH - 44, cardW - 28, 32, '满级基建竣工 (Lv.8)', '#14532D', THEME.GREEN);
-        } else {
-          const btnLabel = tierLocked
-            ? `需打入第 ${reqTier} 级解锁`
-            : canAfford
-            ? `扩建 Lv.${nextLv} (¥${nextCost}万)`
-            : `资金不足 (¥${nextCost}万)`;
-          drawButton(
-            ctx,
-            hits,
-            bx + 14,
-            by + cardH - 44,
-            cardW - 28,
-            32,
-            btnLabel,
-            () => {
-              const res = league.upgradeMetaBranch(branch.id);
-              if (res.ok) {
-                SoundEngine.playClick();
-                this.notice = `已将【${branch.name}】扩建至 Lv.${nextLv}`;
-                actions.onSave();
-              } else {
-                this.notice = res.reason || '扩建失败';
-              }
-            },
-            { variant: canAfford ? 'gold' : 'ghost', disabled: !canAfford, fontSize: 11.5 }
-          );
-        }
+      drawText(ctx, `俱乐部历史最高第 ${league.getBestTierReached()} 级 · 资金扩建永久保留`, baseX + 366, 89, {
+        size: 11.5,
+        color: '#7DD3FC',
       });
+      this.renderClubInfrastructure(ctx, hits, league, baseX, totalW, actions);
       return;
     }
 
-    // Tab 1：124 节点融合星图（铺满全宽 totalW）
-    const club = league.getUserClub();
-    const unlocked = league.getSkillWebUnlocked();
-    const unlockedSet = new Set(unlocked);
-    const mapW = totalW;
-    const mapH = 548;
+    let rx = baseX + totalW;
+    rx -= 96;
+    const isCatalogOpen = this.drawerOpen && (this.selected.kind === 'catalog_directives' || this.selected.kind === 'catalog_skills');
+    drawButton(ctx, hits, rx, 74, 96, 30, '星盘图鉴', () => {
+      this.selected = { kind: this.selected.kind === 'catalog_directives' ? 'catalog_skills' : 'catalog_directives' };
+      this.catalogPage = 0;
+      this.drawerOpen = true;
+    }, { active: isCatalogOpen, fontSize: 11 });
+
+    if (!ast.fogCleared && league.getCurrentTierInfo().tier >= 6) {
+      rx -= 80;
+      drawButton(ctx, hits, rx, 74, 74, 30, '破雾', () => {
+        league.clearV6AstrolabeFog();
+        this.notice = '已驱散新手迷雾，六大流派全盘展示！';
+        actions.onSave();
+      }, { variant: 'ghost', fontSize: 10.5, icon: 'sparkle' });
+    }
+
+    if (!ast.locked) {
+      rx -= 104;
+      drawButton(ctx, hits, rx, 74, 98, 30, '锁定星盘', () => {
+        const r = league.lockV6Astrolabe();
+        if (r.ok) {
+          SoundEngine.playAstrolabeLock();
+          this.rotFlashTimer = 0.65;
+          this.rotFlashRing = 'outer';
+          this.notice = '双环星盘已锁定！当前 6 个正对融合奇点已激活可点亮路径';
+          actions.onSave();
+        }
+      }, { variant: 'gold', fontSize: 11, icon: 'lock' });
+    } else {
+      const respecLabel = ast.freeRespecAvailable ? '免费洗点解锁' : '洗点解锁(¥80万)';
+      rx -= 124;
+      drawButton(ctx, hits, rx, 74, 118, 30, respecLabel, () => {
+        const r = league.respecV6Astrolabe();
+        if (r.ok) {
+          SoundEngine.playClick();
+          this.notice = `已重置星盘并全额退还 ${r.refunded ?? 0}pt，可重新旋转双环！`;
+          actions.onSave();
+        } else {
+          SoundEngine.playWarning();
+          this.notice = r.reason || '无法洗点';
+        }
+      }, { variant: 'ghost', fontSize: 10.5, icon: 'refresh' });
+    }
+
+    // ==================== 全景主舞台：两级语义缩放八卦战术星盘 (y: 112, h: 592) ====================
     const mapX = baseX;
-    const mapY = 156;
-
-    // 筛选芯片栏（全宽展开，每个按钮 ~100px 宽，字号放大至 11.5px）
-    const chipGap = 6;
-    const chipW = Math.floor((mapW - (WEB_FILTERS.length - 1) * chipGap) / WEB_FILTERS.length);
-    WEB_FILTERS.forEach(([fk, fl], fi) => {
-      drawButton(ctx, hits, mapX + fi * (chipW + chipGap), 116, chipW, 30, fl, () => {
-        this.webFilter = fk;
-      }, { active: this.webFilter === fk, fontSize: 11.5 });
-    });
-
+    const mapY = 112;
+    const mapW = totalW;
+    const mapH = 592;
     this.lastMapRect = { x: mapX, y: mapY, w: mapW, h: mapH };
-    drawChamferPanel(ctx, mapX, mapY, mapW, mapH, 12, 'rgba(9, 14, 26, 0.96)', THEME.BORDER_GOLD);
 
-    const cx = mapX + mapW / 2 + this.panX;
-    const cy = mapY + mapH / 2 + this.panY;
-    const scaleBase = Math.min(mapW, mapH) * 1.05 * this.zoom;
-    const toPt = (nx: number, ny: number) => ({
-      x: cx + (nx - 0.5) * scaleBase,
-      y: cy + (ny - 0.5) * scaleBase,
+    drawChamferPanel(ctx, mapX, mapY, mapW, mapH, 12, 'rgba(8, 13, 24, 0.96)', ast.locked ? THEME.BORDER_GOLD : '#38BDF8', 1.4);
+
+    this.renderAstrolabeCanvas(ctx, hits, league, mapX, mapY, mapW, mapH);
+    this.renderSideRotateDials(ctx, hits, league, mapX, mapY, mapW, mapH, actions.onSave);
+
+    // 顶部提示与统计徽章
+    drawBadge(
+      ctx,
+      mapX + 12,
+      mapY + 12,
+      Math.min(490, mapW - 360),
+      24,
+      this.notice,
+      'rgba(11, 17, 32, 0.90)',
+      ast.locked ? THEME.GOLD_LIGHT : '#7DD3FC'
+    );
+
+    const tpBase = league.getV6MatchRuntimeConfig().checkpointTpBase;
+    drawBadge(
+      ctx,
+      mapX + mapW - 352,
+      mapY + 12,
+      340,
+      24,
+      `被动${ast.unlockedPassives.length}/92 · 牌${ast.unlockedDirectives.length}/122 · 技${ast.unlockedSkills.length}/59 · 印${ast.unlockedMasterySeals.length}/6 · 每段${tpBase}TP`,
+      'rgba(11, 17, 32, 0.92)',
+      '#CBD5E1'
+    );
+
+    // 底部极简双态罗盘胶囊（滚轮自由缩放，点击一键切换宏观/特写）
+    const isMacroNow = this.zoom < 1.32;
+    const pillX = mapX + 14;
+    const pillY = mapY + mapH - 38;
+    const pillW = 204;
+    const pillH = 28;
+    drawRoundRect(ctx, pillX, pillY, pillW, pillH, 14, 'rgba(9, 15, 29, 0.92)', THEME.BORDER_GOLD, 1.1);
+    drawRoundRect(
+      ctx,
+      isMacroNow ? pillX + 2 : pillX + pillW / 2,
+      pillY + 2,
+      pillW / 2 - 2,
+      pillH - 4,
+      12,
+      'rgba(245, 158, 11, 0.24)',
+      THEME.GOLD_LIGHT,
+      1.1
+    );
+    drawText(ctx, '🧭 宏观罗盘', pillX + pillW * 0.25, pillY + 14, {
+      size: 10.5,
+      bold: isMacroNow,
+      color: isMacroNow ? THEME.GOLD_LIGHT : '#94A3B8',
+      align: 'center',
     });
+    drawText(ctx, '✨ 星宿特写', pillX + pillW * 0.75, pillY + 14, {
+      size: 10.5,
+      bold: !isMacroNow,
+      color: !isMacroNow ? THEME.GOLD_LIGHT : '#94A3B8',
+      align: 'center',
+    });
+    hits.add(pillX, pillY, pillW / 2, pillH, () => {
+      this.zoom = 0.96;
+      this.panX = 0;
+      this.panY = 0;
+      this.notice = '宏观罗盘视图：可用两侧拨盘旋转双环，点击流派纹章展开星宿';
+    });
+    hits.add(pillX + pillW / 2, pillY, pillW / 2, pillH, () => {
+      const myStyleIdx = Math.max(0, [0, 1, 2, 3, 4, 5].find(k => OUTER_RING_STYLES[((k - ast.outerRingStep) % 6 + 6) % 6] === club.style) ?? 0);
+      const focusAng = -Math.PI / 2 + (myStyleIdx * Math.PI) / 3;
+      this.zoom = 1.88;
+      const unitR = Math.min(mapW, mapH) * 0.48 * this.zoom;
+      this.panX = Math.round(-Math.cos(focusAng) * unitR * 0.62);
+      this.panY = Math.round(-Math.sin(focusAng) * unitR * 0.62);
+      this.notice = `星宿特写视图：已聚焦【${STYLE_LABELS[club.style].name}】扇区，滚轮缩放/按住拖拽`;
+    });
+
+    if (this.drawerOpen) {
+      this.renderInspectorDrawer(ctx, hits, league, mapX, mapY, mapW, mapH, actions);
+    }
+  }
+
+  private renderLoadoutBar(
+    ctx: CanvasRenderingContext2D,
+    hits: HitRegistry,
+    league: LeagueManager,
+    x: number,
+    y: number,
+    w: number,
+    h: number,
+    actions: { onSave: () => void }
+  ): void {
+    const ast = league.getV6Astrolabe();
+    drawChamferPanel(ctx, x, y, w, h, 8, 'rgba(13, 21, 38, 0.94)', THEME.BORDER, 1.1);
+
+    drawText(ctx, '临场指令池', x + 12, y + 15, { size: 10.5, bold: true, color: THEME.GOLD_LIGHT });
+    drawButton(ctx, hits, x + 12, y + 23, 66, 20, ast.useUniversalPool ? '通用✓' : '分拐点', () => {
+      league.setV6UniversalPool(!ast.useUniversalPool);
+      this.notice = !ast.useUniversalPool ? '已开启【一键复用 4 张通用指令池】' : '已切换为 20\'/45\'/70\' 独立配牌模式';
+      actions.onSave();
+    }, { active: ast.useUniversalPool, fontSize: 9.5 });
+
+    let cx = x + 84;
+    CHECKPOINT_TABS.forEach((cp, idx) => {
+      const act = this.activeCheckpoint === cp.key;
+      drawButton(ctx, hits, cx + idx * 38, y + 10, 34, 28, cp.label, () => {
+        this.activeCheckpoint = cp.key;
+      }, { active: act, fontSize: 10.5 });
+    });
+    cx += 120;
+
+    const poolIds = ast.checkpointPools[this.activeCheckpoint] ?? [];
+    const slotW = Math.floor((w - 208 - 356) / 4) - 6;
+    for (let i = 0; i < 4; i++) {
+      const sx = cx + i * (slotW + 6);
+      const did = poolIds[i];
+      const def = did ? V6_DIRECTIVE_MAP[did] : undefined;
+      if (def) {
+        const zCol = ZONE_COLOR[def.zone];
+        const sats = ast.directiveSatellites[did]?.length ?? 0;
+        drawRoundRect(ctx, sx, y + 6, slotW, 36, 6, 'rgba(18, 29, 51, 0.96)', zCol, 1.2);
+        ctx.fillStyle = zCol;
+        ctx.fillRect(sx + 2, y + 8, 3, 32);
+        drawText(ctx, `${def.tpCost}TP`, sx + 10, y + 16, { size: 9, bold: true, color: THEME.GOLD_LIGHT, mono: true });
+        drawText(ctx, `${ZONE_LABEL[def.zone]}·${def.tendency === 'ATK' ? '攻' : '守'}`, sx + slotW - 6, y + 16, {
+          size: 8.5,
+          color: zCol,
+          align: 'right',
+        });
+        drawText(ctx, fitText(ctx, `${def.name}${sats > 0 ? ` ★${sats}` : ''}`, slotW - 14, 10.5, true), sx + 10, y + 32, {
+          size: 10.5,
+          bold: true,
+          color: THEME.TX1,
+        });
+        hits.add(sx, y + 6, slotW, 36, () => {
+          SoundEngine.playClick();
+          this.selected = { kind: 'directive', id: def.id };
+          this.drawerOpen = true;
+        });
+      } else {
+        drawRoundRect(ctx, sx, y + 6, slotW, 36, 6, 'rgba(10, 16, 28, 0.72)', 'rgba(100,116,139,0.35)', 1);
+        drawText(ctx, `+ 槽位 ${i + 1} (点手牌装配)`, sx + slotW / 2, y + 24, {
+          size: 9.5,
+          color: THEME.TX3,
+          align: 'center',
+        });
+        hits.add(sx, y + 6, slotW, 36, () => {
+          this.selected = { kind: 'catalog_directives' };
+          this.catalogPage = 0;
+          this.drawerOpen = true;
+        });
+      }
+    }
+
+    const skStartX = x + w - 348;
+    drawText(ctx, 'F键主动技', skStartX - 2, y + 24, { size: 10, bold: true, color: '#38BDF8', align: 'right' });
+    for (let i = 0; i < 4; i++) {
+      const sx = skStartX + 6 + i * 84;
+      const sid = ast.equippedSkills[i];
+      const sk = sid ? V6_ACTIVE_SKILL_MAP[sid] : undefined;
+      if (sk) {
+        const br = ast.skillBranchChoice[sid] ?? 'A';
+        drawRoundRect(ctx, sx, y + 6, 80, 36, 6, 'rgba(12, 54, 86, 0.85)', '#38BDF8', 1.2);
+        drawText(ctx, `F${i + 1} · ${br}支`, sx + 6, y + 16, { size: 8.5, bold: true, color: '#7DD3FC', mono: true });
+        drawText(ctx, fitText(ctx, sk.name, 70, 10, true), sx + 6, y + 32, { size: 10, bold: true, color: '#FFFFFF' });
+        hits.add(sx, y + 6, 80, 36, () => {
+          SoundEngine.playClick();
+          this.selected = { kind: 'skill', id: sk.id };
+          this.drawerOpen = true;
+        });
+      } else {
+        drawRoundRect(ctx, sx, y + 6, 80, 36, 6, 'rgba(10, 16, 28, 0.72)', 'rgba(56,189,248,0.28)', 1);
+        drawText(ctx, `F${i + 1} 空槽`, sx + 40, y + 24, { size: 9.5, color: THEME.TX3, align: 'center' });
+        hits.add(sx, y + 6, 80, 36, () => {
+          this.selected = { kind: 'catalog_skills' };
+          this.catalogPage = 0;
+          this.drawerOpen = true;
+        });
+      }
+    }
+  }
+
+  private drawEdgeLine(
+    ctx: CanvasRenderingContext2D,
+    ax: number,
+    ay: number,
+    bx: number,
+    by: number,
+    bothUnlocked: boolean,
+    reachable: boolean,
+    color: string,
+    isBridge = false
+  ): void {
+    ctx.save();
+    if (bothUnlocked) {
+      ctx.strokeStyle = color;
+      ctx.lineWidth = isBridge ? 2.6 : 1.9;
+      ctx.shadowColor = color;
+      ctx.shadowBlur = isBridge ? 10 : 6;
+      ctx.beginPath();
+      ctx.moveTo(ax, ay);
+      ctx.lineTo(bx, by);
+      ctx.stroke();
+
+      // 沿连线流动的金色星辉粒子
+      const t = (this.animTime * 0.48 + ((ax + ay) % 100) * 0.01) % 1;
+      const sx = ax + (bx - ax) * t;
+      const sy = ay + (by - ay) * t;
+      ctx.fillStyle = '#FEF08A';
+      ctx.shadowBlur = 4;
+      ctx.beginPath();
+      ctx.arc(sx, sy, isBridge ? 2.4 : 1.7, 0, Math.PI * 2);
+      ctx.fill();
+    } else if (reachable) {
+      ctx.strokeStyle = isBridge ? 'rgba(250, 204, 21, 0.75)' : 'rgba(56, 189, 248, 0.72)';
+      ctx.lineWidth = isBridge ? 2 : 1.45;
+      ctx.setLineDash([4, 4]);
+      ctx.lineDashOffset = -this.animTime * 16;
+      ctx.beginPath();
+      ctx.moveTo(ax, ay);
+      ctx.lineTo(bx, by);
+      ctx.stroke();
+      ctx.setLineDash([]);
+    } else {
+      ctx.strokeStyle = isBridge ? 'rgba(250, 204, 21, 0.22)' : 'rgba(100, 116, 139, 0.26)';
+      ctx.lineWidth = isBridge ? 1.3 : 1;
+      ctx.beginPath();
+      ctx.moveTo(ax, ay);
+      ctx.lineTo(bx, by);
+      ctx.stroke();
+    }
+    ctx.restore();
+  }
+
+  /** 星盘左右两侧物理机械旋盘拨片（左逆转 / 右顺转，带悬停发光与齿轮刻度） */
+  private renderSideRotateDials(
+    ctx: CanvasRenderingContext2D,
+    hits: HitRegistry,
+    league: LeagueManager,
+    mapX: number,
+    mapY: number,
+    mapW: number,
+    mapH: number,
+    onSave: () => void
+  ): void {
+    const ast = league.getV6Astrolabe();
+    if (ast.locked) return;
+
+    const triggerRotate = (ring: 'outer' | 'inner', dir: 1 | -1) => {
+      const r = league.rotateV6Astrolabe(ring, dir);
+      if (!r.ok) return;
+      SoundEngine.playAstrolabeRotate(ring);
+      if (ring === 'outer') {
+        this.outerRotOffset -= dir * (Math.PI / 3);
+        this.outerRotVel = dir * 1.6;
+        this.notice = `外环六大流派${dir > 0 ? '顺时针' : '逆时针'}旋转 60°，6 颗融合奇点已重新对齐！`;
+      } else {
+        this.innerRotOffset -= dir * ((2 * Math.PI) / 3);
+        this.innerRotVel = dir * 2.2;
+        this.notice = `内环防线体系${dir > 0 ? '顺时针' : '逆时针'}旋转 120°，6 颗融合奇点已重新对齐！`;
+      }
+      this.rotFlashTimer = 0.58;
+      this.rotFlashRing = ring;
+      onSave();
+    };
+
+    const drawPaddle = (
+      px: number,
+      py: number,
+      pw: number,
+      ph: number,
+      side: 'left' | 'right',
+      ring: 'outer' | 'inner',
+      title: string,
+      sub: string,
+      glyph: string,
+      accent: string,
+      onClick: () => void
+    ) => {
+      const hovered = hits.isHovered(px, py, pw, ph);
+      ctx.save();
+      // 弧形贴合星环的黄铜/钢蓝机械拨片（仅留 ↺/↻ 与度数刻度，大幅收窄占宽）
+      const radius = 12;
+      ctx.beginPath();
+      if (side === 'left') {
+        ctx.roundRect(px, py, pw, ph, [8, radius, radius, 8]);
+      } else {
+        ctx.roundRect(px, py, pw, ph, [radius, 8, 8, radius]);
+      }
+      ctx.fillStyle = hovered ? 'rgba(20, 34, 62, 0.96)' : 'rgba(9, 15, 29, 0.84)';
+      ctx.fill();
+      ctx.lineWidth = hovered ? 1.8 : 1.1;
+      ctx.strokeStyle = hovered ? THEME.GOLD_LIGHT : `${accent}88`;
+      ctx.stroke();
+
+      // 朝向星盘一侧的弧形齿轮刻线
+      const edgeX = side === 'left' ? px + pw - 4 : px + 4;
+      ctx.strokeStyle = hovered ? THEME.GOLD_LIGHT : `${accent}66`;
+      ctx.lineWidth = hovered ? 2 : 1.2;
+      for (let ti = 0; ti < 4; ti++) {
+        const ty = py + 14 + ti * ((ph - 28) / 3);
+        ctx.beginPath();
+        ctx.moveTo(edgeX - 2, ty);
+        ctx.lineTo(edgeX + 2, ty);
+        ctx.stroke();
+      }
+
+      const textCx = side === 'left' ? px + (pw - 4) / 2 : px + (pw + 4) / 2;
+      drawText(ctx, glyph, textCx, py + 21, {
+        size: hovered ? 20 : 18,
+        bold: true,
+        color: hovered ? THEME.GOLD_LIGHT : accent,
+        align: 'center',
+      });
+      drawText(ctx, sub.split(' ')[0], textCx, py + 45, {
+        size: 10,
+        bold: hovered,
+        color: hovered ? '#FDE68A' : '#94A3B8',
+        align: 'center',
+        mono: true,
+      });
+      ctx.restore();
+      hits.add(px, py, pw, ph, onClick);
+    };
+
+    const pw = 54;
+    const ph = 62;
+    const midY = mapY + mapH / 2;
+    const leftX = mapX + 14;
+    const rightLimit = this.drawerOpen ? mapX + mapW - 422 : mapX + mapW - 14;
+    const rightX = rightLimit - pw;
+
+    // 左侧：逆时针旋转（外环 -60° / 内环 -120°）
+    drawPaddle(leftX, midY - ph - 10, pw, ph, 'left', 'outer', '外环', '-60° 流派', '↺', '#38BDF8', () => triggerRotate('outer', -1));
+    drawPaddle(leftX, midY + 10, pw, ph, 'left', 'inner', '内环', '-120° 防线', '↺', '#F59E0B', () => triggerRotate('inner', -1));
+
+    // 右侧：顺时针旋转（外环 +60° / 内环 +120°）
+    drawPaddle(rightX, midY - ph - 10, pw, ph, 'right', 'outer', '外环', '+60° 流派', '↻', '#38BDF8', () => triggerRotate('outer', 1));
+    drawPaddle(rightX, midY + 10, pw, ph, 'right', 'inner', '内环', '+120° 防线', '↻', '#F59E0B', () => triggerRotate('inner', 1));
+  }
+
+  private renderAstrolabeCanvas(
+    ctx: CanvasRenderingContext2D,
+    hits: HitRegistry,
+    league: LeagueManager,
+    mapX: number,
+    mapY: number,
+    mapW: number,
+    mapH: number
+  ): void {
+    const ast = league.getV6Astrolabe();
+    const club = league.getUserClub();
+    const tier = league.getCurrentTierInfo().tier;
+    const unlockedDirSet = new Set(ast.unlockedDirectives);
+    const unlockedSkillSet = new Set(ast.unlockedSkills);
+    const unlockedFusionSet = new Set(ast.unlockedFusions);
+    const unlockedSealSet = new Set(ast.unlockedMasterySeals);
+    const unlockedPassiveSet = new Set(ast.unlockedPassives);
+    const equippedPoolSet = new Set(ast.checkpointPools[this.activeCheckpoint] ?? []);
+    const equippedSkillSet = new Set(ast.equippedSkills);
+
+    const cx = mapX + (this.drawerOpen ? (mapW - 410) / 2 : mapW / 2) + this.panX;
+    const cy = mapY + mapH / 2 + 6 + this.panY;
+    const baseR = Math.min(mapW, mapH) * 0.48 * this.zoom;
 
     ctx.save();
     ctx.beginPath();
     ctx.rect(mapX + 4, mapY + 4, mapW - 8, mapH - 8);
     ctx.clip();
 
-    // 0. 星图星盘底图（呼吸感轻柔叠加，保证星图节点与连线清晰对比度）
+    // 星空底图
     const constImg = AssetLoader.get('bg_skill_constellation');
     if (constImg && typeof ctx.drawImage === 'function') {
-      const iw = (constImg.naturalWidth || constImg.width || 1024);
-      const ih = (constImg.naturalHeight || constImg.height || 572);
-      const breath = 1.02 + 0.012 * Math.sin(this.animTime * 0.35);
-      const coverScale = Math.max((mapW - 8) / iw, (mapH - 8) / ih) * breath;
-      const dw = iw * coverScale;
-      const dh = ih * coverScale;
+      const iw = constImg.naturalWidth || constImg.width || 1024;
+      const ih = constImg.naturalHeight || constImg.height || 572;
+      const cover = Math.max(mapW / iw, mapH / ih);
       ctx.save();
-      ctx.globalAlpha = 0.72;
-      ctx.drawImage(constImg, mapX + mapW / 2 - dw / 2, mapY + mapH / 2 - dh / 2, dw, dh);
+      ctx.globalAlpha = 0.46;
+      ctx.drawImage(constImg, mapX + mapW / 2 - (iw * cover) / 2, mapY + mapH / 2 - (ih * cover) / 2, iw * cover, ih * cover);
       ctx.restore();
     }
 
-    // 0b. 星空微粒背景
-    for (let si = 0; si < 36; si++) {
-      const sx = mapX + ((si * 97 + Math.sin(this.animTime * 0.2 + si) * 14) % mapW + mapW) % mapW;
-      const sy = mapY + ((si * 61 + Math.cos(this.animTime * 0.16 + si) * 10) % mapH + mapH) % mapH;
-      const sa = 0.14 + 0.18 * Math.sin(this.animTime * 1.6 + si * 1.7);
-      ctx.fillStyle = `rgba(148, 163, 184, ${sa.toFixed(2)})`;
-      ctx.fillRect(sx, sy, 2, 2);
-    }
-
-    // 1. 绘制连线
-    const edges = getSkillWebEdges();
-    edges.forEach(([a, b], eIdx) => {
-      const pa = toPt(a.nx, a.ny);
-      const pb = toPt(b.nx, b.ny);
-      const both = unlockedSet.has(a.id) && unlockedSet.has(b.id);
-      const one = unlockedSet.has(a.id) || unlockedSet.has(b.id);
-      const vis = this.matchWebFilter(a) || this.matchWebFilter(b);
-
-      ctx.save();
-      ctx.globalAlpha = vis ? 1 : 0.16;
-      ctx.strokeStyle = both ? a.color : one ? 'rgba(56, 189, 248, 0.52)' : 'rgba(100, 116, 139, 0.20)';
-      ctx.lineWidth = both ? 2.4 : one ? 1.4 : 0.9;
-      if (!both && one) {
-        ctx.setLineDash([5, 5]);
-        ctx.lineDashOffset = -this.animTime * 18;
-      }
+    // 5 层同心轨道圆环
+    const ringRadii = [0.20, 0.30, 0.40, 0.50, 0.60, 0.78, 0.90, 0.99];
+    ringRadii.forEach((ratio, idx) => {
+      const isFusionRing = idx === 3;
+      ctx.strokeStyle = isFusionRing ? 'rgba(250, 204, 21, 0.36)' : 'rgba(148, 163, 184, 0.14)';
+      ctx.lineWidth = isFusionRing ? 1.8 : 1;
+      if (idx === 1 || idx === 4 || idx === 5) ctx.setLineDash([3, 6]);
+      else ctx.setLineDash([]);
       ctx.beginPath();
-      ctx.moveTo(pa.x, pa.y);
-      ctx.lineTo(pb.x, pb.y);
+      ctx.arc(cx, cy, baseR * ratio, 0, Math.PI * 2);
+      ctx.stroke();
+    });
+    ctx.setLineDash([]);
+
+    // 旋转奇点对齐光波与星辉脉冲
+    if (this.rotFlashTimer > 0) {
+      const p = 1 - this.rotFlashTimer / 0.58; // 0 -> 1
+      const alpha = Math.max(0, (1 - p) * 0.85);
+      const pulseCol = this.rotFlashRing === 'outer' ? '#38BDF8' : '#F59E0B';
+      ctx.save();
+      // 1. 融合轨道金色扩张冲击波
+      ctx.strokeStyle = `rgba(250, 204, 21, ${alpha.toFixed(3)})`;
+      ctx.lineWidth = 3.5 * (1 - p * 0.6);
+      ctx.shadowColor = THEME.GOLD_LIGHT;
+      ctx.shadowBlur = 16;
+      ctx.beginPath();
+      ctx.arc(cx, cy, baseR * (0.48 + p * 0.14), 0, Math.PI * 2);
       ctx.stroke();
 
-      if (both && vis) {
-        const t = (this.animTime * 0.45 + eIdx * 0.17) % 1;
-        const px = pa.x + (pb.x - pa.x) * t;
-        const py = pa.y + (pb.y - pa.y) * t;
-        ctx.fillStyle = '#FEF08A';
+      // 2. 旋转环高亮轨道流光
+      ctx.strokeStyle = pulseCol;
+      ctx.globalAlpha = alpha * 0.7;
+      ctx.lineWidth = 2.4;
+      const ringR = this.rotFlashRing === 'outer' ? 0.78 : 0.35;
+      ctx.beginPath();
+      ctx.arc(cx, cy, baseR * ringR, 0, Math.PI * 2);
+      ctx.stroke();
+
+      // 3. 6 颗正对融合奇点星芒绽放
+      for (let idx = 0; idx < 6; idx++) {
+        const ang = -Math.PI / 2 + (idx * Math.PI) / 3;
+        const fx = cx + Math.cos(ang) * (baseR * 0.50);
+        const fy = cy + Math.sin(ang) * (baseR * 0.50);
+        const flareR = (14 + p * 20) * Math.max(0.75, this.zoom);
+        const grad = ctx.createRadialGradient(fx, fy, 2, fx, fy, flareR);
+        grad.addColorStop(0, `rgba(254, 240, 138, ${alpha.toFixed(3)})`);
+        grad.addColorStop(1, 'rgba(250, 204, 21, 0)');
+        ctx.fillStyle = grad;
         ctx.beginPath();
-        ctx.arc(px, py, 2.2, 0, Math.PI * 2);
+        ctx.arc(fx, fy, flareR, 0, Math.PI * 2);
         ctx.fill();
       }
       ctx.restore();
-    });
+    }
 
-    // 2. 绘制 124 个节点
-    const showMidLabels = this.zoom >= 1.12;
-    const showAllLabels = this.zoom >= 1.6;
-    const equippedSet = new Set(league.getSkillLoadoutIds());
-    SKILL_WEB_NODES.forEach((node, nIdx) => {
-      const pt = toPt(node.nx, node.ny);
-      if (pt.x < mapX - 24 || pt.x > mapX + mapW + 24 || pt.y < mapY - 24 || pt.y > mapY + mapH + 24) return;
+    const canHit = (px: number, py: number) =>
+      !this.inDrawer(px, py) && px >= mapX + 6 && px <= mapX + mapW - 6 && py >= mapY + 6 && py <= mapY + mapH - 6;
 
-      const isUnlocked = unlockedSet.has(node.id);
-      const isReachable = canUnlockNode(node.id, unlocked);
-      const isSelected = this.selectedNodeId === node.id;
-      const isResonating = isUnlocked && isNodeResonating(node, club.formation, club.style);
-      const isActiveSkill = !!node.activeSkill;
-      const isEquipped = isActiveSkill && equippedSet.has(node.id);
-      const filterMatch = this.matchWebFilter(node);
+    // ==================== Pass 1：计算全部星盘节点坐标（用于先画连线、再画节点） ====================
+    const posMap = new Map<string, CanvasNodePos>();
 
-      const baseR =
-        node.kind === 'keystone' ? 12 :
-        node.kind === 'origin' ? 11 :
-        node.kind === 'fusion' ? 9.5 :
-        node.kind === 'formation' ? 8.5 : 5.5;
-      const r = Math.max(4, (isActiveSkill ? Math.max(baseR, 8.5) * 1.18 : baseR) * Math.min(1.45, Math.max(0.78, this.zoom * 0.72)));
-      const pulse = 0.5 + 0.5 * Math.sin(this.animTime * 3.0 + nIdx * 0.4);
-      const glyphKind = getNodeGlyphKind(node);
+    // 外环 6 × 60° 扇区底色 + 计算 48 流派被动 / 36 流派主动技 / 72 流派手牌坐标
+    const outerSectors: Array<{
+      k: number;
+      style: TacticalStyle;
+      visible: boolean;
+      centerAngle: number;
+      startA: number;
+      endA: number;
+    }> = [];
+
+    for (let k = 0; k < 6; k++) {
+      const style = OUTER_RING_STYLES[((k - ast.outerRingStep) % 6 + 6) % 6];
+      const info = STYLE_LABELS[style];
+      const visible = isStyleVisibleInFog(ast, style, tier, club.style);
+      const centerAngle = -Math.PI / 2 + (k * Math.PI) / 3 + this.outerRotOffset;
+      const startA = centerAngle - Math.PI / 6;
+      const endA = centerAngle + Math.PI / 6;
+      outerSectors.push({ k, style, visible, centerAngle, startA, endA });
 
       ctx.save();
-      ctx.globalAlpha = filterMatch ? 1 : 0.16;
+      ctx.beginPath();
+      ctx.moveTo(cx, cy);
+      ctx.arc(cx, cy, baseR * 1.04, startA, endA);
+      ctx.closePath();
+      ctx.fillStyle = visible ? `${info.color}10` : 'rgba(15, 23, 42, 0.48)';
+      ctx.fill();
+      ctx.strokeStyle = visible ? `${info.color}38` : 'rgba(71, 85, 105, 0.24)';
+      ctx.lineWidth = 1;
+      ctx.stroke();
+      ctx.restore();
 
-      if (isActiveSkill) {
-        const dr = r * 1.32;
-        const effR = isUnlocked ? league.getSkillProgressInfo(node.id).effectiveRank || 1 : 1;
-        if (filterMatch) {
-          ctx.strokeStyle = isEquipped ? '#4ADE80' : effR >= 4 ? THEME.GOLD_LIGHT : '#38BDF8';
-          ctx.globalAlpha = (isUnlocked ? 0.55 : 0.28) + pulse * 0.28;
-          ctx.lineWidth = isEquipped ? 2.2 : 1.4;
+      const labelX = cx + Math.cos(centerAngle) * (baseR * 1.07);
+      const labelY = cy + Math.sin(centerAngle) * (baseR * 1.07);
+      drawText(ctx, visible ? info.name : '迷雾流派', labelX, labelY, {
+        size: Math.max(10, Math.min(13, 11.5 * this.zoom)),
+        bold: true,
+        color: visible ? info.color : '#64748B',
+        align: 'center',
+      });
+
+      if (!visible) continue;
+
+      // 8 个流派被动（数值小节点）：原点在 (0, 0.59)，攻线在左翼，守线在右翼
+      const stylePassives = V6_STYLE_PASSIVES.filter(p => p.style === style);
+      const originId = STYLE_ORIGIN_PASSIVE[style];
+      const isBus = style === 'park_bus';
+      for (const p of stylePassives) {
+        const m = p.id.match(/_([ad])([1-4])$/);
+        const br = m ? m[1] : 'a';
+        const step = m ? Number(m[2]) : 1;
+        let offsetA = 0;
+        let radRatio = 0.59;
+        if (p.id === originId) {
+          offsetA = 0;
+          radRatio = 0.59;
+        } else if (br === 'a') {
+          const idx = isBus ? step : step - 1; // 1..4 for bus, 1..3 for others
+          offsetA = -0.075 - idx * 0.062;
+          radRatio = 0.59 + idx * 0.04;
+        } else {
+          const idx = isBus ? step - 1 : step; // 1..3 for bus, 1..4 for others
+          offsetA = 0.075 + idx * 0.062;
+          radRatio = 0.59 + idx * 0.04;
+        }
+        const ang = centerAngle + offsetA;
+        const px = cx + Math.cos(ang) * (baseR * radRatio);
+        const py = cy + Math.sin(ang) * (baseR * radRatio);
+        const unl = unlockedPassiveSet.has(p.id);
+        const reach = !unl && canUnlockV6Node(ast, 'passive', p.id).ok;
+        posMap.set(`passive:${p.id}`, { x: px, y: py, unlocked: unl, reachable: reach, color: info.color });
+      }
+
+      // 6 个流派主动技（菱形插槽，左3攻 / 右3守）
+      const styleSkills = V6_ACTIVE_SKILLS.filter(s => s.source === 'style' && s.style === style);
+      for (const sk of styleSkills) {
+        const side = sk.tendency === 'DEF' ? 1 : -1;
+        const zoneIdx = sk.zone === 'ATT' ? 0 : sk.zone === 'MID' ? 1 : 2;
+        const offsetA = side * (0.11 + zoneIdx * 0.145);
+        const radRatio = 0.80 + zoneIdx * 0.018;
+        const ang = centerAngle + offsetA;
+        const px = cx + Math.cos(ang) * (baseR * radRatio);
+        const py = cy + Math.sin(ang) * (baseR * radRatio);
+        const unl = unlockedSkillSet.has(sk.id);
+        const reach = !unl && canUnlockV6Node(ast, 'skill', sk.id).ok;
+        posMap.set(`skill:${sk.id}`, { x: px, y: py, unlocked: unl, reachable: reach, color: '#38BDF8' });
+      }
+
+      // 12 张流派手牌（左6攻 / 右6守；内圈稳健 1TP @0.89，外圈豪赌 2TP @0.98）
+      const styleDirs = V6_DIRECTIVES.filter(d => d.source === 'style' && d.style === style);
+      for (const dir of styleDirs) {
+        const side = dir.tendency === 'DEF' ? 1 : -1;
+        const zoneIdx = dir.zone === 'ATT' ? 0 : dir.zone === 'MID' ? 1 : 2;
+        const offsetA = side * (0.11 + zoneIdx * 0.155);
+        const radRatio = dir.route === 'steady' ? 0.89 : 0.985;
+        const ang = centerAngle + offsetA;
+        const px = cx + Math.cos(ang) * (baseR * radRatio);
+        const py = cy + Math.sin(ang) * (baseR * radRatio);
+        const unl = unlockedDirSet.has(dir.id);
+        const reach = !unl && canUnlockV6Node(ast, 'directive', dir.id).ok;
+        posMap.set(`directive:${dir.id}`, { x: px, y: py, unlocked: unl, reachable: reach, color: ZONE_COLOR[dir.zone] });
+      }
+    }
+
+    // 6 个正对融合奇点坐标
+    const aligned = getAlignedFusions(ast.outerRingStep, ast.innerRingStep);
+    aligned.forEach((al, idx) => {
+      const ang = -Math.PI / 2 + (idx * Math.PI) / 3;
+      const px = cx + Math.cos(ang) * (baseR * 0.50);
+      const py = cy + Math.sin(ang) * (baseR * 0.50);
+      const unl = unlockedFusionSet.has(al.fusion.id);
+      const reach = !unl && canUnlockV6Node(ast, 'fusion', al.fusion.id).ok;
+      posMap.set(`fusion:${al.fusion.id}`, { x: px, y: py, unlocked: unl, reachable: reach, color: THEME.GOLD_LIGHT });
+    });
+
+    // 内环 3 × 120° 防线体系被动（12 个）+ 16 阵型坐标
+    for (let s = 0; s < 3; s++) {
+      const sys = INNER_RING_SYSTEMS[((s - ast.innerRingStep) % 3 + 3) % 3];
+      const sysInfo = SYSTEM_LABELS[sys];
+      const startA = -Math.PI / 2 - Math.PI / 6 + (s * 2 * Math.PI) / 3 + this.innerRotOffset;
+      const spanA = (2 * Math.PI) / 3;
+      const sysCenterA = startA + spanA / 2;
+
+      const sysPassives = V6_SYSTEM_PASSIVES.filter(p => p.system === sys);
+      const sysOffsets = [
+        { da: 0, r: 0.285 },
+        { da: -0.38, r: 0.315 },
+        { da: 0, r: 0.345 },
+        { da: 0.38, r: 0.315 },
+      ];
+      sysPassives.forEach((sp, si) => {
+        const cfg = sysOffsets[si] ?? { da: 0, r: 0.31 };
+        const a = sysCenterA + cfg.da;
+        const px = cx + Math.cos(a) * (baseR * cfg.r);
+        const py = cy + Math.sin(a) * (baseR * cfg.r);
+        const unl = unlockedPassiveSet.has(sp.id);
+        const reach = !unl && canUnlockV6Node(ast, 'passive', sp.id).ok;
+        posMap.set(`passive:${sp.id}`, { x: px, y: py, unlocked: unl, reachable: reach, color: sysInfo.color });
+      });
+
+      const fms = SYSTEM_FORMATIONS[sys];
+      fms.forEach((fm, fi) => {
+        const fa = startA + ((fi + 0.5) / fms.length) * spanA;
+        const px = cx + Math.cos(fa) * (baseR * 0.405);
+        const py = cy + Math.sin(fa) * (baseR * 0.405);
+        const fmKey = fm.replace(/-/g, '');
+        const hasAnyFmPassive = unlockedPassiveSet.has(`pf_${fmKey}_a`) || unlockedPassiveSet.has(`pf_${fmKey}_d`);
+        const sysOriginUnl = unlockedPassiveSet.has(SYSTEM_ORIGIN_PASSIVE[sys]);
+        posMap.set(`formation:${fm}`, {
+          x: px,
+          y: py,
+          unlocked: hasAnyFmPassive || club.formation === fm,
+          reachable: !hasAnyFmPassive && sysOriginUnl,
+          color: sysInfo.color,
+        });
+      });
+    }
+
+    // 6 个宗师印坐标
+    V6_MASTERY_SEALS.forEach((seal, idx) => {
+      const ang = -Math.PI / 2 + (idx * Math.PI) / 3;
+      const px = cx + Math.cos(ang) * (baseR * 0.20);
+      const py = cy + Math.sin(ang) * (baseR * 0.20);
+      const unl = unlockedSealSet.has(seal.id);
+      const reach = !unl && canUnlockMasterySeal(ast, seal.style).ok;
+      posMap.set(`seal:${seal.id}`, { x: px, y: py, unlocked: unl, reachable: reach, color: STYLE_LABELS[seal.style].color });
+    });
+
+    const isMacro = this.zoom < 1.32;
+
+    // ==================== Pass 2：绘制星宿前置连线（宏观罗盘仅绘主干金桥，特写展开全部星轨） ====================
+    // 2a. 外环流派节点前置连线（特写模式展开）
+    if (!isMacro) {
+      for (const sec of outerSectors) {
+        if (!sec.visible) continue;
+        const style = sec.style;
+        const stylePassives = V6_STYLE_PASSIVES.filter(p => p.style === style);
+        for (const p of stylePassives) {
+          const child = posMap.get(`passive:${p.id}`);
+          if (!child) continue;
+          for (const pre of getV6NodePrerequisites('passive', p.id).prereqs) {
+            const par = posMap.get(`${pre.kind}:${pre.id}`);
+            if (par) this.drawEdgeLine(ctx, par.x, par.y, child.x, child.y, par.unlocked && child.unlocked, par.unlocked && !child.unlocked, child.color);
+          }
+        }
+        const styleSkills = V6_ACTIVE_SKILLS.filter(s => s.source === 'style' && s.style === style);
+        for (const sk of styleSkills) {
+          const child = posMap.get(`skill:${sk.id}`);
+          if (!child) continue;
+          for (const pre of getV6NodePrerequisites('skill', sk.id).prereqs) {
+            const par = posMap.get(`${pre.kind}:${pre.id}`);
+            if (par) this.drawEdgeLine(ctx, par.x, par.y, child.x, child.y, par.unlocked && child.unlocked, par.unlocked && !child.unlocked, '#38BDF8');
+          }
+        }
+        const styleDirs = V6_DIRECTIVES.filter(d => d.source === 'style' && d.style === style);
+        for (const dir of styleDirs) {
+          const child = posMap.get(`directive:${dir.id}`);
+          if (!child) continue;
+          for (const pre of getV6NodePrerequisites('directive', dir.id).prereqs) {
+            const par = posMap.get(`${pre.kind}:${pre.id}`);
+            if (par) this.drawEdgeLine(ctx, par.x, par.y, child.x, child.y, par.unlocked && child.unlocked, par.unlocked && !child.unlocked, child.color);
+          }
+        }
+      }
+
+      // 2b. 内环防线体系被动链 + 防线原点→16阵型连线（特写模式展开）
+      for (const sp of V6_SYSTEM_PASSIVES) {
+        const child = posMap.get(`passive:${sp.id}`);
+        if (!child) continue;
+        for (const pre of getV6NodePrerequisites('passive', sp.id).prereqs) {
+          const par = posMap.get(`${pre.kind}:${pre.id}`);
+          if (par) this.drawEdgeLine(ctx, par.x, par.y, child.x, child.y, par.unlocked && child.unlocked, par.unlocked && !child.unlocked, child.color);
+        }
+      }
+      for (const sys of INNER_RING_SYSTEMS) {
+        const originPos = posMap.get(`passive:${SYSTEM_ORIGIN_PASSIVE[sys]}`);
+        if (!originPos) continue;
+        for (const fm of SYSTEM_FORMATIONS[sys]) {
+          const fPos = posMap.get(`formation:${fm}`);
+          if (fPos) {
+            this.drawEdgeLine(ctx, originPos.x, originPos.y, fPos.x, fPos.y, originPos.unlocked && fPos.unlocked, originPos.unlocked && !fPos.unlocked, fPos.color);
+          }
+        }
+      }
+    }
+
+    // 2c. 6 个正对融合奇点 ↔ 对齐外环流派原点 & 内环防线原点（金色双桥）
+    for (const al of aligned) {
+      const fPos = posMap.get(`fusion:${al.fusion.id}`);
+      if (!fPos) continue;
+      const stOrigin = posMap.get(`passive:${STYLE_ORIGIN_PASSIVE[al.style]}`);
+      const sysOrigin = posMap.get(`passive:${SYSTEM_ORIGIN_PASSIVE[al.system]}`);
+      if (stOrigin) {
+        this.drawEdgeLine(ctx, fPos.x, fPos.y, stOrigin.x, stOrigin.y, fPos.unlocked && stOrigin.unlocked, ast.locked && stOrigin.unlocked && !fPos.unlocked, THEME.GOLD_LIGHT, true);
+      }
+      if (sysOrigin) {
+        this.drawEdgeLine(ctx, sysOrigin.x, sysOrigin.y, fPos.x, fPos.y, fPos.unlocked && sysOrigin.unlocked, ast.locked && sysOrigin.unlocked && !fPos.unlocked, THEME.GOLD_LIGHT, true);
+      }
+    }
+
+    // 2d. 6 个宗师印 ↔ 圆心星辉线
+    for (const seal of V6_MASTERY_SEALS) {
+      const sPos = posMap.get(`seal:${seal.id}`);
+      if (sPos) {
+        this.drawEdgeLine(ctx, cx, cy, sPos.x, sPos.y, sPos.unlocked && ast.coreUnlocked, sPos.unlocked && !ast.coreUnlocked, THEME.GOLD_LIGHT, true);
+      }
+    }
+
+    // ==================== Pass 3：两级语义缩放绘制（宏观罗盘大纹章 vs 星宿特写精细节点） ====================
+    const rotSlow = this.animTime * 0.55;
+
+    // 3a. 外环 6 扇区：宏观罗盘绘制 44px 流派大纹章（点击推入特写），特写绘制完整 26 星宿节点
+    if (isMacro) {
+      for (const sec of outerSectors) {
+        const style = sec.style;
+        const info = STYLE_LABELS[style];
+        const mx = cx + Math.cos(sec.centerAngle) * (baseR * 0.78);
+        const my = cy + Math.sin(sec.centerAngle) * (baseR * 0.78);
+        const mr = 23;
+        if (!sec.visible) {
+          ctx.save();
+          ctx.fillStyle = 'rgba(15, 23, 42, 0.82)';
           ctx.beginPath();
-          ctx.moveTo(pt.x, pt.y - dr - 4 - pulse * 2);
-          ctx.lineTo(pt.x + dr + 4 + pulse * 2, pt.y);
-          ctx.lineTo(pt.x, pt.y + dr + 4 + pulse * 2);
-          ctx.lineTo(pt.x - dr - 4 - pulse * 2, pt.y);
-          ctx.closePath();
+          ctx.arc(mx, my, mr, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.strokeStyle = '#334155';
+          ctx.lineWidth = 1.5;
           ctx.stroke();
-          ctx.globalAlpha = filterMatch ? 1 : 0.16;
+          drawIcon(ctx, 'lock', mx, my, 16, '#64748B');
+          ctx.restore();
+          continue;
         }
+        const unlCount =
+          V6_STYLE_PASSIVES.filter(p => p.style === style && unlockedPassiveSet.has(p.id)).length +
+          V6_ACTIVE_SKILLS.filter(s => s.source === 'style' && s.style === style && unlockedSkillSet.has(s.id)).length +
+          V6_DIRECTIVES.filter(d => d.source === 'style' && d.style === style && unlockedDirSet.has(d.id)).length;
+        const isClubStyle = club.style === style;
 
-        if (isUnlocked || isSelected || isEquipped) {
-          ctx.shadowColor = isSelected ? '#FFFFFF' : isEquipped ? '#4ADE80' : effR >= 4 ? THEME.GOLD_LIGHT : '#38BDF8';
-          ctx.shadowBlur = isSelected ? 18 : isEquipped ? 14 : 10 + pulse * 4;
-        }
-
-        // 双层金属菱形插槽底座
-        ctx.fillStyle = isUnlocked ? (isEquipped ? '#053B2F' : effR >= 4 ? '#422006' : '#0B2E4E') : isReachable ? '#142244' : '#0A101E';
+        ctx.save();
+        ctx.shadowColor = info.color;
+        ctx.shadowBlur = isClubStyle ? 18 : 10;
+        ctx.fillStyle = isClubStyle ? '#162A48' : '#0F1B33';
         ctx.beginPath();
-        ctx.moveTo(pt.x, pt.y - dr);
-        ctx.lineTo(pt.x + dr, pt.y);
-        ctx.lineTo(pt.x, pt.y + dr);
-        ctx.lineTo(pt.x - dr, pt.y);
-        ctx.closePath();
+        ctx.arc(mx, my, mr, 0, Math.PI * 2);
         ctx.fill();
-
-        ctx.lineWidth = isSelected ? 2.8 : isEquipped ? 2.4 : isUnlocked ? 2.2 : 1.5;
-        ctx.strokeStyle = isSelected ? '#FFFFFF' : isEquipped ? '#4ADE80' : (isResonating || effR >= 4) ? '#FEF08A' : isUnlocked ? '#38BDF8' : isReachable ? '#38BDF8' : 'rgba(100, 116, 139, 0.6)';
+        ctx.lineWidth = isClubStyle ? 2.6 : 1.8;
+        ctx.strokeStyle = isClubStyle ? THEME.GOLD_LIGHT : info.color;
         ctx.stroke();
 
-        // 内圈斜切金属线
-        if (dr >= 9) {
-          const ir = dr * 0.78;
-          ctx.strokeStyle = 'rgba(255, 255, 255, 0.18)';
-          ctx.lineWidth = 1;
+        ctx.strokeStyle = `${info.color}88`;
+        ctx.lineWidth = 1.2;
+        ctx.setLineDash([5, 4]);
+        ctx.beginPath();
+        ctx.arc(mx, my, mr + 4.5, rotSlow, rotSlow + Math.PI * 1.5);
+        ctx.stroke();
+        ctx.setLineDash([]);
+
+        drawSkillGlyph(ctx, STYLE_GLYPH[style], mx, my, mr * 1.15, info.color, THEME.GOLD_LIGHT);
+        ctx.restore();
+
+        drawRoundRect(ctx, mx - 46, my + mr + 5, 92, 20, 5, 'rgba(8, 13, 25, 0.92)', info.color, 1);
+        drawText(ctx, `${info.short} ${unlCount}/26 ▶`, mx, my + mr + 15, {
+          size: 10.5,
+          bold: true,
+          color: isClubStyle ? THEME.GOLD_LIGHT : '#E2E8F0',
+          align: 'center',
+        });
+
+        if (canHit(mx, my)) {
+          hits.add(mx - mr - 10, my - mr - 8, (mr + 10) * 2, mr * 2 + 34, () => {
+            SoundEngine.playClick();
+            this.zoom = 1.88;
+            const unitR = Math.min(mapW, mapH) * 0.48 * this.zoom;
+            this.panX = Math.round(-Math.cos(sec.centerAngle) * unitR * 0.62);
+            this.panY = Math.round(-Math.sin(sec.centerAngle) * unitR * 0.62);
+            this.notice = `已展开【${info.name}】星宿特写（点节点解锁或查看卫星，左下角可返回宏观罗盘）`;
+          });
+        }
+      }
+    }
+
+    for (const sec of isMacro ? [] : outerSectors) {
+      if (!sec.visible) continue;
+      const style = sec.style;
+      const info = STYLE_LABELS[style];
+
+      // 48 流派被动（数值节点）
+      const stylePassives = V6_STYLE_PASSIVES.filter(p => p.style === style);
+      for (const p of stylePassives) {
+        const pos = posMap.get(`passive:${p.id}`);
+        if (!pos) continue;
+        const isOrigin = p.tier === 'origin';
+        const isRare = p.tier === 'rare';
+        const isSel = this.selected.kind === 'passive' && this.selected.id === p.id;
+        const nr = isOrigin
+          ? Math.max(8, 10.5 * Math.min(1.3, this.zoom))
+          : isRare
+          ? Math.max(6, 7.6 * Math.min(1.3, this.zoom))
+          : Math.max(4.8, 6.0 * Math.min(1.3, this.zoom));
+
+        ctx.save();
+        if (pos.unlocked || pos.reachable || isSel) {
+          ctx.shadowColor = isSel ? '#FFFFFF' : pos.unlocked ? info.color : '#38BDF8';
+          ctx.shadowBlur = isSel ? 12 : pos.unlocked ? 8 : 5;
+        }
+        ctx.fillStyle = pos.unlocked ? '#16213A' : pos.reachable ? '#0F1D33' : '#090F1D';
+        ctx.beginPath();
+        ctx.arc(pos.x, pos.y, nr, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.lineWidth = isSel ? 2.4 : isOrigin ? 2.1 : pos.unlocked ? 1.8 : 1.2;
+        ctx.strokeStyle = isSel ? '#FFFFFF' : pos.unlocked ? (isRare ? THEME.GOLD_LIGHT : info.color) : pos.reachable ? '#38BDF8' : '#334155';
+        ctx.stroke();
+
+        if (isOrigin && (pos.unlocked || pos.reachable)) {
+          ctx.strokeStyle = pos.unlocked ? THEME.GOLD_LIGHT : 'rgba(56,189,248,0.65)';
+          ctx.lineWidth = 1.1;
+          ctx.setLineDash([4, 4]);
           ctx.beginPath();
-          ctx.moveTo(pt.x, pt.y - ir);
-          ctx.lineTo(pt.x + ir, pt.y);
-          ctx.lineTo(pt.x, pt.y + ir);
-          ctx.lineTo(pt.x - ir, pt.y);
-          ctx.closePath();
+          ctx.arc(pos.x, pos.y, nr + 3.2, rotSlow, rotSlow + Math.PI * 1.5);
           ctx.stroke();
+          ctx.setLineDash([]);
         }
 
-        ctx.shadowBlur = 0;
-        if (dr >= 8) {
-          const gFg = isEquipped ? '#86EFAC' : isUnlocked ? '#FEF08A' : isReachable ? '#BAE6FD' : '#94A3B8';
-          const gAc = isEquipped ? '#4ADE80' : node.color;
-          drawSkillGlyph(ctx, glyphKind, pt.x, pt.y, dr * 1.42, gFg, gAc, { dim: !isUnlocked && !isReachable });
-        } else {
-          ctx.fillStyle = isEquipped ? '#4ADE80' : '#38BDF8';
-          ctx.beginPath();
-          ctx.arc(pt.x, pt.y, 2.4, 0, Math.PI * 2);
-          ctx.fill();
-        }
-        if (isUnlocked && filterMatch && dr >= 7) {
-          const rBg = effR >= 4 ? '#78350F' : effR >= 2 ? '#0C4A6E' : '#1E293B';
-          const rFg = effR >= 4 ? THEME.GOLD_LIGHT : effR >= 2 ? '#7DD3FC' : THEME.TX2;
-          drawRoundRect(ctx, pt.x + dr * 0.48 - 10, pt.y - dr - 9, 21, 13, 4, rBg, rFg, 1);
-          drawText(ctx, `R${effR}`, pt.x + dr * 0.48 + 0.5, pt.y - dr - 2.5, {
-            size: 8.5,
-            bold: true,
-            color: rFg,
+        drawSkillGlyph(
+          ctx,
+          getPassiveStatGlyph(p),
+          pos.x,
+          pos.y,
+          nr * (isOrigin ? 1.42 : 1.26),
+          pos.unlocked ? (isRare ? THEME.GOLD_LIGHT : info.color) : pos.reachable ? '#7DD3FC' : '#64748B',
+          THEME.GOLD_LIGHT,
+          { dim: !pos.unlocked && !pos.reachable }
+        );
+        ctx.restore();
+
+        if (this.zoom >= 1.5 || isOrigin || isSel) {
+          drawText(ctx, isOrigin ? `${info.short}原点` : p.name.slice(0, 4), pos.x, pos.y + nr + 8, {
+            size: isOrigin ? 9 : 8.5,
+            bold: isOrigin || isSel,
+            color: pos.unlocked ? info.color : pos.reachable ? '#7DD3FC' : THEME.TX3,
             align: 'center',
           });
         }
-      } else {
-        if (isReachable && filterMatch) {
-          ctx.strokeStyle = node.color;
-          ctx.globalAlpha = (0.22 + pulse * 0.35) * (filterMatch ? 1 : 0.2);
-          ctx.lineWidth = 1.6;
-          ctx.beginPath();
-          ctx.arc(pt.x, pt.y, r + 3 + pulse * 3, 0, Math.PI * 2);
-          ctx.stroke();
-          ctx.globalAlpha = filterMatch ? 1 : 0.16;
-        }
-        if (isUnlocked || isSelected || isResonating) {
-          ctx.shadowColor = isSelected ? '#FFFFFF' : isResonating ? THEME.GOLD_LIGHT : node.color;
-          ctx.shadowBlur = isSelected ? 15 : isResonating ? 10 + pulse * 6 : 6 + pulse * 4;
-        }
-        const darkMetalNodes = node.kind !== 'path';
-        ctx.fillStyle = darkMetalNodes
-          ? (isUnlocked ? '#17233B' : isReachable ? '#131D31' : '#0B111F')
-          : (isUnlocked ? node.color : isReachable ? '#1E293B' : '#0F172A');
-        ctx.beginPath();
-        ctx.arc(pt.x, pt.y, r, 0, Math.PI * 2);
-        ctx.fill();
-
-        ctx.lineWidth = isSelected ? 2.6 : isResonating ? 2.2 : isReachable ? 1.8 : 1.1;
-        ctx.strokeStyle = isSelected ? '#FFFFFF' : isResonating ? '#FEF08A' : isUnlocked ? '#FDE047' : isReachable ? node.color : '#334155';
-        ctx.stroke();
-
-        ctx.shadowBlur = 0;
-        if (node.kind === 'fusion' && node.aspect && filterMatch) {
-          const hr = r + 5.5 + (isResonating ? pulse * 1.5 : 0);
-          ctx.save();
-          ctx.strokeStyle = isResonating ? '#FEF08A' : isUnlocked ? '#F59E0B' : 'rgba(245, 158, 11, 0.48)';
-          ctx.lineWidth = isResonating ? 2.1 : isUnlocked ? 1.5 : 1.0;
-          ctx.beginPath();
-          ctx.moveTo(pt.x, pt.y - hr);
-          ctx.lineTo(pt.x + hr, pt.y);
-          ctx.lineTo(pt.x, pt.y + hr);
-          ctx.lineTo(pt.x - hr, pt.y);
-          ctx.closePath();
-          ctx.stroke();
-          ctx.restore();
-          if (r >= 6.5) {
-            drawSkillGlyph(
-              ctx,
-              'fusion',
-              pt.x,
-              pt.y,
-              r * 1.62,
-              isResonating ? '#FFFBEB' : isUnlocked ? '#FDE047' : '#F59E0B',
-              '#FEF08A',
-              { dim: !isUnlocked && !isReachable }
-            );
-          }
-        } else if (darkMetalNodes && r >= 7.5) {
-          const gColor = isResonating ? '#FEF08A' : isUnlocked ? '#FDE68A' : node.color;
-          drawSkillGlyph(ctx, glyphKind, pt.x, pt.y, r * 1.54, gColor, THEME.GOLD_LIGHT, { dim: !isUnlocked && !isReachable });
-        } else if (node.kind === 'path' && this.zoom >= 1.5 && r >= 6) {
-          drawSkillGlyph(ctx, glyphKind, pt.x, pt.y, r * 1.15, isUnlocked ? '#0B111E' : '#94A3B8', node.color);
-        }
-
-        if ((isResonating || node.kind === 'keystone') && filterMatch) {
-          const rot = this.animTime * 1.1 + nIdx;
-          ctx.strokeStyle = isResonating ? '#FEF08A' : node.color;
-          ctx.lineWidth = 1.4;
-          ctx.beginPath();
-          ctx.arc(pt.x, pt.y, r + 4.5, rot, rot + Math.PI * 0.65);
-          ctx.stroke();
-          ctx.beginPath();
-          ctx.arc(pt.x, pt.y, r + 4.5, rot + Math.PI, rot + Math.PI * 1.65);
-          ctx.stroke();
+        if (canHit(pos.x, pos.y)) {
+          hits.add(pos.x - nr - 4, pos.y - nr - 4, (nr + 4) * 2, (nr + 4) * 2, () => {
+            SoundEngine.playClick();
+            this.selected = { kind: 'passive', id: p.id };
+            this.drawerOpen = true;
+          });
         }
       }
+
+      // 36 流派主动技（双层金属菱形插槽 + 流派高清雕纹）
+      const styleSkills = V6_ACTIVE_SKILLS.filter(s => s.source === 'style' && s.style === style);
+      for (const sk of styleSkills) {
+        const pos = posMap.get(`skill:${sk.id}`);
+        if (!pos) continue;
+        const isEq = equippedSkillSet.has(sk.id);
+        const isSel = this.selected.kind === 'skill' && this.selected.id === sk.id;
+        const dr = Math.max(7.2, 9.2 * Math.min(1.35, this.zoom));
+
+        ctx.save();
+        if (isSel || isEq || pos.unlocked) {
+          ctx.shadowColor = isSel ? '#FFFFFF' : isEq ? '#4ADE80' : '#38BDF8';
+          ctx.shadowBlur = isSel ? 14 : 10;
+        }
+        ctx.fillStyle = isEq ? '#0C4A6E' : pos.unlocked ? '#172554' : pos.reachable ? '#0E223A' : '#0B111F';
+        ctx.beginPath();
+        ctx.moveTo(pos.x, pos.y - dr);
+        ctx.lineTo(pos.x + dr, pos.y);
+        ctx.lineTo(pos.x, pos.y + dr);
+        ctx.lineTo(pos.x - dr, pos.y);
+        ctx.closePath();
+        ctx.fill();
+        ctx.lineWidth = isSel ? 2.4 : isEq ? 2.1 : pos.unlocked ? 1.8 : 1.2;
+        ctx.strokeStyle = isSel ? '#FFFFFF' : isEq ? '#4ADE80' : pos.unlocked ? '#38BDF8' : pos.reachable ? '#7DD3FC' : '#334155';
+        ctx.stroke();
+
+        // 内层鎏金细框
+        const idr = dr * 0.72;
+        ctx.strokeStyle = isEq ? 'rgba(74,222,128,0.55)' : pos.unlocked ? 'rgba(250,204,21,0.45)' : 'rgba(100,116,139,0.22)';
+        ctx.lineWidth = 0.9;
+        ctx.beginPath();
+        ctx.moveTo(pos.x, pos.y - idr);
+        ctx.lineTo(pos.x + idr, pos.y);
+        ctx.lineTo(pos.x, pos.y + idr);
+        ctx.lineTo(pos.x - idr, pos.y);
+        ctx.closePath();
+        ctx.stroke();
+
+        drawSkillGlyph(ctx, STYLE_GLYPH[style], pos.x, pos.y, dr * 1.12, pos.unlocked ? '#7DD3FC' : '#64748B', THEME.GOLD_LIGHT, {
+          dim: !pos.unlocked && !pos.reachable,
+        });
+        ctx.restore();
+
+        if (this.zoom >= 1.28 || isSel || isEq) {
+          drawText(ctx, sk.name.slice(0, 4), pos.x, pos.y + dr + 8, {
+            size: 9,
+            bold: isEq || isSel,
+            color: isEq ? '#4ADE80' : pos.unlocked ? '#7DD3FC' : THEME.TX3,
+            align: 'center',
+          });
+        }
+        if (canHit(pos.x, pos.y)) {
+          hits.add(pos.x - dr - 4, pos.y - dr - 4, (dr + 4) * 2, (dr + 4) * 2, () => {
+            SoundEngine.playClick();
+            this.selected = { kind: 'skill', id: sk.id };
+            this.drawerOpen = true;
+          });
+        }
+      }
+
+      // 72 流派手牌（攻剑/守盾图标 + 3颗环绕卫星宝石）
+      const styleDirs = V6_DIRECTIVES.filter(d => d.source === 'style' && d.style === style);
+      for (const dir of styleDirs) {
+        const pos = posMap.get(`directive:${dir.id}`);
+        if (!pos) continue;
+        const isEq = equippedPoolSet.has(dir.id);
+        const isSel = this.selected.kind === 'directive' && this.selected.id === dir.id;
+        const sats = ast.directiveSatellites[dir.id] ?? [];
+        const nr = Math.max(5.2, 6.8 * Math.min(1.38, this.zoom));
+        const subAngle = Math.atan2(pos.y - cy, pos.x - cx);
+
+        ctx.save();
+        if (isSel || isEq || pos.unlocked) {
+          ctx.shadowColor = isSel ? '#FFFFFF' : isEq ? '#4ADE80' : ZONE_COLOR[dir.zone];
+          ctx.shadowBlur = isSel ? 12 : isEq ? 9 : 5;
+        }
+        ctx.fillStyle = pos.unlocked ? (isEq ? '#14532D' : '#1E293B') : pos.reachable ? '#101C32' : '#0B111F';
+        ctx.beginPath();
+        ctx.arc(pos.x, pos.y, nr, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.lineWidth = isSel ? 2.4 : isEq ? 2.1 : pos.unlocked ? 1.6 : 1.1;
+        ctx.strokeStyle = isSel ? '#FFFFFF' : isEq ? '#4ADE80' : pos.unlocked ? ZONE_COLOR[dir.zone] : pos.reachable ? '#38BDF8' : '#334155';
+        ctx.stroke();
+
+        drawIcon(
+          ctx,
+          dir.tendency === 'ATK' ? 'sword' : 'shield',
+          pos.x,
+          pos.y,
+          nr * 1.15,
+          pos.unlocked ? (isEq ? '#86EFAC' : ZONE_COLOR[dir.zone]) : pos.reachable ? '#7DD3FC' : '#475569'
+        );
+
+        (['A', 'B', 'C'] as V6SatelliteKey[]).forEach((sk, si) => {
+          const sa = subAngle - 0.55 + si * 0.55;
+          const sx = pos.x + Math.cos(sa) * (nr + 3.4);
+          const sy = pos.y + Math.sin(sa) * (nr + 3.4);
+          const lit = sats.includes(sk);
+          ctx.fillStyle = lit ? (sk === 'C' ? THEME.GOLD_LIGHT : sk === 'B' ? '#38BDF8' : '#4ADE80') : 'rgba(100,116,139,0.35)';
+          ctx.beginPath();
+          ctx.arc(sx, sy, lit ? 2.1 : 1.2, 0, Math.PI * 2);
+          ctx.fill();
+        });
+        ctx.restore();
+
+        if (this.zoom >= 1.55 || isSel) {
+          drawText(ctx, dir.name.slice(0, 4), pos.x, pos.y + nr + 8, {
+            size: 8.5,
+            bold: isSel || isEq,
+            color: isEq ? '#4ADE80' : pos.unlocked ? THEME.TX1 : THEME.TX3,
+            align: 'center',
+          });
+        }
+        if (canHit(pos.x, pos.y)) {
+          hits.add(pos.x - nr - 4, pos.y - nr - 4, (nr + 4) * 2, (nr + 4) * 2, () => {
+            SoundEngine.playClick();
+            this.selected = { kind: 'directive', id: dir.id };
+            this.drawerOpen = true;
+          });
+        }
+      }
+    }
+
+    // 3b. 第 3 层：6 个当前正对的【防线×流派融合奇点】（双层鎏金六角星槽 + fusion 高清雕纹）
+    for (const al of aligned) {
+      const pos = posMap.get(`fusion:${al.fusion.id}`);
+      if (!pos) continue;
+      const isSel = this.selected.kind === 'fusion' && this.selected.id === al.fusion.id;
+      const r = Math.max(9.5, 12.2 * Math.min(1.3, this.zoom));
+
+      ctx.save();
+      if (pos.unlocked || pos.reachable || isSel) {
+        ctx.shadowColor = isSel ? '#FFFFFF' : THEME.GOLD_LIGHT;
+        ctx.shadowBlur = pos.unlocked ? 16 : 10;
+      }
+      ctx.fillStyle = pos.unlocked ? '#422006' : pos.reachable ? '#1C1917' : '#0F172A';
+      ctx.beginPath();
+      for (let h = 0; h < 6; h++) {
+        const ha = (h * Math.PI) / 3 - Math.PI / 6;
+        const hx = pos.x + Math.cos(ha) * r;
+        const hy = pos.y + Math.sin(ha) * r;
+        if (h === 0) ctx.moveTo(hx, hy);
+        else ctx.lineTo(hx, hy);
+      }
+      ctx.closePath();
+      ctx.fill();
+      ctx.lineWidth = isSel ? 2.6 : pos.unlocked ? 2.3 : 1.5;
+      ctx.strokeStyle = isSel ? '#FFFFFF' : pos.unlocked ? '#FEF08A' : pos.reachable ? '#F59E0B' : ast.locked ? '#64748B' : '#38BDF8';
+      ctx.stroke();
+
+      if (pos.unlocked || pos.reachable) {
+        ctx.strokeStyle = pos.unlocked ? 'rgba(254,240,138,0.65)' : 'rgba(245,158,11,0.5)';
+        ctx.lineWidth = 1.1;
+        ctx.setLineDash([4, 4]);
+        ctx.beginPath();
+        ctx.arc(pos.x, pos.y, r + 3.5, -rotSlow, -rotSlow + Math.PI * 1.4);
+        ctx.stroke();
+        ctx.setLineDash([]);
+      }
+
+      drawSkillGlyph(ctx, 'fusion', pos.x, pos.y, r * 1.38, pos.unlocked ? '#FEF08A' : '#F59E0B', THEME.GOLD_LIGHT, {
+        dim: !pos.unlocked && !pos.reachable,
+      });
       ctx.restore();
 
-      const showLabel =
-        isSelected ||
-        node.kind === 'origin' ||
-        node.kind === 'keystone' ||
-        (showMidLabels && (isActiveSkill || node.kind === 'formation' || node.kind === 'fusion')) ||
-        showAllLabels;
-      if (filterMatch && showLabel) {
-        const rawLabel = node.kind === 'formation' ? node.formationTag! : node.name;
-        drawText(ctx, rawLabel, pt.x, pt.y + (isActiveSkill ? r * 1.32 : r) + 11, {
-          size: isActiveSkill ? 10.5 : node.kind === 'path' ? 10 : 11,
-          bold: isActiveSkill || isUnlocked || isSelected || node.kind === 'origin' || node.kind === 'keystone',
-          color: isEquipped ? '#4ADE80' : isActiveSkill ? '#7DD3FC' : isResonating ? '#FEF08A' : isUnlocked ? THEME.GOLD_LIGHT : isReachable ? THEME.TX1 : THEME.TX3,
+      drawText(ctx, al.fusion.name.slice(0, 5), pos.x, pos.y + r + 10, {
+        size: 9.5,
+        bold: true,
+        color: pos.unlocked ? THEME.GOLD_LIGHT : pos.reachable ? '#FDE68A' : '#94A3B8',
+        align: 'center',
+      });
+      if (canHit(pos.x, pos.y)) {
+        hits.add(pos.x - r - 6, pos.y - r - 6, (r + 6) * 2, (r + 6) * 2, () => {
+          SoundEngine.playClick();
+          this.selected = { kind: 'fusion', id: al.fusion.id };
+          this.drawerOpen = true;
+        });
+      }
+    }
+
+    // 3c. 第 2 层：内环 12 个防线体系被动 + 16 阵型节点（宏观罗盘仅绘三大防线原点与当前阵型，消除拥挤）
+    for (const sp of V6_SYSTEM_PASSIVES) {
+      const pos = posMap.get(`passive:${sp.id}`);
+      if (!pos || !sp.system) continue;
+      const isOrigin = sp.tier === 'origin';
+      if (isMacro && !isOrigin) continue;
+      const isSel = this.selected.kind === 'passive' && this.selected.id === sp.id;
+      const sysCol = SYSTEM_LABELS[sp.system].color;
+      const r = isOrigin ? (isMacro ? 14 : Math.max(8, 10.2 * Math.min(1.28, this.zoom))) : Math.max(5.2, 6.4 * Math.min(1.28, this.zoom));
+
+      ctx.save();
+      if (pos.unlocked || pos.reachable || isSel) {
+        ctx.shadowColor = isSel ? '#FFFFFF' : pos.unlocked ? sysCol : '#38BDF8';
+        ctx.shadowBlur = isSel ? 12 : 7;
+      }
+      ctx.fillStyle = pos.unlocked ? '#12223C' : '#0B111F';
+      ctx.beginPath();
+      ctx.arc(pos.x, pos.y, r, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.lineWidth = isSel ? 2.4 : isOrigin ? 2.0 : 1.4;
+      ctx.strokeStyle = isSel ? '#FFFFFF' : pos.unlocked ? sysCol : pos.reachable ? '#38BDF8' : '#334155';
+      ctx.stroke();
+
+      drawSkillGlyph(ctx, getPassiveStatGlyph(sp), pos.x, pos.y, r * (isOrigin ? 1.42 : 1.24), pos.unlocked ? sysCol : '#64748B', THEME.GOLD_LIGHT, {
+        dim: !pos.unlocked && !pos.reachable,
+      });
+      ctx.restore();
+
+      if (isOrigin || this.zoom >= 1.45 || isSel) {
+        drawText(ctx, isOrigin ? SYSTEM_LABELS[sp.system].name.slice(0, 3) : sp.name.slice(0, 4), pos.x, pos.y + r + 8, {
+          size: 8.5,
+          bold: isOrigin || isSel,
+          color: pos.unlocked ? sysCol : THEME.TX3,
           align: 'center',
         });
       }
-
-      if (
-        !this.summaryModalOpen &&
-        !this.inDrawer(pt.x, pt.y) &&
-        pt.x >= mapX + 6 &&
-        pt.x <= mapX + mapW - 6 &&
-        pt.y >= mapY + 6 &&
-        pt.y <= mapY + mapH - 6
-      ) {
-        hits.add(pt.x - r - 8, pt.y - r - 8, (r + 8) * 2, (r + 8) * 2 + 8, () => {
+      if (canHit(pos.x, pos.y)) {
+        hits.add(pos.x - r - 4, pos.y - r - 4, (r + 4) * 2, (r + 4) * 2, () => {
           SoundEngine.playClick();
-          this.selectedNodeId = node.id;
-          this.nodeDrawerOpen = true;
+          this.selected = { kind: 'passive', id: sp.id };
+          this.drawerOpen = true;
         });
       }
+    }
+
+    for (const sys of INNER_RING_SYSTEMS) {
+      const sysCol = SYSTEM_LABELS[sys].color;
+      for (const fm of SYSTEM_FORMATIONS[sys]) {
+        const pos = posMap.get(`formation:${fm}`);
+        if (!pos) continue;
+        const isCurFm = club.formation === fm;
+        if (isMacro && !isCurFm) continue;
+        const isSel = this.selected.kind === 'formation' && this.selected.formation === fm;
+        const r = Math.max(6.2, 7.8 * Math.min(1.28, this.zoom));
+
+        ctx.save();
+        if (isCurFm || isSel) {
+          ctx.shadowColor = isSel ? '#FFFFFF' : THEME.GREEN;
+          ctx.shadowBlur = 10;
+        }
+        ctx.fillStyle = isCurFm ? '#064E3B' : pos.unlocked ? '#16243E' : '#0F172A';
+        ctx.beginPath();
+        ctx.arc(pos.x, pos.y, r, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.lineWidth = isSel ? 2.4 : isCurFm ? 2.1 : 1.3;
+        ctx.strokeStyle = isSel ? '#FFFFFF' : isCurFm ? THEME.GREEN : pos.unlocked ? sysCol : '#475569';
+        ctx.stroke();
+        ctx.restore();
+
+        if (this.zoom >= 0.95 || isCurFm || isSel) {
+          drawText(ctx, fm, pos.x, pos.y + r + 8, {
+            size: 8.5,
+            bold: isCurFm || isSel,
+            color: isCurFm ? THEME.GREEN : pos.unlocked ? '#E2E8F0' : '#94A3B8',
+            align: 'center',
+            mono: true,
+          });
+        }
+        if (canHit(pos.x, pos.y)) {
+          hits.add(pos.x - r - 5, pos.y - r - 5, (r + 5) * 2, (r + 5) * 2, () => {
+            SoundEngine.playClick();
+            this.selected = { kind: 'formation', formation: fm };
+            this.drawerOpen = true;
+          });
+        }
+      }
+    }
+
+    // 3d. 第 1 层：6 个流派宗师大节点（双环金属槽 + 流派高清雕纹）
+    for (const seal of V6_MASTERY_SEALS) {
+      const pos = posMap.get(`seal:${seal.id}`);
+      if (!pos) continue;
+      const isSel = this.selected.kind === 'seal' && this.selected.id === seal.id;
+      const sCol = STYLE_LABELS[seal.style].color;
+      const r = Math.max(9.5, 11.8 * Math.min(1.25, this.zoom));
+
+      ctx.save();
+      if (pos.unlocked || pos.reachable || isSel) {
+        ctx.shadowColor = isSel ? '#FFFFFF' : pos.unlocked ? THEME.GOLD_LIGHT : sCol;
+        ctx.shadowBlur = 14;
+      }
+      ctx.fillStyle = pos.unlocked ? '#422006' : pos.reachable ? '#1E293B' : '#0A101E';
+      ctx.beginPath();
+      ctx.arc(pos.x, pos.y, r, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.lineWidth = isSel ? 2.6 : pos.unlocked ? 2.3 : 1.5;
+      ctx.strokeStyle = isSel ? '#FFFFFF' : pos.unlocked ? THEME.GOLD_LIGHT : pos.reachable ? sCol : '#475569';
+      ctx.stroke();
+
+      drawSkillGlyph(ctx, STYLE_GLYPH[seal.style], pos.x, pos.y, r * 1.38, pos.unlocked ? THEME.GOLD_LIGHT : sCol, THEME.GOLD_LIGHT, {
+        dim: !pos.unlocked && !pos.reachable,
+      });
+      ctx.restore();
+
+      if (canHit(pos.x, pos.y)) {
+        hits.add(pos.x - r - 5, pos.y - r - 5, (r + 5) * 2, (r + 5) * 2, () => {
+          SoundEngine.playClick();
+          this.selected = { kind: 'seal', id: seal.id };
+          this.drawerOpen = true;
+        });
+      }
+    }
+
+    // 3e. 圆心：★ 超级宗师 · 全攻全守（主权皇冠高清雕纹 + 旋转星环）
+    const coreCheck = canUnlockCore(ast);
+    const coreR = Math.max(16, 20.5 * Math.min(1.25, this.zoom));
+    const coreSel = this.selected.kind === 'core';
+    const pulse = 0.5 + 0.5 * Math.sin(this.animTime * 2.8);
+    ctx.save();
+    ctx.shadowColor = ast.coreUnlocked ? '#FACC15' : coreCheck.ok ? '#38BDF8' : '#475569';
+    ctx.shadowBlur = ast.coreUnlocked ? 22 + pulse * 8 : coreCheck.ok ? 14 : 6;
+    ctx.fillStyle = ast.coreUnlocked ? '#78350F' : '#0F172A';
+    ctx.beginPath();
+    ctx.arc(cx, cy, coreR, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.lineWidth = coreSel ? 3 : 2.3;
+    ctx.strokeStyle = coreSel ? '#FFFFFF' : ast.coreUnlocked ? '#FEF08A' : coreCheck.ok ? '#38BDF8' : THEME.BORDER_GOLD;
+    ctx.stroke();
+
+    ctx.strokeStyle = ast.coreUnlocked ? 'rgba(254,240,138,0.75)' : 'rgba(250,204,21,0.38)';
+    ctx.lineWidth = 1.2;
+    ctx.setLineDash([5, 5]);
+    ctx.beginPath();
+    ctx.arc(cx, cy, coreR + 4.5, rotSlow, rotSlow + Math.PI * 1.65);
+    ctx.stroke();
+    ctx.setLineDash([]);
+
+    drawSkillGlyph(ctx, 'master', cx, cy, coreR * 1.44, ast.coreUnlocked ? '#FEF08A' : THEME.GOLD_LIGHT, '#FEF08A', {
+      dim: !ast.coreUnlocked && !coreCheck.ok,
     });
     ctx.restore();
 
-    // 左上角缩放倍率 & 右上角纯矢量图例
-    drawBadge(ctx, mapX + 14, mapY + 14, 184, 24, `缩放 ${Math.round(this.zoom * 100)}% · 拖拽平移`, 'rgba(14,22,40,0.88)', '#7DD3FC');
-    const legX = mapX + mapW - 294;
-    const legY = mapY + 14;
-    drawRoundRect(ctx, legX, legY, 280, 24, 6, 'rgba(14,22,40,0.92)', 'rgba(56,189,248,0.45)');
-    drawSkillGlyph(ctx, 'tiki', legX + 18, legY + 12, 14, '#7DD3FC', '#38BDF8');
-    drawText(ctx, '主动技(34)', legX + 30, legY + 12, { size: 10.5, bold: true, color: '#7DD3FC' });
-    drawSkillGlyph(ctx, 'fusion', legX + 111, legY + 12, 14, '#FDE047', '#F59E0B');
-    drawText(ctx, '融合威能(18)', legX + 123, legY + 12, { size: 10.5, bold: true, color: THEME.GOLD_LIGHT });
-    ctx.fillStyle = '#94A3B8';
-    ctx.beginPath();
-    ctx.arc(legX + 208, legY + 12, 4, 0, Math.PI * 2);
-    ctx.fill();
-    drawText(ctx, '被动(72)', legX + 218, legY + 12, { size: 10.5, bold: true, color: '#CBD5E1' });
-
-    // 左下角缩放与右下角平移控制
-    drawButton(ctx, hits, mapX + 14, mapY + mapH - 40, 62, 28, '全景', () => {
-      this.zoom = 0.88;
-      this.panX = 0;
-      this.panY = 0;
-    }, { active: this.zoom <= 0.95, fontSize: 11 });
-    drawButton(ctx, hits, mapX + 82, mapY + mapH - 40, 48, 28, '－', () => {
-      this.zoom = Math.max(0.72, Math.round((this.zoom - 0.25) * 100) / 100);
-    }, { fontSize: 13 });
-    drawButton(ctx, hits, mapX + 136, mapY + mapH - 40, 48, 28, '＋', () => {
-      this.zoom = Math.min(2.8, Math.round((this.zoom + 0.25) * 100) / 100);
-    }, { fontSize: 13 });
-    drawButton(ctx, hits, mapX + 190, mapY + mapH - 40, 68, 28, '特写', () => {
-      this.zoom = 1.85;
-      this.panX = 0;
-      this.panY = 0;
-    }, { active: this.zoom >= 1.65, fontSize: 11 });
-
-    if (!this.nodeDrawerOpen) {
-      drawButton(ctx, hits, mapX + mapW - 156, mapY + mapH - 40, 34, 28, '←', () => { this.panX += 60; }, { variant: 'ghost', fontSize: 12 });
-      drawButton(ctx, hits, mapX + mapW - 118, mapY + mapH - 40, 34, 28, '↑', () => { this.panY += 60; }, { variant: 'ghost', fontSize: 12 });
-      drawButton(ctx, hits, mapX + mapW - 80, mapY + mapH - 40, 34, 28, '↓', () => { this.panY -= 60; }, { variant: 'ghost', fontSize: 12 });
-      drawButton(ctx, hits, mapX + mapW - 42, mapY + mapH - 40, 34, 28, '→', () => { this.panX -= 60; }, { variant: 'ghost', fontSize: 12 });
+    if (canHit(cx, cy)) {
+      hits.add(cx - coreR - 6, cy - coreR - 6, (coreR + 6) * 2, (coreR + 6) * 2, () => {
+        SoundEngine.playClick();
+        this.selected = { kind: 'core' };
+        this.drawerOpen = true;
+      });
     }
 
-    // 浮层 1：点击节点滑出的详情抽屉
-    if (this.nodeDrawerOpen) {
-      this.renderNodeDrawer(ctx, hits, league, mapX, mapY, mapW, mapH, actions);
-    }
-
-    // 浮层 2：引擎行为修正、熟练度与洗点重置弹窗
-    if (this.summaryModalOpen) {
-      this.renderSummaryModal(ctx, hits, league, actions);
-    }
+    ctx.restore();
   }
 
-  private renderNodeDrawer(
+  private renderInspectorDrawer(
     ctx: CanvasRenderingContext2D,
     hits: HitRegistry,
     league: LeagueManager,
@@ -716,375 +1561,950 @@ export class MetaScreen {
     mapH: number,
     actions: { onSave: () => void }
   ): void {
-    const st = league.getState();
-    const club = league.getUserClub();
-    const unlocked = league.getSkillWebUnlocked();
-    const unlockedSet = new Set(unlocked);
-
-    const dw = 392;
-    const dh = mapH - 24;
-    const dx = mapX + mapW - dw - 12;
-    const dy = mapY + 12;
+    const dw = 408;
+    const dh = mapH - 20;
+    const dx = mapX + mapW - dw - 10;
+    const dy = mapY + 10;
     this.lastDrawerRect = { x: dx, y: dy, w: dw, h: dh };
 
-    drawChamferPanel(ctx, dx, dy, dw, dh, 12, 'rgba(11, 17, 32, 0.96)', THEME.BORDER_GOLD, 1.6, THEME.GOLD_LIGHT);
+    drawChamferPanel(ctx, dx, dy, dw, dh, 12, 'rgba(10, 16, 30, 0.97)', THEME.BORDER_GOLD, 1.6, THEME.GOLD_LIGHT);
+    hits.add(dx, dy, dw, dh, () => {});
 
-    const sel = SKILL_WEB_NODES.find(n => n.id === this.selectedNodeId) ?? SKILL_WEB_NODES[0];
-    const selUnlocked = unlockedSet.has(sel.id);
-    const selReachable = canUnlockNode(sel.id, unlocked);
-    const selResonating = selUnlocked && isNodeResonating(sel, club.formation, club.style);
-    const canBuy = selReachable && st.metaPointsTotal >= sel.cost;
-
-    const kindLabel =
-      sel.activeSkill ? '主动触发技 · 暗黑4质变' :
-      sel.kind === 'origin' ? '体系/战术原点' :
-      sel.kind === 'formation' ? '阵型专精节点' :
-      sel.aspect ? '传奇融合威能奇点' :
-      sel.kind === 'keystone' ? '跨界终极奇点' : '战术路径节点';
-
-    drawBadge(ctx, dx + 18, dy + 16, sel.activeSkill ? 156 : 136, 22, kindLabel, sel.activeSkill ? '#0C4A6E' : sel.aspect ? '#78350F' : '#1E293B', sel.activeSkill ? '#38BDF8' : sel.aspect ? THEME.GOLD_LIGHT : sel.color);
-    drawBadge(
-      ctx,
-      dx + dw - 168,
-      dy + 16,
-      90,
-      22,
-      selResonating ? '共鸣 ×2 ✓' : selUnlocked ? '已点亮 ✓' : selReachable ? '可点亮' : '未连通',
-      selResonating ? '#78350F' : selUnlocked ? '#14532D' : selReachable ? '#1E3A5F' : '#111827',
-      selResonating ? THEME.GOLD_LIGHT : selUnlocked ? THEME.GREEN : selReachable ? '#7DD3FC' : THEME.TX3
-    );
-    drawButton(ctx, hits, dx + dw - 68, dy + 14, 52, 26, '关闭', () => {
-      this.nodeDrawerOpen = false;
+    drawButton(ctx, hits, dx + dw - 62, dy + 12, 48, 26, '关闭', () => {
+      this.drawerOpen = false;
     }, { variant: 'ghost', fontSize: 11 });
 
-    drawRoundRect(ctx, dx + 18, dy + 42, 28, 28, 6, 'rgba(15, 23, 42, 0.9)', sel.color, 1.2);
-    drawSkillGlyph(ctx, getNodeGlyphKind(sel), dx + 32, dy + 56, 20, selUnlocked ? THEME.GOLD_LIGHT : sel.color, THEME.GOLD_LIGHT);
-    drawText(ctx, sel.name, dx + 54, dy + 56, { size: 20, bold: true, color: sel.color });
-    drawWrappedText(ctx, sel.desc, dx + 18, dy + 78, dw - 36, 17, {
-      size: 12,
+    const sel = this.selected;
+    if (sel.kind === 'passive') {
+      this.renderPassiveInspector(ctx, hits, league, sel.id, dx, dy, dw, dh, actions);
+    } else if (sel.kind === 'directive') {
+      this.renderDirectiveInspector(ctx, hits, league, sel.id, dx, dy, dw, dh, actions);
+    } else if (sel.kind === 'skill') {
+      this.renderSkillInspector(ctx, hits, league, sel.id, dx, dy, dw, dh, actions);
+    } else if (sel.kind === 'fusion') {
+      this.renderFusionInspector(ctx, hits, league, sel.id, dx, dy, dw, dh, actions);
+    } else if (sel.kind === 'formation') {
+      this.renderFormationInspector(ctx, hits, league, sel.formation, dx, dy, dw, dh, actions);
+    } else if (sel.kind === 'seal') {
+      this.renderSealInspector(ctx, hits, league, sel.id, dx, dy, dw, dh, actions);
+    } else if (sel.kind === 'core') {
+      this.renderCoreInspector(ctx, hits, league, dx, dy, dw, dh, actions);
+    } else if (sel.kind === 'catalog_directives') {
+      this.renderDirectiveCatalog(ctx, hits, league, dx, dy, dw, dh);
+    } else if (sel.kind === 'catalog_skills') {
+      this.renderSkillCatalog(ctx, hits, league, dx, dy, dw, dh);
+    }
+  }
+
+  private renderPassiveInspector(
+    ctx: CanvasRenderingContext2D,
+    hits: HitRegistry,
+    league: LeagueManager,
+    passiveId: string,
+    dx: number,
+    dy: number,
+    dw: number,
+    _dh: number,
+    actions: { onSave: () => void }
+  ): void {
+    const p = V6_PASSIVE_MAP[passiveId];
+    if (!p) return;
+    const ast = league.getV6Astrolabe();
+    const pt = league.getState().metaPointsTotal;
+    const unlocked = ast.unlockedPassives.includes(passiveId);
+    const prereq = canUnlockV6Node(ast, 'passive', passiveId);
+    const accent = p.style ? STYLE_LABELS[p.style].color : p.system ? SYSTEM_LABELS[p.system].color : '#38BDF8';
+    const tierLabel = p.tier === 'origin' ? '星盘原点' : p.tier === 'rare' ? '稀有被动' : '数值被动';
+
+    drawBadge(ctx, dx + 16, dy + 14, 78, 22, tierLabel, '#0F172A', accent);
+    drawBadge(ctx, dx + 100, dy + 14, 62, 22, p.tendency === 'ATK' ? '进攻线' : '防守线', '#1E293B', p.tendency === 'ATK' ? '#FB7185' : '#4ADE80');
+
+    drawText(ctx, p.name, dx + 16, dy + 54, { size: 19, bold: true, color: THEME.TX1 });
+    drawText(
+      ctx,
+      p.source === 'style' && p.style
+        ? `${STYLE_LABELS[p.style].name} · 永久生效数值节点`
+        : p.source === 'system' && p.system
+        ? `${SYSTEM_LABELS[p.system].name} · 使用该防线体系时生效`
+        : `${p.formation} 阵型专精被动`,
+      dx + 16,
+      dy + 76,
+      { size: 11, color: THEME.TX2 }
+    );
+
+    drawRoundRect(ctx, dx + 16, dy + 94, dw - 32, 74, 8, 'rgba(20, 83, 45, 0.25)', accent, 1.3);
+    drawText(ctx, '永久数值 / 机制增益', dx + 26, dy + 112, { size: 11, bold: true, color: THEME.GOLD_LIGHT });
+    drawWrappedText(ctx, p.desc, dx + 26, dy + 132, dw - 52, 18, { size: 12.5, color: THEME.TX1, maxLines: 2 });
+
+    // 前置连线状态卡
+    drawRoundRect(ctx, dx + 16, dy + 180, dw - 32, 58, 8, THEME.BG_CARD, unlocked || prereq.ok ? THEME.GREEN : '#F59E0B');
+    drawWrappedText(
+      ctx,
+      unlocked
+        ? '✓ 该数值节点已点亮，并已向后续连线节点导通星轨！'
+        : prereq.ok
+        ? '✓ 前置星轨已连通，可立即点亮此节点。'
+        : `🔒 ${prereq.reason}`,
+      dx + 26,
+      dy + 194,
+      dw - 52,
+      16,
+      { size: 11, color: unlocked || prereq.ok ? THEME.GREEN : '#FBBF24', maxLines: 2 }
+    );
+
+    if (!unlocked) {
+      const canBuy = prereq.ok && pt >= p.unlockCost;
+      drawButton(
+        ctx,
+        hits,
+        dx + 16,
+        dy + 252,
+        dw - 32,
+        40,
+        !prereq.ok ? '前置连线未点亮' : pt >= p.unlockCost ? `点亮数值被动 (消耗 ${p.unlockCost}pt)` : `点数不足 (需要 ${p.unlockCost}pt)`,
+        () => {
+          const r = league.unlockV6Passive(passiveId);
+          if (r.ok) {
+            SoundEngine.playGoalCheer();
+            this.notice = `已点亮数值被动【${p.name}】！`;
+            actions.onSave();
+          } else {
+            SoundEngine.playWarning();
+            this.notice = r.reason || '无法解锁';
+          }
+        },
+        { variant: canBuy ? 'gold' : 'ghost', disabled: !canBuy, fontSize: 12.5 }
+      );
+
+      if (prereq.missing.length > 0) {
+        const firstMissing = prereq.missing[0];
+        drawButton(ctx, hits, dx + 16, dy + 302, dw - 32, 32, `定位前置节点：【${firstMissing.label}】 ▶`, () => {
+          SoundEngine.playClick();
+          this.selected = { kind: firstMissing.kind, id: firstMissing.id };
+        }, { variant: 'primary', fontSize: 11 });
+      }
+    } else {
+      drawBadge(ctx, dx + 16, dy + 252, dw - 32, 36, '数值被动已永久激活 ✓', '#14532D', THEME.GREEN);
+    }
+  }
+
+  private renderDirectiveInspector(
+    ctx: CanvasRenderingContext2D,
+    hits: HitRegistry,
+    league: LeagueManager,
+    dirId: string,
+    dx: number,
+    dy: number,
+    dw: number,
+    _dh: number,
+    actions: { onSave: () => void }
+  ): void {
+    const def = V6_DIRECTIVE_MAP[dirId];
+    if (!def) return;
+    const ast = league.getV6Astrolabe();
+    const pt = league.getState().metaPointsTotal;
+    const unlocked = ast.unlockedDirectives.includes(dirId);
+    const prereq = canUnlockV6Node(ast, 'directive', dirId);
+    const sats = ast.directiveSatellites[dirId] ?? [];
+    const pool = ast.checkpointPools[this.activeCheckpoint] ?? [];
+    const equipped = pool.includes(dirId);
+    const zCol = ZONE_COLOR[def.zone];
+
+    drawBadge(ctx, dx + 16, dy + 14, 62, 22, `${ZONE_LABEL[def.zone]}·${def.tendency === 'ATK' ? '攻' : '守'}`, '#0F172A', zCol);
+    drawBadge(ctx, dx + 84, dy + 14, 48, 22, `${def.tpCost} TP`, '#78350F', THEME.GOLD_LIGHT);
+    drawBadge(ctx, dx + 138, dy + 14, 64, 22, `${def.durationMinutes} 分钟`, '#1E293B', '#7DD3FC');
+
+    drawText(ctx, def.name, dx + 16, dy + 52, { size: 18.5, bold: true, color: THEME.TX1 });
+    drawText(
+      ctx,
+      def.source === 'style' && def.style
+        ? `${STYLE_LABELS[def.style].name} · ${def.route === 'steady' ? '稳健路线' : '赌博爆发'}`
+        : def.source === 'formation'
+        ? `阵型专属 · ${def.formation}`
+        : '融合奇点王牌手牌',
+      dx + 16,
+      dy + 72,
+      { size: 11, color: THEME.TX2 }
+    );
+
+    drawRoundRect(ctx, dx + 16, dy + 86, dw - 32, 44, 7, 'rgba(20, 83, 45, 0.28)', 'rgba(34, 197, 94, 0.5)');
+    drawText(ctx, '收益', dx + 26, dy + 108, { size: 10.5, bold: true, color: THEME.GREEN });
+    drawWrappedText(ctx, def.benefitSummary, dx + 62, dy + 94, dw - 88, 15, { size: 11, color: THEME.TX1, maxLines: 2 });
+
+    drawRoundRect(ctx, dx + 16, dy + 135, dw - 32, 44, 7, 'rgba(127, 29, 29, 0.28)', 'rgba(248, 113, 113, 0.5)');
+    drawText(ctx, '代价', dx + 26, dy + 157, { size: 10.5, bold: true, color: '#FCA5A5' });
+    drawWrappedText(ctx, def.riskSummary, dx + 62, dy + 143, dw - 88, 15, { size: 11, color: '#FECACA', maxLines: 2 });
+
+    if (!unlocked) {
+      if (!prereq.ok) {
+        drawText(ctx, fitText(ctx, `🔒 ${prereq.reason}`, dw - 32, 10.5), dx + 16, dy + 191, { size: 10.5, color: '#FBBF24' });
+      }
+      const canBuy = prereq.ok && pt >= def.unlockCost;
+      drawButton(
+        ctx,
+        hits,
+        dx + 16,
+        dy + 202,
+        dw - 32,
+        34,
+        !prereq.ok ? '需先点亮前置连线节点' : pt >= def.unlockCost ? `点亮手牌 (消耗 ${def.unlockCost}pt)` : `点数不足 (需要 ${def.unlockCost}pt)`,
+        () => {
+          const r = league.unlockV6Directive(dirId);
+          if (r.ok) {
+            SoundEngine.playGoalCheer();
+            this.notice = `已解锁手牌【${def.name}】！`;
+            actions.onSave();
+          } else {
+            SoundEngine.playWarning();
+            this.notice = r.reason || '解锁失败';
+          }
+        },
+        { variant: canBuy ? 'gold' : 'ghost', disabled: !canBuy, fontSize: 12 }
+      );
+    } else {
+      const cpLbl = ast.useUniversalPool ? '通用指令池' : `${this.activeCheckpoint.slice(1)}' 拐点池`;
+      drawButton(
+        ctx,
+        hits,
+        dx + 16,
+        dy + 196,
+        dw - 32,
+        36,
+        equipped ? `已编入 ${cpLbl} (${pool.length}/4) · 点击移出` : `编入 ${cpLbl} (${pool.length}/4)`,
+        () => {
+          const r = league.toggleV6CheckpointCard(this.activeCheckpoint, dirId);
+          if (r.ok) {
+            SoundEngine.playClick();
+            this.notice = r.equipped ? `已将【${def.name}】编入${cpLbl}` : `已从${cpLbl}移出【${def.name}】`;
+            actions.onSave();
+          } else {
+            SoundEngine.playWarning();
+            this.notice = r.reason || '操作失败';
+          }
+        },
+        { variant: equipped ? 'green' : 'primary', fontSize: 12 }
+      );
+    }
+
+    drawText(ctx, `卫星质变节点 (${sats.length}/3 · 满 3 颗计入宗师印前置)`, dx + 16, dy + 252, {
+      size: 11.5,
+      bold: true,
+      color: THEME.GOLD_LIGHT,
+    });
+
+    (['A', 'B', 'C'] as V6SatelliteKey[]).forEach((sk, idx) => {
+      const sDef = def.satellites[sk];
+      const sy = dy + 266 + idx * 78;
+      const isLit = sats.includes(sk);
+      const canBuy = unlocked && !isLit && pt >= sDef.cost;
+      const sCol = sk === 'C' ? THEME.GOLD_LIGHT : sk === 'B' ? '#38BDF8' : '#4ADE80';
+      drawRoundRect(ctx, dx + 16, sy, dw - 32, 70, 7, isLit ? 'rgba(20, 83, 45, 0.28)' : THEME.BG_CARD, isLit ? sCol : THEME.BORDER);
+      drawBadge(ctx, dx + 24, sy + 10, 42, 18, `卫星${sk}`, '#0F172A', sCol);
+      drawText(ctx, sDef.label, dx + 72, sy + 19, { size: 12, bold: true, color: isLit ? sCol : THEME.TX1 });
+      drawWrappedText(ctx, sDef.desc, dx + 24, sy + 34, dw - 134, 15, { size: 10.5, color: THEME.TX2, maxLines: 2 });
+
+      if (isLit) {
+        drawBadge(ctx, dx + dw - 86, sy + 22, 62, 24, '已点亮 ✓', '#14532D', THEME.GREEN);
+      } else {
+        drawButton(ctx, hits, dx + dw - 96, sy + 20, 72, 28, `${sDef.cost}pt 点亮`, () => {
+          const r = league.unlockV6DirectiveSatellite(dirId, sk);
+          if (r.ok) {
+            SoundEngine.playGoalCheer();
+            this.notice = `已点亮【${def.name}】卫星 ${sk}：${sDef.label}`;
+            actions.onSave();
+          } else {
+            this.notice = r.reason || '无法点亮';
+          }
+        }, { variant: canBuy ? 'gold' : 'ghost', disabled: !canBuy, fontSize: 10.5 });
+      }
+    });
+  }
+
+  private renderSkillInspector(
+    ctx: CanvasRenderingContext2D,
+    hits: HitRegistry,
+    league: LeagueManager,
+    skillId: string,
+    dx: number,
+    dy: number,
+    dw: number,
+    _dh: number,
+    actions: { onSave: () => void }
+  ): void {
+    const sk = V6_ACTIVE_SKILL_MAP[skillId];
+    if (!sk) return;
+    const ast = league.getV6Astrolabe();
+    const pt = league.getState().metaPointsTotal;
+    const unlocked = ast.unlockedSkills.includes(skillId);
+    const prereq = canUnlockV6Node(ast, 'skill', skillId);
+    const equipped = ast.equippedSkills.includes(skillId);
+    const curBranch = ast.skillBranchChoice[skillId] ?? 'A';
+
+    drawBadge(ctx, dx + 16, dy + 14, 126, 22, 'F键子弹时间主动技', '#0C4A6E', '#38BDF8');
+    drawBadge(ctx, dx + 148, dy + 14, 72, 22, `CD ${sk.cooldownMinutes}分`, '#1E293B', THEME.GOLD_LIGHT);
+
+    drawText(ctx, sk.name, dx + 16, dy + 54, { size: 19, bold: true, color: '#7DD3FC' });
+    drawText(ctx, `触发时机：${sk.situationLabel} · 每场限 ${sk.maxPerMatch} 次`, dx + 16, dy + 76, { size: 11, color: THEME.TX2 });
+
+    drawRoundRect(ctx, dx + 16, dy + 94, dw - 32, 66, 8, 'rgba(12, 74, 110, 0.30)', 'rgba(56, 189, 248, 0.45)');
+    drawText(ctx, `⚡ 物理瞬发：${sk.instantLabel}`, dx + 26, dy + 112, { size: 12, bold: true, color: THEME.GOLD_LIGHT });
+    drawWrappedText(ctx, `${sk.powerLabel}（持续 ${sk.durationMinutes} 分钟）`, dx + 26, dy + 132, dw - 52, 16, {
+      size: 11,
       color: THEME.TX1,
       maxLines: 2,
     });
 
-    if (sel.activeSkill) {
-      const sk = sel.activeSkill;
-      const info = league.getSkillProgressInfo(sel.id);
-      const rankBadge = selUnlocked
-        ? `R${info.effectiveRank}${info.bonusRank > 0 ? ` (Lv.${info.baseRank}+${info.bonusRank})` : ` (Lv.${info.baseRank})`}`
-        : '未点亮';
-      drawRoundRect(ctx, dx + 18, dy + 114, dw - 36, 66, 8, 'rgba(12, 74, 110, 0.35)', 'rgba(56, 189, 248, 0.45)');
-      drawText(ctx, sk.name, dx + 28, dy + 130, { size: 13, bold: true, color: '#38BDF8' });
-      drawText(ctx, rankBadge, dx + dw - 28, dy + 130, { size: 12, bold: true, color: info.effectiveRank >= 4 ? THEME.GOLD_LIGHT : '#7DD3FC', align: 'right' });
-      drawText(ctx, `瞬发：${sk.instantLabel ?? '场上即时干预'}`, dx + 28, dy + 149, { size: 11.5, bold: true, color: THEME.GOLD_LIGHT });
-      drawText(ctx, `触发:${sk.situationLabel} · 熟≥${sk.minFamiliarity}/默≥${sk.minChemistry}`, dx + 28, dy + 167, { size: 10.5, color: THEME.TX2 });
-
-      if (selUnlocked) {
-        const loadoutIds = league.getSkillLoadoutIds();
-        const isEquipped = loadoutIds.includes(sel.id);
-        const canUp = info.nextUpgradeCost !== null && st.metaPointsTotal >= info.nextUpgradeCost;
-        const upLabel = info.nextUpgradeCost !== null
-          ? `升级 Lv.${info.baseRank + 1} (${info.nextUpgradeCost}pt)`
-          : '基础 Lv.3 已满';
-        drawButton(ctx, hits, dx + 18, dy + 186, 172, 32, upLabel, () => {
-          const res = league.upgradeSkillRank(sel.id);
-          if (res.ok) {
+    if (!unlocked) {
+      const isSpecial = sk.source === 'mastery' || sk.source === 'core';
+      if (!isSpecial && !prereq.ok) {
+        drawText(ctx, fitText(ctx, `🔒 ${prereq.reason}`, dw - 32, 10.5), dx + 16, dy + 170, { size: 10.5, color: '#FBBF24' });
+      }
+      const canBuy = !isSpecial && prereq.ok && pt >= sk.unlockCost;
+      drawButton(
+        ctx,
+        hits,
+        dx + 16,
+        dy + 182,
+        dw - 32,
+        36,
+        isSpecial
+          ? '请点亮对应宗师印或圆心解锁'
+          : !prereq.ok
+          ? '前置连线未点亮'
+          : pt >= sk.unlockCost
+          ? `点亮主动技 (消耗 ${sk.unlockCost}pt)`
+          : `点数不足 (需要 ${sk.unlockCost}pt)`,
+        () => {
+          const r = league.unlockV6Skill(skillId);
+          if (r.ok) {
             SoundEngine.playGoalCheer();
-            this.notice = `已将【${sk.name}】提升至基础 Lv.${res.newRank}！`;
+            this.notice = `已解锁主动技【${sk.name}】！`;
             actions.onSave();
           } else {
-            this.notice = res.reason || '升级失败';
+            SoundEngine.playWarning();
+            this.notice = r.reason || '无法解锁';
           }
-        }, { variant: canUp ? 'gold' : 'ghost', disabled: info.nextUpgradeCost === null || !canUp, fontSize: 11 });
-
-        drawButton(
-          ctx,
-          hits,
-          dx + 198,
-          dy + 186,
-          176,
-          32,
-          isEquipped ? `已装配(${loadoutIds.length}/4) · 卸下` : `装配技能(${loadoutIds.length}/4)`,
-          () => {
-            const res = league.toggleSkillLoadout(sel.id);
-            if (res.ok) {
-              SoundEngine.playClick();
-              this.notice = res.equipped
-                ? `已装备主动技【${sk.name}】`
-                : `已卸下主动技【${sk.name}】`;
-              actions.onSave();
-            } else {
-              this.notice = res.reason || '操作失败';
-            }
-          },
-          { variant: isEquipped ? 'green' : 'primary', fontSize: 11 }
-        );
-
-        drawText(
-          ctx,
-          `A/B 质变分支 (${info.mutationUnlocked ? '已解锁 · 点击自由切换' : '有效 Lv.2 解锁'})`,
-          dx + 18,
-          dy + 234,
-          { size: 11, bold: true, color: info.mutationUnlocked ? THEME.GOLD_LIGHT : THEME.TX3 }
-        );
-        (sk.mutations ?? []).forEach((mut, mi) => {
-          const my = dy + 246 + mi * 58;
-          const isChosen = info.mutationUnlocked && info.mutationChoice === mut.choice;
-          const mBg = isChosen ? 'rgba(6, 78, 59, 0.55)' : 'rgba(15, 23, 42, 0.72)';
-          const mBorder = isChosen ? THEME.GREEN : info.mutationUnlocked ? 'rgba(148, 163, 184, 0.38)' : 'rgba(51, 65, 85, 0.45)';
-          drawRoundRect(ctx, dx + 18, my, dw - 36, 52, 7, mBg, mBorder, isChosen ? 1.5 : 1);
-          drawText(ctx, `${mut.choice} · ${mut.name}`, dx + 28, my + 16, {
-            size: 12,
-            bold: true,
-            color: isChosen ? THEME.GREEN : info.mutationUnlocked ? THEME.TX1 : THEME.TX3,
-          });
-          drawText(ctx, isChosen ? '生效中 ✓' : info.mutationUnlocked ? '点击选用' : 'Lv.2解锁', dx + dw - 28, my + 16, {
-            size: 10.5,
-            bold: isChosen,
-            color: isChosen ? THEME.GREEN : THEME.TX3,
-            align: 'right',
-          });
-          drawWrappedText(ctx, mut.shortDesc, dx + 28, my + 32, dw - 56, 14, {
-            size: 10.5,
-            color: info.mutationUnlocked ? THEME.TX2 : THEME.TX3,
-            maxLines: 1,
-          });
-          if (info.mutationUnlocked && !isChosen) {
-            hits.add(dx + 18, my, dw - 36, 52, () => {
-              const r = league.setSkillMutation(sel.id, mut.choice);
-              if (r.ok) {
-                SoundEngine.playClick();
-                this.notice = `【${sk.name}】切换质变：${mut.choice}·${mut.name}`;
-                actions.onSave();
-              }
-            });
-          }
-        });
-      } else {
-        drawText(ctx, 'A/B 质变预览（点亮并达 Lv.2 后自由切换）：', dx + 18, dy + 190, { size: 11, color: THEME.TX2 });
-        (sk.mutations ?? []).forEach((mut, mi) => {
-          const my = dy + 202 + mi * 46;
-          drawRoundRect(ctx, dx + 18, my, dw - 36, 40, 6, 'rgba(15, 23, 42, 0.65)', 'rgba(51, 65, 85, 0.45)');
-          drawText(ctx, `${mut.choice} · ${mut.name}：${mut.shortDesc.slice(0, 20)}`, dx + 26, my + 20, { size: 10.5, color: THEME.TX2 });
-        });
-        drawButton(
-          ctx,
-          hits,
-          dx + 18,
-          dy + 300,
-          dw - 36,
-          42,
-          !selReachable ? '需先点亮相邻节点' : canBuy ? `点亮此技能 (消耗 ${sel.cost}pt)` : `Meta 点数不足 (需要 ${sel.cost}pt)`,
-          () => {
-            const res = league.unlockSkillWebNode(sel.id);
-            if (res.ok) {
-              SoundEngine.playGoalCheer();
-              this.notice = `已点亮战术节点【${res.nodeName}】！`;
-              actions.onSave();
-            } else {
-              this.notice = res.reason || '无法点亮';
-            }
-          },
-          { variant: canBuy ? 'gold' : 'ghost', disabled: !canBuy, fontSize: 13 }
-        );
-      }
-    } else if (sel.aspect) {
-      const asp = sel.aspect;
-      const aspActive = selUnlocked && selResonating;
-      drawRoundRect(ctx, dx + 18, dy + 116, dw - 36, 114, 8, aspActive ? 'rgba(120, 53, 15, 0.34)' : 'rgba(15, 23, 42, 0.72)', aspActive ? THEME.GOLD_LIGHT : 'rgba(245, 158, 11, 0.45)', aspActive ? 1.6 : 1);
-      drawText(ctx, `传奇威能 · ${asp.name}`, dx + 28, dy + 134, { size: 13.5, bold: true, color: THEME.GOLD_LIGHT });
-      drawText(ctx, aspActive ? '激活中 ✓' : selUnlocked ? '待匹配战术' : '未点亮', dx + dw - 28, dy + 134, {
-        size: 11,
-        bold: aspActive,
-        color: aspActive ? THEME.GREEN : THEME.TX3,
-        align: 'right',
-      });
-      drawWrappedText(ctx, asp.shortDesc, dx + 28, dy + 156, dw - 56, 17, {
-        size: 11.5,
-        color: THEME.TX1,
-        maxLines: 3,
-      });
-      drawText(ctx, `激活条件：防线=${asp.system} 且 战术=${TACTICAL_PRESETS[asp.style].name}`, dx + 28, dy + 214, {
-        size: 10.5,
-        color: THEME.TX2,
-      });
-
-      if (selUnlocked) {
-        drawBadge(
-          ctx,
-          dx + 18,
-          dy + 244,
-          dw - 36,
-          38,
-          aspActive ? '传奇威能已在比赛中自动生效 ✓' : '已点亮；切换对应防线与战术即可自动激活',
-          aspActive ? '#78350F' : '#1E293B',
-          aspActive ? THEME.GOLD_LIGHT : THEME.TX2
-        );
-      } else {
-        drawButton(
-          ctx,
-          hits,
-          dx + 18,
-          dy + 244,
-          dw - 36,
-          42,
-          !selReachable ? '需先点亮相邻节点' : canBuy ? `点亮融合威能 (消耗 ${sel.cost}pt)` : `Meta 点数不足 (需要 ${sel.cost}pt)`,
-          () => {
-            const res = league.unlockSkillWebNode(sel.id);
-            if (res.ok) {
-              SoundEngine.playGoalCheer();
-              this.notice = `已点亮传奇融合威能【${asp.name}】！`;
-              actions.onSave();
-            } else {
-              this.notice = res.reason || '无法点亮';
-            }
-          },
-          { variant: canBuy ? 'gold' : 'ghost', disabled: !canBuy, fontSize: 13 }
-        );
-      }
+        },
+        { variant: canBuy ? 'gold' : 'ghost', disabled: !canBuy, fontSize: 12 }
+      );
     } else {
-      const actionY = dy + 154;
-      if (selUnlocked) {
-        drawBadge(
-          ctx,
-          dx + 18,
-          actionY,
-          dw - 36,
-          38,
-          selResonating ? '当前阵型战术触发双倍共鸣生效中 ✓' : '该战术节点已永久生效 ✓',
-          selResonating ? '#78350F' : '#14532D',
-          selResonating ? THEME.GOLD_LIGHT : THEME.GREEN
-        );
-      } else {
-        drawButton(
-          ctx,
-          hits,
-          dx + 18,
-          actionY,
-          dw - 36,
-          42,
-          !selReachable
-            ? '需先点亮相邻节点'
-            : canBuy
-            ? `点亮此节点 (消耗 ${sel.cost}pt)`
-            : `Meta 点数不足 (需要 ${sel.cost}pt)`,
-          () => {
-            const res = league.unlockSkillWebNode(sel.id);
-            if (res.ok) {
-              SoundEngine.playGoalCheer();
-              this.notice = `已点亮战术节点【${res.nodeName}】！`;
-              actions.onSave();
-            } else {
-              this.notice = res.reason || '无法点亮';
-            }
-          },
-          { variant: canBuy ? 'gold' : 'ghost', disabled: !canBuy, fontSize: 13.5 }
-        );
-      }
+      drawButton(
+        ctx,
+        hits,
+        dx + 16,
+        dy + 176,
+        dw - 32,
+        38,
+        equipped ? `已装配至 F 键 (${ast.equippedSkills.length}/4) · 点击卸下` : `装配至 F 键槽位 (${ast.equippedSkills.length}/4)`,
+        () => {
+          const r = league.toggleV6EquippedSkill(skillId);
+          if (r.ok) {
+            SoundEngine.playClick();
+            this.notice = r.equipped ? `已装配主动技【${sk.name}】` : `已卸下主动技【${sk.name}】`;
+            actions.onSave();
+          } else {
+            SoundEngine.playWarning();
+            this.notice = r.reason || '操作失败';
+          }
+        },
+        { variant: equipped ? 'green' : 'primary', fontSize: 12 }
+      );
     }
 
-    // 底部精简信息：当前点亮进度 + 威能状态 + 引擎修正入口
-    const activeAspectsCnt = league.getActiveLegendaryAspects().length;
-    drawChamferPanel(ctx, dx + 18, dy + dh - 146, dw - 36, 76, 8, THEME.BG_CARD, THEME.BORDER);
-    drawText(ctx, `星图：${unlocked.length}/${SKILL_WEB_NODES.length} 节点 · 传奇威能 ${activeAspectsCnt} 个激活`, dx + 30, dy + dh - 124, { size: 12, bold: true, color: THEME.GOLD_LIGHT });
-    drawText(ctx, `当前激活：${club.formation} · ${TACTICAL_PRESETS[club.style].name}`, dx + 30, dy + dh - 96, { size: 11.5, color: THEME.TX2 });
+    drawText(ctx, 'A / B 互斥质变分支（解锁后可随时免费切换）', dx + 16, dy + 234, {
+      size: 11.5,
+      bold: true,
+      color: THEME.GOLD_LIGHT,
+    });
 
-    drawButton(ctx, hits, dx + 18, dy + dh - 56, dw - 36, 38, '查看引擎修正 / 重置星图', () => {
-      this.summaryModalOpen = true;
-    }, { variant: 'ghost', fontSize: 12, icon: 'chart' });
+    ([['A', sk.branchA], ['B', sk.branchB]] as const).forEach(([ch, br], idx) => {
+      const by = dy + 250 + idx * 84;
+      const chosen = unlocked && curBranch === ch;
+      drawRoundRect(ctx, dx + 16, by, dw - 32, 74, 8, chosen ? 'rgba(6, 78, 59, 0.45)' : THEME.BG_CARD, chosen ? THEME.GREEN : THEME.BORDER, chosen ? 1.6 : 1);
+      drawText(ctx, `分支 ${ch} · ${br.label}`, dx + 26, by + 18, { size: 12.5, bold: true, color: chosen ? THEME.GREEN : THEME.TX1 });
+      drawText(ctx, chosen ? '生效中 ✓' : unlocked ? '点击切换' : '解锁可用', dx + dw - 26, by + 18, {
+        size: 10.5,
+        color: chosen ? THEME.GREEN : THEME.TX3,
+        align: 'right',
+      });
+      drawWrappedText(ctx, br.desc, dx + 26, by + 38, dw - 52, 16, { size: 11, color: THEME.TX2, maxLines: 2 });
+      if (unlocked && !chosen) {
+        hits.add(dx + 16, by, dw - 32, 74, () => {
+          league.setV6SkillBranch(skillId, ch);
+          SoundEngine.playClick();
+          this.notice = `【${sk.name}】已切换为分支 ${ch}：${br.label}`;
+          actions.onSave();
+        });
+      }
+    });
   }
 
-  private renderSummaryModal(
+  private renderFusionInspector(
     ctx: CanvasRenderingContext2D,
     hits: HitRegistry,
     league: LeagueManager,
+    fusionId: string,
+    dx: number,
+    dy: number,
+    dw: number,
+    _dh: number,
     actions: { onSave: () => void }
   ): void {
-    const club = league.getUserClub();
-    const unlocked = league.getSkillWebUnlocked();
-    const activeMods = computeSkillWebMods(unlocked, club.formation, club.style);
+    const f = V6_FUSION_MAP[fusionId];
+    if (!f) return;
+    const ast = league.getV6Astrolabe();
+    const pt = league.getState().metaPointsTotal;
+    const unlocked = ast.unlockedFusions.includes(fusionId);
+    const prereq = canUnlockV6Node(ast, 'fusion', fusionId);
+    const curBr = ast.fusionBranchChoice[fusionId] ?? 'A';
+    const royalDir = V6_DIRECTIVE_MAP[f.royalDirectiveId];
 
-    ctx.fillStyle = 'rgba(4, 7, 14, 0.84)';
-    ctx.fillRect(0, 0, THEME.W, THEME.H);
-    hits.clear();
-
-    const mx = 220;
-    const my = 96;
-    const mw = 840;
-    const mh = 528;
-    drawChamferPanel(ctx, mx, my, mw, mh, 14, 'rgba(14, 22, 40, 0.98)', THEME.BORDER_GOLD, 1.6, THEME.GOLD_LIGHT);
-
-    drawText(ctx, `引擎行为修正与实战熟练度总览 (${club.formation} · ${TACTICAL_PRESETS[club.style].name})`, mx + 28, my + 34, {
-      size: 18,
-      bold: true,
-      color: THEME.GOLD_LIGHT,
-    });
-    drawButton(ctx, hits, mx + mw - 104, my + 18, 80, 34, '关闭', () => {
-      this.summaryModalOpen = false;
-    }, { variant: 'ghost', fontSize: 12, icon: 'close' });
-
-    const modTags: string[] = [];
-    if ((activeMods.overlapDepthBonus ?? 0) > 0) modTags.push(`边卫套上 +${activeMods.overlapDepthBonus}m`);
-    if (activeMods.dualOverlap) modTags.push('双侧翼卫同插');
-    if ((activeMods.falseNineDrop ?? 0) > 0) modTags.push(`伪九回撤 -${activeMods.falseNineDrop}m`);
-    if ((activeMods.boxCrashBonus ?? 0) > 0) modTags.push(`中场抢点 +${activeMods.boxCrashBonus}人`);
-    if ((activeMods.lineShift ?? 0) !== 0) modTags.push(`防线 ${activeMods.lineShift! > 0 ? '+' : ''}${activeMods.lineShift}m`);
-    if ((activeMods.pressDistBonus ?? 0) > 0) modTags.push(`逼抢半径 +${activeMods.pressDistBonus}m`);
-    if (activeMods.extraPresser) modTags.push('3人合围围抢');
-    if ((activeMods.throughPassBias ?? 0) > 0) modTags.push(`直塞 +${Math.round(activeMods.throughPassBias! * 100)}%`);
-    if ((activeMods.longShotBias ?? 0) > 0) modTags.push(`远射 +${Math.round(activeMods.longShotBias! * 100)}%`);
-    if ((activeMods.crossBias ?? 0) > 0) modTags.push(`传中 +${Math.round(activeMods.crossBias! * 100)}%`);
-    if ((activeMods.shortPassBias ?? 0) > 0) modTags.push(`短传 +${Math.round(activeMods.shortPassBias! * 100)}%`);
-    if (activeMods.gkQuickLaunch) modTags.push('门将快发反击');
-    if ((activeMods.staminaDrainMul ?? 1) < 1) modTags.push(`体能消耗 -${Math.round((1 - activeMods.staminaDrainMul!) * 100)}%`);
-
-    drawChamferPanel(ctx, mx + 28, my + 70, mw - 56, 132, 10, THEME.BG_CARD, THEME.BORDER);
-    drawText(ctx, '当前 2D 比赛引擎实时行为修正', mx + 46, my + 94, { size: 13.5, bold: true, color: '#38BDF8' });
-    drawWrappedText(
+    drawBadge(ctx, dx + 16, dy + 14, 150, 22, `${SYSTEM_LABELS[f.system].name} × ${STYLE_LABELS[f.style].short}`, '#78350F', THEME.GOLD_LIGHT);
+    drawText(ctx, f.name, dx + 16, dy + 54, { size: 19, bold: true, color: THEME.GOLD_LIGHT });
+    drawText(
       ctx,
-      modTags.length > 0 ? modTags.join('  ·  ') : '尚未激活引擎行为修正，点亮路径或融合奇点后在 2D 比赛中实时生效',
-      mx + 46,
-      my + 118,
-      mw - 92,
-      21,
-      { size: 12.5, color: THEME.TX1, maxLines: 3 }
+      unlocked
+        ? '融合奇点已激活 · 规则级质变生效中'
+        : prereq.ok
+        ? '星轨双桥已连通 · 可点亮此融合奇点'
+        : fitText(ctx, `🔒 ${prereq.reason}`, dw - 32, 11),
+      dx + 16,
+      dy + 76,
+      { size: 11, color: unlocked || prereq.ok ? THEME.GREEN : '#FBBF24' }
     );
 
-    const activeAspects = league.getActiveLegendaryAspects();
-    drawChamferPanel(ctx, mx + 28, my + 212, mw - 56, 106, 10, activeAspects.length > 0 ? 'rgba(120, 53, 15, 0.25)' : THEME.BG_CARD, activeAspects.length > 0 ? THEME.GOLD : THEME.BORDER);
-    drawText(ctx, `传奇融合威能 (${activeAspects.length} 个当前生效)`, mx + 46, my + 234, { size: 13.5, bold: true, color: THEME.GOLD_LIGHT });
-    const aspText = activeAspects.length > 0
-      ? activeAspects.map(a => `[${a.name}]：${a.shortDesc}`).join('  |  ')
-      : '尚未激活传奇融合威能。点亮星图外环「防线×战术」融合奇点并匹配当前阵型战术即可自动觉醒';
-    drawWrappedText(ctx, aspText, mx + 46, my + 258, mw - 92, 19, { size: 12, color: activeAspects.length > 0 ? THEME.TX1 : THEME.TX2, maxLines: 2 });
+    if (!unlocked) {
+      const canBuy = prereq.ok && pt >= f.unlockCost;
+      drawButton(
+        ctx,
+        hits,
+        dx + 16,
+        dy + 96,
+        dw - 32,
+        36,
+        !prereq.ok ? '前置条件未满足' : pt >= f.unlockCost ? `点亮融合奇点 (消耗 ${f.unlockCost}pt)` : `点数不足 (需要 ${f.unlockCost}pt)`,
+        () => {
+          const r = league.unlockV6Fusion(fusionId);
+          if (r.ok) {
+            SoundEngine.playGoalCheer();
+            this.notice = `已点亮融合奇点【${f.name}】！`;
+            actions.onSave();
+          } else {
+            SoundEngine.playWarning();
+            this.notice = r.reason || '无法解锁';
+          }
+        },
+        { variant: canBuy ? 'gold' : 'ghost', disabled: !canBuy, fontSize: 12 }
+      );
+    } else {
+      drawBadge(ctx, dx + 16, dy + 96, dw - 32, 32, '融合奇点已激活 · 下方自由切换 A/B 规则分支 ✓', '#14532D', THEME.GREEN);
+    }
 
-    const mastery = league.getTacticalMastery();
-    const formInfo = getFormationMasteryInfo(club.formation, mastery.formations[club.formation] ?? 0);
-    const styleInfo = getStyleMasteryInfo(club.style, mastery.styles[club.style] ?? 0);
-    drawChamferPanel(ctx, mx + 28, my + 328, mw - 56, 122, 10, THEME.BG_CARD, THEME.BORDER);
-    drawText(ctx, `实战熟练度与技能等级加成 (${unlocked.length}/${SKILL_WEB_NODES.length} 节点已点亮)`, mx + 46, my + 350, {
-      size: 13.5,
+    ([['A', f.branchA], ['B', f.branchB]] as const).forEach(([ch, br], idx) => {
+      const by = dy + 142 + idx * 96;
+      const chosen = unlocked && curBr === ch;
+      drawRoundRect(ctx, dx + 16, by, dw - 32, 86, 8, chosen ? 'rgba(120, 53, 15, 0.36)' : THEME.BG_CARD, chosen ? THEME.GOLD_LIGHT : THEME.BORDER, chosen ? 1.6 : 1);
+      drawText(ctx, `奇点分支 ${ch} · ${br.label}`, dx + 26, by + 18, { size: 12.5, bold: true, color: chosen ? THEME.GOLD_LIGHT : THEME.TX1 });
+      drawText(ctx, chosen ? '生效中 ✓' : unlocked ? '点击切换' : '', dx + dw - 26, by + 18, {
+        size: 10.5,
+        color: THEME.GREEN,
+        align: 'right',
+      });
+      drawWrappedText(ctx, br.desc, dx + 26, by + 36, dw - 52, 16, { size: 11, color: THEME.TX2, maxLines: 3 });
+      if (unlocked && !chosen) {
+        hits.add(dx + 16, by, dw - 32, 86, () => {
+          league.setV6FusionBranch(fusionId, ch);
+          SoundEngine.playClick();
+          this.notice = `奇点【${f.name}】切换至分支 ${ch}：${br.label}`;
+          actions.onSave();
+        });
+      }
+    });
+
+    if (royalDir) {
+      const ry = dy + 350;
+      drawRoundRect(ctx, dx + 16, ry, dw - 32, 92, 8, 'rgba(30, 27, 75, 0.45)', '#A855F7');
+      drawText(ctx, `👑 伴生王牌手牌（3 TP）：${royalDir.name}`, dx + 26, ry + 20, { size: 12.5, bold: true, color: '#E9D5FF' });
+      drawWrappedText(ctx, `收益：${royalDir.benefitSummary}`, dx + 26, ry + 38, dw - 52, 15, { size: 10.5, color: THEME.GREEN, maxLines: 1 });
+      drawButton(ctx, hits, dx + 26, ry + 56, dw - 52, 28, '查看并解锁/装配此王牌手牌 ▶', () => {
+        this.selected = { kind: 'directive', id: royalDir.id };
+      }, { variant: 'primary', fontSize: 11 });
+    }
+  }
+
+  private renderFormationInspector(
+    ctx: CanvasRenderingContext2D,
+    hits: HitRegistry,
+    league: LeagueManager,
+    fm: FormationName,
+    dx: number,
+    dy: number,
+    dw: number,
+    _dh: number,
+    actions: { onSave: () => void }
+  ): void {
+    const ast = league.getV6Astrolabe();
+    const pt = league.getState().metaPointsTotal;
+    const passives = V6_ALL_PASSIVES.filter(p => p.source === 'formation' && p.formation === fm);
+    const dirs = V6_DIRECTIVES.filter(d => d.source === 'formation' && d.formation === fm);
+    const sk = V6_ACTIVE_SKILLS.find(s => s.source === 'formation' && s.formation === fm);
+
+    drawBadge(ctx, dx + 16, dy + 14, 118, 22, `阵型专精 · ${fm}`, '#1E3A5F', THEME.GOLD_LIGHT);
+    drawText(ctx, `${fm} 专属星盘节点`, dx + 16, dy + 52, { size: 18, bold: true, color: THEME.TX1 });
+
+    let cy = dy + 74;
+    drawText(ctx, '阵型被动 (2 个 · 需先点亮对应防线体系原点)', dx + 16, cy, { size: 11, bold: true, color: '#7DD3FC' });
+    cy += 12;
+    passives.forEach(p => {
+      const unl = ast.unlockedPassives.includes(p.id);
+      const pre = canUnlockV6Node(ast, 'passive', p.id);
+      const canBuy = !unl && pre.ok && pt >= p.unlockCost;
+      drawRoundRect(ctx, dx + 16, cy, dw - 32, 52, 7, unl ? 'rgba(20,83,45,0.28)' : THEME.BG_CARD, unl ? THEME.GREEN : THEME.BORDER);
+      drawText(ctx, p.name, dx + 26, cy + 16, { size: 11.5, bold: true, color: unl ? THEME.GREEN : THEME.TX1 });
+      drawWrappedText(ctx, p.desc, dx + 26, cy + 30, dw - 122, 14, { size: 10, color: THEME.TX2, maxLines: 1 });
+      if (!unl) {
+        drawButton(ctx, hits, dx + dw - 92, cy + 12, 68, 28, pre.ok ? `${p.unlockCost}pt` : '未连通', () => {
+          const r = league.unlockV6Passive(p.id);
+          if (r.ok) {
+            SoundEngine.playClick();
+            this.notice = `已解锁阵型被动【${p.name}】`;
+            actions.onSave();
+          } else {
+            SoundEngine.playWarning();
+            this.notice = r.reason || '无法解锁';
+          }
+        }, { variant: canBuy ? 'gold' : 'ghost', disabled: !canBuy, fontSize: 10.5 });
+      }
+      cy += 58;
+    });
+
+    cy += 6;
+    drawText(ctx, '阵型专属手牌 (1攻 + 1守 · 需先点亮对应攻/守被动)', dx + 16, cy, { size: 11, bold: true, color: THEME.GOLD_LIGHT });
+    cy += 12;
+    dirs.forEach(d => {
+      const unl = ast.unlockedDirectives.includes(d.id);
+      drawRoundRect(ctx, dx + 16, cy, dw - 32, 54, 7, THEME.BG_CARD, ZONE_COLOR[d.zone]);
+      drawText(ctx, `${d.name} (${d.tpCost}TP·${d.tendency === 'ATK' ? '攻' : '守'})`, dx + 26, cy + 16, { size: 11.5, bold: true, color: THEME.TX1 });
+      drawText(ctx, fitText(ctx, d.benefitSummary, dw - 126, 10), dx + 26, cy + 36, { size: 10, color: THEME.GREEN });
+      drawButton(ctx, hits, dx + dw - 92, cy + 13, 68, 28, unl ? '配装/卫星' : '详情 ▶', () => {
+        this.selected = { kind: 'directive', id: d.id };
+      }, { variant: 'primary', fontSize: 10 });
+      cy += 60;
+    });
+
+    if (sk) {
+      cy += 6;
+      drawText(ctx, '阵型专属主动技 (点亮任一阵型被动后可解锁)', dx + 16, cy, { size: 11, bold: true, color: '#38BDF8' });
+      cy += 12;
+      drawRoundRect(ctx, dx + 16, cy, dw - 32, 60, 7, 'rgba(12, 74, 110, 0.30)', '#38BDF8');
+      drawText(ctx, sk.name, dx + 26, cy + 18, { size: 12, bold: true, color: '#7DD3FC' });
+      drawText(ctx, fitText(ctx, sk.instantLabel, dw - 126, 10), dx + 26, cy + 40, { size: 10, color: THEME.GOLD_LIGHT });
+      drawButton(ctx, hits, dx + dw - 92, cy + 16, 68, 28, '详情 ▶', () => {
+        this.selected = { kind: 'skill', id: sk.id };
+      }, { variant: 'primary', fontSize: 10.5 });
+    }
+  }
+
+  private renderSealInspector(
+    ctx: CanvasRenderingContext2D,
+    hits: HitRegistry,
+    league: LeagueManager,
+    sealId: string,
+    dx: number,
+    dy: number,
+    dw: number,
+    _dh: number,
+    actions: { onSave: () => void }
+  ): void {
+    const seal = V6_MASTERY_SEAL_MAP[sealId];
+    if (!seal) return;
+    const ast = league.getV6Astrolabe();
+    const pt = league.getState().metaPointsTotal;
+    const unlocked = ast.unlockedMasterySeals.includes(sealId);
+    const prereq = canUnlockMasterySeal(ast, seal.style);
+    const ult = V6_ACTIVE_SKILL_MAP[seal.activeSkillId];
+
+    drawBadge(ctx, dx + 16, dy + 14, 116, 22, '宗师大节点 · 宗师印', '#78350F', THEME.GOLD_LIGHT);
+    drawText(ctx, seal.name, dx + 16, dy + 54, { size: 20, bold: true, color: THEME.GOLD_LIGHT });
+    drawWrappedText(ctx, seal.desc, dx + 16, dy + 82, dw - 32, 18, { size: 12, color: THEME.TX1, maxLines: 3 });
+
+    drawRoundRect(ctx, dx + 16, dy + 148, dw - 32, 54, 8, THEME.BG_CARD, prereq.ok ? THEME.GREEN : THEME.BORDER);
+    drawWrappedText(
+      ctx,
+      prereq.ok ? '✓ 前置条件已达成，可随时点亮本流派宗师印！' : `前置要求：${prereq.reason}`,
+      dx + 26,
+      dy + 160,
+      dw - 52,
+      16,
+      { size: 11, color: prereq.ok ? THEME.GREEN : '#FBBF24', maxLines: 2 }
+    );
+
+    if (!unlocked) {
+      const canBuy = prereq.ok && pt >= seal.unlockCost;
+      drawButton(ctx, hits, dx + 16, dy + 214, dw - 32, 40, `点亮宗师印 (消耗 ${seal.unlockCost}pt)`, () => {
+        const r = league.unlockV6MasterySeal(sealId);
+        if (r.ok) {
+          SoundEngine.playGoalCheer();
+          this.notice = `宗师印【${seal.name}】已点亮！同时解锁宗师终极主动技！`;
+          actions.onSave();
+        } else {
+          this.notice = r.reason || '无法解锁';
+        }
+      }, { variant: canBuy ? 'gold' : 'ghost', disabled: !canBuy, fontSize: 13 });
+    } else {
+      drawBadge(ctx, dx + 16, dy + 214, dw - 32, 36, '宗师印已永久激活 ✓', '#14532D', THEME.GREEN);
+    }
+
+    if (ult) {
+      drawRoundRect(ctx, dx + 16, dy + 270, dw - 32, 102, 8, 'rgba(12, 74, 110, 0.35)', '#38BDF8');
+      drawText(ctx, `⚡ 伴生终极主动技：${ult.name}`, dx + 26, dy + 290, { size: 13, bold: true, color: '#7DD3FC' });
+      drawWrappedText(ctx, `${ult.instantLabel} · ${ult.powerLabel}`, dx + 26, dy + 310, dw - 52, 16, { size: 11, color: THEME.TX1, maxLines: 2 });
+      drawButton(ctx, hits, dx + 26, dy + 336, dw - 52, 28, '查看并装配此终极主动技 ▶', () => {
+        this.selected = { kind: 'skill', id: ult.id };
+      }, { variant: 'primary', fontSize: 11 });
+    }
+  }
+
+  private renderCoreInspector(
+    ctx: CanvasRenderingContext2D,
+    hits: HitRegistry,
+    league: LeagueManager,
+    dx: number,
+    dy: number,
+    dw: number,
+    _dh: number,
+    actions: { onSave: () => void }
+  ): void {
+    const ast = league.getV6Astrolabe();
+    const pt = league.getState().metaPointsTotal;
+    const chk = canUnlockCore(ast);
+    const ult = V6_ACTIVE_SKILL_MAP['sk_ult_core'];
+    const club = league.getUserClub();
+    const refund = calcRefundablePoints(ast, club.style, club.formation);
+
+    drawBadge(ctx, dx + 16, dy + 14, 152, 22, '星盘圆心 · 终极核心', '#78350F', '#FEF08A');
+    drawText(ctx, '★ 超级宗师 · 全攻全守', dx + 16, dy + 54, { size: 20, bold: true, color: '#FEF08A' });
+    drawWrappedText(
+      ctx,
+      '单场前/中/后三区均打出过指令后触发【全攻全守交响】：全队四维 +10、失球率 -25% 持续至终场，并解锁圆心终极技《全军破限》！',
+      dx + 16,
+      dy + 80,
+      dw - 32,
+      18,
+      { size: 11.5, color: THEME.TX1, maxLines: 3 }
+    );
+
+    drawRoundRect(ctx, dx + 16, dy + 146, dw - 32, 74, 8, THEME.BG_CARD, chk.ok ? THEME.GREEN : THEME.BORDER_GOLD);
+    drawText(ctx, '双轨解锁条件（二选一，不强迫全修 6 流派）', dx + 26, dy + 164, { size: 11, bold: true, color: THEME.GOLD_LIGHT });
+    drawWrappedText(ctx, chk.reason, dx + 26, dy + 182, dw - 52, 16, {
+      size: 11,
+      color: chk.ok ? THEME.GREEN : '#CBD5E1',
+      maxLines: 2,
+    });
+
+    if (!ast.coreUnlocked) {
+      const canBuy = chk.ok && pt >= 5;
+      drawButton(ctx, hits, dx + 16, dy + 232, dw - 32, 42, '点亮圆心【★ 超级宗师】(消耗 5pt)', () => {
+        const r = league.unlockV6Core();
+        if (r.ok) {
+          SoundEngine.playGoalCheer();
+          this.notice = '圆心【★ 超级宗师 · 全攻全守】已觉醒！';
+          actions.onSave();
+        } else {
+          this.notice = r.reason || '未满足条件';
+        }
+      }, { variant: canBuy ? 'gold' : 'ghost', disabled: !canBuy, fontSize: 13 });
+    } else {
+      drawBadge(ctx, dx + 16, dy + 232, dw - 32, 38, '★ 超级宗师已觉醒 · 全攻全守永久生效 ✓', '#78350F', '#FEF08A');
+    }
+
+    if (ult) {
+      drawRoundRect(ctx, dx + 16, dy + 286, dw - 32, 92, 8, 'rgba(12, 74, 110, 0.35)', '#38BDF8');
+      drawText(ctx, `⚡ 圆心终极技：${ult.name}`, dx + 26, dy + 306, { size: 12.5, bold: true, color: '#FEF08A' });
+      drawWrappedText(ctx, ult.powerLabel, dx + 26, dy + 324, dw - 52, 15, { size: 10.5, color: THEME.TX1, maxLines: 2 });
+      drawButton(ctx, hits, dx + 26, dy + 344, dw - 52, 26, '查看并装配圆心终极技 ▶', () => {
+        this.selected = { kind: 'skill', id: ult.id };
+      }, { variant: 'primary', fontSize: 10.5 });
+    }
+
+    drawText(ctx, `已投入可退还点数：${refund}pt · 六印全齐额外 +1 TP/拐点`, dx + 16, dy + 402, {
+      size: 11,
+      color: THEME.TX3,
+    });
+  }
+
+  private renderDirectiveCatalog(
+    ctx: CanvasRenderingContext2D,
+    hits: HitRegistry,
+    league: LeagueManager,
+    dx: number,
+    dy: number,
+    dw: number,
+    dh: number
+  ): void {
+    const ast = league.getV6Astrolabe();
+    const unlSet = new Set(ast.unlockedDirectives);
+    const eqSet = new Set(ast.checkpointPools[this.activeCheckpoint] ?? []);
+    drawText(ctx, `122 张三区双刃剑手牌库 (${ast.unlockedDirectives.length}已解锁)`, dx + 16, dy + 24, {
+      size: 14,
       bold: true,
       color: THEME.GOLD_LIGHT,
     });
-    drawText(ctx, `${club.formation}：Lv.${formInfo.level} ${formInfo.title} (${formInfo.xp}/15) · ${formInfo.bonusDesc}`, mx + 46, my + 378, {
-      size: 12,
-      color: THEME.GREEN,
+
+    const filters: Array<['ALL' | TacticalStyle | 'formation' | 'fusion', string]> = [
+      ['ALL', '全部'],
+      ['tiki_taka', '传控'],
+      ['gegenpress', '高压'],
+      ['wing_play', '两翼'],
+      ['counter', '反击'],
+      ['park_bus', '铁桶'],
+      ['balanced', '均衡'],
+      ['formation', '阵型'],
+      ['fusion', '王牌'],
+    ];
+    filters.forEach(([fk, fl], idx) => {
+      const col = idx % 5;
+      const row = Math.floor(idx / 5);
+      drawButton(ctx, hits, dx + 16 + col * 76, dy + 46 + row * 28, 70, 24, fl, () => {
+        this.catalogFilterStyle = fk;
+        this.catalogPage = 0;
+      }, { active: this.catalogFilterStyle === fk, fontSize: 10 });
     });
-    drawText(ctx, `${TACTICAL_PRESETS[club.style].name}：Lv.${styleInfo.level} ${styleInfo.title} (${styleInfo.xp}/15) · ${styleInfo.bonusDesc}`, mx + 46, my + 404, {
-      size: 12,
+
+    const list: V6DirectiveDef[] = V6_DIRECTIVES.filter(d => {
+      if (this.catalogFilterStyle === 'ALL') return true;
+      if (this.catalogFilterStyle === 'formation') return d.source === 'formation';
+      if (this.catalogFilterStyle === 'fusion') return d.source === 'fusion';
+      return d.style === this.catalogFilterStyle;
+    }).sort((a, b) => Number(unlSet.has(b.id)) - Number(unlSet.has(a.id)));
+
+    const pageSize = 6;
+    const totalPages = Math.max(1, Math.ceil(list.length / pageSize));
+    if (this.catalogPage >= totalPages) this.catalogPage = totalPages - 1;
+    const slice = list.slice(this.catalogPage * pageSize, (this.catalogPage + 1) * pageSize);
+
+    slice.forEach((d, idx) => {
+      const ry = dy + 112 + idx * 60;
+      const isUnl = unlSet.has(d.id);
+      const isEq = eqSet.has(d.id);
+      drawRoundRect(ctx, dx + 16, ry, dw - 32, 54, 7, isEq ? 'rgba(20,83,45,0.34)' : THEME.BG_CARD, isEq ? THEME.GREEN : isUnl ? ZONE_COLOR[d.zone] : THEME.BORDER);
+      drawBadge(ctx, dx + 24, ry + 8, 44, 16, `${ZONE_LABEL[d.zone]}·${d.tendency === 'ATK' ? '攻' : '守'}`, '#0F172A', ZONE_COLOR[d.zone]);
+      drawBadge(ctx, dx + 72, ry + 8, 34, 16, `${d.tpCost}TP`, '#78350F', THEME.GOLD_LIGHT);
+      drawText(ctx, fitText(ctx, d.name, 168, 12, true), dx + 112, ry + 16, { size: 12, bold: true, color: isUnl ? THEME.TX1 : THEME.TX3 });
+      drawText(ctx, isEq ? '已编入✓' : isUnl ? '已解锁' : `${d.unlockCost}pt`, dx + dw - 24, ry + 16, {
+        size: 10,
+        bold: true,
+        color: isEq ? THEME.GREEN : isUnl ? '#7DD3FC' : THEME.GOLD_LIGHT,
+        align: 'right',
+      });
+      drawText(ctx, fitText(ctx, d.benefitSummary, dw - 52, 10), dx + 24, ry + 38, { size: 10, color: THEME.TX2 });
+      hits.add(dx + 16, ry, dw - 32, 54, () => {
+        SoundEngine.playClick();
+        this.selected = { kind: 'directive', id: d.id };
+      });
+    });
+
+    drawButton(ctx, hits, dx + 16, dy + dh - 38, 80, 26, '上一页', () => {
+      this.catalogPage = Math.max(0, this.catalogPage - 1);
+    }, { disabled: this.catalogPage === 0, fontSize: 10.5 });
+    drawText(ctx, `${this.catalogPage + 1} / ${totalPages} (共${list.length}张)`, dx + dw / 2, dy + dh - 25, {
+      size: 10.5,
+      color: THEME.TX2,
+      align: 'center',
+    });
+    drawButton(ctx, hits, dx + dw - 96, dy + dh - 38, 80, 26, '下一页', () => {
+      this.catalogPage = Math.min(totalPages - 1, this.catalogPage + 1);
+    }, { disabled: this.catalogPage >= totalPages - 1, fontSize: 10.5 });
+  }
+
+  private renderSkillCatalog(
+    ctx: CanvasRenderingContext2D,
+    hits: HitRegistry,
+    league: LeagueManager,
+    dx: number,
+    dy: number,
+    dw: number,
+    dh: number
+  ): void {
+    const ast = league.getV6Astrolabe();
+    const unlSet = new Set(ast.unlockedSkills);
+    const eqSet = new Set(ast.equippedSkills);
+    drawText(ctx, `59 个子弹时间主动技库 (${ast.unlockedSkills.length}已解锁)`, dx + 16, dy + 24, {
+      size: 14,
+      bold: true,
       color: '#38BDF8',
     });
 
-    drawButton(ctx, hits, mx + 28, my + mh - 64, mw - 56, 44, '重置星图与技能等级（全额退还 Meta 点数）', () => {
-      const res = league.resetSkillWeb();
-      if (res.ok) {
+    const list = [...V6_ACTIVE_SKILLS].sort((a, b) => Number(eqSet.has(b.id)) - Number(eqSet.has(a.id)) || Number(unlSet.has(b.id)) - Number(unlSet.has(a.id)));
+    const pageSize = 7;
+    const totalPages = Math.max(1, Math.ceil(list.length / pageSize));
+    if (this.catalogPage >= totalPages) this.catalogPage = totalPages - 1;
+    const slice = list.slice(this.catalogPage * pageSize, (this.catalogPage + 1) * pageSize);
+
+    slice.forEach((sk, idx) => {
+      const ry = dy + 52 + idx * 60;
+      const isUnl = unlSet.has(sk.id);
+      const isEq = eqSet.has(sk.id);
+      drawRoundRect(ctx, dx + 16, ry, dw - 32, 54, 7, isEq ? 'rgba(12, 74, 110, 0.45)' : THEME.BG_CARD, isEq ? '#4ADE80' : isUnl ? '#38BDF8' : THEME.BORDER);
+      drawText(ctx, sk.name, dx + 24, ry + 16, { size: 12, bold: true, color: isEq ? '#4ADE80' : isUnl ? '#7DD3FC' : THEME.TX3 });
+      drawText(ctx, isEq ? '已装配✓' : isUnl ? '已解锁' : `${sk.unlockCost}pt`, dx + dw - 24, ry + 16, {
+        size: 10,
+        bold: true,
+        color: isEq ? THEME.GREEN : isUnl ? '#7DD3FC' : THEME.GOLD_LIGHT,
+        align: 'right',
+      });
+      drawText(ctx, fitText(ctx, `${sk.situationLabel} · ${sk.instantLabel}`, dw - 52, 10), dx + 24, ry + 38, {
+        size: 10,
+        color: THEME.TX2,
+      });
+      hits.add(dx + 16, ry, dw - 32, 54, () => {
         SoundEngine.playClick();
-        this.summaryModalOpen = false;
-        this.notice = `星图已重置，全额退还 ${res.refunded} Meta 点数！`;
-        actions.onSave();
-      } else {
-        this.notice = res.reason || '无法重置';
+        this.selected = { kind: 'skill', id: sk.id };
+      });
+    });
+
+    drawButton(ctx, hits, dx + 16, dy + dh - 38, 80, 26, '上一页', () => {
+      this.catalogPage = Math.max(0, this.catalogPage - 1);
+    }, { disabled: this.catalogPage === 0, fontSize: 10.5 });
+    drawText(ctx, `${this.catalogPage + 1} / ${totalPages} (共${list.length}个)`, dx + dw / 2, dy + dh - 25, {
+      size: 10.5,
+      color: THEME.TX2,
+      align: 'center',
+    });
+    drawButton(ctx, hits, dx + dw - 96, dy + dh - 38, 80, 26, '下一页', () => {
+      this.catalogPage = Math.min(totalPages - 1, this.catalogPage + 1);
+    }, { disabled: this.catalogPage >= totalPages - 1, fontSize: 10.5 });
+  }
+
+  private renderClubInfrastructure(
+    ctx: CanvasRenderingContext2D,
+    hits: HitRegistry,
+    league: LeagueManager,
+    baseX: number,
+    totalW: number,
+    actions: { onSave: () => void }
+  ): void {
+    const levels = league.getMetaLevels();
+    const cardGap = 12;
+    const cardW = (totalW - cardGap * 3) / 4;
+    const cardH = 286;
+    const clubFunds = league.getClubFunds();
+    const bestTier = league.getBestTierReached();
+
+    META_BRANCHES.forEach((branch, idx) => {
+      const col = idx % 4;
+      const row = Math.floor(idx / 4);
+      const bx = baseX + col * (cardW + cardGap);
+      const by = 116 + row * (cardH + 12);
+
+      const curLv = levels[branch.id] ?? 0;
+      const nextLv = curLv + 1;
+      const req = getMetaUpgradeRequirement(branch.id, curLv);
+      const nextCost = req?.cost ?? null;
+      const reqTier = req?.minTier ?? 7;
+      const tierLocked = nextCost !== null && bestTier > reqTier;
+      const canAfford = nextCost !== null && !tierLocked && clubFunds >= nextCost;
+
+      drawChamferPanel(
+        ctx,
+        bx,
+        by,
+        cardW,
+        cardH,
+        12,
+        'rgba(14, 22, 40, 0.92)',
+        curLv > 0 ? branch.accent : THEME.BORDER,
+        curLv > 0 ? 1.5 : 1,
+        curLv > 0 ? branch.accent : undefined
+      );
+      drawIcon(ctx, BRANCH_ICON[branch.id], bx + 22, by + 24, 15, branch.accent);
+      drawText(ctx, branch.name, bx + 38, by + 24, { size: 15.5, bold: true, color: branch.accent });
+      drawBadge(ctx, bx + cardW - 76, by + 13, 62, 20, `Lv.${curLv}/${branch.maxLevel}`, '#1E293B', THEME.GOLD_LIGHT);
+
+      for (let lvDot = 0; lvDot < branch.maxLevel; lvDot++) {
+        const dw = Math.floor((cardW - 36 - 7 * 3) / 8);
+        const dx = bx + 18 + lvDot * (dw + 3);
+        const lit = curLv > lvDot;
+        const lockedDot = lvDot >= 5 && bestTier > (INFRA_MIN_TIERS[lvDot] ?? 7);
+        drawRoundRect(ctx, dx, by + 44, dw, 5, 2, lit ? branch.accent : lockedDot ? '#334155' : '#1E293B');
       }
-    }, { variant: 'ghost', fontSize: 13, icon: 'refresh' });
+
+      const startLv = Math.max(0, Math.min(branch.maxLevel - 3, curLv > 0 ? curLv - 1 : 0));
+      for (let li = startLv; li < Math.min(branch.maxLevel, startLv + 3); li++) {
+        const rowIdx = li - startLv;
+        const ly = by + 58 + rowIdx * 56;
+        const unlocked = curLv >= li + 1;
+        const lvReq = INFRA_MIN_TIERS[li] ?? 7;
+        const isLvLocked = !unlocked && bestTier > lvReq;
+        drawRoundRect(
+          ctx,
+          bx + 14,
+          ly,
+          cardW - 28,
+          50,
+          7,
+          unlocked ? 'rgba(34,197,94,0.12)' : THEME.BG_CARD,
+          unlocked ? THEME.GREEN : isLvLocked ? '#475569' : THEME.BORDER
+        );
+        drawBadge(
+          ctx,
+          bx + 20,
+          ly + 15,
+          38,
+          20,
+          `Lv.${li + 1}`,
+          unlocked ? THEME.GREEN : isLvLocked ? '#1E293B' : '#334155',
+          unlocked ? '#080C14' : isLvLocked ? '#FCA5A5' : THEME.TX2
+        );
+        drawWrappedText(ctx, branch.levelDescriptions[li], bx + 64, ly + 11, cardW - 134, 14, {
+          size: 10,
+          color: unlocked ? THEME.TX1 : THEME.TX2,
+          maxLines: 2,
+        });
+        drawText(
+          ctx,
+          unlocked ? '已建' : isLvLocked ? `需T${lvReq}` : `¥${branch.costs[li]}万`,
+          bx + cardW - 18,
+          ly + 25,
+          {
+            size: 10,
+            bold: true,
+            color: unlocked ? THEME.GREEN : isLvLocked ? '#FCA5A5' : THEME.GOLD_LIGHT,
+            align: 'right',
+            mono: !unlocked,
+          }
+        );
+      }
+
+      if (nextCost === null) {
+        drawBadge(ctx, bx + 14, by + cardH - 44, cardW - 28, 32, '满级基建竣工 (Lv.8)', '#14532D', THEME.GREEN);
+      } else {
+        const btnLabel = tierLocked
+          ? `需打入第 ${reqTier} 级解锁`
+          : canAfford
+          ? `扩建 Lv.${nextLv} (¥${nextCost}万)`
+          : `资金不足 (¥${nextCost}万)`;
+        drawButton(
+          ctx,
+          hits,
+          bx + 14,
+          by + cardH - 44,
+          cardW - 28,
+          32,
+          btnLabel,
+          () => {
+            const res = league.upgradeMetaBranch(branch.id);
+            if (res.ok) {
+              SoundEngine.playClick();
+              this.notice = `已将【${branch.name}】扩建至 Lv.${nextLv}`;
+              actions.onSave();
+            } else {
+              this.notice = res.reason || '扩建失败';
+            }
+          },
+          { variant: canAfford ? 'gold' : 'ghost', disabled: !canAfford, fontSize: 11.5 }
+        );
+      }
+    });
   }
 }

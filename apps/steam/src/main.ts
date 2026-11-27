@@ -1,11 +1,27 @@
 /**
- * @fm-league/steam - Steam / 浏览器桌面端入口
- * 支持 Retina HiDPI (`devicePixelRatio`) 高清缩放、桌面端快捷键 (Space / 1-4 / Escape)
- * 与后端 SQLite 数据库持久化。存档按 8 位口令隔离：save_key = SAVE_KEY_<口令>
+ * @fm-league/steam - Steam 桌面端 / 浏览器桌面入口
+ * - 支持 Retina HiDPI (`devicePixelRatio`) 16:9 等比缩放
+ * - 移除浏览器口令门与 window.prompt，接入 Canvas 内置输入法桥接
+ * - 支持 3 档多存档槽位：Electron 桌面端直存 userData/saves/*.json，浏览器端回退 localStorage
  */
 
-import { GameApp, PlatformAdapter, SAVE_KEY, THEME } from '../../../packages/game-ui/src/index';
+import { GameApp, PlatformAdapter, SAVE_KEY, SaveSlotSnapshot, THEME } from '../../../packages/game-ui/src/index';
 import { IS_MOBILE } from '../../../packages/game-ui/src/Theme';
+
+interface ElectronBridge {
+  isDesktop: boolean;
+  loadSaveSync(slotId: string): string | null;
+  writeSave(slotId: string, data: string): void;
+  deleteSave(slotId: string): void;
+  loadSettingsSync(): string | null;
+  saveSettings(data: string): void;
+  isFullscreenSync(): boolean;
+  toggleFullscreen(): void;
+  quitApp(): void;
+}
+
+const gWin = globalThis as unknown as { electronBridge?: ElectronBridge };
+const bridge = gWin.electronBridge;
 
 const canvas = document.getElementById('gameCanvas') as HTMLCanvasElement;
 const ctx = canvas.getContext('2d')!;
@@ -24,144 +40,209 @@ function applyHiDPI(): void {
 applyHiDPI();
 window.addEventListener('resize', applyHiDPI);
 
-const LEGACY_SAVE_KEY = 'fm_league_steam_v1';
-const GLOBAL_SAVE_KEY = SAVE_KEY; // 历史全局存档键（无口令时代），仅用于首次迁移
-const memorySaveCache = new Map<string, string>();
-let saveSyncTimer: number | null = null;
-let lastSyncedData: string | null = null;
+const SLOT_IDS = ['slot_1', 'slot_2', 'slot_3'] as const;
+const ACTIVE_SLOT_KEY = 'fm_league_active_slot';
+const SETTINGS_KEY = 'fm_league_settings_v1';
 
-// 当前口令隔离后的存档键，在 boot() 中根据口令确定
-let activeSaveKey = GLOBAL_SAVE_KEY;
-
-async function syncSaveToServer(key: string, data: string): Promise<void> {
-  lastSyncedData = data;
-  try {
-    await fetch(`/api/saves/${encodeURIComponent(key)}`, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ data }),
-      keepalive: true,
-    });
-  } catch {
-    // 网络异常时保留内存状态，不阻塞前端帧率
-  }
+function slotStorageKey(slotId: string): string {
+  return `${SAVE_KEY}_${slotId}`;
 }
 
-// 页面隐藏/卸载时强制同步尚未落盘的最后一笔，防止防抖窗口内刷新丢档
-function flushPendingSave(): void {
-  if (saveSyncTimer !== null) {
-    window.clearTimeout(saveSyncTimer);
-    saveSyncTimer = null;
-  }
-  const data = memorySaveCache.get(activeSaveKey);
-  if (data && data !== lastSyncedData) {
-    void syncSaveToServer(activeSaveKey, data);
-  }
-}
-
-window.addEventListener('pagehide', flushPendingSave);
-window.addEventListener('beforeunload', flushPendingSave);
-document.addEventListener('visibilitychange', () => {
-  if (document.visibilityState === 'hidden') flushPendingSave();
-});
-
-// 从服务器读取指定键，返回存档字符串或 null
-async function fetchSave(key: string): Promise<string | null> {
-  try {
-    const resp = await fetch(`/api/saves/${encodeURIComponent(key)}`, { cache: 'no-store' });
-    if (resp.ok) {
-      const json = await resp.json() as { ok?: boolean; data?: string };
-      if (json.ok && typeof json.data === 'string' && json.data.length > 0) {
-        return json.data;
-      }
-    }
-  } catch {
-    // ignore fetch errors on startup
-  }
-  return null;
-}
-
-async function hydrateFromDatabase(key: string): Promise<void> {
-  // 1. 优先读当前口令自己的存档
-  const own = await fetchSave(key);
-  if (own) {
-    memorySaveCache.set(key, own);
-    lastSyncedData = own;
-    return;
-  }
-
-  // 2. 兼容：当前口令首次使用，尝试迁移历史全局存档（若已主动重置过则不再回迁旧档）
-  let skipLegacy = false;
-  try {
-    skipLegacy = window.localStorage.getItem(`fm_skip_legacy_migration_${key}`) === '1';
-  } catch {
-    skipLegacy = false;
-  }
-  if (!skipLegacy && key !== GLOBAL_SAVE_KEY) {
-    const legacyServer = await fetchSave(GLOBAL_SAVE_KEY);
-    if (legacyServer) {
-      memorySaveCache.set(key, legacyServer);
-      await syncSaveToServer(key, legacyServer);
-      // 迁移后保留全局档，不删除，避免影响其他尚未设置口令的入口
-      return;
-    }
-  }
-
-  // 3. 兼容：浏览器 localStorage 里的旧档（迁移到当前口令键）
-  if (!skipLegacy) {
+function readSlotRaw(slotId: string): string | null {
+  if (bridge) {
     try {
-      const legacy = window.localStorage.getItem(GLOBAL_SAVE_KEY) || window.localStorage.getItem(LEGACY_SAVE_KEY);
-      if (legacy) {
-        memorySaveCache.set(key, legacy);
-        await syncSaveToServer(key, legacy);
-        window.localStorage.removeItem(GLOBAL_SAVE_KEY);
-        window.localStorage.removeItem(LEGACY_SAVE_KEY);
-      }
+      return bridge.loadSaveSync(slotId);
     } catch {
-      // ignore legacy migration errors
+      return null;
     }
   }
+  try {
+    return window.localStorage.getItem(slotStorageKey(slotId));
+  } catch {
+    return null;
+  }
 }
+
+function writeSlotRaw(slotId: string, data: string): void {
+  if (bridge) {
+    try {
+      bridge.writeSave(slotId, data);
+    } catch {
+      // ignore
+    }
+  }
+  try {
+    window.localStorage.setItem(slotStorageKey(slotId), data);
+  } catch {
+    // ignore storage quota errors
+  }
+}
+
+function deleteSlotRaw(slotId: string): void {
+  if (bridge) {
+    try {
+      bridge.deleteSave(slotId);
+    } catch {
+      // ignore
+    }
+  }
+  try {
+    window.localStorage.removeItem(slotStorageKey(slotId));
+  } catch {
+    // ignore
+  }
+}
+
+let activeSlotId = 'slot_1';
+try {
+  const savedSlot = window.localStorage.getItem(ACTIVE_SLOT_KEY);
+  if (savedSlot && (SLOT_IDS as readonly string[]).includes(savedSlot)) {
+    activeSlotId = savedSlot;
+  }
+} catch {
+  // ignore
+}
+
+// 兼容迁移旧版单槽位存档 (fm_league_save_v1) 到 slot_1
+try {
+  const legacy = window.localStorage.getItem(SAVE_KEY);
+  if (legacy && !readSlotRaw('slot_1')) {
+    writeSlotRaw('slot_1', legacy);
+  }
+} catch {
+  // ignore
+}
+
+let imeActive = false;
 
 const steamPlatform: PlatformAdapter = {
   name: 'steam',
+  isDesktop: !!bridge?.isDesktop,
   loadSave(_key: string): string | null {
-    // GameApp 内部始终用固定键，这里重定向到口令隔离的实际键
-    return memorySaveCache.get(activeSaveKey) ?? null;
+    return readSlotRaw(activeSlotId);
   },
   writeSave(_key: string, data: string): void {
-    memorySaveCache.set(activeSaveKey, data);
-    if (saveSyncTimer !== null) {
-      window.clearTimeout(saveSyncTimer);
-    }
-    saveSyncTimer = window.setTimeout(() => {
-      saveSyncTimer = null;
-      void syncSaveToServer(activeSaveKey, data);
-    }, 120);
+    writeSlotRaw(activeSlotId, data);
   },
   clearSave(_key: string): void {
-    if (saveSyncTimer !== null) {
-      window.clearTimeout(saveSyncTimer);
-      saveSyncTimer = null;
-    }
-    lastSyncedData = null;
-    memorySaveCache.delete(activeSaveKey);
-    try {
-      window.localStorage.setItem(`fm_skip_legacy_migration_${activeSaveKey}`, '1');
-    } catch {
-      // ignore storage errors
-    }
-    void fetch(`/api/saves/${encodeURIComponent(activeSaveKey)}`, { method: 'DELETE' }).catch(() => {});
+    deleteSlotRaw(activeSlotId);
   },
   getSafeArea() {
     return { left: 0, top: 0, right: 0, bottom: 0 };
   },
-  promptText(title: string, defaultValue: string, onDone: (val: string) => void) {
-    const res = window.prompt(title, defaultValue);
-    if (res !== null) {
-      const trimmed = res.trim();
-      if (trimmed) onDone(trimmed.slice(0, 12));
+  getActiveSlotId(): string {
+    return activeSlotId;
+  },
+  setActiveSlotId(slotId: string): void {
+    if ((SLOT_IDS as readonly string[]).includes(slotId)) {
+      activeSlotId = slotId;
+      try {
+        window.localStorage.setItem(ACTIVE_SLOT_KEY, slotId);
+      } catch {
+        // ignore
+      }
     }
+  },
+  listSaveSlots(): SaveSlotSnapshot[] {
+    return SLOT_IDS.map(slotId => ({ slotId, raw: readSlotRaw(slotId) }));
+  },
+  isFullscreen(): boolean {
+    if (bridge) {
+      try {
+        return bridge.isFullscreenSync();
+      } catch {
+        return false;
+      }
+    }
+    return !!document.fullscreenElement;
+  },
+  toggleFullscreen(): void {
+    if (bridge) {
+      bridge.toggleFullscreen();
+      return;
+    }
+    if (!document.fullscreenElement) {
+      document.documentElement.requestFullscreen?.().catch(() => {});
+    } else {
+      document.exitFullscreen?.().catch(() => {});
+    }
+  },
+  quitApp: bridge ? () => bridge.quitApp() : undefined,
+  loadSettings(): string | null {
+    if (bridge) {
+      try {
+        const s = bridge.loadSettingsSync();
+        if (s) return s;
+      } catch {
+        // ignore
+      }
+    }
+    try {
+      return window.localStorage.getItem(SETTINGS_KEY);
+    } catch {
+      return null;
+    }
+  },
+  saveSettings(data: string): void {
+    if (bridge) {
+      try {
+        bridge.saveSettings(data);
+      } catch {
+        // ignore
+      }
+    }
+    try {
+      window.localStorage.setItem(SETTINGS_KEY, data);
+    } catch {
+      // ignore
+    }
+  },
+  bindImeInput(initialValue, maxLen, onChange, onSubmit, onCancel) {
+    const el = document.getElementById('imeBridge') as HTMLInputElement | null;
+    if (!el) return () => {};
+    imeActive = true;
+    el.value = initialValue;
+    el.maxLength = maxLen;
+    let composing = false;
+
+    const handleInput = () => {
+      if (composing) return;
+      onChange(el.value.slice(0, maxLen));
+    };
+    const handleCompStart = () => {
+      composing = true;
+    };
+    const handleCompEnd = () => {
+      composing = false;
+      onChange(el.value.slice(0, maxLen));
+    };
+    const handleKey = (e: KeyboardEvent) => {
+      if (composing) return;
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        e.stopPropagation();
+        onSubmit();
+      } else if (e.key === 'Escape') {
+        e.preventDefault();
+        e.stopPropagation();
+        onCancel();
+      }
+    };
+
+    el.addEventListener('input', handleInput);
+    el.addEventListener('compositionstart', handleCompStart);
+    el.addEventListener('compositionend', handleCompEnd);
+    el.addEventListener('keydown', handleKey);
+    window.setTimeout(() => el.focus(), 10);
+
+    return () => {
+      imeActive = false;
+      el.removeEventListener('input', handleInput);
+      el.removeEventListener('compositionstart', handleCompStart);
+      el.removeEventListener('compositionend', handleCompEnd);
+      el.removeEventListener('keydown', handleKey);
+      el.blur();
+    };
   },
 };
 
@@ -173,19 +254,7 @@ function toDesignCoord(clientX: number, clientY: number): { x: number; y: number
   };
 }
 
-// 等待 index.html 的口令门确定口令（字符串或 Promise）
-async function resolveAccessCode(): Promise<string> {
-  const g = globalThis as unknown as { __fmAccessCode?: string | Promise<string> };
-  const value = g.__fmAccessCode;
-  const code = typeof value === 'string' ? value : value ? await value : '';
-  return /^[A-Z0-9]{8}$/.test(code) ? code : 'GUEST01';
-}
-
-async function boot(): Promise<void> {
-  const code = await resolveAccessCode();
-  activeSaveKey = `${GLOBAL_SAVE_KEY}_${code}`;
-  await hydrateFromDatabase(activeSaveKey);
-
+function boot(): void {
   const app = new GameApp(steamPlatform);
 
   let lastInteractionMs = performance.now();
@@ -221,11 +290,11 @@ async function boot(): Promise<void> {
 
   window.addEventListener('keydown', (e) => {
     markActive();
-    if (e.code === 'Space' || e.code === 'Escape' || ['Digit1', 'Digit2', 'Digit3', 'Digit4'].includes(e.code)) {
-      if (typeof (app as unknown as { onKeyDown?: (code: string) => void }).onKeyDown === 'function') {
-        (app as unknown as { onKeyDown: (code: string) => void }).onKeyDown(e.code);
-      }
+    if (imeActive) return;
+    if (e.code === 'F11') {
+      e.preventDefault();
     }
+    app.onKeyDown(e.code, e.key);
   });
 
   let lastRenderTs = performance.now();
@@ -247,4 +316,4 @@ async function boot(): Promise<void> {
   requestAnimationFrame(loop);
 }
 
-void boot();
+boot();

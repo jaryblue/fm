@@ -1,18 +1,10 @@
-"use strict";
 /**
  * 轻量 2D+Z 球体物理与球员运动学
  */
-Object.defineProperty(exports, "__esModule", { value: true });
-exports.dist2D = dist2D;
-exports.pointToSegment = pointToSegment;
-exports.launchPassBall = launchPassBall;
-exports.launchShotBall = launchShotBall;
-exports.stepBallPhysics = stepBallPhysics;
-exports.stepPlayersPhysics = stepPlayersPhysics;
-const types_1 = require("./types");
-const formations_1 = require("./formations");
+import { PITCH, SIM_CONFIG, } from './types';
+import { clamp } from './formations';
 const GRAVITY = 9.81;
-function dist2D(a, b) {
+export function dist2D(a, b) {
     const dx = a.x - b.x;
     const dy = a.y - b.y;
     return Math.sqrt(dx * dx + dy * dy);
@@ -20,13 +12,13 @@ function dist2D(a, b) {
 /**
  * 点 P 到线段 AB 的最短距离与投影参数 t ∈ [0, 1]
  */
-function pointToSegment(p, a, b) {
+export function pointToSegment(p, a, b) {
     const abx = b.x - a.x;
     const aby = b.y - a.y;
     const lenSq = abx * abx + aby * aby;
     if (lenSq < 1e-6)
         return { dist: dist2D(p, a), t: 0 };
-    const t = (0, formations_1.clamp)(((p.x - a.x) * abx + (p.y - a.y) * aby) / lenSq, 0, 1);
+    const t = clamp(((p.x - a.x) * abx + (p.y - a.y) * aby) / lenSq, 0, 1);
     const px = a.x + t * abx;
     const py = a.y + t * aby;
     return { dist: dist2D(p, { x: px, y: py }), t };
@@ -34,13 +26,13 @@ function pointToSegment(p, a, b) {
 /**
  * 发起传球物理轨迹（短传贴地，长传/传中带 Z 轴抛物线）
  */
-function launchPassBall(ball, from, to, passer, target, passType) {
+export function launchPassBall(ball, from, to, passer, target, passType) {
     const d = Math.max(2, dist2D(from, to));
     // 传球初速度：短传 ~16-20 m/s，长传/直塞 ~22-27 m/s
     const baseSpeed = passType === 'short' ? 16 + Math.min(4, d * 0.15) :
         passType === 'through' ? 21 :
             passType === 'cross' ? 22 : 24;
-    const flightTime = (0, formations_1.clamp)(d / baseSpeed, 0.25, 2.2);
+    const flightTime = clamp(d / baseSpeed, 0.25, 2.2);
     // 地面传球略有摩擦，略提高初速以保证到达
     const isLofted = passType === 'long' || passType === 'cross' || d > 26;
     const speedMul = isLofted ? 1.0 : 1.18;
@@ -48,8 +40,8 @@ function launchPassBall(ball, from, to, passer, target, passType) {
     const accFactor = (100 - passer.attributes.passing) * 0.015;
     const errX = (Math.random() - 0.5) * accFactor * (d * 0.08);
     const errY = (Math.random() - 0.5) * accFactor * (d * 0.08);
-    const tx = (0, formations_1.clamp)(to.x + errX, 1.5, types_1.PITCH.LENGTH - 1.5);
-    const ty = (0, formations_1.clamp)(to.y + errY, 1.5, types_1.PITCH.WIDTH - 1.5);
+    const tx = clamp(to.x + errX, 1.5, PITCH.LENGTH - 1.5);
+    const ty = clamp(to.y + errY, 1.5, PITCH.WIDTH - 1.5);
     ball.mode = 'pass';
     ball.holderId = null;
     ball.lastTouchTeam = passer.team;
@@ -66,11 +58,11 @@ function launchPassBall(ball, from, to, passer, target, passType) {
 /**
  * 发起射门物理轨迹
  */
-function launchShotBall(ball, shooter, attackDir, xG, onTarget, targetY, targetZ) {
-    const goalX = attackDir === 1 ? types_1.PITCH.LENGTH : 0;
+export function launchShotBall(ball, shooter, attackDir, xG, onTarget, targetY, targetZ) {
+    const goalX = attackDir === 1 ? PITCH.LENGTH : 0;
     const d = Math.max(2, dist2D(shooter.pos, { x: goalX, y: targetY }));
     const shotSpeed = 26 + (shooter.attributes.shooting / 99) * 8; // 26~34 m/s
-    const flightTime = (0, formations_1.clamp)(d / shotSpeed, 0.15, 1.3);
+    const flightTime = clamp(d / shotSpeed, 0.15, 1.3);
     ball.mode = 'shot';
     ball.holderId = null;
     ball.lastTouchTeam = shooter.team;
@@ -89,10 +81,10 @@ function launchShotBall(ball, shooter, attackDir, xG, onTarget, targetY, targetZ
 /**
  * 推进球体物理状态 1 个 tick (0.1s)
  */
-function stepBallPhysics(ball) {
+export function stepBallPhysics(ball) {
     if (ball.mode === 'dead' || ball.mode === 'held')
         return;
-    const dt = types_1.SIM_CONFIG.TICK_DT;
+    const dt = SIM_CONFIG.TICK_DT;
     ball.pos.x += ball.vel.x * dt;
     ball.pos.y += ball.vel.y * dt;
     ball.pos.z += ball.vel.z * dt;
@@ -128,8 +120,8 @@ function stepBallPhysics(ball) {
 /**
  * 推进所有场上球员运动学 (带转向惯性与体能影响)
  */
-function stepPlayersPhysics(players, ball) {
-    const dt = types_1.SIM_CONFIG.TICK_DT;
+export function stepPlayersPhysics(players, ball) {
+    const dt = SIM_CONFIG.TICK_DT;
     for (const p of players) {
         if (p.redCard)
             continue;
@@ -141,11 +133,10 @@ function stepPlayersPhysics(players, ball) {
         }
         if (p.decisionCooldown > 0)
             p.decisionCooldown--;
-        // 持球人略微降速 (带球比无球慢约 12%)；体能低于 65% 后速度明显下滑，凸显换人价值
+        // 持球人略微降速 (带球比无球慢约 12%)；平滑体能衰减曲线（无断崖暴毙）
         const baseMaxSpeed = 6.2 + (p.attributes.pace / 99) * 2.6; // 6.2 ~ 8.8 m/s
-        const fatigueFactor = p.fitness >= 65
-            ? 0.90 + ((p.fitness - 65) / 35) * 0.10
-            : 0.58 + (p.fitness / 65) * 0.32;
+        const fitNorm = Math.max(0, Math.min(1, (100 - p.fitness) / 80));
+        const fatigueFactor = 1.0 - 0.14 * Math.pow(fitNorm, 1.35);
         const ballCarryFactor = p.hasBall ? 0.88 : 1.0;
         const maxSpeed = baseMaxSpeed * fatigueFactor * ballCarryFactor;
         const dx = p.targetPos.x - p.pos.x;
@@ -167,8 +158,8 @@ function stepPlayersPhysics(players, ball) {
         }
         const oldX = p.pos.x;
         const oldY = p.pos.y;
-        p.pos.x = (0, formations_1.clamp)(p.pos.x + p.vel.x * dt, 0.8, types_1.PITCH.LENGTH - 0.8);
-        p.pos.y = (0, formations_1.clamp)(p.pos.y + p.vel.y * dt, 0.8, types_1.PITCH.WIDTH - 0.8);
+        p.pos.x = clamp(p.pos.x + p.vel.x * dt, 0.8, PITCH.LENGTH - 0.8);
+        p.pos.y = clamp(p.pos.y + p.vel.y * dt, 0.8, PITCH.WIDTH - 0.8);
         const moved = dist2D({ x: oldX, y: oldY }, p.pos);
         p.matchStats.distanceM += moved;
         // 持球时球紧贴脚下（略微在运动方向前方 0.45m）
