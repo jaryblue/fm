@@ -230,10 +230,26 @@ async function connectCdp(serial, cfg) {
     );
   }
   const socket = sockets[0];
+  // 先清掉可能残留的旧转发（否则会连到上一次运行的 WebView 进程，拿不到页面）
+  try {
+    execFileSync(ADB, ['-s', serial, 'forward', '--remove', `tcp:${cfg.cdpPort}`], { stdio: 'ignore' });
+  } catch { /* 旧转发不存在时忽略 */ }
   adbFor(serial, ['forward', `tcp:${cfg.cdpPort}`, `localabstract:${socket}`]);
-  await new Promise(r => setTimeout(r, 300));
 
-  const targets = await httpJson(`http://127.0.0.1:${cfg.cdpPort}/json`);
+  // 等 WebView 页面真正就绪（/json 返回非空且含 page 目标）
+  let targets = [];
+  for (let i = 0; i < 30; i++) {
+    try {
+      targets = await httpJson(`http://127.0.0.1:${cfg.cdpPort}/json`);
+      if (targets.some(t => t.type === 'page')) break;
+    } catch {
+      // retry
+    }
+    await new Promise(r => setTimeout(r, 400));
+  }
+  if (targets.length === 0) {
+    throw new Error(`CDP 端口 ${cfg.cdpPort} 无页面目标。WebView socket=${socket}，请确认 app 已完全启动。`);
+  }
   const page = targets.find(t => t.type === 'page' && (t.url.includes('localhost') || t.url.includes('file:') || t.url.includes('http')));
   if (!page) throw new Error('CDP 中未找到页面目标');
   const client = new CdpClient(page.webSocketDebuggerUrl);
@@ -287,9 +303,14 @@ async function runSmoke(client, serial) {
   const shot1 = await screenshot(client, serial, '01_title');
   checks(results, '标题页截图', fs.statSync(shot1).size > 1000, shot1);
 
+  // OTA 更新弹窗可能挡住点击：先点「取消」（设计坐标约 536,428）关掉。
+  // ConfirmModal 渲染时会 hits.clear()，不关弹窗的话后续 tap 会被吞掉。
+  await client.evalJs(`window.__FM_TEST__.tap(536, 428)`);
+  await new Promise(r => setTimeout(r, 300));
+
   // 点击「开启新赛季」（设计坐标 640,446）
   await client.evalJs(`window.__FM_TEST__.tap(640, 446)`);
-  await new Promise(r => setTimeout(r, 800));
+  await new Promise(r => setTimeout(r, 1200));
   const route2 = await client.evalJs(`window.__FM_TEST__.getRoute()`);
   checks(results, '点击开局后路由变化', route2 !== route, `${route} -> ${route2}`);
 
@@ -372,7 +393,9 @@ async function main() {
   }
 
   client.close();
-  adbFor(serial, ['forward', '--remove', `tcp:${cfg.cdpPort}`]);
+  try {
+    execFileSync(ADB, ['-s', serial, 'forward', '--remove', `tcp:${cfg.cdpPort}`], { stdio: 'ignore' });
+  } catch { /* ignore */ }
 
   const failed = results.filter(r => !r.ok);
   console.log(`\n=== 结果: ${results.length - failed.length}/${results.length} PASS ===`);
