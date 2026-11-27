@@ -159,5 +159,124 @@
   <b>交叉验证</b>：新玩家流程拟人测试（jitter=8px）命中率 30%，失败集中在核心开包与首战按钮——但那是<b>设计坐标用错</b>导致的假象。改用正确设计坐标后，进入比赛日、NavRail 全部一次命中。真实按钮热区（drawButton 已有 44px padding）达标，无需为此改动。
 </div>
 
+<h2>补充：12 个页面 + 7 个弹窗全量覆盖</h2>
+<div class="sub" style="margin-bottom:16px">
+  2026-11-27 第二轮 · 走真实玩家路径（序章 → 建队 → 开包 → 夏窗 → 常规赛 → 赛季收官），非跳转。<br>
+  真机锁屏（<code>secure=true</code>）导致 adb 无法自动解锁，改走 Playwright 移动端模拟通道：
+  <code>isMobile + hasTouch + Android UA</code> 使 <code>Theme.IS_MOBILE</code> 为真，画布仍为 1280×720 设计空间，
+  因此布局结论与真机一致；真机仍用于验证触摸手感。脚本：<code>scripts/capture_ui_all.mjs</code>（16/16 阶段 PASS）。
+</div>
+
+<div class="stat">
+  <div><b>12/12</b>页面覆盖</div>
+  <div><b>7/7</b>弹窗覆盖</div>
+  <div><b>16/16</b>阶段通过</div>
+  <div><b>48</b>张截图</div>
+  <div><b>0</b>页面异常</div>
+</div>
+
+<table>
+  <tr><th>类型</th><th>名称</th><th>覆盖方式 / 触发入口</th><th>结论</th></tr>
+  <tr><td>页面</td><td>标题页</td><td>冷启动 / 有存档两种状态</td><td>良好</td></tr>
+  <tr><td>页面</td><td>序章叙事</td><td>开始新赛季 → 3 幕 + 双抉择</td><td>良好，正文 12px 偏小</td></tr>
+  <tr><td>页面</td><td>核心开包</td><td>建队向导确认后</td><td>4 段进度条标签接近 10px</td></tr>
+  <tr><td>页面</td><td>门户（夏窗/常规赛）</td><td>开包签入后</td><td>信息密度最高，P1</td></tr>
+  <tr><td>页面</td><td>联赛 / 战术 / 引援 / 星盘 / 荣誉</td><td>NavRail 逐项</td><td>引援 P0，其余 P1~P2</td></tr>
+  <tr><td>页面</td><td>比赛日</td><td>联赛页「进入比赛日」</td><td>开球过场有元素碰撞，见下</td></tr>
+  <tr><td>页面</td><td>赛后复盘 / 肉鸽三选一</td><td>快速完赛 → 查看复盘</td><td>底部 CTA 被 Toast 压住</td></tr>
+  <tr><td>页面</td><td>赛季收官</td><td>末轮踢完后自然结算</td><td>顶部副标题被面板遮挡</td></tr>
+  <tr><td>弹窗</td><td>设置</td><td>标题页「设置」</td><td>良好，滑杆 44px 达标</td></tr>
+  <tr><td>弹窗</td><td>存档位管理</td><td>标题页「存档位」</td><td>良好</td></tr>
+  <tr><td>弹窗</td><td>文本输入</td><td>建队向导「编辑」队名</td><td>4 按钮同行偏挤，P2</td></tr>
+  <tr><td>弹窗</td><td>确认（危险操作）</td><td>标题页「重置存档」</td><td>良好，可安全取消</td></tr>
+  <tr><td>弹窗</td><td>球员详情</td><td>引援中心点球员卡</td><td>良好</td></tr>
+  <tr><td>弹窗</td><td>剧情 / 启程简报</td><td>夏窗开赛、捧杯过场</td><td>全屏拦截正确，需注意异步弹出时机</td></tr>
+  <tr><td>遮罩</td><td>新手引导（8 步）</td><td>首赛季 draft 步</td><td>气泡压住底部状态栏，见下</td></tr>
+</table>
+
+<h2>本轮新发现的适配问题</h2>
+<div class="grid">
+
+  <div class="card">
+    <h3>赛后复盘：底部主 CTA 被成就 Toast 覆盖 <span class="badge b-p1">P1</span></h3>
+    <ul>
+      <li>「下一步：领取赛后肉鸽奖励」与「解锁成就：零封铁闸 (+15pt)」Toast 落在同一行</li>
+      <li>Toast 描边压在按钮上边框，观感像按钮被切了一刀</li>
+      <li>建议：Toast 底距抬高到 96px 以上，或在有底部 CTA 的页面把 Toast 移到顶部广播条</li>
+    </ul>
+  </div>
+
+  <div class="card">
+    <h3>新手引导气泡压住底部状态栏 <span class="badge b-p1">P1</span></h3>
+    <ul>
+      <li>draft 步气泡 + 老恩师立绘占据底部 96px，正好盖住「当前 11 人（已抽核心 0/9）」状态条</li>
+      <li>立绘左缘还切掉了状态条首字，读起来是「当前 11 人」缺半边</li>
+      <li>建议：气泡左移或用 8px 网格重新排布，把立绘从状态条区域移开</li>
+    </ul>
+  </div>
+
+  <div class="card">
+    <h3>比赛日开球过场：VS 圆环压住提示文案 <span class="badge b-p2">P2</span></h3>
+    <ul>
+      <li>「点击任意位置或按 空格/回车 立即开哨」正好穿过客队卡右侧 VS 圆环</li>
+      <li>中文字被蓝色圆环切断，读起来断句</li>
+      <li>建议：提示文案下移 24px，或改为在两张队伍卡下方居中</li>
+    </ul>
+  </div>
+
+  <div class="card">
+    <h3>赛季收官页：顶部副标题与底部继承文案被压 <span class="badge b-p2">P2</span></h3>
+    <ul>
+      <li>标题下方「第N赛季 · …」副标题被「赛季个人荣誉殿堂」面板上沿切掉</li>
+      <li>底部「原承逸已继承梅利纳衣钵…」与主按钮行底边重叠</li>
+      <li>建议：右侧内容整体下移 12px，底部说明行改为与按钮同基线</li>
+    </ul>
+  </div>
+
+  <div class="card">
+    <h3>文本输入弹窗：4 按钮同行偏挤 <span class="badge b-p2">P2</span></h3>
+    <ul>
+      <li>随机队名 / 清空 / 取消 / 确认 四颗按钮挤在 440px 宽弹窗内</li>
+      <li>每颗约 100×36 设计像素，手机上实际约 84×30</li>
+      <li>建议：随机队名与清空降级为图标，或把「清空」并入输入框尾部</li>
+    </ul>
+  </div>
+
+  <div class="card">
+    <h3>序章比赛强制教程存在「时钟冻结」体验风险 <span class="badge b-p2">P2</span></h3>
+    <ul>
+      <li>47'/73' 要打出指定牌、80' 要开换人面板换老队长、89' 要放绝杀技</li>
+      <li>每一步不完成，比赛时钟就完全停住（不是慢放），且无超时兜底</li>
+      <li>提示横幅有指引，但玩家若误触别处会以为卡死</li>
+      <li>建议：保留强制节奏，但加「30 秒未操作 → 高亮目标 + 震动/音效提醒」</li>
+    </ul>
+  </div>
+
+</div>
+
+<h2>工具链：本轮补齐的测试能力</h2>
+<div class="warn">
+  <b><code>__FM_TEST__</code> 新增三个接口</b>（仅 <code>?e2e=1</code> / <code>localStorage.fm_e2e=1</code> 时挂载，线上玩家不可见）：
+  <ul style="margin:8px 0 0 18px;color:var(--tx2);font-size:12.5px">
+    <li><code>getHits()</code> → 当前帧所有可点热区矩形。Canvas 没有 DOM 定位器，这是唯一能枚举「这一页有哪些可点区域」的途径，也是本次能定位「进入比赛日按钮中心其实是 (974,34)」的原因。</li>
+    <li><code>getModals()</code> → 当前打开的弹窗名列表，用于断言「弹窗确实开了 / 确实关了」，避免用亮度差分猜测。</li>
+    <li><code>getTutorial()</code> → 新手引导进度，判断遮罩是否应该出现。</li>
+  </ul>
+</div>
+
+<table>
+  <tr><th>发现</th><th>表现</th><th>处理</th></tr>
+  <tr><td><code>device_new_player_flow.mjs</code> 序章换人坐标失效</td><td>旧内联换人按钮 (536,356) 已不存在，真机跑必然卡到 240s 超时</td><td>改为换人面板四步：开面板 (1147,112) → 场上 #19 (613,285) → 替补老队长 (978,224) → 保存 (1147,51)</td></tr>
+  <tr><td>同上：捧杯入口位置变更</td><td>旧版在顶部 header (1135,42)，现移入全场弹窗</td><td>改为弹窗主按钮 (774,574)</td></tr>
+  <tr><td>同上：双抉择变两段式</td><td>点抉择卡后还需再点「接受执教」</td><td>补第二步 (985,648)</td></tr>
+  <tr><td>同上：核心开包必须逐张点牌</td><td>撕包后有约 2s 爆炸动画，翻面未到 80% 时 DraftScreen 不注册热区，「一键推荐选满」在该窗口内点击无效</td><td>等 2.8s 后按 <code>getHits()</code> 取真实卡片热区，逐张点 3 张</td></tr>
+  <tr><td><code>getMatchDebug().hand[].x/y</code> 与真实热区一致</td><td>硬编码 (625+i*97+45, 646) 与 HitRegistry 卡片矩形完全吻合</td><td>无需改动</td></tr>
+</table>
+
+<div class="note">
+  <b>截图产物</b>：<code>shots/ui-all14/</code>（48 张，2560×1440，含 manifest.json 记录每张的 route / 弹窗 / 说明）。
+  该目录在 <code>.gitignore</code> 内，不进仓库。
+</div>
+
 </body>
 </html>

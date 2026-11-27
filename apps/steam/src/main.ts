@@ -287,6 +287,25 @@ function boot(): void {
       },
       getRoute: () => (app as unknown as { route: string }).route,
       getState: () => (app as unknown as { league: { getState: () => unknown } }).league.getState(),
+      // 当前帧所有可点热区。Canvas 没有 DOM 定位器，自动化只能靠它枚举
+      // 「这一页到底有哪些可点区域」，否则只能靠源码里手抄坐标，极易漂移。
+      getHits: () => {
+        const hits = (app as unknown as { hits?: { regions?: Array<{ x: number; y: number; w: number; h: number }> } }).hits;
+        return (hits?.regions ?? []).map(r => ({ x: r.x, y: r.y, w: r.w, h: r.h }));
+      },
+      // 当前打开了哪些弹窗，用于断言「弹窗确实开了 / 确实关了」
+      getModals: () => {
+        const a = app as unknown as Record<string, { isOpen?: () => boolean } | undefined>;
+        const names = ['playerModal', 'confirmModal', 'settingsModal', 'saveSlotModal', 'textInputModal'];
+        const open = names.filter(n => a[n]?.isOpen?.());
+        const storyPending = !!(app as unknown as { league: { getState: () => { pendingStoryEvent?: unknown } } })
+          .league.getState().pendingStoryEvent;
+        if (storyPending) open.push('storyModal');
+        return open;
+      },
+      // 新手引导进度：TutorialOverlay 按 step 判定是否遮挡，进度全在 LeagueManager
+      getTutorial: () => (app as unknown as { league: { getTutorialProgress: () => Record<string, unknown> } })
+        .league.getTutorialProgress(),
       // 比赛内部调试状态：Canvas 游戏没有 DOM 定位器，序章强制教程（“打出某张卡/换人”）
       // 只能靠这个接口让自动化脚本知道该点哪张牌，否则只能盲等 180s 超时。
       getMatchDebug: () => {

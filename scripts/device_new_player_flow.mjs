@@ -96,9 +96,20 @@ export default async function run(client, ctx) {
       const tut = dbg.tutorial ?? {};
 
       if (tut.waitingForSub) {
-        // 「换下 #19 陈小宇 → 老队长」按钮 (416,338,240,36) → 中心 (536,356)
-        await rawTap(536, 356);
-        log(`教程换人 @${dbg.minute}'`);
+        // 换人已改为「右侧换人面板」流程，旧的 (536,356) 内联换人按钮已不存在：
+        // 开面板 (1147,112) → 点场上 #19 陈小宇 (613,285) → 点替补席老队长 (978,224) → 保存 (1147,51)
+        await rawTap(1147, 112);
+        await sleep(700);
+        await rawTap(613, 285);
+        await sleep(700);
+        await rawTap(978, 224);
+        await sleep(700);
+        await rawTap(1147, 51);
+        log(`教程换人 @${dbg.minute}'（换人面板流程）`);
+      } else if (tut.waitingForSkill) {
+        // 90' 绝杀技能提示：「立即释放 (F)」(756,480,122,38) → 中心 (817,499)
+        await rawTap(817, 499);
+        log(`教程技能释放 @${dbg.minute}'`);
       } else if (tut.waitingForCard) {
         const targetId = tutIds[tut.waitingForCard];
         const card = (dbg.hand ?? []).find(c => c.id === targetId && !c.used);
@@ -119,8 +130,9 @@ export default async function run(client, ctx) {
     if (matchPhase !== 'full_time') throw new Error(`序章比赛 240s 未结束，phase=${matchPhase}`);
     await snap('np_03_prologue_fulltime');
 
-    // 顶部「捧起超级联赛冠军奖杯」(1020,24,230,36) → 中心 (1135,42)
-    r = await tap(1135, 42, { label: '捧起超级联赛冠军奖杯', waitMs: 900 });
+    // 全场结束弹窗右侧主按钮「捧起超级联赛冠军奖杯」(516,546,516,56) → 中心 (774,574)
+    // 旧版在顶部 header（1135,42），移动端改版后已移入弹窗
+    r = await tap(774, 574, { label: '捧起超级联赛冠军奖杯', waitMs: 900 });
     log(`捧杯: hit=${r.hit}`);
     // 冠军 modal「捧杯之后 · 回到更衣室」(450,578,380,50) → 中心 (640,603)
     r = await tap(640, 603, { label: '捧杯之后·回到更衣室', expectRoute: 'prologue', waitMs: 1400 });
@@ -131,9 +143,9 @@ export default async function run(client, ctx) {
     r = await tap(1028, 610, { label: '回到故乡·推开铁门', waitMs: 1000 });
     log(`回到故乡: ${r.before.route} -> ${r.after.route} hit=${r.hit}`);
 
-    // Stage 3 左卡「接过教鞭，回到家乡执教」(lx=88,ly=416,lw=532,lh=264)
-    // 按钮 = (110, 622, 488, 44) → 中心 (354, 644)
-    r = await tap(354, 644, { label: '接过教鞭·回到家乡执教', expectRoute: 'title', waitMs: 1500 });
+    // Stage 3 双抉择是两段式：先点抉择卡按钮，再点「接受执教」才回标题
+    await tap(926, 644, { label: '抉择卡·接过教鞭', waitMs: 1200 });
+    r = await tap(985, 648, { label: '接受执教', expectRoute: 'title', waitMs: 1500 });
     log(`接过教鞭: ${r.before.route} -> ${r.after.route} hit=${r.hit}`);
     await snap('np_05_prologue_accept');
     return `序章走通，最终 route=${r.after.route}`;
@@ -168,12 +180,22 @@ export default async function run(client, ctx) {
     for (let i = 0; i < 3; i++) {
       const s = await snapshot(client);
       if (s.phase !== 'INIT_DRAFT') break;
-      // 撕包 (cx-150,526,300,48) → 中心 (640,550)
-      await tap(640, 550, { label: `撕开核心包#${i + 1}`, waitMs: 750 });
-      // 一键推荐选满 (926,134,150,30) → 中心 (1001,149)，热区高度仅 30px，抖动敏感
-      await tap(1001, 149, { label: `一键推荐选满#${i + 1}`, waitMs: 300 });
+      // 撕包 (cx-150,526,300,48) → 中心 (640,550)，后接约 2s 爆炸动画，期间点击会被吞
+      await tap(640, 550, { label: `撕开核心包#${i + 1}`, waitMs: 2800 });
+      // 逐张点牌：翻面动画未到 80% 时 DraftScreen 不注册热区，
+      // 「一键推荐选满」在动画期间点击无效，改为直接点前 3 张牌（几何取真实热区）
+      const rawHits = await client.evalJs(`JSON.stringify(window.__FM_TEST__.getHits())`);
+      const cards = JSON.parse(rawHits ?? '[]')
+        .filter(r => r.w > 150 && r.w < 300 && r.h > 200 && r.y > 100)
+        .sort((a, b) => a.x - b.x)
+        .slice(0, 3);
+      if (!cards || cards.length < 3) throw new Error(`第 ${i + 1} 包找不到 3 张可选牌`);
+      for (const c of cards) {
+        await rawTap(Math.round(c.x + c.w / 2), Math.round(c.y + c.h / 2));
+        await sleep(450);
+      }
       // 签入 (640,573)
-      await tap(640, 573, { label: `签入 3 人#${i + 1}`, waitMs: 500 });
+      await tap(640, 573, { label: `签入 3 人#${i + 1}`, waitMs: 600 });
 
       // 只有状态签名真的变了才算这一轮完成，避免「点了但没生效」被记成 PASS
       const afterRound = await snapshot(client);
