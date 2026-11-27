@@ -60,6 +60,7 @@ export class ClubRosterScreen {
   private lbTab: LeaderboardTab = 'goals';
   private sortMode: SortMode = 'ca';
   private page = 0;
+  private academyPage = 0;
   private marketSellPage = 0;
   private devilTargetId: string | null = null;
 
@@ -770,7 +771,7 @@ export class ClubRosterScreen {
       }
     }, { variant: 'primary', disabled: !isWindowOpen || (!isFreeReroll && funds < nextRerollCost), fontSize: 11, icon: 'refresh' });
 
-    drawButton(ctx, hits, baseX + totalW - 224, panelY + 14, 204, 32, '海外 U18 盲包×3 (¥380万)', () => {
+    drawButton(ctx, hits, baseX + totalW - 224, panelY + 14, 204, 32, '海外U18盲包 (¥380万)', () => {
       const res = league.buyOverseasYouthPack();
       if (res.ok) {
         SoundEngine.playFanfare();
@@ -790,15 +791,20 @@ export class ClubRosterScreen {
       return;
     }
 
-    const cw = Math.floor((totalW - 64) / 3);
-    const gap = Math.floor((totalW - 40 - cw * 3) / 2);
-    const ch = 226;
+    const cols = IS_MOBILE ? 2 : 3;
+    const yaPageSize = IS_MOBILE ? 4 : 6;
+    const yaTotalPages = Math.max(1, Math.ceil(ya.candidates.length / yaPageSize));
+    if (this.academyPage >= yaTotalPages) this.academyPage = yaTotalPages - 1;
+    const yaVisible = ya.candidates.slice(this.academyPage * yaPageSize, (this.academyPage + 1) * yaPageSize);
+    const gap = 14;
+    const cw = Math.floor((totalW - 40 - gap * (cols - 1)) / cols);
+    const ch = IS_MOBILE ? 204 : 226;
 
-    ya.candidates.slice(0, 6).forEach((p, idx) => {
-      const col = idx % 3;
-      const row = Math.floor(idx / 3);
+    yaVisible.forEach((p, idx) => {
+      const col = idx % cols;
+      const row = Math.floor(idx / cols);
       const cx = baseX + 20 + col * (cw + gap);
-      const cy = panelY + 66 + row * 238;
+      const cy = panelY + (IS_MOBILE ? 64 : 66) + row * (IS_MOBILE ? 214 : 238);
       const fog = p.scoutFogLevel ?? 0;
       const pa = p.pa ?? p.ca;
       const disc = acaLv >= 5 ? 0.75 : acaLv >= 3 ? 0.85 : 1.0;
@@ -874,6 +880,17 @@ export class ClubRosterScreen {
         }
       }, { variant: canSign ? 'green' : 'ghost', disabled: !canSign, fontSize: 11.5 });
     });
+
+    if (yaTotalPages > 1) {
+      const cxMid = baseX + totalW / 2;
+      drawButton(ctx, hits, cxMid - 150, panelY + panelH - 42, 92, 28, '上一页', () => {
+        this.academyPage = Math.max(0, this.academyPage - 1);
+      }, { disabled: this.academyPage === 0, fontSize: 11 });
+      drawText(ctx, `${this.academyPage + 1} / ${yaTotalPages} 页`, cxMid, panelY + panelH - 28, { size: 11, color: THEME.TX2, align: 'center' });
+      drawButton(ctx, hits, cxMid + 58, panelY + panelH - 42, 92, 28, '下一页', () => {
+        this.academyPage = Math.min(yaTotalPages - 1, this.academyPage + 1);
+      }, { disabled: this.academyPage >= yaTotalPages - 1, fontSize: 11 });
+    }
   }
 
   private renderTransferMarketTab(
@@ -930,20 +947,23 @@ export class ClubRosterScreen {
         align: 'center',
       });
     } else {
-      tm.marketPool.slice(0, 6).forEach((p, idx) => {
-        const py = panelY + 52 + idx * 81;
+      const mLimit = IS_MOBILE ? 5 : 6;
+      const mStep = IS_MOBILE ? 94 : 81;
+      const mRowH = IS_MOBILE ? 84 : 73;
+      tm.marketPool.slice(0, mLimit).forEach((p, idx) => {
+        const py = panelY + 54 + idx * mStep;
         const fog = p.scoutFogLevel ?? 1;
         const isClear = fog >= 2;
         const price = Math.round((p.marketValue ?? p.cost) * discountRate);
         const canBuy = isWindowOpen && funds >= price && roster.length < MAX_CLUB_ROSTER;
-        const rowHover = hits.isHovered(baseX + 14, py, leftW - 28, 73);
+        const rowHover = hits.isHovered(baseX + 14, py, leftW - 28, mRowH);
 
         drawRoundRect(
           ctx,
           baseX + 14,
           py,
           leftW - 28,
-          73,
+          mRowH,
           8,
           rowHover ? THEME.BG_CARD_HOVER : THEME.BG_CARD,
           rowHover ? THEME.GOLD_LIGHT : isClear ? THEME.BORDER_GOLD : THEME.BORDER,
@@ -1035,16 +1055,18 @@ export class ClubRosterScreen {
 
     drawText(ctx, '我方大名单球员（快卖即时到账 / 挂牌竞拍溢价更高）', rightX + 18, panelY + 162, { size: 11.5, bold: true, color: THEME.TX2 });
     const sellList = [...roster].sort((a, b) => a.ca - b.ca);
-    const sPageSize = 7;
+    const sPageSize = IS_MOBILE ? 5 : 7;
+    const sStep = IS_MOBILE ? 60 : 48;
+    const sRowH = IS_MOBILE ? 52 : 42;
     const sPages = Math.max(1, Math.ceil(sellList.length / sPageSize));
     if (this.marketSellPage >= sPages) this.marketSellPage = sPages - 1;
     const visibleSell = sellList.slice(this.marketSellPage * sPageSize, (this.marketSellPage + 1) * sPageSize);
 
     visibleSell.forEach((p, si) => {
-      const sy = panelY + 178 + si * 48;
+      const sy = panelY + 178 + si * sStep;
       const val = p.marketValue ?? p.cost;
       const isListed = tm.listings.some(l => l.playerId === p.id);
-      drawRoundRect(ctx, rightX + 18, sy, rightW - 36, 42, 6, THEME.BG_CARD, isListed ? THEME.GOLD : THEME.BORDER);
+      drawRoundRect(ctx, rightX + 18, sy, rightW - 36, sRowH, 6, THEME.BG_CARD, isListed ? THEME.GOLD : THEME.BORDER);
       drawBadge(ctx, rightX + 26, sy + 12, 32, 18, p.role, tierColor(p.tier));
       drawText(ctx, `${p.name} (${p.age}岁) · CA ${p.ca}/PA ${p.pa ?? p.ca}`, rightX + 64, sy + 21, { size: 11, bold: true });
 
@@ -1186,8 +1208,8 @@ export class ClubRosterScreen {
         actions.onInspectPlayer(p);
       }, { variant: 'ghost', fontSize: 10.5 });
     } else {
-      drawText(ctx, '顶级经纪人地下通道 · 按当前联赛标准百分比浮动', x1 + 18, panelY + 72, { size: 16.5, bold: true, color: THEME.TX1 });
-      drawText(ctx, '高风险博弈：输多赢少，但有概率直接抽中远超联赛水准的超级巨星！开出后可选择【入队】或【立即出售】', x1 + 18, panelY + 96, {
+      drawText(ctx, fitText(ctx, '顶级经纪人地下通道 · 按当前联赛标准百分比浮动', leftW - 36, 16.5, true), x1 + 18, panelY + 72, { size: 16.5, bold: true, color: THEME.TX1 });
+      drawText(ctx, fitText(ctx, '高风险博弈：输多赢少，但有概率抽中超级巨星！开出后可选择【入队】或【立即出售】', leftW - 36, 11), x1 + 18, panelY + 96, {
         size: 11,
         color: '#CBD5E1',
       });
@@ -1257,15 +1279,17 @@ export class ClubRosterScreen {
     drawText(ctx, `魔鬼特训 (¥350万 · ${tm.privateTrainCount}/2)`, x2 + 18, panelY + 72, { size: 15.5, bold: true, color: THEME.GOLD_LIGHT });
     drawText(ctx, '直接 +1~3 CA 并有机会突破 PA 天花板（仅转会窗开放）', x2 + 18, panelY + 95, { size: 10.5, color: '#FCA5A5' });
 
-    const trainPool = [...roster].sort((a, b) => b.ca - a.ca).slice(0, 7);
+    const trainPool = [...roster].sort((a, b) => b.ca - a.ca).slice(0, IS_MOBILE ? 6 : 7);
     if (!this.devilTargetId || !trainPool.some(p => p.id === this.devilTargetId)) {
       this.devilTargetId = trainPool[0]?.id ?? null;
     }
     const canTrainNow = isWindowOpen && funds >= 350 && tm.privateTrainCount < 2;
+    const tStep = IS_MOBILE ? 52 : 46;
+    const tRowH = IS_MOBILE ? 46 : 40;
     trainPool.forEach((p, ti) => {
-      const ty = panelY + 114 + ti * 46;
+      const ty = panelY + 114 + ti * tStep;
       const isSel = this.devilTargetId === p.id;
-      drawRoundRect(ctx, x2 + 16, ty, rightW - 32, 40, 6, isSel ? '#3B1E24' : 'rgba(15, 23, 42, 0.85)', isSel ? THEME.GOLD_LIGHT : THEME.BORDER);
+      drawRoundRect(ctx, x2 + 16, ty, rightW - 32, tRowH, 6, isSel ? '#3B1E24' : 'rgba(15, 23, 42, 0.85)', isSel ? THEME.GOLD_LIGHT : THEME.BORDER);
       drawBadge(ctx, x2 + 24, ty + 11, 32, 18, p.role, tierColor(p.tier));
       drawText(ctx, `${p.name} (${p.age}岁)`, x2 + 64, ty + 20, { size: 11.5, bold: true });
       drawText(ctx, `CA ${p.ca}/${p.pa ?? p.ca}`, x2 + rightW - 94, ty + 20, { size: 11, bold: true, color: THEME.GOLD_LIGHT, align: 'right', mono: true });

@@ -197,11 +197,11 @@ export function drawChamferPanel(
  */
 export const FONT = {
   DISPLAY: 30,
-  HEADLINE: IS_MOBILE ? 22 : 20,
-  TITLE: IS_MOBILE ? 16.5 : 15,
-  BODY: IS_MOBILE ? 14 : 13,
-  LABEL: IS_MOBILE ? 12 : 11,
-  MICRO: IS_MOBILE ? 11 : 10,
+  HEADLINE: IS_MOBILE ? 24 : 20,
+  TITLE: IS_MOBILE ? 18 : 15,
+  BODY: IS_MOBILE ? 16 : 13,
+  LABEL: IS_MOBILE ? 14 : 11,
+  MICRO: IS_MOBILE ? 12.5 : 10,
 } as const;
 
 export type FontToken = keyof typeof FONT;
@@ -211,12 +211,12 @@ export type FontToken = keyof typeof FONT;
  */
 export function mobileFontSize(size: number): number {
   if (!IS_MOBILE) return size;
-  if (size <= 9) return 11.5;
-  if (size <= 10.5) return 12.5;
-  if (size <= 12) return 14;
-  if (size <= 14) return 15.5;
-  if (size <= 17) return size + 1.5;
-  if (size <= 19) return size + 1;
+  if (size <= 9) return 12.5;
+  if (size <= 10.5) return 13.5;
+  if (size <= 12) return 15;
+  if (size <= 14) return 16.5;
+  if (size <= 17) return size + 2;
+  if (size <= 19) return size + 1.5;
   return size;
 }
 
@@ -857,7 +857,7 @@ export function drawBadge(
   // 保持调用方指定的锚点与宽度，移动端在不截断的前提下优先使用更大字号
   const pad = w <= 36 ? 4 : 8;
   const innerMax = Math.max(10, w - pad);
-  const candidates = IS_MOBILE ? [12, 11, 10, 9, 8] : [10, 9, 8];
+  const candidates = IS_MOBILE ? [13.5, 12.5, 11.5, 10.5, 9.5] : [10, 9, 8];
   let fontSize = candidates[candidates.length - 1];
   for (const s of candidates) {
     ctx.font = `bold ${s}px ${THEME.FONT_FAMILY}`;

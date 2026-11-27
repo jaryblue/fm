@@ -1491,7 +1491,7 @@ export class MatchDayScreen {
     drawText(ctx, '实时文字直播', 42, 107, { size: 13.5, bold: true, color: THEME.GOLD_LIGHT });
 
     const events = st.events.filter(e => e.type !== 'pass').slice(-12).reverse();
-    const commLineH = IS_MOBILE ? Math.max(18, Math.round(FONT.MICRO * 1.45)) : 14;
+    const commLineH = IS_MOBILE ? Math.max(19, Math.round(FONT.MICRO * 1.48)) : 14;
     let cy = 128;
     for (const ev of events) {
       const isGoal = ev.type === 'goal';
@@ -2625,8 +2625,9 @@ export class MatchDayScreen {
       }, { variant: 'ghost', fontSize: 11 });
     }
 
-    // 4. 底部栏 (y: 562..704, h: 142)：序章模式隐藏杂乱预置按钮只保留决战目标卡，正式比赛保留 4 套预置战术
-    drawChamferPanel(ctx, 266, 562, 342, 142, 10, 'rgba(11, 17, 30, 0.90)', THEME.BORDER, 1.2);
+    // 4. 底部栏 (y: 562..704, h: 142)：保持三栏视觉对称；正式比赛收窄预置区、扩宽 V6 指令手牌至每张 120px
+    const leftBottomW = this.isPrologueMode ? 342 : 218;
+    drawChamferPanel(ctx, 266, 562, leftBottomW, 142, 10, 'rgba(11, 17, 30, 0.90)', THEME.BORDER, 1.2);
     const curForm = this.userSide === 'home' ? st.homeFormation : st.awayFormation;
     const curStyle = this.userSide === 'home' ? st.homeStyle : st.awayStyle;
     if (this.isPrologueMode) {
@@ -2645,10 +2646,10 @@ export class MatchDayScreen {
       drawRoundRect(ctx, 278, 636, 318, 52, 8, 'rgba(15, 23, 42, 0.85)', THEME.BORDER_GOLD);
       drawText(ctx, stageHint, 437, 662, { size: 11.5, bold: true, color: THEME.GOLD_LIGHT, align: 'center' });
     } else {
-      const presetHdr = fitText(ctx, `预置战术 (${curForm} · ${TACTICAL_PRESETS[curStyle].name})`, 232, 11, true);
-      drawText(ctx, presetHdr, 278, 579, { size: 11, bold: true, color: THEME.GOLD_LIGHT });
+      const presetHdr = fitText(ctx, `${curForm}·${TACTICAL_PRESETS[curStyle].name}`, 124, IS_MOBILE ? 12 : 10.5, true, IS_MOBILE);
+      drawText(ctx, presetHdr, 276, 579, { size: IS_MOBILE ? 12 : 10.5, rawSize: IS_MOBILE, bold: true, color: THEME.GOLD_LIGHT });
       if (st.phase !== 'full_time') {
-        drawButton(ctx, hits, 522, 567, 76, 24, '细致调整', () => {
+        drawButton(ctx, hits, 404, 567, 72, 24, '微调', () => {
           this.openTacticalModal(st);
         }, { variant: 'primary', fontSize: 10, icon: 'gear' });
       }
@@ -2656,15 +2657,15 @@ export class MatchDayScreen {
       this.matchPresets.slice(0, 4).forEach((pr, pi) => {
         const col = pi % 2;
         const row = Math.floor(pi / 2);
-        const bx = 276 + col * 164;
+        const bx = 274 + col * 102;
         const by = 602 + row * 48;
         const isAct = curForm === pr.formation && curStyle === pr.style;
-        const label = `${pi + 1}.${pr.name.slice(0, 4)} (${pr.formation}·${TACTICAL_PRESETS[pr.style].name.slice(0, 2)})`;
-        drawButton(ctx, hits, bx, by, 158, 40, label, () => {
+        const label = `${pi + 1}.${pr.name.slice(0, 3)}`;
+        drawButton(ctx, hits, bx, by, 98, 40, label, () => {
           this.engine!.setTactics(this.userSide, pr.formation, pr.style);
           this.triggerTacticsFeedback(pr.formation, pr.style);
           this.cardBanner = { text: `预案切换 · ${pr.name} (${pr.formation} · ${TACTICAL_PRESETS[pr.style].name})`, color: '#38BDF8', timer: 2.0 };
-        }, { active: isAct, variant: isAct ? 'primary' : 'ghost', fontSize: 10 });
+        }, { active: isAct, variant: isAct ? 'primary' : 'ghost', fontSize: 10.5 });
       });
     }
 
@@ -2700,7 +2701,9 @@ export class MatchDayScreen {
     this.v6HoveredZone = null;
     this.v6HoveringCard = false;
     const cmdBackImg = AssetLoader.get('command_card_back');
-    drawChamferPanel(ctx, 616, 562, 398, 142, 10, 'rgba(11, 17, 30, 0.92)', this.v6Tp > 0 ? THEME.BORDER_GOLD : THEME.BORDER, 1.4, THEME.GOLD);
+    const handBoxX = this.isPrologueMode ? 616 : 492;
+    const handBoxW = this.isPrologueMode ? 398 : 522;
+    drawChamferPanel(ctx, handBoxX, 562, handBoxW, 142, 10, 'rgba(11, 17, 30, 0.92)', this.v6Tp > 0 ? THEME.BORDER_GOLD : THEME.BORDER, 1.4, THEME.GOLD);
     const curStance = st.teamStance?.[this.userSide] ?? curStyle;
     if (!this.isPrologueMode) {
       const curSeg = this.v6CurrentSegment;
@@ -2712,26 +2715,27 @@ export class MatchDayScreen {
       V6_SEGMENTS.forEach((seg, si) => {
         const isCur = seg.key === curSeg;
         const isPast = this.v6TriggeredCheckpoints.has(seg.key) && !isCur;
-        const sx = 622 + si * 52;
+        const sx = 500 + si * 58;
         drawBadge(
           ctx,
           sx,
           566,
-          49,
-          19,
+          54,
+          20,
           seg.shortLabel,
           isCur ? '#78350F' : isPast ? '#0F172A' : '#1E293B',
           isCur ? '#FEF08A' : isPast ? '#64748B' : '#94A3B8'
         );
       });
-      drawText(ctx, `TP ${this.v6Tp} · 本段${this.v6CheckpointPlayedCount}/${maxPlays}`, 836, 576, {
-        size: 11,
+      drawText(ctx, `TP ${this.v6Tp} · 本段${this.v6CheckpointPlayedCount}/${maxPlays}`, 742, 576, {
+        size: IS_MOBILE ? 12.5 : 11,
+        rawSize: IS_MOBILE,
         bold: true,
         color: this.v6Tp > 0 ? THEME.GOLD_LIGHT : THEME.TX2,
         mono: true,
       });
       if (this.v6HasEmergencyCall && !this.v6EmergencyUsed && st.phase !== 'full_time') {
-        drawButton(ctx, hits, 930, 565, 78, 21, '爆发+2TP', () => {
+        drawButton(ctx, hits, 924, 565, 82, 21, '爆发+2TP', () => {
           this.v6EmergencyUsed = true;
           this.v6Tp += 2;
           this.v6BonusPlayCap += 1;
@@ -2748,9 +2752,9 @@ export class MatchDayScreen {
       cpCards.slice(0, 4).forEach((entry, ci) => {
         const { def } = entry;
         const effCost = this.getEffectiveV6CardCost(entry);
-        const cx = 623 + ci * 96;
+        const cx = 500 + ci * 128;
         const cy = 591;
-        const cw = 91;
+        const cw = 120;
         const ch = 106;
         const used = this.v6CheckpointUsedIds.has(def.id);
         const playCapFull = this.v6CheckpointPlayedCount >= maxPlays;
@@ -2784,28 +2788,28 @@ export class MatchDayScreen {
         const isDisc = effCost < def.tpCost;
         drawBadge(
           ctx,
-          cx + 5,
+          cx + 6,
           cyL + 5,
-          42,
-          17,
+          52,
+          18,
           `${def.zone === 'ATT' ? '前' : def.zone === 'MID' ? '中' : '后'}·${def.tendency === 'ATK' ? '攻' : '守'}`,
           '#0B1120',
           used ? THEME.TX3 : zCol
         );
         drawBadge(
           ctx,
-          cx + cw - 40,
+          cx + cw - 46,
           cyL + 5,
-          35,
-          17,
+          40,
+          18,
           `${effCost}TP`,
           used ? '#1E293B' : isDisc ? '#065F46' : canPlay ? '#78350F' : '#1E293B',
           used ? THEME.TX3 : isDisc ? '#6EE7B7' : canPlay ? '#FEF08A' : THEME.TX3
         );
 
-        // 卡片主标题（紧凑双行，与下方标签留出呼吸感）
-        drawWrappedText(ctx, def.name, cx + 7, cyL + 26, cw - 14, IS_MOBILE ? 16 : 15, {
-          size: IS_MOBILE ? 11.5 : FONT.MICRO,
+        // 卡片主标题（120px 宽卡舒适双行）
+        drawWrappedText(ctx, def.name, cx + 8, cyL + 27, cw - 16, IS_MOBILE ? 17 : 15, {
+          size: IS_MOBILE ? 13 : 11.5,
           rawSize: IS_MOBILE,
           bold: true,
           color: used ? THEME.TX3 : THEME.TX1,
@@ -2816,13 +2820,13 @@ export class MatchDayScreen {
         const satCount = entry.satellites.length;
         const enchInfo = entry.enchant ? V6_DIRECTIVE_ENCHANTS[entry.enchant] : null;
         if (enchInfo) {
-          drawBadge(ctx, cx + 6, cyL + 65, cw - 12, 16, `✦${enchInfo.shortTag}`, '#3B1F6E', '#E9D5FF');
+          drawBadge(ctx, cx + 8, cyL + 66, cw - 16, 17, `✦${enchInfo.shortTag}`, '#3B1F6E', '#E9D5FF');
         } else if (satCount > 0) {
-          drawBadge(ctx, cx + 10, cyL + 65, cw - 20, 16, `${'★'.repeat(satCount)}${entry.isOverclocked ? '超频' : '改造'}`, '#1E293B', THEME.GOLD_LIGHT);
+          drawBadge(ctx, cx + 10, cyL + 66, cw - 20, 17, `${'★'.repeat(satCount)}${entry.isOverclocked ? '超频' : '改造'}`, '#1E293B', THEME.GOLD_LIGHT);
         } else {
           const routeTag = def.source === 'fusion' ? '融合王牌' : def.source === 'formation' ? '阵型专属' : def.route === 'gamble' ? '高赔豪赌' : '稳健拼图';
-          drawText(ctx, routeTag, cx + cw / 2, cyL + 73, {
-            size: IS_MOBILE ? 11 : FONT.MICRO,
+          drawText(ctx, routeTag, cx + cw / 2, cyL + 74, {
+            size: IS_MOBILE ? 12 : 10.5,
             rawSize: IS_MOBILE,
             color: used ? THEME.TX3 : '#94A3B8',
             align: 'center',
@@ -2838,7 +2842,7 @@ export class MatchDayScreen {
           ? '⚡ 点击拍板'
           : `需 ${effCost} TP`;
         drawText(ctx, statusTxt, cx + cw / 2, cyL + 93, {
-          size: IS_MOBILE ? 11 : FONT.MICRO,
+          size: IS_MOBILE ? 12 : 10.5,
           rawSize: IS_MOBILE,
           bold: true,
           color: used ? '#64748B' : canPlay ? THEME.GOLD_LIGHT : THEME.TX3,
@@ -2865,7 +2869,7 @@ export class MatchDayScreen {
         const zCol = def.zone === 'ATT' ? '#F43F5E' : def.zone === 'MID' ? '#38BDF8' : '#22C55E';
         const fw = 368;
         const fh = entry.enchant || entry.satellites.length > 0 ? 132 : 112;
-        const tx = Math.min(646, Math.max(616, x - 90));
+        const tx = Math.min(646, Math.max(492, x - 90));
         const ty = 556 - fh;
         drawChamferPanel(ctx, tx, ty, fw, fh, 10, 'rgba(7, 12, 24, 0.97)', canPlay ? zCol : THEME.GOLD_LIGHT, 1.8, zCol);
         drawBadge(
@@ -3216,14 +3220,14 @@ export class MatchDayScreen {
 
         const rows: Array<[string, string, string, number]> = [
           ['控球率', `${hPoss}%`, `${100 - hPoss}%`, hPoss / 100],
-          ['射门 (射正)', `${h.shots} (${h.shotsOnTarget})`, `${a.shots} (${a.shotsOnTarget})`, h.shots / Math.max(1, h.shots + a.shots)],
+          ['射门(射正)', `${h.shots}(${h.shotsOnTarget})`, `${a.shots}(${a.shotsOnTarget})`, h.shots / Math.max(1, h.shots + a.shots)],
           ['预期进球 xG', h.xG.toFixed(2), a.xG.toFixed(2), h.xG / Math.max(0.01, h.xG + a.xG)],
-          ['传球 (成功率)', `${h.passes} (${hAcc}%)`, `${a.passes} (${aAcc}%)`, h.passes / Math.max(1, h.passes + a.passes)],
+          ['传球成功率', `${h.passes}(${hAcc}%)`, `${a.passes}(${aAcc}%)`, h.passes / Math.max(1, h.passes + a.passes)],
           ['抢断', `${h.tackles}`, `${a.tackles}`, h.tackles / Math.max(1, h.tackles + a.tackles)],
           ['拦截', `${h.interceptions}`, `${a.interceptions}`, h.interceptions / Math.max(1, h.interceptions + a.interceptions)],
           ['扑救', `${h.saves}`, `${a.saves}`, h.saves / Math.max(1, h.saves + a.saves)],
           ['角球', `${h.corners}`, `${a.corners}`, h.corners / Math.max(1, h.corners + a.corners)],
-          ['犯规 (黄牌)', `${h.fouls} (${h.yellowCards})`, `${a.fouls} (${a.yellowCards})`, h.fouls / Math.max(1, h.fouls + a.fouls)],
+          ['犯规(黄牌)', `${h.fouls}(${h.yellowCards})`, `${a.fouls}(${a.yellowCards})`, h.fouls / Math.max(1, h.fouls + a.fouls)],
         ];
 
         let ry = 152;

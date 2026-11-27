@@ -4828,20 +4828,20 @@
   }
   var FONT = {
     DISPLAY: 30,
-    HEADLINE: IS_MOBILE ? 22 : 20,
-    TITLE: IS_MOBILE ? 16.5 : 15,
-    BODY: IS_MOBILE ? 14 : 13,
-    LABEL: IS_MOBILE ? 12 : 11,
-    MICRO: IS_MOBILE ? 11 : 10
+    HEADLINE: IS_MOBILE ? 24 : 20,
+    TITLE: IS_MOBILE ? 18 : 15,
+    BODY: IS_MOBILE ? 16 : 13,
+    LABEL: IS_MOBILE ? 14 : 11,
+    MICRO: IS_MOBILE ? 12.5 : 10
   };
   function mobileFontSize(size) {
     if (!IS_MOBILE) return size;
-    if (size <= 9) return 11.5;
-    if (size <= 10.5) return 12.5;
-    if (size <= 12) return 14;
-    if (size <= 14) return 15.5;
-    if (size <= 17) return size + 1.5;
-    if (size <= 19) return size + 1;
+    if (size <= 9) return 12.5;
+    if (size <= 10.5) return 13.5;
+    if (size <= 12) return 15;
+    if (size <= 14) return 16.5;
+    if (size <= 17) return size + 2;
+    if (size <= 19) return size + 1.5;
     return size;
   }
   function drawText(ctx2, text, x, y, opts = {}) {
@@ -5223,7 +5223,7 @@
   function drawBadge(ctx2, x, y, w, h, text, bg, color = "#FFFFFF") {
     const pad = w <= 36 ? 4 : 8;
     const innerMax = Math.max(10, w - pad);
-    const candidates = IS_MOBILE ? [12, 11, 10, 9, 8] : [10, 9, 8];
+    const candidates = IS_MOBILE ? [13.5, 12.5, 11.5, 10.5, 9.5] : [10, 9, 8];
     let fontSize = candidates[candidates.length - 1];
     for (const s of candidates) {
       ctx2.font = `bold ${s}px ${THEME.FONT_FAMILY}`;
@@ -5422,7 +5422,7 @@
   var TACTICAL_PRESETS = {
     balanced: {
       name: "\u5747\u8861\u9635\u5730",
-      lineHeight: 0,
+      lineHeight: 2,
       widthScale: 1,
       directness: 0.5,
       tempo: 1.01,
@@ -5969,9 +5969,9 @@
       const dx = p.targetPos.x - p.pos.x;
       const dy = p.targetPos.y - p.pos.y;
       const dist = Math.sqrt(dx * dx + dy * dy);
-      if (dist < 0.35) {
-        p.vel.x *= 0.6;
-        p.vel.y *= 0.6;
+      if (dist < 0.6) {
+        p.vel.x *= 0.55;
+        p.vel.y *= 0.55;
       } else {
         const desiredSpeed = dist < 2 ? maxSpeed * (dist / 2) : maxSpeed;
         const desiredVx = dx / dist * desiredSpeed;
@@ -6322,9 +6322,13 @@
       }
       if (pressers.has(p.id)) {
         const dir2 = p.team === "home" ? homeDir : homeDir === 1 ? -1 : 1;
+        const presserArr = Array.from(pressers);
+        const pIdx = presserArr.indexOf(p.id);
+        const laneOffsetY = pIdx === 0 ? 0 : p.pos.y >= ball.pos.y ? 3.2 : -3.2;
+        const laneOffsetX = pIdx === 0 ? -dir2 * 0.6 : -dir2 * 2.4;
         p.targetPos = {
-          x: clamp(ball.pos.x - dir2 * 0.6, 2, PITCH.LENGTH - 2),
-          y: clamp(ball.pos.y, 2, PITCH.WIDTH - 2)
+          x: clamp(ball.pos.x + laneOffsetX, 2, PITCH.LENGTH - 2),
+          y: clamp(ball.pos.y + laneOffsetY, 2, PITCH.WIDTH - 2)
         };
         continue;
       }
@@ -6376,10 +6380,16 @@
           }
         }
       }
-      p.targetPos = {
-        x: clamp(clampOnside(tx), 3, PITCH.LENGTH - 3),
-        y: clamp(ty, 4, PITCH.WIDTH - 4)
-      };
+      const rawTx = clamp(clampOnside(tx), 3, PITCH.LENGTH - 3);
+      const rawTy = clamp(ty, 4, PITCH.WIDTH - 4);
+      const moveDist = dist2D(p.targetPos, { x: rawTx, y: rawTy });
+      if (moveDist >= 0.8) {
+        const damp = moveDist > 18 ? 0.45 : 0.28;
+        p.targetPos = {
+          x: p.targetPos.x + (rawTx - p.targetPos.x) * damp,
+          y: p.targetPos.y + (rawTy - p.targetPos.y) * damp
+        };
+      }
     }
   }
 
@@ -7257,6 +7267,7 @@
         homeScore: 0,
         awayScore: 0,
         players,
+        subbedOutPlayers: [],
         homeSubs: home.subs ? [...home.subs] : [],
         awaySubs: away.subs ? [...away.subs] : [],
         homeSubsUsed: 0,
@@ -7670,6 +7681,7 @@
         newPlayer.attributes.passing = Math.min(99, newPlayer.attributes.passing + 10);
         newPlayer.fitness = Math.min(100, newPlayer.fitness + 15);
       }
+      (s.subbedOutPlayers ??= []).push(outPlayer);
       s.players[pIdx] = newPlayer;
       if (wasHolding) s.ball.holderId = newPlayer.id;
       if (team === "home") s.homeSubsUsed++;
@@ -12867,34 +12879,13 @@
     return { mode: "all", prereqs: [] };
   }
   function getV6TierCaps(bestTier) {
-    if (bestTier >= 6) {
-      return {
-        maxPassives: 5,
-        maxSkills: 2,
-        maxDirectives: 4,
-        maxSatelliteLevel: 0,
-        maxRelics: 2,
-        allowFusion: false,
-        allowMastery: false
-      };
-    }
-    if (bestTier >= 4) {
-      return {
-        maxPassives: 9,
-        maxSkills: 3,
-        maxDirectives: 6,
-        maxSatelliteLevel: 2,
-        maxRelics: 3,
-        allowFusion: true,
-        allowMastery: false
-      };
-    }
+    const maxRelics = bestTier >= 6 ? 2 : bestTier >= 4 ? 3 : 5;
     return {
-      maxPassives: 99,
-      maxSkills: 4,
-      maxDirectives: 99,
+      maxPassives: 999,
+      maxSkills: 99,
+      maxDirectives: 999,
       maxSatelliteLevel: 3,
-      maxRelics: 5,
+      maxRelics,
       allowFusion: true,
       allowMastery: true
     };
@@ -19288,6 +19279,7 @@
   var LeagueManager = class _LeagueManager {
     constructor(initialState) {
       this.lastMatchGrowth = {};
+      this.lastMatchSummary = null;
       if (initialState) {
         this.state = JSON.parse(JSON.stringify(initialState));
         this.migrateState();
@@ -19474,6 +19466,9 @@
     }
     getLastMatchGrowth() {
       return this.lastMatchGrowth;
+    }
+    getLastMatchSummary() {
+      return this.lastMatchSummary;
     }
     getStandings() {
       return computeStandings(this.state.clubs, this.state.fixtures);
@@ -19934,10 +19929,6 @@
       const p = V6_PASSIVE_MAP[passiveId];
       if (!p) return { ok: false, reason: "\u672A\u627E\u5230\u8BE5\u88AB\u52A8\u8282\u70B9" };
       if (ast.unlockedPassives.includes(passiveId)) return { ok: false, reason: "\u5DF2\u70B9\u4EAE" };
-      const caps = getV6TierCaps(this.getBestTierReached());
-      if (ast.unlockedPassives.length >= caps.maxPassives) {
-        return { ok: false, reason: `\u5F53\u524D\u7EA7\u522B\u88AB\u52A8\u69FD\u4F4D\u5DF2\u6EE1 (${caps.maxPassives})\uFF0C\u5347\u5165\u66F4\u9AD8\u7EA7\u522B\u8054\u8D5B\u540E\u89E3\u9501\u66F4\u591A` };
-      }
       const prereq = canUnlockV6Node(ast, "passive", passiveId);
       if (!prereq.ok) return { ok: false, reason: prereq.reason };
       if (this.state.metaPointsTotal < p.unlockCost) return { ok: false, reason: `Meta \u70B9\u6570\u4E0D\u8DB3 (\u9700 ${p.unlockCost} pt)` };
@@ -19951,10 +19942,6 @@
       const d = V6_DIRECTIVE_MAP[directiveId];
       if (!d) return { ok: false, reason: "\u672A\u627E\u5230\u8BE5\u4E09\u533A\u624B\u724C" };
       if (ast.unlockedDirectives.includes(directiveId)) return { ok: false, reason: "\u5DF2\u89E3\u9501" };
-      const caps = getV6TierCaps(this.getBestTierReached());
-      if (ast.unlockedDirectives.length >= caps.maxDirectives) {
-        return { ok: false, reason: `\u5F53\u524D\u7EA7\u522B\u624B\u724C\u5E93\u4E0A\u9650\u4E3A ${caps.maxDirectives} \u5F20\uFF0C\u5347\u5165\u66F4\u9AD8\u7EA7\u522B\u8054\u8D5B\u540E\u6269\u5BB9` };
-      }
       const prereq = canUnlockV6Node(ast, "directive", directiveId);
       if (!prereq.ok) return { ok: false, reason: prereq.reason };
       if (this.state.metaPointsTotal < d.unlockCost) return { ok: false, reason: `Meta \u70B9\u6570\u4E0D\u8DB3 (\u9700 ${d.unlockCost} pt)` };
@@ -19968,13 +19955,6 @@
       const d = V6_DIRECTIVE_MAP[directiveId];
       if (!d) return { ok: false, reason: "\u672A\u627E\u5230\u8BE5\u624B\u724C" };
       if (!ast.unlockedDirectives.includes(directiveId)) return { ok: false, reason: "\u8BF7\u5148\u89E3\u9501\u8BE5\u624B\u724C\u672C\u4F53" };
-      const caps = getV6TierCaps(this.getBestTierReached());
-      if (caps.maxSatelliteLevel === 0) {
-        return { ok: false, reason: "\u9700\u66FE\u664B\u7EA7\u7B2C 5 \u7EA7\u6216\u66F4\u9AD8\u8054\u8D5B\u540E\u5F00\u653E\u624B\u724C\u536B\u661F\u6539\u9020" };
-      }
-      if (sat === "C" && caps.maxSatelliteLevel < 3) {
-        return { ok: false, reason: "\u9700\u66FE\u664B\u7EA7\u7B2C 3 \u7EA7\u6216\u66F4\u9AD8\u8054\u8D5B\u540E\u5F00\u653E C \u536B\u661F\u5B97\u5E08\u6539\u9020" };
-      }
       const cur = ast.directiveSatellites[directiveId] ?? [];
       if (cur.includes(sat)) return { ok: false, reason: "\u8BE5\u536B\u661F\u6539\u9020\u5DF2\u70B9\u4EAE" };
       const cost = d.satellites[sat].cost;
@@ -19991,10 +19971,6 @@
       if (ast.unlockedSkills.includes(skillId)) return { ok: false, reason: "\u5DF2\u89E3\u9501" };
       if (sk.source === "mastery" || sk.source === "core") {
         return { ok: false, reason: "\u5B97\u5E08\u7EC8\u6781\u6280\u9700\u901A\u8FC7\u70B9\u4EAE\u5BF9\u5E94\u5B97\u5E08\u5370\u6216\u5706\u5FC3\u89E3\u9501" };
-      }
-      const caps = getV6TierCaps(this.getBestTierReached());
-      if (ast.unlockedSkills.length >= caps.maxSkills) {
-        return { ok: false, reason: `\u5F53\u524D\u7EA7\u522B\u4E3B\u52A8\u6280\u4E0A\u9650\u4E3A ${caps.maxSkills} \u4E2A\uFF0C\u5347\u5165\u66F4\u9AD8\u7EA7\u522B\u8054\u8D5B\u540E\u89E3\u9501\u66F4\u591A` };
       }
       const prereq = canUnlockV6Node(ast, "skill", skillId);
       if (!prereq.ok) return { ok: false, reason: prereq.reason };
@@ -20017,10 +19993,6 @@
       const f = V6_FUSION_MAP[fusionId];
       if (!f) return { ok: false, reason: "\u672A\u627E\u5230\u8BE5\u878D\u5408\u5947\u70B9" };
       if (ast.unlockedFusions.includes(fusionId)) return { ok: false, reason: "\u5DF2\u70B9\u4EAE" };
-      const caps = getV6TierCaps(this.getBestTierReached());
-      if (!caps.allowFusion) {
-        return { ok: false, reason: "\u9700\u66FE\u664B\u7EA7\u7B2C 5 \u7EA7\u6216\u66F4\u9AD8\u8054\u8D5B\u540E\u89E3\u9501\u878D\u5408\u5947\u70B9" };
-      }
       const prereq = canUnlockV6Node(ast, "fusion", fusionId);
       if (!prereq.ok) return { ok: false, reason: prereq.reason };
       if (this.state.metaPointsTotal < f.unlockCost) return { ok: false, reason: `Meta \u70B9\u6570\u4E0D\u8DB3 (\u9700 ${f.unlockCost} pt)` };
@@ -20044,10 +20016,6 @@
       const seal = V6_MASTERY_SEAL_MAP[sealId];
       if (!seal) return { ok: false, reason: "\u672A\u627E\u5230\u8BE5\u5B97\u5E08\u5370" };
       if (ast.unlockedMasterySeals.includes(sealId)) return { ok: false, reason: "\u5DF2\u70B9\u4EAE" };
-      const caps = getV6TierCaps(this.getBestTierReached());
-      if (!caps.allowMastery) {
-        return { ok: false, reason: "\u9700\u66FE\u664B\u7EA7\u7B2C 3 \u7EA7\u6216\u66F4\u9AD8\u8054\u8D5B\u540E\u89E3\u9501\u5B97\u5E08\u5370" };
-      }
       const check = canUnlockMasterySeal(ast, seal.style);
       if (!check.ok) return check;
       if (this.state.metaPointsTotal < seal.unlockCost) return { ok: false, reason: `Meta \u70B9\u6570\u4E0D\u8DB3 (\u9700 ${seal.unlockCost} pt)` };
@@ -22363,6 +22331,7 @@
     completeCurrentRoundWithUserResult(userMatchResult) {
       const userFixture = this.getUserCurrentFixture();
       if (!userFixture) return;
+      const rankBefore = this.getStandings().findIndex((r) => r.isUser) + 1;
       this.applyMatchOutcome(userFixture, userMatchResult);
       const pendingInRound = this.state.fixtures.filter(
         (f) => f.round === this.state.currentRound && !f.played
@@ -22373,12 +22342,12 @@
         const a = this.state.clubs.find((c) => c.id === fx.awayClubId);
         const engine = new MatchEngine(this.buildTeamSetup(h, a.id), this.buildTeamSetup(a, h.id));
         const res = engine.simulateMatch();
-        for (const mp of res.players) aiMatchFitness.set(mp.id, mp.fitness);
+        for (const mp of [...res.players, ...res.subbedOutPlayers ?? []]) aiMatchFitness.set(mp.id, mp.fitness);
         this.applyMatchOutcome(fx, res);
       }
       const userSquadIds = new Set(this.getUserClub().squad.map((p) => p.id));
       const userEndFitness = /* @__PURE__ */ new Map();
-      for (const mp of userMatchResult.players) {
+      for (const mp of [...userMatchResult.players, ...userMatchResult.subbedOutPlayers ?? []]) {
         if (userSquadIds.has(mp.id)) {
           userEndFitness.set(mp.id, mp.fitness);
         } else {
@@ -22526,16 +22495,26 @@
       const finBonusRates = [0, 0.15, 0.25, 0.35, 0.35, 0.35, 0.35, 0.5, 0.6];
       const homeMul = userIsHome ? 1 + (stadBonusRates[metaNow.stadium ?? 0] ?? 0) : 1;
       const finMul = 1 + (finBonusRates[metaNow.finance ?? 0] ?? 0);
-      this.addClubFunds(Math.round(baseMatchFunds * tierFundScale * homeMul * finMul));
+      const fundsEarned = Math.round(baseMatchFunds * tierFundScale * homeMul * finMul);
+      this.addClubFunds(fundsEarned);
       const v6MetaGain = userWon ? 2 : myGoals === oppGoals ? 1 : 0;
       this.state.metaPointsTotal += v6MetaGain;
+      const rankAfter = this.getStandings().findIndex((r) => r.isUser) + 1;
+      this.lastMatchSummary = {
+        roundNumber: userFixture.round,
+        fundsEarned,
+        metaGain: v6MetaGain,
+        rankBefore: rankBefore > 0 ? rankBefore : rankAfter,
+        rankAfter,
+        totalTeams: this.state.clubs.length
+      };
       this.lastMatchGrowth = {};
       const unlockedTraitMap = /* @__PURE__ */ new Map();
       for (const u of userMatchResult.unlockedHiddenTraits || []) {
         if (u.team === userSide) unlockedTraitMap.set(u.playerId, u.trait);
       }
       const matchStatsByPlayer = new Map(
-        userMatchResult.players.filter((mp) => mp.team === userSide).map((mp) => [mp.id, mp.matchStats])
+        [...userMatchResult.players, ...userMatchResult.subbedOutPlayers ?? []].filter((mp) => mp.team === userSide).map((mp) => [mp.id, mp.matchStats])
       );
       const webUnlocked = this.getSkillWebUnlocked();
       const hasFormNode = webUnlocked.includes(`fm_${userClubNow.formation}`);
@@ -23851,7 +23830,10 @@
           if (!dp.traits.includes(u.trait)) dp.traits.push(u.trait);
         }
       }
-      for (const mp of res.players) {
+      const seenPlayedIds = /* @__PURE__ */ new Set();
+      for (const mp of [...res.players, ...res.subbedOutPlayers ?? []]) {
+        if (seenPlayedIds.has(mp.id)) continue;
+        seenPlayedIds.add(mp.id);
         const dp = playerMap.get(mp.id);
         if (!dp) continue;
         dp.seasonStats.appearances++;
@@ -28614,24 +28596,33 @@
         ctx2.fillRect(ix + 18 + tw, iy + 12, 2, 24);
         ctx2.restore();
       }
-      drawText(ctx2, `${this.value.length}/${this.maxLen}`, ix + iw - 14, iy + ih / 2, {
-        size: 11,
-        color: THEME.TX3,
-        align: "right",
-        mono: true
-      });
-      drawButton(ctx2, hits, mx + 24, my + mh - 58, 108, 38, "\u968F\u673A\u961F\u540D", () => {
+      if (this.value.length > 0) {
+        drawText(ctx2, `${this.value.length}/${this.maxLen}`, ix + iw - 44, iy + ih / 2, {
+          size: 11,
+          color: THEME.TX3,
+          align: "right",
+          mono: true
+        });
+        drawButton(ctx2, hits, ix + iw - 36, iy + 9, 28, 30, "\xD7", () => {
+          this.value = "";
+          SoundEngine.playClick();
+        }, { variant: "ghost", fontSize: 14 });
+      } else {
+        drawText(ctx2, `${this.value.length}/${this.maxLen}`, ix + iw - 14, iy + ih / 2, {
+          size: 11,
+          color: THEME.TX3,
+          align: "right",
+          mono: true
+        });
+      }
+      drawButton(ctx2, hits, mx + 24, my + mh - 58, 124, 38, "\u968F\u673A\u961F\u540D", () => {
         this.value = generateFictionalClubName().slice(0, this.maxLen);
         SoundEngine.playClick();
-      }, { variant: "primary", fontSize: 12, icon: "dice" });
-      drawButton(ctx2, hits, mx + 140, my + mh - 58, 72, 38, "\u6E05\u7A7A", () => {
-        this.value = "";
-        SoundEngine.playClick();
-      }, { variant: "ghost", fontSize: 12 });
-      drawButton(ctx2, hits, mx + mw - 210, my + mh - 58, 86, 38, "\u53D6\u6D88", () => {
+      }, { variant: "primary", fontSize: 12.5, icon: "dice" });
+      drawButton(ctx2, hits, mx + mw - 224, my + mh - 58, 92, 38, "\u53D6\u6D88", () => {
         this.close();
       }, { variant: "ghost", fontSize: 12.5 });
-      drawButton(ctx2, hits, mx + mw - 114, my + mh - 58, 90, 38, "\u786E\u8BA4", () => {
+      drawButton(ctx2, hits, mx + mw - 120, my + mh - 58, 96, 38, "\u786E\u8BA4", () => {
         this.confirm();
       }, { variant: "gold", fontSize: 13, disabled: this.value.trim().length === 0 });
     }
@@ -28643,12 +28634,12 @@
       stepNum: "\u5F15\u5BFC 1/8 \xB7 \u6838\u5FC3\u5F00\u5305",
       title: "\u6BCF\u8F6E 5 \u9009 3 \u7EC4\u5EFA\u9AA8\u67B6",
       body: "\u4ECE 5 \u540D\u8BD5\u8BAD\u7403\u5458\u4E2D\u6311\u9009 3 \u4EBA\u5165\u961F\uFF0C\u9009\u6EE1\u540E\u70B9\u5E95\u90E8\u786E\u8BA4\u3002",
-      x: 330,
-      y: 604,
-      w: 640,
-      h: 108,
+      x: 340,
+      y: 486,
+      w: 620,
+      h: 104,
       highlight: { x: 52, y: 168, w: 1176, h: 432 },
-      arrowTo: { x: 640, y: 598 }
+      arrowTo: { x: 640, y: 478 }
     },
     portal_summer: {
       stepNum: "\u5F15\u5BFC 2/8 \xB7 \u5B63\u524D\u590F\u7A97",
@@ -28709,12 +28700,12 @@
       stepNum: "\u5F15\u5BFC 7/8 \xB7 \u56DB\u8D5B\u6BB5\u968F\u65F6\u62CD\u677F",
       title: "0-20 / 21-45 / 46-70 / 71-90+ \u56DB\u6BB5\u81EA\u7531\u51FA\u724C",
       body: "\u5168\u573A\u5206 4 \u4E2A\u8D5B\u6BB5\uFF0C\u6BCF\u6BB5\u81EA\u52A8\u8865\u5145 TP\uFF08\u672A\u82B1\u5B8C\u6700\u591A\u7ED3\u8F6C 2 TP\uFF09\u3002\u60AC\u505C\u624B\u724C\u81EA\u52A8 0.25x \u805A\u7126\u9884\u89C8\u7403\u573A\u5149\u5E55\uFF0C\u968F\u65F6\u70B9\u51FB\u5373\u53EF\u62CD\u51FA\u6307\u4EE4\uFF01",
-      x: 112,
+      x: 36,
       y: 386,
-      w: 486,
+      w: 430,
       h: 136,
-      highlight: { x: 616, y: 562, w: 398, h: 142 },
-      arrowTo: { x: 616, y: 622 }
+      highlight: { x: 492, y: 562, w: 522, h: 142 },
+      arrowTo: { x: 492, y: 622 }
     },
     post_match: {
       stepNum: "\u5F15\u5BFC 8/8 \xB7 \u8D5B\u540E\u8089\u9E3D\u4E0E\u661F\u76D8\u6210\u957F",
@@ -28863,6 +28854,7 @@
       this.lbTab = "goals";
       this.sortMode = "ca";
       this.page = 0;
+      this.academyPage = 0;
       this.marketSellPage = 0;
       this.devilTargetId = null;
     }
@@ -29066,48 +29058,52 @@
     renderRosterWallTab(ctx2, hits, league, actions, baseX, totalW, panelY, panelH, displayRoster, isLocked) {
       const club = league.getUserClub();
       const selectedSet = new Set(club.squad.map((p) => p.id));
-      const lbW = 316;
+      const lbW = IS_MOBILE ? 344 : 316;
       const wallX = baseX + lbW + 12;
       const wallW = totalW - lbW - 12;
       drawChamferPanel(ctx2, baseX, panelY, lbW, panelH, 12, "rgba(14, 22, 40, 0.94)", THEME.BORDER_GOLD);
-      drawText(ctx2, "\u961F\u5185\u6570\u636E\u699C\u5355 \xB7 LEADERBOARD", baseX + 16, panelY + 20, { size: 13.5, bold: true, color: THEME.GOLD_LIGHT });
-      drawText(ctx2, "\u4E00\u7EBF\u961F\u5B9E\u7EE9\u6392\u884C\uFF08\u70B9\u51FB\u67E5\u770B\u8BE6\u60C5\uFF09", baseX + 16, panelY + 38, { size: 10, color: THEME.TX2 });
+      drawText(ctx2, "\u961F\u5185\u6570\u636E\u699C\u5355 \xB7 LEADERBOARD", baseX + 16, panelY + 20, { size: IS_MOBILE ? 14.5 : 13.5, bold: true, color: THEME.GOLD_LIGHT });
+      drawText(ctx2, "\u4E00\u7EBF\u961F\u5B9E\u7EE9\u6392\u884C\uFF08\u70B9\u51FB\u67E5\u770B\u8BE6\u60C5\uFF09", baseX + 16, panelY + 38, { size: IS_MOBILE ? 11 : 10, color: THEME.TX2 });
+      const lbTabW = Math.floor((lbW - 32) / 3);
       LB_TABS.forEach((tab, ti) => {
         const col = ti % 3;
         const row = Math.floor(ti / 3);
-        drawButton(ctx2, hits, baseX + 12 + col * 98, panelY + 50 + row * 28, 92, 23, tab.label, () => {
+        drawButton(ctx2, hits, baseX + 12 + col * (lbTabW + 4), panelY + 50 + row * 29, lbTabW, IS_MOBILE ? 25 : 23, tab.label, () => {
           this.lbTab = tab.key;
-        }, { active: this.lbTab === tab.key, fontSize: 10 });
+        }, { active: this.lbTab === tab.key, fontSize: IS_MOBILE ? 11 : 10 });
       });
       const lbPool = (this.lbTab === "gk" ? displayRoster.filter((p) => p.role === "GK") : displayRoster).map((p) => ({ p, val: this.getLbValue(p, this.lbTab) })).sort((a, b) => b.val.score !== a.val.score ? b.val.score - a.val.score : b.p.ca - a.p.ca);
       const listStartY = panelY + 114;
-      lbPool.slice(0, 10).forEach((entry, idx) => {
+      const maxLbRows = IS_MOBILE ? 8 : 10;
+      const lbRowStep = IS_MOBILE ? 52 : 43;
+      const lbRowH = IS_MOBILE ? 48 : 40;
+      lbPool.slice(0, maxLbRows).forEach((entry, idx) => {
         const { p, val } = entry;
-        const ry = listStartY + idx * 43;
-        if (ry + 38 > panelY + panelH - 6) return;
+        const ry = listStartY + idx * lbRowStep;
+        if (ry + lbRowH - 2 > panelY + panelH - 6) return;
         const rankCol = idx === 0 ? THEME.GOLD_LIGHT : idx === 1 ? "#CBD5E1" : idx === 2 ? "#D97706" : THEME.TX3;
         drawRoundRect(
           ctx2,
           baseX + 12,
           ry,
           lbW - 24,
-          40,
+          lbRowH,
           6,
           idx === 0 ? "rgba(212, 168, 67, 0.12)" : THEME.BG_CARD,
           idx === 0 ? THEME.BORDER_GOLD : THEME.BORDER
         );
-        drawText(ctx2, `${idx + 1}`, baseX + 24, ry + 20, { token: "LABEL", bold: true, color: rankCol, align: "center", mono: true });
-        drawBadge(ctx2, baseX + 38, ry + 11, 32, 18, p.role, tierColor(p.tier));
-        drawText(ctx2, fitText(ctx2, p.name, lbW - 154, FONT.LABEL, true, true), baseX + 76, ry + 13, { token: "LABEL", bold: true, color: THEME.TX1 });
-        drawText(ctx2, `${p.age}\u5C81 \xB7 ${p.ca}/${p.pa ?? p.ca}`, baseX + 76, ry + 29, { token: "MICRO", color: THEME.TX2, mono: true });
-        drawText(ctx2, val.text, baseX + lbW - 18, ry + 20, {
-          token: "LABEL",
+        drawText(ctx2, `${idx + 1}`, baseX + 24, ry + lbRowH / 2, { token: IS_MOBILE ? "BODY" : "LABEL", bold: true, color: rankCol, align: "center", mono: true });
+        drawBadge(ctx2, baseX + 38, ry + (lbRowH - 18) / 2, 34, 18, p.role, tierColor(p.tier));
+        drawText(ctx2, fitText(ctx2, p.name, lbW - 166, IS_MOBILE ? FONT.BODY : FONT.LABEL, true, true), baseX + 78, ry + (IS_MOBILE ? 15 : 13), { token: IS_MOBILE ? "BODY" : "LABEL", bold: true, color: THEME.TX1 });
+        drawText(ctx2, `${p.age}\u5C81 \xB7 ${p.ca}/${p.pa ?? p.ca}`, baseX + 78, ry + (IS_MOBILE ? 34 : 29), { token: IS_MOBILE ? "LABEL" : "MICRO", color: THEME.TX2, mono: true });
+        drawText(ctx2, val.text, baseX + lbW - 18, ry + lbRowH / 2, {
+          token: IS_MOBILE ? "BODY" : "LABEL",
           bold: true,
           color: idx < 3 ? rankCol : "#7DD3FC",
           align: "right",
           mono: true
         });
-        hits.addTouchTarget(baseX + 12, ry, lbW - 24, 40, () => {
+        hits.addTouchTarget(baseX + 12, ry, lbW - 24, lbRowH, () => {
           SoundEngine.playClick();
           actions.onInspectPlayer(p);
         });
@@ -29203,18 +29199,20 @@
         }
         return b.ca - a.ca;
       });
-      const pageSize = 9;
+      const cols = IS_MOBILE ? 2 : 3;
+      const pageSize = IS_MOBILE ? 6 : 9;
       const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize));
       if (this.page >= totalPages) this.page = totalPages - 1;
       const visible = filtered.slice(this.page * pageSize, (this.page + 1) * pageSize);
-      const cw = Math.floor((wallW - 44) / 3);
-      const gap = Math.floor((wallW - 24 - cw * 3) / 2);
-      const ch = 132;
+      const gap = IS_MOBILE ? 14 : 10;
+      const cw = Math.floor((wallW - 24 - gap * (cols - 1)) / cols);
+      const ch = IS_MOBILE ? 136 : 132;
+      const rowStep = IS_MOBILE ? 141 : 138;
       visible.forEach((p, idx) => {
-        const col = idx % 3;
-        const row = Math.floor(idx / 3);
+        const col = idx % cols;
+        const row = Math.floor(idx / cols);
         const px = wallX + 12 + col * (cw + gap);
-        const py = panelY + 104 + row * 138;
+        const py = panelY + (IS_MOBILE ? 102 : 104) + row * rowStep;
         const isSel = selectedSet.has(p.id);
         const isSuspended = (p.suspendedRounds ?? 0) > 0;
         const paVal = p.pa ?? p.ca;
@@ -29248,62 +29246,115 @@
         if (isSuspended) drawBadge(ctx2, px + 148, py + 7, 28, 15, "\u505C\u8D5B", "#991B1B", "#FECACA");
         drawText(ctx2, fitText(ctx2, p.name, cw - 122, FONT.BODY, true, true), px + 52, py + 32, { token: "BODY", bold: true, color: THEME.TX1 });
         const secText = p.secondaryRoles && p.secondaryRoles.length > 0 ? `\u517C:${p.secondaryRoles.join("/")}` : "\u4E13\u804C";
-        drawText(ctx2, fitText(ctx2, `${secText} \xB7 ${formatFunds(p.marketValue ?? p.cost)}`, cw - 122, FONT.MICRO, false, true), px + 52, py + 47, {
-          token: "MICRO",
+        drawText(ctx2, fitText(ctx2, `${secText} \xB7 ${formatFunds(p.marketValue ?? p.cost)}`, cw - 122, IS_MOBILE ? FONT.LABEL : FONT.MICRO, false, true), px + 52, py + 47, {
+          token: IS_MOBILE ? "LABEL" : "MICRO",
           color: "#7DD3FC"
         });
         drawText(ctx2, `${p.ca}`, px + cw - 10, py + 15, { token: "TITLE", bold: true, color: THEME.GOLD_LIGHT, align: "right", mono: true });
         drawStatBar(ctx2, p.ca, 99, px + cw - 52, py + 25, 42, 3, THEME.GOLD_LIGHT);
-        drawText(ctx2, `PA ${paVal}`, px + cw - 10, py + 36, { token: "MICRO", bold: true, color: paVal >= 85 ? THEME.GOLD_LIGHT : "#38BDF8", align: "right", mono: true });
-        const attrPairs = p.role === "GK" ? [
-          ["stat_gk", p.attributes.goalkeeping],
-          ["stat_pos", p.attributes.positioning],
-          ["stat_calm", p.attributes.composure],
-          ["stat_pass", p.attributes.passing],
-          ["shield", p.attributes.strength],
-          ["stat_fit", p.attributes.stamina]
-        ] : [
-          ["stat_pace", p.attributes.pace],
-          ["stat_shoot", p.attributes.shooting],
-          ["stat_pass", p.attributes.passing],
-          ["ball", p.attributes.dribbling],
-          ["stat_def", p.attributes.defending],
-          ["stat_fit", p.attributes.stamina]
-        ];
-        const boxW = Math.floor((cw - 28) / 3);
-        attrPairs.forEach(([ic, val], ai) => {
-          const acol = ai % 3;
-          const arow = Math.floor(ai / 3);
-          const ax = px + 10 + acol * (boxW + 4);
-          const ay = py + 56 + arow * 20;
-          drawRoundRect(ctx2, ax, ay, boxW, 17, 4, "rgba(11, 17, 30, 0.85)", "rgba(148, 163, 184, 0.20)");
-          drawIcon(ctx2, ic, ax + 11, ay + 8.5, 10, THEME.TX3);
-          drawText(ctx2, `${val}`, ax + boxW - 6, ay + 8.5, { size: 10.5, bold: true, color: this.statColor(val), align: "right", mono: true });
-        });
+        drawText(ctx2, `PA ${paVal}`, px + cw - 10, py + 36, { token: IS_MOBILE ? "LABEL" : "MICRO", bold: true, color: paVal >= 85 ? THEME.GOLD_LIGHT : "#38BDF8", align: "right", mono: true });
+        if (IS_MOBILE) {
+          const keyAttrs = p.role === "GK" ? [
+            ["stat_gk", "\u6251\u6551", p.attributes.goalkeeping],
+            ["stat_pos", "\u7AD9\u4F4D", p.attributes.positioning],
+            ["stat_calm", "\u51B7\u9759", p.attributes.composure],
+            ["stat_pass", "\u4F20\u7403", p.attributes.passing]
+          ] : [
+            ["stat_pace", "\u901F\u5EA6", p.attributes.pace],
+            ["stat_shoot", "\u5C04\u95E8", p.attributes.shooting],
+            ["stat_pass", "\u4F20\u7403", p.attributes.passing],
+            ["stat_def", "\u9632\u5B88", p.attributes.defending]
+          ];
+          const barColW = Math.floor((cw - 28) / 2);
+          keyAttrs.forEach(([ic, lbl, val], ai) => {
+            const acol = ai % 2;
+            const arow = Math.floor(ai / 2);
+            const ax = px + 10 + acol * (barColW + 8);
+            const ay = py + 58 + arow * 20;
+            const col2 = this.statColor(val);
+            drawIcon(ctx2, ic, ax + 6, ay + 8, 11, THEME.TX3);
+            drawText(ctx2, lbl, ax + 16, ay + 8, { size: 11, rawSize: true, color: THEME.TX2 });
+            drawStatBar(ctx2, val, 99, ax + 46, ay + 6, barColW - 76, 5, col2);
+            drawText(ctx2, `${val}`, ax + barColW - 2, ay + 8, { size: 11.5, rawSize: true, bold: true, color: col2, align: "right", mono: true });
+          });
+        } else {
+          const attrPairs = p.role === "GK" ? [
+            ["stat_gk", p.attributes.goalkeeping],
+            ["stat_pos", p.attributes.positioning],
+            ["stat_calm", p.attributes.composure],
+            ["stat_pass", p.attributes.passing],
+            ["shield", p.attributes.strength],
+            ["stat_fit", p.attributes.stamina]
+          ] : [
+            ["stat_pace", p.attributes.pace],
+            ["stat_shoot", p.attributes.shooting],
+            ["stat_pass", p.attributes.passing],
+            ["ball", p.attributes.dribbling],
+            ["stat_def", p.attributes.defending],
+            ["stat_fit", p.attributes.stamina]
+          ];
+          const boxW = Math.floor((cw - 28) / 3);
+          attrPairs.forEach(([ic, val], ai) => {
+            const acol = ai % 3;
+            const arow = Math.floor(ai / 3);
+            const ax = px + 10 + acol * (boxW + 4);
+            const ay = py + 56 + arow * 20;
+            drawRoundRect(ctx2, ax, ay, boxW, 17, 4, "rgba(11, 17, 30, 0.85)", "rgba(148, 163, 184, 0.20)");
+            drawIcon(ctx2, ic, ax + 11, ay + 8.5, 10, THEME.TX3);
+            drawText(ctx2, `${val}`, ax + boxW - 6, ay + 8.5, { size: 10.5, bold: true, color: this.statColor(val), align: "right", mono: true });
+          });
+        }
         const traitText = p.traits && p.traits.length > 0 ? p.traits.slice(0, 2).join(" \xB7 ") : "\u5747\u8861\u578B\u7403\u5458";
-        drawText(ctx2, fitText(ctx2, traitText, cw - 60, FONT.MICRO, false, true), px + 12, py + 103, { token: "MICRO", color: "#A5B4FC" });
-        drawButton(ctx2, hits, px + cw - 42, py + 93, 34, 18, p.isStarred ? "\u2605" : "\u2606", () => {
+        drawText(ctx2, fitText(ctx2, traitText, cw - 60, IS_MOBILE ? FONT.LABEL : FONT.MICRO, false, true), px + 12, py + (IS_MOBILE ? 105 : 103), {
+          token: IS_MOBILE ? "LABEL" : "MICRO",
+          color: "#A5B4FC"
+        });
+        drawButton(ctx2, hits, px + cw - 42, py + (IS_MOBILE ? 95 : 93), 34, 18, p.isStarred ? "\u2605" : "\u2606", () => {
           const next = league.toggleStarPlayer(p.id);
           actions.onSave();
           actions.onToast?.(next ? `\u5DF2\u6536\u85CF\u3010${p.name}\u3011\uFF0C\u6362\u4EBA\u65F6\u5C06\u4F18\u5148\u7F6E\u9876` : `\u5DF2\u53D6\u6D88\u6536\u85CF\u3010${p.name}\u3011`, next ? THEME.GOLD_LIGHT : THEME.TX2);
-        }, { variant: p.isStarred ? "gold" : "ghost", fontSize: 10 });
+        }, { variant: p.isStarred ? "gold" : "ghost", fontSize: IS_MOBILE ? 11 : 10 });
         const apps = p.seasonStats.appearances ?? 0;
-        const botY = py + 120;
+        const botY = py + (IS_MOBILE ? 123 : 120);
         let lx = px + 12;
-        drawText(ctx2, `${apps}\u573A`, lx, botY, { token: "MICRO", color: THEME.TX2, mono: true });
-        lx += 32;
+        drawText(ctx2, `${apps}\u573A`, lx, botY, { token: IS_MOBILE ? "LABEL" : "MICRO", color: THEME.TX2, mono: true });
+        lx += IS_MOBILE ? 38 : 32;
         if (p.role === "GK") {
-          lx += drawStatMicro(ctx2, "stat_gk", `${p.seasonStats.saves ?? 0}`, lx, botY, { iconSize: 10, fontSize: 10, iconColor: THEME.TX3, valueColor: THEME.TX1, gap: 2 });
-          lx += 7;
-          drawStatMicro(ctx2, "shield", `${p.seasonStats.cleanSheets ?? 0}`, lx, botY, { iconSize: 10, fontSize: 10, iconColor: THEME.TX3, valueColor: THEME.GREEN, gap: 2 });
+          lx += drawStatMicro(ctx2, "stat_gk", `${p.seasonStats.saves ?? 0}`, lx, botY, {
+            iconSize: IS_MOBILE ? 12 : 10,
+            fontSize: IS_MOBILE ? 11.5 : 10,
+            iconColor: THEME.TX3,
+            valueColor: THEME.TX1,
+            gap: 2
+          });
+          lx += 8;
+          drawStatMicro(ctx2, "shield", `${p.seasonStats.cleanSheets ?? 0}`, lx, botY, {
+            iconSize: IS_MOBILE ? 12 : 10,
+            fontSize: IS_MOBILE ? 11.5 : 10,
+            iconColor: THEME.TX3,
+            valueColor: THEME.GREEN,
+            gap: 2
+          });
         } else {
-          lx += drawStatMicro(ctx2, "ball", `${p.seasonStats.goals ?? 0}`, lx, botY, { iconSize: 10, fontSize: 10, iconColor: THEME.TX3, valueColor: THEME.TX1, gap: 2 });
-          lx += 7;
-          drawStatMicro(ctx2, "stat_assist", `${p.seasonStats.assists ?? 0}`, lx, botY, { iconSize: 10, fontSize: 10, iconColor: THEME.TX3, valueColor: THEME.TX1, gap: 2 });
+          lx += drawStatMicro(ctx2, "ball", `${p.seasonStats.goals ?? 0}`, lx, botY, {
+            iconSize: IS_MOBILE ? 12 : 10,
+            fontSize: IS_MOBILE ? 11.5 : 10,
+            iconColor: THEME.TX3,
+            valueColor: THEME.TX1,
+            gap: 2
+          });
+          lx += 8;
+          drawStatMicro(ctx2, "stat_assist", `${p.seasonStats.assists ?? 0}`, lx, botY, {
+            iconSize: IS_MOBILE ? 12 : 10,
+            fontSize: IS_MOBILE ? 11.5 : 10,
+            iconColor: THEME.TX3,
+            valueColor: THEME.TX1,
+            gap: 2
+          });
         }
         const fitPct = Math.round(p.fitness ?? 100);
-        drawMiniBar(ctx2, px + cw - 68, botY - 2, 26, 4, fitPct / 100, fitPct < 60 ? "#FBBF24" : THEME.GREEN);
-        drawText(ctx2, `${fitPct}%`, px + cw - 10, botY, { token: "MICRO", color: fitPct < 60 ? "#FBBF24" : THEME.TX2, align: "right", mono: true });
+        drawMiniBar(ctx2, px + cw - (IS_MOBILE ? 76 : 68), botY - 2, 26, 4, fitPct / 100, fitPct < 60 ? "#FBBF24" : THEME.GREEN);
+        drawText(ctx2, `${fitPct}%`, px + cw - 10, botY, { token: IS_MOBILE ? "LABEL" : "MICRO", color: fitPct < 60 ? "#FBBF24" : THEME.TX2, align: "right", mono: true });
         hits.add(px, py, cw, ch, () => {
           SoundEngine.playClick();
           actions.onInspectPlayer(p);
@@ -29396,7 +29447,7 @@
           actions.onToast?.(res.reason || "\u5237\u65B0\u5931\u8D25", THEME.RED_LIGHT);
         }
       }, { variant: "primary", disabled: !isWindowOpen || !isFreeReroll && funds < nextRerollCost, fontSize: 11, icon: "refresh" });
-      drawButton(ctx2, hits, baseX + totalW - 224, panelY + 14, 204, 32, "\u6D77\u5916 U18 \u76F2\u5305\xD73 (\xA5380\u4E07)", () => {
+      drawButton(ctx2, hits, baseX + totalW - 224, panelY + 14, 204, 32, "\u6D77\u5916U18\u76F2\u5305 (\xA5380\u4E07)", () => {
         const res = league.buyOverseasYouthPack();
         if (res.ok) {
           SoundEngine.playFanfare();
@@ -29414,14 +29465,19 @@
         });
         return;
       }
-      const cw = Math.floor((totalW - 64) / 3);
-      const gap = Math.floor((totalW - 40 - cw * 3) / 2);
-      const ch = 226;
-      ya.candidates.slice(0, 6).forEach((p, idx) => {
-        const col = idx % 3;
-        const row = Math.floor(idx / 3);
+      const cols = IS_MOBILE ? 2 : 3;
+      const yaPageSize = IS_MOBILE ? 4 : 6;
+      const yaTotalPages = Math.max(1, Math.ceil(ya.candidates.length / yaPageSize));
+      if (this.academyPage >= yaTotalPages) this.academyPage = yaTotalPages - 1;
+      const yaVisible = ya.candidates.slice(this.academyPage * yaPageSize, (this.academyPage + 1) * yaPageSize);
+      const gap = 14;
+      const cw = Math.floor((totalW - 40 - gap * (cols - 1)) / cols);
+      const ch = IS_MOBILE ? 204 : 226;
+      yaVisible.forEach((p, idx) => {
+        const col = idx % cols;
+        const row = Math.floor(idx / cols);
         const cx = baseX + 20 + col * (cw + gap);
-        const cy = panelY + 66 + row * 238;
+        const cy = panelY + (IS_MOBILE ? 64 : 66) + row * (IS_MOBILE ? 214 : 238);
         const fog = p.scoutFogLevel ?? 0;
         const pa = p.pa ?? p.ca;
         const disc = acaLv >= 5 ? 0.75 : acaLv >= 3 ? 0.85 : 1;
@@ -29486,6 +29542,16 @@
           }
         }, { variant: canSign ? "green" : "ghost", disabled: !canSign, fontSize: 11.5 });
       });
+      if (yaTotalPages > 1) {
+        const cxMid = baseX + totalW / 2;
+        drawButton(ctx2, hits, cxMid - 150, panelY + panelH - 42, 92, 28, "\u4E0A\u4E00\u9875", () => {
+          this.academyPage = Math.max(0, this.academyPage - 1);
+        }, { disabled: this.academyPage === 0, fontSize: 11 });
+        drawText(ctx2, `${this.academyPage + 1} / ${yaTotalPages} \u9875`, cxMid, panelY + panelH - 28, { size: 11, color: THEME.TX2, align: "center" });
+        drawButton(ctx2, hits, cxMid + 58, panelY + panelH - 42, 92, 28, "\u4E0B\u4E00\u9875", () => {
+          this.academyPage = Math.min(yaTotalPages - 1, this.academyPage + 1);
+        }, { disabled: this.academyPage >= yaTotalPages - 1, fontSize: 11 });
+      }
     }
     renderTransferMarketTab(ctx2, hits, league, actions, baseX, totalW, panelY, panelH, isWindowOpen) {
       const club = league.getUserClub();
@@ -29518,19 +29584,22 @@
           align: "center"
         });
       } else {
-        tm.marketPool.slice(0, 6).forEach((p, idx) => {
-          const py = panelY + 52 + idx * 81;
+        const mLimit = IS_MOBILE ? 5 : 6;
+        const mStep = IS_MOBILE ? 94 : 81;
+        const mRowH = IS_MOBILE ? 84 : 73;
+        tm.marketPool.slice(0, mLimit).forEach((p, idx) => {
+          const py = panelY + 54 + idx * mStep;
           const fog = p.scoutFogLevel ?? 1;
           const isClear = fog >= 2;
           const price = Math.round((p.marketValue ?? p.cost) * discountRate);
           const canBuy = isWindowOpen && funds >= price && roster.length < MAX_CLUB_ROSTER;
-          const rowHover = hits.isHovered(baseX + 14, py, leftW - 28, 73);
+          const rowHover = hits.isHovered(baseX + 14, py, leftW - 28, mRowH);
           drawRoundRect(
             ctx2,
             baseX + 14,
             py,
             leftW - 28,
-            73,
+            mRowH,
             8,
             rowHover ? THEME.BG_CARD_HOVER : THEME.BG_CARD,
             rowHover ? THEME.GOLD_LIGHT : isClear ? THEME.BORDER_GOLD : THEME.BORDER,
@@ -29609,15 +29678,17 @@
       }
       drawText(ctx2, "\u6211\u65B9\u5927\u540D\u5355\u7403\u5458\uFF08\u5FEB\u5356\u5373\u65F6\u5230\u8D26 / \u6302\u724C\u7ADE\u62CD\u6EA2\u4EF7\u66F4\u9AD8\uFF09", rightX + 18, panelY + 162, { size: 11.5, bold: true, color: THEME.TX2 });
       const sellList = [...roster].sort((a, b) => a.ca - b.ca);
-      const sPageSize = 7;
+      const sPageSize = IS_MOBILE ? 5 : 7;
+      const sStep = IS_MOBILE ? 60 : 48;
+      const sRowH = IS_MOBILE ? 52 : 42;
       const sPages = Math.max(1, Math.ceil(sellList.length / sPageSize));
       if (this.marketSellPage >= sPages) this.marketSellPage = sPages - 1;
       const visibleSell = sellList.slice(this.marketSellPage * sPageSize, (this.marketSellPage + 1) * sPageSize);
       visibleSell.forEach((p, si) => {
-        const sy = panelY + 178 + si * 48;
+        const sy = panelY + 178 + si * sStep;
         const val = p.marketValue ?? p.cost;
         const isListed = tm.listings.some((l) => l.playerId === p.id);
-        drawRoundRect(ctx2, rightX + 18, sy, rightW - 36, 42, 6, THEME.BG_CARD, isListed ? THEME.GOLD : THEME.BORDER);
+        drawRoundRect(ctx2, rightX + 18, sy, rightW - 36, sRowH, 6, THEME.BG_CARD, isListed ? THEME.GOLD : THEME.BORDER);
         drawBadge(ctx2, rightX + 26, sy + 12, 32, 18, p.role, tierColor(p.tier));
         drawText(ctx2, `${p.name} (${p.age}\u5C81) \xB7 CA ${p.ca}/PA ${p.pa ?? p.ca}`, rightX + 64, sy + 21, { size: 11, bold: true });
         drawButton(ctx2, hits, rightX + rightW - 252, sy + 7, 110, 28, `\u5FEB\u5356 +${formatFunds(Math.round(val * 0.72))}`, () => {
@@ -29730,8 +29801,8 @@
           actions.onInspectPlayer(p);
         }, { variant: "ghost", fontSize: 10.5 });
       } else {
-        drawText(ctx2, "\u9876\u7EA7\u7ECF\u7EAA\u4EBA\u5730\u4E0B\u901A\u9053 \xB7 \u6309\u5F53\u524D\u8054\u8D5B\u6807\u51C6\u767E\u5206\u6BD4\u6D6E\u52A8", x1 + 18, panelY + 72, { size: 16.5, bold: true, color: THEME.TX1 });
-        drawText(ctx2, "\u9AD8\u98CE\u9669\u535A\u5F08\uFF1A\u8F93\u591A\u8D62\u5C11\uFF0C\u4F46\u6709\u6982\u7387\u76F4\u63A5\u62BD\u4E2D\u8FDC\u8D85\u8054\u8D5B\u6C34\u51C6\u7684\u8D85\u7EA7\u5DE8\u661F\uFF01\u5F00\u51FA\u540E\u53EF\u9009\u62E9\u3010\u5165\u961F\u3011\u6216\u3010\u7ACB\u5373\u51FA\u552E\u3011", x1 + 18, panelY + 96, {
+        drawText(ctx2, fitText(ctx2, "\u9876\u7EA7\u7ECF\u7EAA\u4EBA\u5730\u4E0B\u901A\u9053 \xB7 \u6309\u5F53\u524D\u8054\u8D5B\u6807\u51C6\u767E\u5206\u6BD4\u6D6E\u52A8", leftW - 36, 16.5, true), x1 + 18, panelY + 72, { size: 16.5, bold: true, color: THEME.TX1 });
+        drawText(ctx2, fitText(ctx2, "\u9AD8\u98CE\u9669\u535A\u5F08\uFF1A\u8F93\u591A\u8D62\u5C11\uFF0C\u4F46\u6709\u6982\u7387\u62BD\u4E2D\u8D85\u7EA7\u5DE8\u661F\uFF01\u5F00\u51FA\u540E\u53EF\u9009\u62E9\u3010\u5165\u961F\u3011\u6216\u3010\u7ACB\u5373\u51FA\u552E\u3011", leftW - 36, 11), x1 + 18, panelY + 96, {
           size: 11,
           color: "#CBD5E1"
         });
@@ -29794,15 +29865,17 @@
       drawBadge(ctx2, x2 + 18, panelY + 34, 152, 22, "\u79C1\u6559\u7279\u8BAD \xB7 \u7A81\u7834\u4E0A\u9650", "#7F1D1D", "#FCA5A5");
       drawText(ctx2, `\u9B54\u9B3C\u7279\u8BAD (\xA5350\u4E07 \xB7 ${tm.privateTrainCount}/2)`, x2 + 18, panelY + 72, { size: 15.5, bold: true, color: THEME.GOLD_LIGHT });
       drawText(ctx2, "\u76F4\u63A5 +1~3 CA \u5E76\u6709\u673A\u4F1A\u7A81\u7834 PA \u5929\u82B1\u677F\uFF08\u4EC5\u8F6C\u4F1A\u7A97\u5F00\u653E\uFF09", x2 + 18, panelY + 95, { size: 10.5, color: "#FCA5A5" });
-      const trainPool = [...roster].sort((a, b) => b.ca - a.ca).slice(0, 7);
+      const trainPool = [...roster].sort((a, b) => b.ca - a.ca).slice(0, IS_MOBILE ? 6 : 7);
       if (!this.devilTargetId || !trainPool.some((p) => p.id === this.devilTargetId)) {
         this.devilTargetId = trainPool[0]?.id ?? null;
       }
       const canTrainNow = isWindowOpen && funds >= 350 && tm.privateTrainCount < 2;
+      const tStep = IS_MOBILE ? 52 : 46;
+      const tRowH = IS_MOBILE ? 46 : 40;
       trainPool.forEach((p, ti) => {
-        const ty = panelY + 114 + ti * 46;
+        const ty = panelY + 114 + ti * tStep;
         const isSel = this.devilTargetId === p.id;
-        drawRoundRect(ctx2, x2 + 16, ty, rightW - 32, 40, 6, isSel ? "#3B1E24" : "rgba(15, 23, 42, 0.85)", isSel ? THEME.GOLD_LIGHT : THEME.BORDER);
+        drawRoundRect(ctx2, x2 + 16, ty, rightW - 32, tRowH, 6, isSel ? "#3B1E24" : "rgba(15, 23, 42, 0.85)", isSel ? THEME.GOLD_LIGHT : THEME.BORDER);
         drawBadge(ctx2, x2 + 24, ty + 11, 32, 18, p.role, tierColor(p.tier));
         drawText(ctx2, `${p.name} (${p.age}\u5C81)`, x2 + 64, ty + 20, { size: 11.5, bold: true });
         drawText(ctx2, `CA ${p.ca}/${p.pa ?? p.ca}`, x2 + rightW - 94, ty + 20, { size: 11, bold: true, color: THEME.GOLD_LIGHT, align: "right", mono: true });
@@ -31141,6 +31214,7 @@
       this.storyTags = /* @__PURE__ */ new Map();
       this.playerCaMap = /* @__PURE__ */ new Map();
       this.elapsedSec = 0;
+      this.prologueWaitTimer = 0;
       this.goalScorePopTimer = 0;
       this.memoryHighlightTimer = 0;
       this.kickoffIntroTimer = 0;
@@ -31929,6 +32003,8 @@
         }
       } else if (!this.isPaused && st.phase !== "full_time" && this.hitStopTimer <= 0) {
         const tutState = this.isPrologueMode ? this.engine.getPrologueTutorialState() : null;
+        const isWaitingPrologue = !!(this.isPrologueMode && (tutState?.waitingForSub || tutState?.waitingForCard || st.activeSkillPrompt));
+        this.prologueWaitTimer = isWaitingPrologue ? this.prologueWaitTimer + dtSec : 0;
         const effSpeed = st.activeSkillPrompt ? 0.25 : tutState?.waitingForSub || tutState?.waitingForCard ? 0.55 : this.v6HoveringCard ? 0.25 : this.speed;
         this.tickAcc += dtSec * 10 * effSpeed;
         let steps = 0;
@@ -32343,7 +32419,7 @@
       ctx2.restore();
       drawText(ctx2, "\u5B9E\u65F6\u6587\u5B57\u76F4\u64AD", 42, 107, { size: 13.5, bold: true, color: THEME.GOLD_LIGHT });
       const events = st.events.filter((e) => e.type !== "pass").slice(-12).reverse();
-      const commLineH = IS_MOBILE ? Math.max(18, Math.round(FONT.MICRO * 1.45)) : 14;
+      const commLineH = IS_MOBILE ? Math.max(19, Math.round(FONT.MICRO * 1.48)) : 14;
       let cy = 128;
       for (const ev of events) {
         const isGoal = ev.type === "goal";
@@ -32867,8 +32943,8 @@
       const minLY = PITCH_RECT.y + 2;
       const maxLY = PITCH_RECT.y + PITCH_RECT.h - 2;
       for (const { p, sp } of labelOrder) {
-        const lw = Math.max(IS_MOBILE ? 26 : 20, p.role.length * (IS_MOBILE ? 7.5 : 6) + 8);
-        const lh = IS_MOBILE ? 14 : 11;
+        const lw = Math.max(IS_MOBILE ? 28 : 20, p.role.length * (IS_MOBILE ? 8 : 6) + 8);
+        const lh = IS_MOBILE ? 15 : 11;
         const candidates = [
           { cx: sp.x, cy: sp.y + (IS_MOBILE ? 21 : 18) },
           { cx: sp.x, cy: sp.y - (IS_MOBILE ? 26 : 23) },
@@ -32895,9 +32971,9 @@
         }
         if (chosen && chosenCenter) {
           occupiedRects.push(chosen);
-          drawRoundRect(ctx2, chosen.x, chosen.y, chosen.w, chosen.h, 3, "rgba(8, 12, 20, 0.72)");
+          drawRoundRect(ctx2, chosen.x, chosen.y, chosen.w, chosen.h, 3, "rgba(8, 12, 20, 0.78)");
           drawText(ctx2, p.role, chosenCenter.cx, chosenCenter.cy, {
-            size: IS_MOBILE ? 10.5 : 8.5,
+            size: IS_MOBILE ? 11 : 8.5,
             rawSize: true,
             bold: isPriority,
             color: p.customOffset ? "#38BDF8" : p.hasBall ? "#FEF08A" : "rgba(241,245,249,0.92)",
@@ -33360,7 +33436,8 @@
           this.engine.dismissActiveSkillPrompt();
         }, { variant: "ghost", fontSize: 11 });
       }
-      drawChamferPanel(ctx2, 266, 562, 342, 142, 10, "rgba(11, 17, 30, 0.90)", THEME.BORDER, 1.2);
+      const leftBottomW = this.isPrologueMode ? 342 : 218;
+      drawChamferPanel(ctx2, 266, 562, leftBottomW, 142, 10, "rgba(11, 17, 30, 0.90)", THEME.BORDER, 1.2);
       const curForm = this.userSide === "home" ? st.homeFormation : st.awayFormation;
       const curStyle = this.userSide === "home" ? st.homeStyle : st.awayStyle;
       if (this.isPrologueMode) {
@@ -33371,25 +33448,25 @@
         drawRoundRect(ctx2, 278, 636, 318, 52, 8, "rgba(15, 23, 42, 0.85)", THEME.BORDER_GOLD);
         drawText(ctx2, stageHint, 437, 662, { size: 11.5, bold: true, color: THEME.GOLD_LIGHT, align: "center" });
       } else {
-        const presetHdr = fitText(ctx2, `\u9884\u7F6E\u6218\u672F (${curForm} \xB7 ${TACTICAL_PRESETS[curStyle].name})`, 232, 11, true);
-        drawText(ctx2, presetHdr, 278, 579, { size: 11, bold: true, color: THEME.GOLD_LIGHT });
+        const presetHdr = fitText(ctx2, `${curForm}\xB7${TACTICAL_PRESETS[curStyle].name}`, 124, IS_MOBILE ? 12 : 10.5, true, IS_MOBILE);
+        drawText(ctx2, presetHdr, 276, 579, { size: IS_MOBILE ? 12 : 10.5, rawSize: IS_MOBILE, bold: true, color: THEME.GOLD_LIGHT });
         if (st.phase !== "full_time") {
-          drawButton(ctx2, hits, 522, 567, 76, 24, "\u7EC6\u81F4\u8C03\u6574", () => {
+          drawButton(ctx2, hits, 404, 567, 72, 24, "\u5FAE\u8C03", () => {
             this.openTacticalModal(st);
           }, { variant: "primary", fontSize: 10, icon: "gear" });
         }
         this.matchPresets.slice(0, 4).forEach((pr, pi) => {
           const col = pi % 2;
           const row = Math.floor(pi / 2);
-          const bx = 276 + col * 164;
+          const bx = 274 + col * 102;
           const by = 602 + row * 48;
           const isAct = curForm === pr.formation && curStyle === pr.style;
-          const label = `${pi + 1}.${pr.name.slice(0, 4)} (${pr.formation}\xB7${TACTICAL_PRESETS[pr.style].name.slice(0, 2)})`;
-          drawButton(ctx2, hits, bx, by, 158, 40, label, () => {
+          const label = `${pi + 1}.${pr.name.slice(0, 3)}`;
+          drawButton(ctx2, hits, bx, by, 98, 40, label, () => {
             this.engine.setTactics(this.userSide, pr.formation, pr.style);
             this.triggerTacticsFeedback(pr.formation, pr.style);
             this.cardBanner = { text: `\u9884\u6848\u5207\u6362 \xB7 ${pr.name} (${pr.formation} \xB7 ${TACTICAL_PRESETS[pr.style].name})`, color: "#38BDF8", timer: 2 };
-          }, { active: isAct, variant: isAct ? "primary" : "ghost", fontSize: 10 });
+          }, { active: isAct, variant: isAct ? "primary" : "ghost", fontSize: 10.5 });
         });
       }
       const prologueTut = this.isPrologueMode ? this.engine.getPrologueTutorialState() : null;
@@ -33405,13 +33482,16 @@
         drawText(ctx2, tipMsg, 438, 470, { size: 12.5, bold: true, color: "#FEF08A" });
         ctx2.save();
         ctx2.globalAlpha = pulse;
-        drawText(ctx2, "\u25BC \u76F4\u63A5\u70B9\u51FB\u4E0B\u65B9\u9AD8\u4EAE\u8FDB\u653B\u624B\u724C\u5373\u53EF\u6253\u51FA", 715, 550, { size: 11.5, bold: true, color: THEME.GOLD_LIGHT, align: "center" });
+        const waitHint = this.prologueWaitTimer >= 25 ? "\u23F1 \u6BD4\u8D5B\u6B63\u7B49\u5F85\u4F60\u51FA\u724C\uFF1A\u8BF7\u70B9\u51FB\u4E0B\u65B9\u95EA\u70C1\u7684\u91D1\u8272\u624B\u724C\u7EE7\u7EED" : "\u25BC \u76F4\u63A5\u70B9\u51FB\u4E0B\u65B9\u9AD8\u4EAE\u8FDB\u653B\u624B\u724C\u5373\u53EF\u6253\u51FA";
+        drawText(ctx2, waitHint, 715, 550, { size: 12, bold: true, color: THEME.GOLD_LIGHT, align: "center" });
         ctx2.restore();
       }
       this.v6HoveredZone = null;
       this.v6HoveringCard = false;
       const cmdBackImg = AssetLoader.get("command_card_back");
-      drawChamferPanel(ctx2, 616, 562, 398, 142, 10, "rgba(11, 17, 30, 0.92)", this.v6Tp > 0 ? THEME.BORDER_GOLD : THEME.BORDER, 1.4, THEME.GOLD);
+      const handBoxX = this.isPrologueMode ? 616 : 492;
+      const handBoxW = this.isPrologueMode ? 398 : 522;
+      drawChamferPanel(ctx2, handBoxX, 562, handBoxW, 142, 10, "rgba(11, 17, 30, 0.92)", this.v6Tp > 0 ? THEME.BORDER_GOLD : THEME.BORDER, 1.4, THEME.GOLD);
       const curStance = st.teamStance?.[this.userSide] ?? curStyle;
       if (!this.isPrologueMode) {
         const curSeg = this.v6CurrentSegment;
@@ -33421,26 +33501,27 @@
         V6_SEGMENTS.forEach((seg, si) => {
           const isCur = seg.key === curSeg;
           const isPast = this.v6TriggeredCheckpoints.has(seg.key) && !isCur;
-          const sx = 622 + si * 52;
+          const sx = 500 + si * 58;
           drawBadge(
             ctx2,
             sx,
             566,
-            49,
-            19,
+            54,
+            20,
             seg.shortLabel,
             isCur ? "#78350F" : isPast ? "#0F172A" : "#1E293B",
             isCur ? "#FEF08A" : isPast ? "#64748B" : "#94A3B8"
           );
         });
-        drawText(ctx2, `TP ${this.v6Tp} \xB7 \u672C\u6BB5${this.v6CheckpointPlayedCount}/${maxPlays}`, 836, 576, {
-          size: 11,
+        drawText(ctx2, `TP ${this.v6Tp} \xB7 \u672C\u6BB5${this.v6CheckpointPlayedCount}/${maxPlays}`, 742, 576, {
+          size: IS_MOBILE ? 12.5 : 11,
+          rawSize: IS_MOBILE,
           bold: true,
           color: this.v6Tp > 0 ? THEME.GOLD_LIGHT : THEME.TX2,
           mono: true
         });
         if (this.v6HasEmergencyCall && !this.v6EmergencyUsed && st.phase !== "full_time") {
-          drawButton(ctx2, hits, 930, 565, 78, 21, "\u7206\u53D1+2TP", () => {
+          drawButton(ctx2, hits, 924, 565, 82, 21, "\u7206\u53D1+2TP", () => {
             this.v6EmergencyUsed = true;
             this.v6Tp += 2;
             this.v6BonusPlayCap += 1;
@@ -33456,9 +33537,9 @@
         cpCards.slice(0, 4).forEach((entry, ci) => {
           const { def } = entry;
           const effCost = this.getEffectiveV6CardCost(entry);
-          const cx = 623 + ci * 96;
+          const cx = 500 + ci * 128;
           const cy2 = 591;
-          const cw = 91;
+          const cw = 120;
           const ch = 106;
           const used = this.v6CheckpointUsedIds.has(def.id);
           const playCapFull = this.v6CheckpointPlayedCount >= maxPlays;
@@ -33490,26 +33571,27 @@
           const isDisc = effCost < def.tpCost;
           drawBadge(
             ctx2,
-            cx + 5,
+            cx + 6,
             cyL + 5,
-            42,
-            17,
+            52,
+            18,
             `${def.zone === "ATT" ? "\u524D" : def.zone === "MID" ? "\u4E2D" : "\u540E"}\xB7${def.tendency === "ATK" ? "\u653B" : "\u5B88"}`,
             "#0B1120",
             used ? THEME.TX3 : zCol
           );
           drawBadge(
             ctx2,
-            cx + cw - 40,
+            cx + cw - 46,
             cyL + 5,
-            35,
-            17,
+            40,
+            18,
             `${effCost}TP`,
             used ? "#1E293B" : isDisc ? "#065F46" : canPlay ? "#78350F" : "#1E293B",
             used ? THEME.TX3 : isDisc ? "#6EE7B7" : canPlay ? "#FEF08A" : THEME.TX3
           );
-          drawWrappedText(ctx2, def.name, cx + 7, cyL + 26, cw - 14, 15, {
-            token: "MICRO",
+          drawWrappedText(ctx2, def.name, cx + 8, cyL + 27, cw - 16, IS_MOBILE ? 17 : 15, {
+            size: IS_MOBILE ? 13 : 11.5,
+            rawSize: IS_MOBILE,
             bold: true,
             color: used ? THEME.TX3 : THEME.TX1,
             maxLines: 2
@@ -33517,16 +33599,22 @@
           const satCount = entry.satellites.length;
           const enchInfo = entry.enchant ? V6_DIRECTIVE_ENCHANTS[entry.enchant] : null;
           if (enchInfo) {
-            drawBadge(ctx2, cx + 6, cyL + 65, cw - 12, 16, `\u2726${enchInfo.shortTag}`, "#3B1F6E", "#E9D5FF");
+            drawBadge(ctx2, cx + 8, cyL + 66, cw - 16, 17, `\u2726${enchInfo.shortTag}`, "#3B1F6E", "#E9D5FF");
           } else if (satCount > 0) {
-            drawBadge(ctx2, cx + 10, cyL + 65, cw - 20, 16, `${"\u2605".repeat(satCount)}${entry.isOverclocked ? "\u8D85\u9891" : "\u6539\u9020"}`, "#1E293B", THEME.GOLD_LIGHT);
+            drawBadge(ctx2, cx + 10, cyL + 66, cw - 20, 17, `${"\u2605".repeat(satCount)}${entry.isOverclocked ? "\u8D85\u9891" : "\u6539\u9020"}`, "#1E293B", THEME.GOLD_LIGHT);
           } else {
             const routeTag = def.source === "fusion" ? "\u878D\u5408\u738B\u724C" : def.source === "formation" ? "\u9635\u578B\u4E13\u5C5E" : def.route === "gamble" ? "\u9AD8\u8D54\u8C6A\u8D4C" : "\u7A33\u5065\u62FC\u56FE";
-            drawText(ctx2, routeTag, cx + cw / 2, cyL + 73, { token: "MICRO", color: used ? THEME.TX3 : "#94A3B8", align: "center" });
+            drawText(ctx2, routeTag, cx + cw / 2, cyL + 74, {
+              size: IS_MOBILE ? 12 : 10.5,
+              rawSize: IS_MOBILE,
+              color: used ? THEME.TX3 : "#94A3B8",
+              align: "center"
+            });
           }
           const statusTxt = used ? "\u672C\u6BB5\u5DF2\u62CD \u2713" : playCapFull ? "\u672C\u6BB5\u6EE1\u989D" : canPlay ? "\u26A1 \u70B9\u51FB\u62CD\u677F" : `\u9700 ${effCost} TP`;
           drawText(ctx2, statusTxt, cx + cw / 2, cyL + 93, {
-            token: "MICRO",
+            size: IS_MOBILE ? 12 : 10.5,
+            rawSize: IS_MOBILE,
             bold: true,
             color: used ? "#64748B" : canPlay ? THEME.GOLD_LIGHT : THEME.TX3,
             align: "center"
@@ -33543,7 +33631,7 @@
           const zCol = def.zone === "ATT" ? "#F43F5E" : def.zone === "MID" ? "#38BDF8" : "#22C55E";
           const fw = 368;
           const fh = entry.enchant || entry.satellites.length > 0 ? 132 : 112;
-          const tx = Math.min(646, Math.max(616, x - 90));
+          const tx = Math.min(646, Math.max(492, x - 90));
           const ty = 556 - fh;
           drawChamferPanel(ctx2, tx, ty, fw, fh, 10, "rgba(7, 12, 24, 0.97)", canPlay ? zCol : THEME.GOLD_LIGHT, 1.8, zCol);
           drawBadge(
@@ -33865,24 +33953,24 @@
           const aAcc = a.passes > 0 ? Math.round(a.passesSuccess / a.passes * 100) : 0;
           const rows = [
             ["\u63A7\u7403\u7387", `${hPoss}%`, `${100 - hPoss}%`, hPoss / 100],
-            ["\u5C04\u95E8 (\u5C04\u6B63)", `${h.shots} (${h.shotsOnTarget})`, `${a.shots} (${a.shotsOnTarget})`, h.shots / Math.max(1, h.shots + a.shots)],
+            ["\u5C04\u95E8(\u5C04\u6B63)", `${h.shots}(${h.shotsOnTarget})`, `${a.shots}(${a.shotsOnTarget})`, h.shots / Math.max(1, h.shots + a.shots)],
             ["\u9884\u671F\u8FDB\u7403 xG", h.xG.toFixed(2), a.xG.toFixed(2), h.xG / Math.max(0.01, h.xG + a.xG)],
-            ["\u4F20\u7403 (\u6210\u529F\u7387)", `${h.passes} (${hAcc}%)`, `${a.passes} (${aAcc}%)`, h.passes / Math.max(1, h.passes + a.passes)],
+            ["\u4F20\u7403\u6210\u529F\u7387", `${h.passes}(${hAcc}%)`, `${a.passes}(${aAcc}%)`, h.passes / Math.max(1, h.passes + a.passes)],
             ["\u62A2\u65AD", `${h.tackles}`, `${a.tackles}`, h.tackles / Math.max(1, h.tackles + a.tackles)],
             ["\u62E6\u622A", `${h.interceptions}`, `${a.interceptions}`, h.interceptions / Math.max(1, h.interceptions + a.interceptions)],
             ["\u6251\u6551", `${h.saves}`, `${a.saves}`, h.saves / Math.max(1, h.saves + a.saves)],
             ["\u89D2\u7403", `${h.corners}`, `${a.corners}`, h.corners / Math.max(1, h.corners + a.corners)],
-            ["\u72AF\u89C4 (\u9EC4\u724C)", `${h.fouls} (${h.yellowCards})`, `${a.fouls} (${a.yellowCards})`, h.fouls / Math.max(1, h.fouls + a.fouls)]
+            ["\u72AF\u89C4(\u9EC4\u724C)", `${h.fouls}(${h.yellowCards})`, `${a.fouls}(${a.yellowCards})`, h.fouls / Math.max(1, h.fouls + a.fouls)]
           ];
           let ry = 152;
           for (const [label, hv, av, ratio] of rows) {
             drawText(ctx2, hv, 1046, ry, { token: "TITLE", bold: true, mono: true });
             drawText(ctx2, av, 1248, ry, { token: "TITLE", bold: true, align: "right", mono: true });
-            drawText(ctx2, label, 1147, ry, { token: "LABEL", color: THEME.TX2, align: "center" });
-            drawRoundRect(ctx2, 1046, ry + 13, 202, 5, 2, "#1E293B");
+            drawText(ctx2, label, 1147, ry, { size: IS_MOBILE ? 12.5 : 11, rawSize: IS_MOBILE, color: THEME.TX2, align: "center" });
+            drawRoundRect(ctx2, 1046, ry + (IS_MOBILE ? 15 : 13), 202, 5, 2, "#1E293B");
             const r = Math.max(0.05, Math.min(0.95, isNaN(ratio) ? 0.5 : ratio));
-            drawRoundRect(ctx2, 1046, ry + 13, 202 * r, 5, 2, homeKit.primary);
-            drawRoundRect(ctx2, 1046 + 202 * r, ry + 13, 202 * (1 - r), 5, 2, awayKit.primary);
+            drawRoundRect(ctx2, 1046, ry + (IS_MOBILE ? 15 : 13), 202 * r, 5, 2, homeKit.primary);
+            drawRoundRect(ctx2, 1046 + 202 * r, ry + (IS_MOBILE ? 15 : 13), 202 * (1 - r), 5, 2, awayKit.primary);
             ry += 62;
           }
         } else {
@@ -34484,8 +34572,8 @@
       drawText(ctx2, "VS", 0, -8, { size: 26, bold: true, italic: true, color: THEME.GOLD_LIGHT, align: "center", mono: true });
       drawText(ctx2, "KICK OFF", 0, 20, { size: 9.5, bold: true, color: THEME.FLAME_LIGHT, align: "center", mono: true });
       ctx2.restore();
-      drawText(ctx2, "\u70B9\u51FB\u4EFB\u610F\u4F4D\u7F6E\u6216\u6309 \u7A7A\u683C/\u56DE\u8F66 \u7ACB\u5373\u5F00\u54E8", cx, cy + 144, {
-        size: 12,
+      drawText(ctx2, "\u70B9\u51FB\u4EFB\u610F\u4F4D\u7F6E\u6216\u6309 \u7A7A\u683C/\u56DE\u8F66 \u7ACB\u5373\u5F00\u54E8", cx, cy + 168, {
+        size: 12.5,
         color: THEME.TX2,
         align: "center"
       });
@@ -35129,6 +35217,24 @@
         }
       }
     }
+    drawNodeLabel(ctx2, text, x, y, color, bold = false, mono = false, size = 9) {
+      const fontStr = `${bold ? "bold " : ""}${size}px ${THEME.FONT_FAMILY}`;
+      ctx2.save();
+      ctx2.font = fontStr;
+      const tw = Math.ceil(ctx2.measureText(text).width);
+      const pw = tw + 10;
+      const ph = size + 6;
+      drawRoundRect(ctx2, x - pw / 2, y - ph / 2, pw, ph, 4, "rgba(8, 13, 24, 0.86)", "rgba(148, 163, 184, 0.24)", 0.8);
+      ctx2.restore();
+      drawText(ctx2, text, x, y, {
+        size,
+        rawSize: true,
+        bold,
+        color,
+        align: "center",
+        mono
+      });
+    }
     drawEdgeLine(ctx2, ax, ay, bx, by, bothUnlocked, reachable, color, isBridge = false) {
       const mr = this.lastMapRect;
       if (Math.max(ax, bx) < mr.x - 20 || Math.min(ax, bx) > mr.x + mr.w + 20 || Math.max(ay, by) < mr.y - 20 || Math.min(ay, by) > mr.y + mr.h + 20) {
@@ -35352,12 +35458,16 @@
         const labelY = cy + Math.sin(centerAngle) * (baseR * 1.07);
         const isBeginnerMode2 = !ast.fogCleared && tier >= 6;
         if (visible || !isBeginnerMode2) {
-          drawText(ctx2, visible ? info.name : "\u8FF7\u96FE\u6D41\u6D3E", labelX, labelY, {
-            size: Math.max(10, Math.min(13, 11.5 * this.zoom)),
-            bold: true,
-            color: visible ? info.color : "#64748B",
-            align: "center"
-          });
+          this.drawNodeLabel(
+            ctx2,
+            visible ? info.name : "\u8FF7\u96FE\u6D41\u6D3E",
+            labelX,
+            labelY,
+            visible ? info.color : "#64748B",
+            true,
+            false,
+            Math.max(IS_MOBILE ? 11.5 : 10, Math.min(13.5, 11.5 * this.zoom))
+          );
         }
         if (!visible) continue;
         const stylePassives = V6_STYLE_PASSIVES.filter((p) => p.style === style);
@@ -35653,12 +35763,7 @@
           );
           ctx2.restore();
           if (isOrigin || isSel || !IS_MOBILE && this.zoom >= 1.5) {
-            drawText(ctx2, isOrigin ? `${info.short}\u539F\u70B9` : p.name.slice(0, 4), pos.x, pos.y + nr + 8, {
-              size: isOrigin ? 9 : 8.5,
-              bold: isOrigin || isSel,
-              color: pos.unlocked ? info.color : pos.reachable ? "#7DD3FC" : THEME.TX3,
-              align: "center"
-            });
+            this.drawNodeLabel(ctx2, isOrigin ? `${info.short}\u539F\u70B9` : p.name.slice(0, 4), pos.x, pos.y + nr + (IS_MOBILE ? 11 : 8), pos.unlocked ? info.color : pos.reachable ? "#7DD3FC" : THEME.TX3, isOrigin || isSel, false, IS_MOBILE ? 10.5 : isOrigin ? 9 : 8.5);
           }
           if (canHit(pos.x, pos.y)) {
             const hr = nodeHitR(nr);
@@ -35707,12 +35812,7 @@
           });
           ctx2.restore();
           if (isSel || isEq || !IS_MOBILE && this.zoom >= 1.28) {
-            drawText(ctx2, sk.name.slice(0, 4), pos.x, pos.y + dr + 8, {
-              size: 9,
-              bold: isEq || isSel,
-              color: isEq ? "#4ADE80" : pos.unlocked ? "#7DD3FC" : THEME.TX3,
-              align: "center"
-            });
+            this.drawNodeLabel(ctx2, sk.name.slice(0, 4), pos.x, pos.y + dr + (IS_MOBILE ? 11 : 8), isEq ? "#4ADE80" : pos.unlocked ? "#7DD3FC" : THEME.TX3, isEq || isSel, false, IS_MOBILE ? 10.5 : 9);
           }
           if (canHit(pos.x, pos.y)) {
             const hr = nodeHitR(dr);
@@ -35764,12 +35864,7 @@
           });
           ctx2.restore();
           if (isSel || !IS_MOBILE && this.zoom >= 1.55) {
-            drawText(ctx2, dir.name.slice(0, 4), pos.x, pos.y + nr + 8, {
-              size: 8.5,
-              bold: isSel || isEq,
-              color: isEq ? "#4ADE80" : pos.unlocked ? THEME.TX1 : THEME.TX3,
-              align: "center"
-            });
+            this.drawNodeLabel(ctx2, dir.name.slice(0, 4), pos.x, pos.y + nr + (IS_MOBILE ? 11 : 8), isEq ? "#4ADE80" : pos.unlocked ? THEME.TX1 : THEME.TX3, isSel || isEq, false, IS_MOBILE ? 10.5 : 8.5);
           }
           if (canHit(pos.x, pos.y)) {
             const hr = nodeHitR(nr);
@@ -35819,12 +35914,7 @@
         });
         ctx2.restore();
         if (!isBeginnerMode || !isMacro || al.style === club.style || pos.unlocked) {
-          drawText(ctx2, al.fusion.name.slice(0, 5), pos.x, pos.y + r + 10, {
-            size: 9.5,
-            bold: true,
-            color: pos.unlocked ? THEME.GOLD_LIGHT : pos.reachable ? "#FDE68A" : "#94A3B8",
-            align: "center"
-          });
+          this.drawNodeLabel(ctx2, al.fusion.name.slice(0, 5), pos.x, pos.y + r + (IS_MOBILE ? 12 : 10), pos.unlocked ? THEME.GOLD_LIGHT : pos.reachable ? "#FDE68A" : "#94A3B8", true, false, IS_MOBILE ? 11 : 9.5);
         }
         if (canHit(pos.x, pos.y)) {
           const hr = nodeHitR(r, 6);
@@ -35860,12 +35950,8 @@
         });
         ctx2.restore();
         if (isOrigin || isSel || !IS_MOBILE && this.zoom >= 1.45) {
-          drawText(ctx2, isOrigin ? SYSTEM_LABELS[sp.system].name.slice(0, 3) : sp.name.slice(0, 4), pos.x, pos.y + r + 8, {
-            size: 8.5,
-            bold: isOrigin || isSel,
-            color: pos.unlocked ? sysCol : THEME.TX3,
-            align: "center"
-          });
+          const lblText = isOrigin ? SYSTEM_LABELS[sp.system].name.slice(0, 3) : sp.name.slice(0, 4);
+          this.drawNodeLabel(ctx2, lblText, pos.x, pos.y + r + (IS_MOBILE ? 11 : 8), pos.unlocked ? sysCol : THEME.TX3, isOrigin || isSel, false, IS_MOBILE ? 10.5 : 8.5);
         }
         if (canHit(pos.x, pos.y)) {
           const hr = nodeHitR(r);
@@ -35899,13 +35985,7 @@
           ctx2.stroke();
           ctx2.restore();
           if (this.zoom >= 0.95 || isCurFm || isSel) {
-            drawText(ctx2, fm, pos.x, pos.y + r + 8, {
-              size: 8.5,
-              bold: isCurFm || isSel,
-              color: isCurFm ? THEME.GREEN : pos.unlocked ? "#E2E8F0" : "#94A3B8",
-              align: "center",
-              mono: true
-            });
+            this.drawNodeLabel(ctx2, fm, pos.x, pos.y + r + (IS_MOBILE ? 11 : 8), isCurFm ? THEME.GREEN : pos.unlocked ? "#E2E8F0" : "#94A3B8", isCurFm || isSel, true, IS_MOBILE ? 10.5 : 8.5);
           }
           if (canHit(pos.x, pos.y)) {
             const hr = nodeHitR(r, 5);
@@ -36777,6 +36857,7 @@
     constructor() {
       this.prepToast = "";
       this.scoutModalOpen = false;
+      this.perksModalOpen = false;
       this.scoutNotice = "";
       this.selectedZoneId = null;
       this.animTime = 0;
@@ -36789,6 +36870,10 @@
       }
     }
     handleEscape() {
+      if (this.perksModalOpen) {
+        this.perksModalOpen = false;
+        return true;
+      }
       if (this.scoutModalOpen) {
         this.scoutModalOpen = false;
         return true;
@@ -36816,54 +36901,66 @@
         showSoundToggle: true
       });
       drawNavRail(ctx2, hits, "portal", actions.onNavigate);
-      drawChamferPanel(ctx2, 96, 80, 590, 294, 12, "rgba(17, 23, 34, 0.95)", THEME.BORDER, 1);
+      const LX = 96;
+      const LW = 560;
       const prep = isSummerWindow ? void 0 : league.getInterMatchPrep();
+      drawChamferPanel(ctx2, LX, 80, LW, 294, 12, "rgba(17, 23, 34, 0.95)", THEME.BORDER, 1);
       if (isSummerWindow) {
         const squadCount = club.squad.length;
         const needCount = Math.max(0, 26 - squadCount);
         const ready = squadCount >= 26;
-        drawText(ctx2, "PRE-SEASON \xB7 \u590F\u5B63\u8F6C\u4F1A\u7A97\u5F15\u63F4\u5F15\u5BFC", 116, 98, {
+        drawText(ctx2, "PRE-SEASON \xB7 \u590F\u5B63\u8F6C\u4F1A\u7A97\u5F15\u63F4", LX + 18, 98, {
           size: 11.5,
           bold: true,
           color: THEME.GOLD,
           mono: true
         });
-        drawText(ctx2, `\u5F53\u524D\u5927\u540D\u5355 ${squadCount}/26 \u4EBA \xB7 \u53EF\u7528\u8D44\u91D1 ${league.getClubFunds()} \u4E07`, 666, 98, {
+        drawText(ctx2, `\u5927\u540D\u5355 ${squadCount}/26 \u4EBA \xB7 \u8D44\u91D1 ${league.getClubFunds()} \u4E07`, LX + LW - 18, 98, {
           size: 11.5,
           color: ready ? THEME.GREEN : "#38BDF8",
           align: "right"
         });
-        drawRoundRect(ctx2, 112, 114, 558, 52, 8, THEME.BG_CARD, ready ? "rgba(74, 222, 128, 0.45)" : THEME.BORDER, 1);
-        drawText(ctx2, `\u8DB3\u534F\u4E00\u7EBF\u961F\u6CE8\u518C\u516C\u6587\uFF1A${squadCount} / 26 \u4EBA`, 130, 130, {
+        drawRoundRect(ctx2, LX + 16, 114, LW - 32, 52, 8, THEME.BG_CARD, ready ? "rgba(74, 222, 128, 0.45)" : THEME.BORDER, 1);
+        drawText(ctx2, `\u8DB3\u534F\u4E00\u7EBF\u961F\u6CE8\u518C\uFF1A${squadCount} / 26 \u4EBA`, LX + 32, 130, {
           size: 13.5,
           bold: true,
           color: THEME.TX1
         });
         drawBadge(
           ctx2,
-          524,
+          LX + LW - 152,
           120,
-          130,
+          122,
           20,
-          ready ? "\u540D\u989D\u5DF2\u6EE1 \xB7 \u5F85\u76D6\u7AE0" : `\u8FD8\u5DEE ${needCount} \u540D\u7403\u5458`,
+          ready ? "\u540D\u989D\u5DF2\u6EE1 \xB7 \u5F85\u76D6\u7AE0" : `\u8FD8\u5DEE ${needCount} \u540D`,
           ready ? "#14532D" : "#78350F",
           ready ? THEME.GREEN : THEME.GOLD_LIGHT
         );
-        drawRoundRect(ctx2, 130, 148, 524, 8, 4, "#1E293B");
-        drawRoundRect(ctx2, 130, 148, Math.max(12, Math.round(Math.min(1, squadCount / 26) * 524)), 8, 4, ready ? THEME.GREEN : THEME.GOLD_LIGHT);
+        drawRoundRect(ctx2, LX + 32, 148, LW - 64, 8, 4, "#1E293B");
+        drawRoundRect(
+          ctx2,
+          LX + 32,
+          148,
+          Math.max(12, Math.round(Math.min(1, squadCount / 26) * (LW - 64))),
+          8,
+          4,
+          ready ? THEME.GREEN : THEME.GOLD_LIGHT
+        );
         const channels = [
-          { title: "\u9752\u8BAD\u5B66\u9662", sub: "0 \u4E07\u514D\u7B7E\u63D0\u62D4\u5C0F\u5996", desc: "\u8FF7\u96FE\u968F\u8D5B\u5B63\u9010\u6B65\u6E05\u6670\uFF0C\u8D5B\u5B63\u672B\u8D85 19 \u5C81\u81EA\u52A8\u79BB\u961F", color: THEME.GREEN },
-          { title: "\u8F6C\u4F1A\u5E02\u573A", sub: "\u9884\u7B97\u7B7E\u5165\u5373\u6218\u529B", desc: "\u8865\u5F3A\u8584\u5F31\u4F4D\u7F6E\uFF0C\u4E5F\u53EF\u6302\u724C\u51FA\u552E\u5197\u4F59\u7403\u5458\u56DE\u7B3C\u8D44\u91D1", color: "#38BDF8" },
-          { title: "\u795E\u79D8\u7ECF\u7EAA\u4EBA", sub: "\u9AD8\u98CE\u9669\u76F2\u76D2\u5BC6\u8350", desc: "\u6309\u8054\u8D5B\u6C34\u5E73\u6D6E\u52A8\uFF0C\u5C0F\u6982\u7387\u76F4\u63A5\u5F00\u51FA\u8D85\u7EA7\u5DE8\u661F", color: "#C084FC" }
+          { title: "\u9752\u8BAD\u5B66\u9662", sub: "0 \u4E07\u514D\u7B7E\u63D0\u62D4", desc: "\u8FF7\u96FE\u968F\u8D5B\u5B63\u6E05\u6670\uFF0C\u8D85 19 \u5C81\u81EA\u52A8\u79BB\u961F", color: THEME.GREEN },
+          { title: "\u8F6C\u4F1A\u5E02\u573A", sub: "\u9884\u7B97\u7B7E\u5165\u5373\u6218\u529B", desc: "\u8865\u5F3A\u8584\u5F31\u4F4D\u7F6E\uFF0C\u4E5F\u53EF\u51FA\u552E\u5197\u4F59\u7403\u5458", color: "#38BDF8" },
+          { title: "\u795E\u79D8\u7ECF\u7EAA\u4EBA", sub: "\u9AD8\u98CE\u9669\u76F2\u76D2\u5BC6\u8350", desc: "\u6309\u8054\u8D5B\u6C34\u5E73\u6D6E\u52A8\uFF0C\u5C0F\u6982\u7387\u51FA\u5DE8\u661F", color: "#C084FC" }
         ];
+        const chW = 168;
+        const chGap = 12;
         channels.forEach((ch, ci) => {
-          const cx = 112 + ci * 189;
-          const chHov = hits.isHovered(cx, 176, 180, 122);
+          const cx = LX + 16 + ci * (chW + chGap);
+          const chHov = hits.isHovered(cx, 176, chW, 122);
           drawRoundRect(
             ctx2,
             cx,
             176,
-            180,
+            chW,
             122,
             8,
             chHov ? THEME.BG_CARD_HOVER : THEME.BG_CARD,
@@ -36871,23 +36968,23 @@
             chHov ? 1.5 : 1
           );
           ctx2.fillStyle = ch.color;
-          ctx2.fillRect(cx + 10, 177, 160, 2);
+          ctx2.fillRect(cx + 10, 177, chW - 20, 2);
           drawText(ctx2, ch.title, cx + 14, 198, { size: 13.5, bold: true, color: ch.color });
           drawText(ctx2, ch.sub, cx + 14, 219, { size: 11.5, bold: true, color: THEME.TX1 });
-          drawWrappedText(ctx2, ch.desc, cx + 14, 239, 152, 17, { size: 10.5, color: THEME.TX2, maxLines: 2 });
-          drawText(ctx2, "\u8FDB\u5165 \u203A", cx + 166, 284, {
-            size: 10.5,
+          drawWrappedText(ctx2, ch.desc, cx + 14, 239, chW - 28, 17, { size: 10.5, color: THEME.TX2, maxLines: 2 });
+          drawText(ctx2, "\u8FDB\u5165 \u203A", cx + chW - 14, 284, {
+            size: 11,
             bold: true,
             color: chHov ? "#FFFFFF" : ch.color,
             align: "right"
           });
-          hits.add(cx, 176, 180, 122, () => {
+          hits.add(cx, 176, chW, 122, () => {
             SoundEngine.playClick();
             actions.onNavigate("transfer_hub");
           });
         });
         if (ready) {
-          drawButton(ctx2, hits, 112, 308, 558, 48, "\u2713 \u8DB3\u534F\u76D6\u7AE0\u6CE8\u518C \xB7 \u65B0\u8D5B\u5B63\u5F00\u54E8 \u25B6", () => {
+          drawButton(ctx2, hits, LX + 16, 308, LW - 32, 48, "\u2713 \u8DB3\u534F\u76D6\u7AE0\u6CE8\u518C \xB7 \u65B0\u8D5B\u5B63\u5F00\u54E8 \u25B6", () => {
             const res = league.finishSummerWindowAndStartSeason();
             if (res.ok) {
               SoundEngine.playFanfare();
@@ -36902,7 +36999,7 @@
             icon: "sparkle"
           });
         } else {
-          drawButton(ctx2, hits, 112, 310, 236, 46, `\u4E00\u952E\u5F81\u53EC\u9752\u8BAD\u8865\u9F50 (${squadCount}/26)`, () => {
+          drawButton(ctx2, hits, LX + 16, 310, 224, 46, `\u4E00\u952E\u9752\u8BAD\u8865\u9F50 (${squadCount}/26)`, () => {
             const res = league.signFreeAcademyFill(true);
             if (res.ok) {
               SoundEngine.playCraftSuccess();
@@ -36917,7 +37014,7 @@
             variant: "primary",
             fontSize: 12.5
           });
-          drawButton(ctx2, hits, 358, 308, 312, 48, "\u8865\u9F50\u9752\u8BAD\u5E76\u76D6\u7AE0\u5F00\u8D5B \u25B6", () => {
+          drawButton(ctx2, hits, LX + 250, 308, 294, 48, "\u8865\u9F50\u9752\u8BAD\u5E76\u76D6\u7AE0\u5F00\u8D5B \u25B6", () => {
             const fillRes = league.signFreeAcademyFill(true);
             if (fillRes.ok) {
               actions.onSave?.();
@@ -36937,13 +37034,13 @@
           });
         }
       } else {
-        drawText(ctx2, `NEXT FIXTURE \xB7 \u7B2C ${st.currentRound}/${totalRounds} \u8F6E`, 116, 98, {
+        drawText(ctx2, `NEXT FIXTURE \xB7 \u7B2C ${st.currentRound}/${totalRounds} \u8F6E`, LX + 18, 98, {
           size: 11.5,
           bold: true,
           color: THEME.GOLD,
           mono: true
         });
-        drawText(ctx2, `${tierInfo.name} \xB7 \u6211\u961F\u6682\u5217\u7B2C ${userRankIdx + 1} \u540D`, 666, 98, {
+        drawText(ctx2, `${tierInfo.name} \xB7 \u6211\u961F\u6682\u5217\u7B2C ${userRankIdx + 1} \u540D`, LX + LW - 18, 98, {
           size: 11.5,
           color: "#38BDF8",
           align: "right"
@@ -36956,7 +37053,7 @@
         const awayRankIdx = standings.findIndex((r) => r.clubId === away.id);
         const homeRow = standings[homeRankIdx];
         const awayRow = standings[awayRankIdx];
-        const stageX = 112, stageY = 116, stageW = 558, stageH = 122;
+        const stageX = LX + 16, stageY = 116, stageW = LW - 32, stageH = 122;
         const stageHover = hits.isHovered(stageX, stageY, stageW, stageH);
         drawChamferPanel(
           ctx2,
@@ -36997,16 +37094,19 @@
           ctx2.fill();
           ctx2.restore();
         };
-        drawCrestGlow(224, 154, home.primaryColor);
-        drawCrestGlow(558, 154, away.primaryColor);
-        drawClubCrest(ctx2, 224, 154, 28, home);
-        drawText(ctx2, fitText(ctx2, home.name, 178, 16, true), 224, 196, {
-          size: 16,
+        const homeCx = stageX + 106;
+        const awayCx = stageX + stageW - 106;
+        const midCx = stageX + stageW / 2;
+        drawCrestGlow(homeCx, 154, home.primaryColor);
+        drawCrestGlow(awayCx, 154, away.primaryColor);
+        drawClubCrest(ctx2, homeCx, 154, 28, home);
+        drawText(ctx2, fitText(ctx2, home.name, 168, 15.5, true), homeCx, 196, {
+          size: 15.5,
           bold: true,
           align: "center",
           color: home.isUser ? THEME.GOLD_LIGHT : THEME.TX1
         });
-        drawText(ctx2, `\u7B2C${homeRankIdx + 1}\u540D \xB7 ${homeRow?.points ?? 0}\u5206 \xB7 ${home.formation}`, 224, 216, {
+        drawText(ctx2, `\u7B2C${homeRankIdx + 1}\u540D \xB7 ${homeRow?.points ?? 0}\u5206 \xB7 ${home.formation}`, homeCx, 216, {
           size: 11,
           align: "center",
           color: THEME.TX2
@@ -37014,11 +37114,11 @@
         ctx2.save();
         ctx2.shadowColor = "rgba(0, 0, 0, 0.85)";
         ctx2.shadowBlur = 12;
-        drawText(ctx2, "VS", 391, 160, { size: 28, bold: true, italic: true, align: "center", color: THEME.GOLD_LIGHT });
+        drawText(ctx2, "VS", midCx, 160, { size: 28, bold: true, italic: true, align: "center", color: THEME.GOLD_LIGHT });
         ctx2.restore();
         drawBadge(
           ctx2,
-          355,
+          midCx - 36,
           186,
           72,
           18,
@@ -37026,21 +37126,21 @@
           "rgba(15, 23, 42, 0.90)",
           home.isUser ? THEME.GOLD_LIGHT : "#7DD3FC"
         );
-        drawClubCrest(ctx2, 558, 154, 28, away);
-        drawText(ctx2, fitText(ctx2, away.name, 178, 16, true), 558, 196, {
-          size: 16,
+        drawClubCrest(ctx2, awayCx, 154, 28, away);
+        drawText(ctx2, fitText(ctx2, away.name, 168, 15.5, true), awayCx, 196, {
+          size: 15.5,
           bold: true,
           align: "center",
           color: away.isUser ? THEME.GOLD_LIGHT : THEME.TX1
         });
-        drawText(ctx2, `\u7B2C${awayRankIdx + 1}\u540D \xB7 ${awayRow?.points ?? 0}\u5206 \xB7 ${away.formation}`, 558, 216, {
+        drawText(ctx2, `\u7B2C${awayRankIdx + 1}\u540D \xB7 ${awayRow?.points ?? 0}\u5206 \xB7 ${away.formation}`, awayCx, 216, {
           size: 11,
           align: "center",
           color: THEME.TX2
         });
         drawBadge(
           ctx2,
-          336,
+          midCx - 55,
           210,
           110,
           20,
@@ -37055,50 +37155,50 @@
         const oppClub = home.isUser ? away : home;
         const brief = league.getOpponentBriefing(oppClub.id);
         const intel = prep?.matchupIntel;
-        drawRoundRect(ctx2, 112, 246, 558, 52, 8, THEME.BG_CARD, THEME.BORDER);
+        drawRoundRect(ctx2, LX + 16, 246, LW - 32, 52, 8, THEME.BG_CARD, THEME.BORDER);
         const famText = intel ? `\u4E86\u89E3 ${intel.familiarity}%` : "\u7403\u63A2\u60C5\u62A5";
         const famColor = intel && intel.familiarity >= 70 ? THEME.GREEN : "#38BDF8";
-        drawBadge(ctx2, 122, 253, 76, 18, famText, "#1E3A5F", famColor);
+        drawBadge(ctx2, LX + 26, 253, 76, 18, famText, "#1E3A5F", famColor);
         const ecoSuffix = [brief.isRival ? "\u5BBF\u654C" : null, brief.ecoTag ?? null, brief.formerPlayerName ? `\u65E7\u5C06:${brief.formerPlayerName.split("(")[0]}` : null].filter(Boolean).join(" \xB7 ");
-        drawText(ctx2, fitText(ctx2, `${brief.styleName} \xB7 ${brief.weakLineLabel}${ecoSuffix ? ` \xB7 ${ecoSuffix}` : ""}`, 318, 11.5, true), 206, 262, {
+        drawText(ctx2, fitText(ctx2, `${brief.styleName} \xB7 ${brief.weakLineLabel}${ecoSuffix ? ` \xB7 ${ecoSuffix}` : ""}`, 290, 11.5, true), LX + 110, 262, {
           size: 11.5,
           bold: true,
           color: brief.isRival || brief.formerPlayerName ? THEME.GOLD_LIGHT : THEME.TX1
         });
         const subTip = intel?.chosenCounterId ? intel.spotCorrect ? intel.chosenRewardKind === "skill_overclock" ? "\u7EA2\u5229\u9501\u5B9A\uFF1A\u514B\u5236\u4E3B\u52A8\u6280\u672C\u573A\u4E34\u65F6+1 Rank \xB7 \u9996\u89E6\u53D1\u514D\u51B7\u5374" : intel.chosenRewardKind === "buff_debuff" ? `\u7EA2\u5229\u9501\u5B9A\uFF1A\u514B\u5236\u624B\u724C-1\u8D39+5\u5206 \xB7 ${intel.activeDebuff?.label || "\u5DF2\u6302\u5F31\u70B9\u51CF\u76CA"}` : "\u7834\u7EFD\u6307\u8BC1\u6210\u7ACB\uFF01\u70B9\u300C\u6218\u524D\u5F55\u50CF\u5BA4\u300D\u9501\u5B9A 2 \u9009 1 \u9488\u5BF9\u7EA2\u5229" : "\u5DF2\u5B8C\u6210\u6307\u8BC1\uFF08\u8BEF\u5224\u5E72\u6270\u7EBF\u7D22\uFF0C\u6B63\u5E38\u5E94\u6218\uFF09" : brief.counterTip;
-        drawText(ctx2, fitText(ctx2, subTip, 396, 11.5), 122, 282, {
+        drawText(ctx2, fitText(ctx2, subTip, 376, 11.5), LX + 26, 282, {
           size: 11.5,
           color: intel?.spotCorrect ? THEME.GREEN : THEME.GOLD_LIGHT
         });
         if (intel) {
           const needsRewardPick = !!intel.spotCorrect && !intel.chosenRewardKind;
           const btnLabel = !intel.chosenCounterId ? "\u4FA6\u5BDF\u6293\u7834\u7EFD" : needsRewardPick ? "\u9009\u62E9\u9488\u5BF9\u7EA2\u5229" : "\u6218\u672F\u5F55\u50CF\u5BA4";
-          drawButton(ctx2, hits, 534, 254, 124, 36, btnLabel, () => {
+          drawButton(ctx2, hits, LX + LW - 148, 254, 122, 36, btnLabel, () => {
             this.scoutNotice = "";
             this.selectedZoneId = null;
             this.scoutModalOpen = true;
           }, { variant: needsRewardPick ? "gold" : intel.chosenCounterId ? "ghost" : "primary", fontSize: 11.5 });
         }
-        drawButton(ctx2, hits, 112, 308, 456, 48, "\u25B6 \u5439\u54CD\u5F00\u573A\u54E8 \xB7 \u4EB2\u81EA\u6307\u6325\u672C\u573A\u5BF9\u51B3", actions.onStartMatch, {
+        drawButton(ctx2, hits, LX + 16, 308, 426, 48, "\u25B6 \u5439\u54CD\u5F00\u573A\u54E8 \xB7 \u4EB2\u81EA\u6307\u6325\u672C\u573A\u5BF9\u51B3", actions.onStartMatch, {
           variant: "gold",
-          fontSize: 15
+          fontSize: 14.5
         });
-        drawButton(ctx2, hits, 578, 312, 92, 40, "\u23E9 \u5FEB\u8FDB", () => {
+        drawButton(ctx2, hits, LX + 452, 312, 92, 40, "\u23E9 \u5FEB\u8FDB", () => {
           actions.onQuickSim?.();
         }, {
           variant: "ghost",
           fontSize: 12
         });
       }
-      drawChamferPanel(ctx2, 96, 386, 590, 318, 12, "rgba(17, 23, 34, 0.94)", THEME.BORDER, 1);
+      drawChamferPanel(ctx2, LX, 386, LW, 318, 12, "rgba(17, 23, 34, 0.94)", THEME.BORDER, 1);
       if (isSummerWindow) {
         const gkCnt = club.squad.filter((p) => p.role === "GK").length;
         const defCnt = club.squad.filter((p) => ["CB", "LB", "RB", "LWB", "RWB"].includes(p.role)).length;
         const midCnt = club.squad.filter((p) => ["CDM", "CM", "CAM", "LM", "RM"].includes(p.role)).length;
         const fwdCnt = club.squad.filter((p) => ["LW", "RW", "ST"].includes(p.role)).length;
         const avgOvr = club.squad.length > 0 ? Math.round(club.squad.reduce((acc, p) => acc + p.ca, 0) / club.squad.length) : 0;
-        drawBadge(ctx2, 114, 400, 108, 22, "\u5B63\u524D\u5907\u6218\u6307\u5F15", "#0F172A", THEME.GOLD_LIGHT);
-        drawText(ctx2, `\u5F53\u524D\u9635\u5BB9\u5747\u8BC4 ${avgOvr} \xB7 ${club.formation} \xB7 ${TACTICAL_PRESETS[club.style].name}`, 232, 411, {
+        drawBadge(ctx2, LX + 16, 400, 108, 22, "\u5B63\u524D\u5907\u6218\u6307\u5F15", "#0F172A", THEME.GOLD_LIGHT);
+        drawText(ctx2, `\u5F53\u524D\u9635\u5BB9\u5747\u8BC4 ${avgOvr} \xB7 ${club.formation} \xB7 ${TACTICAL_PRESETS[club.style].name}`, LX + 134, 411, {
           size: 12,
           color: THEME.TX2
         });
@@ -37109,33 +37209,33 @@
           { label: "\u524D\u950B FWD", val: `${fwdCnt} \u4EBA`, col: "#F87171" }
         ];
         posBoxes.forEach((pb, idx) => {
-          const bx = 114 + idx * 140;
-          drawRoundRect(ctx2, bx, 434, 132, 54, 8, THEME.BG_CARD, THEME.BORDER);
-          drawText(ctx2, pb.label, bx + 66, 450, { size: 11, color: THEME.TX2, align: "center" });
-          drawText(ctx2, pb.val, bx + 66, 472, { size: 15, bold: true, color: pb.col, align: "center" });
+          const bx = LX + 16 + idx * 134;
+          drawRoundRect(ctx2, bx, 434, 126, 54, 8, THEME.BG_CARD, THEME.BORDER);
+          drawText(ctx2, pb.label, bx + 63, 450, { size: 11, color: THEME.TX2, align: "center" });
+          drawText(ctx2, pb.val, bx + 63, 472, { size: 15, bold: true, color: pb.col, align: "center" });
         });
-        drawRoundRect(ctx2, 114, 500, 554, 188, 10, THEME.BG_CARD, THEME.BORDER);
-        drawText(ctx2, "\u65B0\u8D5B\u5B63\u542F\u7A0B\u4E09\u6B65\u8D70", 132, 524, { size: 14, bold: true, color: THEME.GOLD_LIGHT });
+        drawRoundRect(ctx2, LX + 16, 500, LW - 32, 188, 10, THEME.BG_CARD, THEME.BORDER);
+        drawText(ctx2, "\u65B0\u8D5B\u5B63\u542F\u7A0B\u4E09\u6B65\u8D70", LX + 34, 524, { size: 14, bold: true, color: THEME.GOLD_LIGHT });
         const steps = [
           "\u2713 1. \u5DF2\u5B8C\u6210 3 \u8F6E\u6838\u5FC3\u5F00\u5305\uFF0C\u83B7\u5F97\u521D\u59CB\u5EFA\u961F\u57FA\u77F3\u7403\u5458",
-          `${club.squad.length >= 26 ? "\u2713" : "\u25CB"} 2. \u5728\u5F15\u63F4\u4E2D\u5FC3\u901A\u8FC7\u9752\u8BAD\u3001\u8F6C\u4F1A\u6216\u7ECF\u7EAA\u4EBA\u8865\u9F50 26 \u4EBA\u5927\u540D\u5355\uFF08\u5F53\u524D ${club.squad.length}/26\uFF09`,
-          "\u25CB 3. \u70B9\u51FB\u4E0A\u65B9\u300C\u786E\u8BA4\u5F00\u542F\u65B0\u8D5B\u5B63\u300D\uFF0C\u6B63\u5F0F\u8FDB\u5165\u7B2C 1 \u8F6E\u5907\u6218\u4E0E\u6BD4\u8D5B\u65E5"
+          `${club.squad.length >= 26 ? "\u2713" : "\u25CB"} 2. \u901A\u8FC7\u9752\u8BAD\u3001\u8F6C\u4F1A\u6216\u7ECF\u7EAA\u4EBA\u8865\u9F50 26 \u4EBA\u5927\u540D\u5355\uFF08\u5F53\u524D ${club.squad.length}/26\uFF09`,
+          "\u25CB 3. \u70B9\u51FB\u4E0A\u65B9\u300C\u76D6\u7AE0\u5F00\u8D5B\u300D\uFF0C\u6B63\u5F0F\u8FDB\u5165\u7B2C 1 \u8F6E\u5907\u6218\u4E0E\u6BD4\u8D5B\u65E5"
         ];
         steps.forEach((line, si) => {
-          drawText(ctx2, line, 132, 554 + si * 28, {
+          drawText(ctx2, line, LX + 34, 554 + si * 28, {
             size: 12.5,
             color: si === 0 || si === 1 && club.squad.length >= 26 ? THEME.GREEN : THEME.TX1
           });
         });
-        drawText(ctx2, "\u70B9\u51FB\u5DE6\u4FA7\u3010\u5F15\u63F4\u3011\u6216\u3010\u6218\u672F\u3011\u5373\u53EF\u968F\u65F6\u8C03\u6574\u5927\u540D\u5355\u4E0E\u9996\u53D1\u7AD9\u4F4D", 132, 654, {
+        drawText(ctx2, "\u53F3\u4FA7\u53EF\u968F\u65F6\u9884\u89C8\u4E0E\u5207\u6362\u51FA\u6218\u7EDD\u6280\u3001\u56DB\u6BB5\u6307\u4EE4\u53CA\u9635\u578B\u9884\u6848", LX + 34, 654, {
           size: 11.5,
           color: "#7DD3FC"
         });
       } else if (prep) {
         const wInfo = WEATHER_INFO[prep.weather];
-        drawBadge(ctx2, 114, 400, 84, 22, wInfo.label, "#0F172A", wInfo.color);
-        drawText(ctx2, wInfo.tip, 208, 411, { size: 12, color: THEME.TX2 });
-        drawText(ctx2, `\u8D5B\u524D\u6574\u5907\u6B21\u6570 ${prep.actionsLeft}/1`, 666, 411, {
+        drawBadge(ctx2, LX + 16, 400, 84, 22, wInfo.label, "#0F172A", wInfo.color);
+        drawText(ctx2, wInfo.tip, LX + 110, 411, { size: 12, color: THEME.TX2 });
+        drawText(ctx2, `\u8D5B\u524D\u6574\u5907 ${prep.actionsLeft}/1`, LX + LW - 18, 411, {
           size: 12,
           bold: true,
           align: "right",
@@ -37149,9 +37249,9 @@
           { kind: "sharp", label: "\u5C04\u95E8\u52A0\u7EC3+2" }
         ];
         trainBtns.forEach((tb, bi) => {
-          const bx = 114 + bi * 140;
+          const bx = LX + 16 + bi * 134;
           const done = prep.doneTraining === tb.kind;
-          drawButton(ctx2, hits, bx, 434, 132, 38, tb.label, () => {
+          drawButton(ctx2, hits, bx, 434, 126, 38, tb.label, () => {
             const res = league.applyPrepTraining(tb.kind);
             if (res.msg) this.prepToast = res.msg;
             if (res.ok) SoundEngine.playCraftSuccess();
@@ -37165,29 +37265,29 @@
         });
         const talk = prep.playerTalk;
         if (talk) {
-          drawRoundRect(ctx2, 114, 486, 554, 204, 10, THEME.BG_CARD, talk.resolved ? THEME.GREEN : THEME.BORDER_GOLD);
-          drawBadge(ctx2, 128, 500, 46, 20, talk.role, "#1E3A5F", THEME.TX1);
-          drawText(ctx2, `${talk.playerName} \xB7 \u8D5B\u524D\u4E00\u5BF9\u4E00\u6C9F\u901A`, 184, 510, { size: 13.5, bold: true, color: THEME.GOLD_LIGHT });
+          drawRoundRect(ctx2, LX + 16, 486, LW - 32, 204, 10, THEME.BG_CARD, talk.resolved ? THEME.GREEN : THEME.BORDER_GOLD);
+          drawBadge(ctx2, LX + 30, 500, 46, 20, talk.role, "#1E3A5F", THEME.TX1);
+          drawText(ctx2, `${talk.playerName} \xB7 \u8D5B\u524D\u4E00\u5BF9\u4E00\u6C9F\u901A`, LX + 86, 510, { size: 13.5, bold: true, color: THEME.GOLD_LIGHT });
           if (talk.resolved) {
-            drawText(ctx2, `\u5DF2\u56DE\u5E94\uFF1A${talk.chosenLabel}`, 128, 558, { size: 13, bold: true, color: THEME.GREEN });
+            drawText(ctx2, `\u5DF2\u56DE\u5E94\uFF1A${talk.chosenLabel}`, LX + 30, 558, { size: 13, bold: true, color: THEME.GREEN });
             drawWrappedText(
               ctx2,
               this.prepToast || "\u7403\u5458\u58EB\u6C14\u5DF2\u7A33\u4F4F\uFF0C\u4E13\u6CE8\u8FCE\u63A5\u672C\u8F6E\u8F83\u91CF",
-              128,
+              LX + 30,
               592,
-              524,
+              LW - 60,
               20,
               { size: 12, color: THEME.TX2, maxLines: 3 }
             );
           } else {
-            drawWrappedText(ctx2, talk.prompt, 128, 538, 524, 21, { size: 12.5, color: THEME.TX1, maxLines: 3 });
-            drawButton(ctx2, hits, 128, 632, 256, 42, talk.optA.label, () => {
+            drawWrappedText(ctx2, talk.prompt, LX + 30, 538, LW - 60, 21, { size: 12.5, color: THEME.TX1, maxLines: 3 });
+            drawButton(ctx2, hits, LX + 30, 632, 242, 42, talk.optA.label, () => {
               const res = league.resolvePlayerTalk("A");
               if (res.msg) this.prepToast = res.msg;
               if (res.ok) SoundEngine.playRewardChime();
               actions.onSave?.();
             }, { variant: "primary", fontSize: 12 });
-            drawButton(ctx2, hits, 396, 632, 256, 42, talk.optB.label, () => {
+            drawButton(ctx2, hits, LX + 284, 632, 242, 42, talk.optB.label, () => {
               const res = league.resolvePlayerTalk("B");
               if (res.msg) this.prepToast = res.msg;
               if (res.ok) SoundEngine.playRewardChime();
@@ -37195,220 +37295,396 @@
             }, { variant: "ghost", fontSize: 12 });
           }
         } else {
-          drawRoundRect(ctx2, 114, 486, 554, 204, 10, THEME.BG_CARD, THEME.BORDER);
-          drawText(ctx2, "\u66F4\u8863\u5BA4\u6C1B\u56F4\u5E73\u7A33 \xB7 \u5168\u961F\u4E13\u6CE8\u5907\u6218\u4E0B\u8F6E\u5BF9\u624B", 132, 542, { size: 14, bold: true, color: THEME.TX1 });
-          const subMsg = this.prepToast || prep.nextMatchBuff?.note || st.lastMatchReview || "\u53EF\u4ECE\u4E0A\u65B9\u9009\u62E9 1 \u9879\u8D5B\u524D\u8F7B\u8BAD\u7EC3\u8C03\u6574\u72B6\u6001";
-          drawWrappedText(ctx2, subMsg, 132, 580, 518, 22, {
-            size: 12.5,
-            color: this.prepToast || prep.nextMatchBuff?.note ? THEME.GREEN : st.lastMatchReview ? "#7DD3FC" : THEME.TX2,
+          const strainList = club.squad.filter((p) => p.strainWarning || (p.injuredRounds ?? 0) > 0 || (p.suspendedRounds ?? 0) > 0);
+          drawRoundRect(ctx2, LX + 16, 486, LW - 32, 114, 9, THEME.BG_CARD, THEME.BORDER);
+          drawIcon(ctx2, "bolt", LX + 32, 506, 13, "#38BDF8");
+          drawText(ctx2, "\u4E0A\u8F6E\u6218\u51B5\u590D\u76D8\u4E0E\u5907\u6218\u5907\u5FD8", LX + 46, 506, { size: 12.5, bold: true, color: "#38BDF8" });
+          const reviewMsg = this.prepToast || prep.nextMatchBuff?.note || st.lastMatchReview || "\u9996\u8F6E\u5F00\u8D5B\u540E\u5C06\u5728\u6B64\u751F\u6210\u4E0A\u8F6E\u6218\u672F\u590D\u76D8\u4E0E xG \u8BCA\u65AD\u3002";
+          drawWrappedText(ctx2, reviewMsg, LX + 30, 528, LW - 60, 20, {
+            size: 12,
+            color: this.prepToast || prep.nextMatchBuff?.note ? THEME.GREEN : THEME.TX1,
             maxLines: 3
           });
+          drawRoundRect(ctx2, LX + 16, 610, LW - 32, 80, 9, THEME.BG_CARD, strainList.length > 0 ? "rgba(251, 191, 36, 0.45)" : THEME.BORDER);
+          drawText(ctx2, "\u961F\u533B\u4E0E\u4F53\u80FD\u72B6\u6001", LX + 30, 628, {
+            size: 12,
+            bold: true,
+            color: strainList.length > 0 ? "#FBBF24" : THEME.GREEN
+          });
+          drawWrappedText(
+            ctx2,
+            strainList.length > 0 ? `\u9884\u8B66\uFF1A${strainList.slice(0, 3).map((p) => `${p.name}(${(p.injuredRounds ?? 0) > 0 ? "\u4F24\u505C" : (p.suspendedRounds ?? 0) > 0 ? "\u505C\u8D5B" : "\u75B2\u60EB"})`).join("\u3001")} \xB7 \u5EFA\u8BAE\u8F6E\u6362` : "\u5168\u961F\u5065\u5EB7\u5EA6\u826F\u597D\uFF0C\u65E0\u4F24\u505C\u3001\u505C\u8D5B\u6216\u4F53\u80FD\u75B2\u60EB\u9884\u8B66",
+            LX + 30,
+            650,
+            LW - 60,
+            19,
+            { size: 12, color: strainList.length > 0 ? "#FDE68A" : THEME.TX2, maxLines: 2 }
+          );
         }
       }
-      drawChamferPanel(ctx2, 702, 80, 562, 196, 12, "rgba(17, 23, 34, 0.95)", THEME.BORDER, 1);
-      drawText(ctx2, "\u5F53\u524D\u51FA\u6218\u914D\u7F6E\u6458\u8981", 722, 102, { size: 13.5, bold: true, color: THEME.GOLD_LIGHT });
-      drawText(ctx2, `\u6FC0\u6D3B\uFF1A${club.formation} \xB7 ${TACTICAL_PRESETS[club.style].name}`, 1244, 102, {
-        size: 12,
-        bold: true,
-        color: "#38BDF8",
-        align: "right"
-      });
+      const RX = 672;
+      const RW = 592;
       const eqSkills = league.getEquippedActiveSkills();
-      const deckPresets = league.getDeckPresets();
       const presets = league.getTacticalPresets();
       const curPresetIdx = presets.findIndex((pr) => pr && club.formation === pr.formation && club.style === pr.style);
       const rogue = league.getV6SeasonRogue();
-      const hovMeta = hits.isHovered(720, 122, 168, 138);
-      drawRoundRect(ctx2, 720, 122, 168, 138, 8, hovMeta ? THEME.BG_CARD_HOVER : THEME.BG_CARD, hovMeta ? "#38BDF8" : THEME.BORDER, hovMeta ? 1.4 : 1);
-      ctx2.fillStyle = "#38BDF8";
-      ctx2.fillRect(730, 123, 148, 2);
-      drawIcon(ctx2, "bolt", 736, 138, 12, "#38BDF8");
-      drawText(ctx2, `\u7EDD\u6280 ${eqSkills.length}/4`, 746, 138, { size: 11.5, bold: true, color: "#38BDF8" });
-      drawText(ctx2, `\u5723\u7269 ${rogue.seasonRelics.length}`, 878, 138, { size: 10.5, bold: true, color: "#E9D5FF", align: "right", mono: true });
+      const v6Cfg = league.getV6MatchRuntimeConfig();
+      const s1Cards = league.getV6CheckpointDirectives("s1");
+      drawChamferPanel(ctx2, RX, 80, RW, 194, 12, "rgba(17, 23, 34, 0.95)", THEME.BORDER, 1);
+      drawIcon(ctx2, "bolt", RX + 20, 100, 13, "#38BDF8");
+      drawText(ctx2, `F1\u2013F4 \u4E34\u573A\u4E3B\u52A8\u7EDD\u6280 (${eqSkills.length}/4)`, RX + 32, 100, { size: 13.5, bold: true, color: "#38BDF8" });
+      const hovMetaTop = hits.isHovered(RX + RW - 120, 86, 106, 26);
+      drawText(ctx2, "\u661F\u76D8\u914D\u88C5 \u203A", RX + RW - 16, 100, {
+        size: 12,
+        bold: true,
+        color: hovMetaTop ? "#FFFFFF" : "#7DD3FC",
+        align: "right"
+      });
+      hits.add(RX + RW - 120, 86, 106, 26, () => actions.onNavigate("meta"));
+      const skW = 274;
+      const skH = 54;
       for (let si = 0; si < 4; si++) {
         const col = si % 2;
         const row = Math.floor(si / 2);
-        const sx = 730 + col * 76;
-        const sy = 152 + row * 40;
+        const sx = RX + 16 + col * (skW + 12);
+        const sy = 118 + row * 60;
         const sk = eqSkills[si];
         if (sk) {
           const gKind = sk.styleTag ? STYLE_GLYPH2[sk.styleTag] ?? "master" : "master";
-          drawRoundRect(ctx2, sx, sy, 72, 34, 6, "rgba(12, 42, 68, 0.85)", "rgba(56, 189, 248, 0.45)", 1);
-          drawSkillGlyph(ctx2, gKind, sx + 15, sy + 17, 19, "#38BDF8", THEME.GOLD_LIGHT);
-          drawText(ctx2, fitText(ctx2, sk.name, 42, FONT.MICRO, true, true), sx + 28, sy + 17, { token: "MICRO", bold: true, color: THEME.TX1 });
+          const hovSk = hits.isHovered(sx, sy, skW, skH);
+          drawRoundRect(
+            ctx2,
+            sx,
+            sy,
+            skW,
+            skH,
+            8,
+            hovSk ? "rgba(18, 54, 86, 0.92)" : "rgba(12, 34, 58, 0.86)",
+            hovSk ? "#7DD3FC" : "rgba(56, 189, 248, 0.45)",
+            hovSk ? 1.4 : 1
+          );
+          drawSkillGlyph(ctx2, gKind, sx + 22, sy + 27, 24, "#38BDF8", THEME.GOLD_LIGHT);
+          drawBadge(ctx2, sx + 42, sy + 7, 24, 16, `F${si + 1}`, "#0F172A", "#7DD3FC");
+          drawText(ctx2, fitText(ctx2, sk.name, 134, 13, true), sx + 72, sy + 15, { size: 13, bold: true, color: THEME.TX1 });
+          const rk = sk.effectiveRank ?? sk.rank ?? 1;
+          drawBadge(ctx2, sx + skW - 84, sy + 7, 28, 16, `R${rk}`, "#1E293B", THEME.GOLD_LIGHT);
+          drawText(ctx2, `${sk.cooldownMinutes}m`, sx + skW - 10, sy + 15, {
+            size: 10.5,
+            bold: true,
+            color: THEME.TX2,
+            align: "right",
+            mono: true
+          });
+          const effLine = sk.instantLabel || sk.powerLabel || sk.situationLabel;
+          drawText(ctx2, fitText(ctx2, effLine, skW - 52, 11), sx + 42, sy + 37, { size: 11, color: "#CBD5E1" });
+          hits.add(sx, sy, skW, skH, () => actions.onNavigate("meta"));
         } else {
           ctx2.save();
-          ctx2.setLineDash([3, 2]);
-          drawRoundRect(ctx2, sx, sy, 72, 34, 6, "rgba(15, 23, 42, 0.55)", "rgba(148, 163, 184, 0.28)", 1);
+          ctx2.setLineDash([4, 3]);
+          drawRoundRect(ctx2, sx, sy, skW, skH, 8, "rgba(15, 23, 42, 0.55)", "rgba(148, 163, 184, 0.30)", 1);
           ctx2.restore();
-          drawText(ctx2, `F${si + 1} \u7A7A`, sx + 36, sy + 17, { token: "MICRO", color: THEME.TX3, align: "center" });
+          drawText(ctx2, `F${si + 1} \u7A7A\u69FD \xB7 \u70B9\u51FB\u524D\u5F80\u661F\u76D8\u88C5\u914D\u7EDD\u6280`, sx + skW / 2, sy + 27, {
+            size: 11.5,
+            color: THEME.TX3,
+            align: "center"
+          });
+          hits.add(sx, sy, skW, skH, () => actions.onNavigate("meta"));
         }
       }
+      drawText(ctx2, `\u8D5B\u5B63\u5723\u7269 (${rogue.seasonRelics.length}/5)`, RX + 18, 254, { size: 11.5, bold: true, color: "#E9D5FF" });
       for (let ri = 0; ri < 5; ri++) {
         const lit = ri < rogue.seasonRelics.length;
-        drawRoundRect(ctx2, 730 + ri * 12, 240, 8, 8, 2, lit ? "#C084FC" : "rgba(148, 163, 184, 0.22)");
+        drawRoundRect(ctx2, RX + 122 + ri * 18, 248, 12, 12, 3, lit ? "#C084FC" : "rgba(148, 163, 184, 0.22)");
       }
-      drawText(ctx2, "\u661F\u76D8 \u203A", 878, 244, { size: 10.5, bold: true, color: hovMeta ? "#FFFFFF" : "#7DD3FC", align: "right" });
-      hits.add(720, 122, 168, 138, () => actions.onNavigate("meta"));
-      const v6Cfg = league.getV6MatchRuntimeConfig();
-      const s1Cards = league.getV6CheckpointDirectives("s1");
+      drawText(
+        ctx2,
+        rogue.seasonRelics.length > 0 ? "\u5DF2\u5728\u661F\u76D8\u6FC0\u6D3B\u8D5B\u5B63\u5723\u7269\u534F\u540C" : "\u8FDE\u80DC/\u91CC\u7A0B\u7891\u4E8B\u4EF6\u4E2D\u53EF\u83B7\u5F3A\u529B\u8D5B\u5B63\u5723\u7269",
+        RX + RW - 18,
+        254,
+        { size: 11, color: THEME.TX3, align: "right" }
+      );
       const v6DeckWarn = s1Cards.length < 4;
       const deckAccent = v6DeckWarn ? "#F59E0B" : "#C084FC";
-      const hovDeck = hits.isHovered(898, 122, 168, 138);
-      drawRoundRect(ctx2, 898, 122, 168, 138, 8, hovDeck ? THEME.BG_CARD_HOVER : THEME.BG_CARD, hovDeck ? deckAccent : v6DeckWarn ? "rgba(245, 158, 11, 0.55)" : THEME.BORDER, hovDeck ? 1.4 : 1);
-      ctx2.fillStyle = deckAccent;
-      ctx2.fillRect(908, 123, 148, 2);
-      drawText(ctx2, `\u56DB\u6BB5\u6307\u4EE4 (${s1Cards.length}/4)`, 908, 138, { size: 11.5, bold: true, color: deckAccent });
-      drawText(ctx2, `+${v6Cfg.checkpointTpBase}TP`, 1056, 138, { size: 10, bold: true, color: THEME.GOLD_LIGHT, align: "right", mono: true });
+      drawChamferPanel(ctx2, RX, 284, RW, 218, 12, "rgba(17, 23, 34, 0.95)", v6DeckWarn ? "rgba(245, 158, 11, 0.50)" : THEME.BORDER, 1);
+      drawText(ctx2, `V6 \u56DB\u8D5B\u6BB5\u51FA\u6218\u6307\u4EE4 (${s1Cards.length}/4)`, RX + 18, 304, { size: 13.5, bold: true, color: deckAccent });
+      drawBadge(ctx2, RX + 224, 294, 72, 20, `+${v6Cfg.checkpointTpBase} TP/\u6BB5`, "#1E293B", THEME.GOLD_LIGHT);
+      const hovCardsTop = hits.isHovered(RX + RW - 120, 290, 106, 26);
+      drawText(ctx2, "\u914D\u88C5\u5361\u7EC4 \u203A", RX + RW - 16, 304, {
+        size: 12,
+        bold: true,
+        color: hovCardsTop ? "#FFFFFF" : deckAccent,
+        align: "right"
+      });
+      hits.add(RX + RW - 120, 290, 106, 26, () => actions.onNavigate("cards"));
+      const cardW = 134;
+      const cardH = 160;
+      const cardGap = 8;
+      const zoneLabelMap = { ATT: "\u524D\u950B", MID: "\u4E2D\u573A", DEF: "\u9632\u7EBF" };
       for (let ci = 0; ci < 4; ci++) {
-        const col = ci % 2;
-        const row = Math.floor(ci / 2);
-        const cx = 908 + col * 76;
-        const cy = 152 + row * 40;
+        const cx = RX + 16 + ci * (cardW + cardGap);
+        const cy = 324;
         const entry = s1Cards[ci];
         if (entry) {
           const zCol = entry.def.zone === "ATT" ? "#F43F5E" : entry.def.zone === "MID" ? "#38BDF8" : "#22C55E";
-          drawRoundRect(ctx2, cx, cy, 72, 34, 6, "rgba(18, 29, 51, 0.92)", zCol, 1);
+          const hovC = hits.isHovered(cx, cy, cardW, cardH);
+          drawRoundRect(
+            ctx2,
+            cx,
+            cy,
+            cardW,
+            cardH,
+            8,
+            hovC ? "#1A2942" : "rgba(18, 29, 51, 0.92)",
+            hovC ? "#FFFFFF" : zCol,
+            hovC ? 1.5 : 1
+          );
           ctx2.fillStyle = zCol;
-          ctx2.fillRect(cx + 1, cy + 5, 2.5, 24);
-          drawIcon(ctx2, entry.def.tendency === "ATK" ? "sword" : "shield", cx + 13, cy + 12, 10, zCol);
-          drawText(ctx2, `${entry.effectiveTpCost}T`, cx + 67, cy + 12, { size: 8.5, bold: true, color: THEME.GOLD_LIGHT, align: "right", mono: true });
-          drawText(ctx2, fitText(ctx2, entry.def.name, 60, 9.5, true), cx + 8, cy + 25, { size: 9.5, bold: true, color: THEME.TX1 });
+          ctx2.fillRect(cx + 1, cy + 8, 3, cardH - 16);
+          drawBadge(ctx2, cx + 10, cy + 10, 44, 18, zoneLabelMap[entry.def.zone] ?? entry.def.zone, "#0F172A", zCol);
+          drawBadge(ctx2, cx + cardW - 44, cy + 10, 34, 18, `${entry.effectiveTpCost}T`, "#1E293B", THEME.GOLD_LIGHT);
+          drawWrappedText(ctx2, entry.def.name, cx + 10, cy + 40, cardW - 18, 17, {
+            size: 12.5,
+            bold: true,
+            color: THEME.TX1,
+            maxLines: 2
+          });
+          drawWrappedText(ctx2, entry.def.benefitSummary, cx + 10, cy + 84, cardW - 18, 16, {
+            size: 10.5,
+            color: "#CBD5E1",
+            maxLines: 4
+          });
+          hits.add(cx, cy, cardW, cardH, () => actions.onNavigate("cards"));
         } else {
           ctx2.save();
-          ctx2.setLineDash([3, 2]);
-          drawRoundRect(ctx2, cx, cy, 72, 34, 6, "rgba(15, 23, 42, 0.55)", "rgba(245, 158, 11, 0.45)", 1);
+          ctx2.setLineDash([4, 3]);
+          drawRoundRect(ctx2, cx, cy, cardW, cardH, 8, "rgba(15, 23, 42, 0.55)", "rgba(245, 158, 11, 0.45)", 1);
           ctx2.restore();
-          drawText(ctx2, "+ \u7A7A\u69FD", cx + 36, cy + 17, { size: 9.5, color: "#FCD34D", align: "center" });
+          drawText(ctx2, "+ \u7A7A\u6307\u4EE4\u69FD", cx + cardW / 2, cy + 68, { size: 12, bold: true, color: "#FCD34D", align: "center" });
+          drawText(ctx2, "\u70B9\u51FB\u914D\u88C5", cx + cardW / 2, cy + 92, { size: 10.5, color: THEME.TX3, align: "center" });
+          hits.add(cx, cy, cardW, cardH, () => actions.onNavigate("cards"));
         }
       }
-      drawText(ctx2, "\u914D\u88C5 \u203A", 1056, 244, { size: 10.5, bold: true, color: hovDeck ? "#FFFFFF" : deckAccent, align: "right" });
-      hits.add(898, 122, 168, 138, () => actions.onNavigate("cards"));
-      const hovPreset = hits.isHovered(1076, 122, 170, 138);
-      drawRoundRect(ctx2, 1076, 122, 170, 138, 8, hovPreset ? THEME.BG_CARD_HOVER : THEME.BG_CARD, hovPreset ? THEME.GOLD_LIGHT : THEME.BORDER, hovPreset ? 1.4 : 1);
-      ctx2.fillStyle = THEME.GOLD_LIGHT;
-      ctx2.fillRect(1086, 123, 150, 2);
-      drawText(ctx2, curPresetIdx >= 0 ? `\u9884\u6848 ${curPresetIdx + 1}/4` : "\u6218\u672F\u9884\u6848", 1088, 138, { size: 11.5, bold: true, color: THEME.GOLD_LIGHT });
-      for (let pi = 0; pi < 4; pi++) {
-        const activeDot = pi === (curPresetIdx >= 0 ? curPresetIdx : 0);
-        drawRoundRect(ctx2, 1192 + pi * 11, 134, 7, 7, 3.5, activeDot ? THEME.GOLD_LIGHT : "rgba(148, 163, 184, 0.25)");
-      }
-      const mpX = 1088, mpY = 152, mpW = 54, mpH = 74;
-      drawRoundRect(ctx2, mpX, mpY, mpW, mpH, 6, "#0B241A", "rgba(74, 222, 128, 0.35)", 1);
+      const leftStripW = 324;
+      drawChamferPanel(ctx2, RX, 514, leftStripW, 190, 12, "rgba(17, 23, 34, 0.94)", THEME.BORDER, 1);
+      drawText(ctx2, "\u51FA\u6218\u9635\u578B\u4E0E\u9884\u6848", RX + 16, 534, { size: 13, bold: true, color: THEME.GOLD_LIGHT });
+      const hovTac = hits.isHovered(RX + leftStripW - 92, 520, 80, 26);
+      drawText(ctx2, "\u8C03\u9635 \u203A", RX + leftStripW - 14, 534, {
+        size: 11.5,
+        bold: true,
+        color: hovTac ? "#FFFFFF" : "#7DD3FC",
+        align: "right"
+      });
+      hits.add(RX + leftStripW - 92, 520, 80, 26, () => actions.onNavigate("tactics"));
+      const mpX = RX + 16, mpY = 554, mpW = 64, mpH = 94;
+      drawRoundRect(ctx2, mpX, mpY, mpW, mpH, 7, "#0B241A", "rgba(74, 222, 128, 0.35)", 1);
       ctx2.save();
       ctx2.strokeStyle = "rgba(255,255,255,0.20)";
       ctx2.lineWidth = 0.8;
       ctx2.beginPath();
-      ctx2.moveTo(mpX + 4, mpY + mpH / 2);
-      ctx2.lineTo(mpX + mpW - 4, mpY + mpH / 2);
+      ctx2.moveTo(mpX + 5, mpY + mpH / 2);
+      ctx2.lineTo(mpX + mpW - 5, mpY + mpH / 2);
       ctx2.stroke();
       const miniSlots = FORMATIONS[club.formation] ?? [];
       miniSlots.forEach((sl, idx) => {
-        const dx = mpX + 7 + sl.baseY / 68 * (mpW - 14);
-        const dy = mpY + 7 + (1 - Math.max(0, Math.min(1, (sl.baseX - 5) / 73))) * (mpH - 14);
+        const dx = mpX + 8 + sl.baseY / 68 * (mpW - 16);
+        const dy = mpY + 8 + (1 - Math.max(0, Math.min(1, (sl.baseX - 5) / 73))) * (mpH - 16);
         ctx2.fillStyle = idx === 0 ? "#FACC15" : "#4ADE80";
         ctx2.beginPath();
-        ctx2.arc(dx, dy, 2.3, 0, Math.PI * 2);
+        ctx2.arc(dx, dy, 2.6, 0, Math.PI * 2);
         ctx2.fill();
       });
       ctx2.restore();
-      drawSkillGlyph(ctx2, STYLE_GLYPH2[club.style] ?? "balanced", 1192, 174, 28, "#38BDF8", THEME.GOLD_LIGHT);
-      drawText(ctx2, club.formation, 1192, 202, { size: 14, bold: true, color: THEME.GREEN, align: "center", mono: true });
-      drawText(ctx2, TACTICAL_PRESETS[club.style].name, 1192, 220, { size: 11, color: THEME.TX1, align: "center" });
-      drawText(ctx2, "\u8F6E\u6362 \u21BB", 1234, 244, { size: 10.5, bold: true, color: hovPreset ? "#FFFFFF" : THEME.GOLD_LIGHT, align: "right" });
-      hits.add(1076, 122, 170, 138, () => {
-        if (presets.length === 0) {
-          actions.onNavigate("tactics");
-          return;
-        }
-        const nextIdx = (curPresetIdx + 1) % presets.length;
-        const res = league.applyTacticalPreset(nextIdx);
-        if (res.ok && res.preset) {
-          SoundEngine.playClick();
-          this.prepToast = `\u5DF2\u5207\u6362\u81F3\u9884\u6848${nextIdx + 1}\uFF1A${res.preset.formation} \xB7 ${TACTICAL_PRESETS[res.preset.style].name}`;
-          actions.onSave?.();
-        }
+      hits.add(mpX, mpY, mpW, mpH, () => actions.onNavigate("tactics"));
+      drawSkillGlyph(ctx2, STYLE_GLYPH2[club.style] ?? "balanced", RX + 104, 574, 24, "#38BDF8", THEME.GOLD_LIGHT);
+      drawText(ctx2, club.formation, RX + 128, 570, { size: 17, bold: true, color: THEME.GREEN, mono: true });
+      drawText(ctx2, TACTICAL_PRESETS[club.style].name, RX + 128, 592, { size: 12.5, bold: true, color: THEME.TX1 });
+      drawText(ctx2, curPresetIdx >= 0 ? `\u5F53\u524D\u542F\u7528\uFF1A\u9884\u6848 ${curPresetIdx + 1}` : "\u5F53\u524D\u4E3A\u81EA\u5B9A\u4E49\u9635\u578B", RX + 94, 622, {
+        size: 11,
+        color: THEME.TX2
       });
-      drawChamferPanel(ctx2, 702, 290, 562, 222, 12, "rgba(17, 23, 34, 0.94)", THEME.BORDER);
-      const story = st.storyline;
-      drawIcon(ctx2, "sparkle", 724, 314, 15, THEME.GOLD_LIGHT);
-      drawText(ctx2, `\u4FF1\u4E50\u90E8\u8D5B\u5B63\u8109\u7EDC\u4E0E\u8BCD\u6761 (${club.perks.length})`, 742, 314, { size: 13.5, bold: true, color: THEME.TX1 });
-      if (story) {
-        drawBadge(ctx2, 974, 303, 92, 22, story.title, "#312E81", "#A5B4FC");
-      }
-      const syn = computePerkSynergies(club.perks);
-      const synLine = syn.synergies[0] ? `\u5171\u632F\uFF1A${syn.synergies[0]}` : "\u540C\u7CFB\u53E0\u52A02\u5F20\u6FC0\u6D3B\u5171\u632F";
-      drawText(ctx2, synLine, 1244, 314, { size: 11, color: syn.synergies[0] ? THEME.GREEN : THEME.TX3, align: "right" });
-      if (club.perks.length === 0) {
-        drawRoundRect(ctx2, 720, 338, 526, 156, 8, THEME.BG_CARD, THEME.BORDER);
-        const perkArt = AssetLoader.get("perk_event");
-        if (perkArt && typeof ctx2.drawImage === "function") {
-          ctx2.save();
-          ctx2.beginPath();
-          ctx2.roundRect(734, 352, 118, 128, 6);
-          ctx2.clip();
-          ctx2.globalAlpha = 0.85;
-          ctx2.drawImage(perkArt, 734, 352, 118, 128);
-          ctx2.restore();
-          drawRoundRect(ctx2, 734, 352, 118, 128, 6, void 0, "rgba(250, 204, 21, 0.32)", 1);
-        }
-        const textLeft = perkArt ? 868 : 742;
-        const textMaxW = perkArt ? 360 : 482;
-        drawText(ctx2, "\u6682\u672A\u6FC0\u6D3B Rogue \u6218\u672F\u8BCD\u6761", textLeft, 374, { size: 14.5, bold: true, color: THEME.TX1 });
-        drawWrappedText(
-          ctx2,
-          "\u7B2C 8 / 16 / 24 \u8F6E\u8D5B\u540E 3 \u9009 1 \u5C06\u5FC5\u5B9A\u51FA\u73B0\u300C\u8D5B\u5B63\u6218\u672F\u8BCD\u6761\u300D\u76F2\u76D2\uFF0C\u4E5F\u53EF\u5728\u5176\u4ED6\u8F6E\u6B21\u7684\u8089\u9E3D\u4E8B\u4EF6\u4E2D\u83B7\u53D6\u5F3A\u529B\u8BCD\u6761\u4E0E\u89C9\u9192\u6548\u679C\u3002",
-          textLeft,
-          404,
-          textMaxW,
-          24,
-          { size: 12, color: THEME.TX2, maxLines: 3 }
-        );
-      } else {
-        club.perks.slice(0, 3).forEach((pk, i) => {
-          const px = 720 + i * 178;
-          drawChamferPanel(ctx2, px, 338, 170, 156, 8, THEME.BG_CARD, THEME.BORDER, 1, THEME.GOLD);
-          drawIcon(ctx2, "sparkle", px + 20, 362, 13, THEME.GOLD_LIGHT);
-          drawText(ctx2, fitText(ctx2, pk.name, 122, 13, true), px + 34, 362, { size: 13, bold: true, color: THEME.GOLD_LIGHT });
-          drawWrappedText(ctx2, pk.description, px + 14, 386, 142, 20, { size: 11.5, color: THEME.TX2, maxLines: 5 });
+      for (let pi = 0; pi < 4; pi++) {
+        const pData = presets[pi];
+        const activeP = pi === curPresetIdx;
+        const pbx = RX + 16 + pi * 74;
+        const pby = 658;
+        drawButton(ctx2, hits, pbx, pby, 68, 32, `\u9884\u6848${pi + 1}`, () => {
+          if (!pData) {
+            actions.onNavigate("tactics");
+            return;
+          }
+          const res = league.applyTacticalPreset(pi);
+          if (res.ok && res.preset) {
+            SoundEngine.playClick();
+            this.prepToast = `\u5DF2\u5207\u6362\u81F3\u9884\u6848${pi + 1}\uFF1A${res.preset.formation} \xB7 ${TACTICAL_PRESETS[res.preset.style].name}`;
+            actions.onSave?.();
+          }
+        }, {
+          variant: activeP ? "gold" : "ghost",
+          disabled: !pData && false,
+          fontSize: 11
         });
       }
-      drawChamferPanel(ctx2, 702, 526, 562, 178, 12, "rgba(17, 23, 34, 0.94)", THEME.BORDER);
-      const strainList = club.squad.filter((p) => p.strainWarning || (p.injuredRounds ?? 0) > 0 || (p.suspendedRounds ?? 0) > 0);
-      drawText(ctx2, "\u4E0A\u8F6E\u6218\u51B5\u590D\u76D8\u4E0E\u961F\u5185\u72B6\u6001", 722, 550, { size: 13.5, bold: true, color: "#38BDF8" });
-      drawWrappedText(
+      const rightStripX = RX + leftStripW + 12;
+      const rightStripW = RW - leftStripW - 12;
+      const hovLeague = hits.isHovered(rightStripX, 514, rightStripW, 90);
+      drawChamferPanel(
         ctx2,
-        st.lastMatchReview || "\u9996\u8F6E\u5F00\u8D5B\u540E\u5C06\u5728\u6B64\u751F\u6210\u4E0A\u8F6E\u6218\u672F\u590D\u76D8\u4E0E xG \u8BCA\u65AD",
-        722,
-        574,
-        340,
-        20,
-        { size: 11.5, color: THEME.TX1, maxLines: 3 }
+        rightStripX,
+        514,
+        rightStripW,
+        90,
+        10,
+        hovLeague ? THEME.BG_CARD_HOVER : "rgba(17, 23, 34, 0.94)",
+        hovLeague ? THEME.GOLD_LIGHT : THEME.BORDER,
+        hovLeague ? 1.4 : 1
       );
-      drawWrappedText(
-        ctx2,
-        strainList.length > 0 ? `\u961F\u533B\u63D0\u9192\uFF1A${strainList.slice(0, 2).map((p) => `${p.name}(${(p.injuredRounds ?? 0) > 0 ? "\u4F24\u505C" : (p.suspendedRounds ?? 0) > 0 ? "\u505C\u8D5B" : "\u75B2\u60EB"})`).join("\u3001")} \xB7 \u5EFA\u8BAE\u8F6E\u6362` : "\u5168\u961F\u5065\u5EB7\u5EA6\u826F\u597D\uFF0C\u65E0\u4F24\u505C\u6216\u4F53\u80FD\u75B2\u60EB\u9884\u8B66",
-        722,
-        642,
-        340,
-        19,
-        { size: 11.5, color: strainList.length > 0 ? "#FBBF24" : THEME.GREEN, maxLines: 2 }
-      );
-      const hovLeague = hits.isHovered(1076, 542, 170, 144);
-      drawRoundRect(ctx2, 1076, 542, 170, 144, 8, hovLeague ? THEME.BG_CARD_HOVER : THEME.BG_CARD, hovLeague ? THEME.GOLD_LIGHT : THEME.BORDER, hovLeague ? 1.4 : 1);
-      drawText(ctx2, "\u8054\u8D5B\u5B9E\u65F6\u6392\u540D", 1161, 566, { size: 11.5, color: THEME.TX2, align: "center" });
-      drawText(ctx2, `\u7B2C ${userRankIdx + 1} \u540D`, 1161, 604, { size: 26, bold: true, color: THEME.GOLD_LIGHT, align: "center", mono: true });
+      drawText(ctx2, "\u8054\u8D5B\u5B9E\u65F6\u6392\u540D", rightStripX + 16, 536, { size: 12, bold: true, color: THEME.TX2 });
+      drawText(ctx2, "\u79EF\u5206\u699C \u203A", rightStripX + rightStripW - 16, 536, {
+        size: 11.5,
+        bold: true,
+        color: hovLeague ? "#FFFFFF" : "#7DD3FC",
+        align: "right"
+      });
+      drawText(ctx2, `\u7B2C ${userRankIdx + 1} \u540D`, rightStripX + 16, 572, {
+        size: 22,
+        bold: true,
+        color: THEME.GOLD_LIGHT,
+        mono: true
+      });
       drawText(
         ctx2,
         userRow ? `${userRow.points}\u5206 \xB7 ${userRow.won}\u80DC${userRow.drawn}\u5E73${userRow.lost}\u8D1F` : "0\u5206 \xB7 \u672A\u5F00\u8D5B",
-        1161,
-        638,
-        { size: 11, color: THEME.TX2, align: "center", mono: true }
+        rightStripX + rightStripW - 16,
+        574,
+        { size: 11.5, color: THEME.TX1, align: "right", mono: true }
       );
-      drawText(ctx2, "\u79EF\u5206\u699C \u203A", 1161, 668, { size: 10.5, bold: true, color: hovLeague ? "#FFFFFF" : "#7DD3FC", align: "center" });
-      hits.add(1076, 542, 170, 144, () => actions.onNavigate("league"));
-      if (this.scoutModalOpen && prep?.matchupIntel) {
+      hits.add(rightStripX, 514, rightStripW, 90, () => actions.onNavigate("league"));
+      const story = st.storyline;
+      const syn = computePerkSynergies(club.perks);
+      const hovPerks = hits.isHovered(rightStripX, 614, rightStripW, 90);
+      drawChamferPanel(
+        ctx2,
+        rightStripX,
+        614,
+        rightStripW,
+        90,
+        10,
+        hovPerks ? THEME.BG_CARD_HOVER : "rgba(17, 23, 34, 0.94)",
+        hovPerks ? THEME.GOLD_LIGHT : THEME.BORDER,
+        hovPerks ? 1.4 : 1
+      );
+      drawIcon(ctx2, "sparkle", rightStripX + 20, 636, 13, THEME.GOLD_LIGHT);
+      drawText(ctx2, `\u8D5B\u5B63\u8BCD\u6761 (${club.perks.length})`, rightStripX + 34, 636, { size: 12.5, bold: true, color: THEME.TX1 });
+      drawText(ctx2, "\u8BE6\u60C5 \u203A", rightStripX + rightStripW - 16, 636, {
+        size: 11.5,
+        bold: true,
+        color: hovPerks ? "#FFFFFF" : THEME.GOLD_LIGHT,
+        align: "right"
+      });
+      if (club.perks.length > 0) {
+        drawText(
+          ctx2,
+          fitText(ctx2, club.perks.slice(0, 2).map((p) => p.name).join(" \xB7 "), rightStripW - 32, 12, true),
+          rightStripX + 16,
+          664,
+          { size: 12, bold: true, color: THEME.GOLD_LIGHT }
+        );
+        drawText(
+          ctx2,
+          syn.synergies[0] ? `\u5171\u632F\uFF1A${syn.synergies[0]}` : story ? `\u8109\u7EDC\uFF1A${story.title}` : "\u70B9\u51FB\u67E5\u770B\u5168\u90E8\u8BCD\u6761\u6548\u679C",
+          rightStripX + 16,
+          684,
+          { size: 11, color: syn.synergies[0] ? THEME.GREEN : THEME.TX2 }
+        );
+      } else {
+        drawText(ctx2, story ? `\u8109\u7EDC\uFF1A${story.title}` : "\u6682\u672A\u6FC0\u6D3B Rogue \u8BCD\u6761", rightStripX + 16, 664, {
+          size: 12,
+          bold: true,
+          color: story ? "#A5B4FC" : THEME.TX2
+        });
+        drawText(ctx2, "\u7B2C 8 / 16 / 24 \u8F6E\u8D5B\u540E 3 \u9009 1 \u83B7\u53D6", rightStripX + 16, 684, {
+          size: 11,
+          color: THEME.TX3
+        });
+      }
+      hits.add(rightStripX, 614, rightStripW, 90, () => {
+        SoundEngine.playClick();
+        this.perksModalOpen = true;
+      });
+      if (this.perksModalOpen) {
+        this.renderPerksModal(ctx2, hits, league);
+      } else if (this.scoutModalOpen && prep?.matchupIntel) {
         this.renderScoutModal(ctx2, hits, league, prep.matchupIntel, prep.actionsLeft, actions);
+      }
+    }
+    renderPerksModal(ctx2, hits, league) {
+      const st = league.getState();
+      const club = league.getUserClub();
+      const story = st.storyline;
+      const syn = computePerkSynergies(club.perks);
+      ctx2.fillStyle = "rgba(4, 7, 14, 0.86)";
+      ctx2.fillRect(0, 0, THEME.W, THEME.H);
+      hits.clear();
+      const mx = 220;
+      const my = 120;
+      const mw = 840;
+      const mh = 470;
+      drawChamferPanel(ctx2, mx, my, mw, mh, 14, "rgba(11, 17, 32, 0.98)", THEME.BORDER_GOLD, 1.8, THEME.GOLD_LIGHT);
+      drawIcon(ctx2, "sparkle", mx + 26, my + 28, 16, THEME.GOLD_LIGHT);
+      drawText(ctx2, `\u4FF1\u4E50\u90E8\u8D5B\u5B63\u8109\u7EDC\u4E0E Rogue \u6218\u672F\u8BCD\u6761 (${club.perks.length})`, mx + 46, my + 28, {
+        size: 17,
+        bold: true,
+        color: THEME.GOLD_LIGHT
+      });
+      if (story) {
+        drawBadge(ctx2, mx + 440, my + 17, 110, 22, story.title, "#312E81", "#A5B4FC");
+      }
+      drawButton(ctx2, hits, mx + mw - 96, my + 14, 76, 30, "\u5173\u95ED", () => {
+        this.perksModalOpen = false;
+      }, { variant: "ghost", fontSize: 12, icon: "close" });
+      drawText(
+        ctx2,
+        syn.synergies.length > 0 ? `\u5DF2\u6FC0\u6D3B\u5171\u632F\uFF1A${syn.synergies.join(" \xB7 ")}` : "\u540C\u7CFB\u53E0\u52A0 2 \u5F20\u8BCD\u6761\u53EF\u6FC0\u6D3B\u5F3A\u529B\u5171\u632F\u6548\u679C",
+        mx + 26,
+        my + 62,
+        { size: 12.5, bold: true, color: syn.synergies.length > 0 ? THEME.GREEN : THEME.TX2 }
+      );
+      if (club.perks.length === 0) {
+        drawRoundRect(ctx2, mx + 26, my + 90, mw - 52, 340, 10, THEME.BG_CARD, THEME.BORDER);
+        drawText(ctx2, "\u6682\u672A\u6FC0\u6D3B\u8D5B\u5B63 Rogue \u6218\u672F\u8BCD\u6761", mx + mw / 2, my + 225, {
+          size: 16,
+          bold: true,
+          color: THEME.TX1,
+          align: "center"
+        });
+        drawWrappedText(
+          ctx2,
+          "\u7B2C 8 / 16 / 24 \u8F6E\u8D5B\u540E 3 \u9009 1 \u5C06\u5FC5\u5B9A\u51FA\u73B0\u300C\u8D5B\u5B63\u6218\u672F\u8BCD\u6761\u300D\u76F2\u76D2\uFF0C\u4E5F\u53EF\u5728\u65E5\u5E38\u8089\u9E3D\u4E8B\u4EF6\u4E2D\u83B7\u53D6\u5F3A\u529B\u8BCD\u6761\u4E0E\u89C9\u9192\u6548\u679C\u3002",
+          mx + 140,
+          my + 260,
+          mw - 280,
+          24,
+          { size: 13, color: THEME.TX2, maxLines: 3 }
+        );
+      } else {
+        club.perks.slice(0, 6).forEach((pk, idx) => {
+          const col = idx % 3;
+          const row = Math.floor(idx / 3);
+          const px = mx + 26 + col * 266;
+          const py = my + 90 + row * 176;
+          drawChamferPanel(ctx2, px, py, 254, 162, 10, THEME.BG_CARD, THEME.BORDER_GOLD, 1.2, THEME.GOLD);
+          drawIcon(ctx2, "sparkle", px + 18, py + 24, 14, THEME.GOLD_LIGHT);
+          drawText(ctx2, fitText(ctx2, pk.name, 200, 14, true), px + 34, py + 24, {
+            size: 14,
+            bold: true,
+            color: THEME.GOLD_LIGHT
+          });
+          drawWrappedText(ctx2, pk.description, px + 16, py + 52, 222, 21, {
+            size: 12,
+            color: THEME.TX1,
+            maxLines: 5
+          });
+        });
       }
     }
     renderScoutModal(ctx2, hits, league, intel, actionsLeft, actions) {
@@ -37834,6 +38110,8 @@
       this.recapTab = "analytics";
       this.selectedCandidateId = null;
       this.selectedDropId = null;
+      this.ratingPage = 0;
+      this.resultsPage = 0;
       this.statTargetPage = 0;
       this.statTargetFilter = "all";
       // 抽卡开包与逐张翻牌动画状态
@@ -37850,6 +38128,9 @@
     setLastMatch(match) {
       this.lastMatch = match;
       this.viewMode = "recap";
+      this.recapTab = "analytics";
+      this.ratingPage = 0;
+      this.resultsPage = 0;
       this.selectedCandidateId = null;
       this.selectedDropId = null;
       this.statTargetPage = 0;
@@ -37862,6 +38143,8 @@
     dispose() {
       this.lastMatch = null;
       this.packAnim = null;
+      this.ratingPage = 0;
+      this.resultsPage = 0;
       this.selectedCandidateId = null;
       this.selectedDropId = null;
       this.statTargetPage = 0;
@@ -37936,9 +38219,11 @@
       const rd = st.reDraft;
       const rw = st.pendingPostMatchReward;
       const m = this.lastMatch;
+      const summary = league.getLastMatchSummary();
+      const tierInfo = league.getCurrentTierInfo();
       const hasPendingCardUnlock = !!(rw?.tutorialCardUnlock && !rw.tutorialCardUnlock.claimed);
       const hasPendingReward = !!(rw && !rw.completed);
-      const nextActionLabel = hasPendingCardUnlock ? "\u9886\u53D6\u65B0\u89E3\u9501\u6218\u672F\u5361 \u25B6" : hasPendingReward ? "\u9886\u53D6\u8D5B\u540E\u8089\u9E3D\u5956\u52B1 (3\u90091) \u25B6" : rd ? "\u8FDB\u5165\u8D5B\u540E\u8865\u5F3A (2\u6B65) \u25B6" : "\u8FD4\u56DE\u95E8\u6237\u9996\u9875 \u25B6";
+      const nextActionLabel = hasPendingCardUnlock ? "\u9886\u53D6\u65B0\u89E3\u9501\u6218\u672F\u5361 \u25B6" : hasPendingReward ? "\u9886\u53D6\u8D5B\u540E\u6218\u5229\u54C1 (3\u90091) \u25B6" : rd ? "\u8FDB\u5165\u8D5B\u540E\u8865\u5F3A (2\u6B65) \u25B6" : "\u7EE7\u7EED\u4E0B\u4E00\u8F6E \xB7 \u8FD4\u56DE\u95E8\u6237 \u25B6";
       const goNext = () => {
         if (hasPendingCardUnlock) {
           this.viewMode = "card_unlock";
@@ -37954,220 +38239,42 @@
           onContinue();
         }
       };
-      drawRoundRect(ctx2, 16, 14, 1248, 56, 10, THEME.BG_PANEL, THEME.BORDER);
-      drawText(ctx2, "\u8D5B\u540E\u6218\u62A5\u4E0E\u5956\u52B1\u7ED3\u7B97", 34, 42, { size: 18, bold: true, color: THEME.GOLD_LIGHT });
-      drawButton(ctx2, hits, 1018, 24, 232, 36, nextActionLabel, goNext, { variant: "gold" });
-      const pHero = easeOutCubic(Math.min(1, Math.max(0.05, this.recapEnterTimer / 0.36)));
-      ctx2.save();
-      ctx2.globalAlpha = pHero;
-      ctx2.translate(0, (1 - pHero) * 14);
+      const t = this.recapEnterTimer;
+      const pHero = easeOutCubic(Math.min(1, Math.max(0.05, t / 0.34)));
+      const pScore = easeOutCubic(Math.min(1, Math.max(0.01, t / 0.35)));
+      const pBars = easeOutCubic(Math.min(1, Math.max(0, (t - 0.14) / 0.5)));
+      const pMvp = easeOutBack(Math.min(1, Math.max(0, (t - 0.18) / 0.42)));
+      const pRewards = easeOutBack(Math.min(1, Math.max(0, (t - 0.42) / 0.45)));
+      drawRoundRect(ctx2, 16, 12, 1248, 48, 10, THEME.BG_PANEL, THEME.BORDER);
+      const roundLabel = summary?.roundNumber ?? (rd ? rd.roundCompleted : Math.max(1, st.currentRound - 1));
+      drawBadge(ctx2, 28, 23, 140, 26, `${tierInfo.name} \xB7 \u7B2C${roundLabel}\u8F6E`, "#1E3A5F", "#7DD3FC");
+      drawText(ctx2, "\u8D5B\u540E\u6F14\u64AD\u5BA4 \xB7 \u6218\u62A5\u4E0E\u6218\u672F\u590D\u76D8", 182, 36, { size: 17, bold: true, color: THEME.GOLD_LIGHT });
       if (m) {
-        const userIsHome = m.homeName === club.name;
-        const myScore = userIsHome ? m.homeScore : m.awayScore;
-        const oppScore = userIsHome ? m.awayScore : m.homeScore;
-        const resultTag = myScore > oppScore ? "\u6BD4\u8D5B\u80DC\u5229" : myScore === oppScore ? "\u63E1\u624B\u8A00\u548C" : "\u9057\u61BE\u60DC\u8D25";
-        const resultColor = myScore > oppScore ? THEME.GREEN : myScore === oppScore ? THEME.GOLD_LIGHT : THEME.RED_LIGHT;
-        const homeClub = st.clubs.find((c) => c.name === m.homeName) || club;
-        const awayClub = st.clubs.find((c) => c.name === m.awayName) || club;
-        drawRoundRect(ctx2, 16, 84, 760, 260, 12, THEME.BG_PANEL, myScore > oppScore ? THEME.GREEN : THEME.BORDER_GOLD, 1.5);
-        drawBadge(ctx2, 36, 104, 130, 26, resultTag, "#1E293B", resultColor);
-        drawText(ctx2, m.minute + "' \u5168\u573A\u7ED3\u675F", 752, 117, { size: 13, color: THEME.TX2, align: "right" });
-        drawClubCrest(ctx2, 176, 186, 30, homeClub);
-        drawText(ctx2, m.homeName + (homeClub.isUser ? " (\u6211)" : ""), 176, 236, {
-          size: 18,
-          bold: true,
-          color: homeClub.isUser ? THEME.GOLD_LIGHT : THEME.TX1,
-          align: "center"
-        });
-        drawRoundRect(ctx2, 316, 152, 160, 68, 10, THEME.BG_CARD, THEME.GOLD);
-        drawText(ctx2, `${m.homeScore} : ${m.awayScore}`, 396, 186, {
-          size: 32,
-          bold: true,
-          color: THEME.TX1,
-          align: "center",
-          mono: true
-        });
-        drawClubCrest(ctx2, 616, 186, 30, awayClub);
-        drawText(ctx2, m.awayName + (awayClub.isUser ? " (\u6211)" : ""), 616, 236, {
-          size: 18,
-          bold: true,
-          color: awayClub.isUser ? THEME.GOLD_LIGHT : THEME.TX1,
-          align: "center"
-        });
-        const h = m.stats.home;
-        const a = m.stats.away;
-        const totPoss = h.possessionTicks + a.possessionTicks || 1;
-        const hPoss = Math.round(h.possessionTicks / totPoss * 100);
-        drawRoundRect(ctx2, 36, 268, 720, 56, 8, THEME.BG_CARD, THEME.BORDER);
-        const reviewTxt = st.lastMatchReview;
-        drawText(
-          ctx2,
-          `\u63A7\u7403 ${hPoss}% : ${100 - hPoss}%   |   \u5C04\u95E8 ${h.shots}(\u6B63${h.shotsOnTarget}) : ${a.shots}(\u6B63${a.shotsOnTarget})   |   xG ${h.xG.toFixed(2)} : ${a.xG.toFixed(2)}`,
-          396,
-          reviewTxt ? 284 : 296,
-          { size: reviewTxt ? 12 : 13, bold: true, color: THEME.TX1, align: "center" }
-        );
-        if (reviewTxt) {
-          drawText(ctx2, reviewTxt, 396, 307, {
-            size: 11,
-            color: "#7DD3FC",
-            align: "center"
-          });
-        }
-        drawChamferPanel(ctx2, 792, 84, 472, 260, 12, THEME.BG_PANEL, THEME.BORDER_GOLD, 1.2, THEME.GOLD_LIGHT);
-        drawText(ctx2, "\u672C\u573A\u6218\u5229\u54C1\u4E0E\u5173\u952E\u4E8B\u4EF6", 814, 110, { size: 15, bold: true, color: THEME.GOLD_LIGHT });
-        const rwImg = AssetLoader.get(myScore > oppScore ? "reward_win" : "reward_draw");
-        drawChamferPanel(ctx2, 814, 130, 168, 96, 6, THEME.BG_CARD, THEME.BORDER);
-        if (rwImg && typeof ctx2.drawImage === "function") {
-          ctx2.save();
-          ctx2.beginPath();
-          ctx2.rect(816, 132, 164, 92);
-          ctx2.clip();
-          ctx2.drawImage(rwImg, 816, 132, 164, 92);
-          ctx2.restore();
-        } else {
-          drawRewardIllustration(ctx2, myScore > oppScore, 816, 132, 164, 92);
-        }
-        drawRoundRect(ctx2, 994, 130, 248, 96, 8, THEME.BG_CARD, THEME.BORDER);
-        drawText(ctx2, "\u8D5B\u540E 3 \u9009 1 \u6218\u5229\u54C1\u5DF2\u5C31\u7EEA", 1010, 158, { size: 14.5, bold: true, color: THEME.GOLD_LIGHT });
-        drawWrappedText(ctx2, "\u53EF\u9886\u53D6\u8D5B\u5B63\u5723\u7269\u3001\u624B\u724C\u6697\u91D1\u9644\u9B54\u6216\u6C38\u4E45\u661F\u76D8\u70B9", 1010, 178, 224, 16, { size: 10.5, color: THEME.TX2, maxLines: 2 });
-        const goals = m.events.filter((e) => e.type === "goal").slice(0, 3);
-        if (goals.length === 0) {
-          drawText(ctx2, "\u672C\u573A\u53CC\u65B9\u63E1\u624B\u8A00\u548C\uFF0C\u672A\u4EA7\u751F\u8FDB\u7403\u3002", 814, 250, { size: 12, color: THEME.TX3 });
-        } else {
-          goals.forEach((g, gi) => {
-            drawText(ctx2, `[\u8FDB\u7403] ${g.minute}' ${g.playerName} (${g.team === "home" ? m.homeName : m.awayName})`, 814, 244 + gi * 22, {
-              size: 12,
-              color: THEME.TX1
-            });
-          });
-        }
-        if (m.unlockedHiddenTraits && m.unlockedHiddenTraits.length > 0) {
-          const u = m.unlockedHiddenTraits[0];
-          drawRoundRect(ctx2, 812, 310, 430, 24, 6, "rgba(12, 74, 110, 0.45)", "#38BDF8", 1);
-          drawText(ctx2, `\u9690\u85CF\u7279\u8D28\u89C9\u9192\uFF1A${u.playerName} \u89E3\u9501\u3010${u.trait}\u3011`, 822, 322, {
-            size: 11.5,
-            bold: true,
-            color: "#7DD3FC"
-          });
-        }
+        drawText(ctx2, `${m.minute}' \u5168\u573A\u7EC8\u573A\u54E8\u54CD`, 1246, 36, { size: 12, color: THEME.TX2, align: "right", mono: true });
       }
-      drawRoundRect(ctx2, 16, 360, 1248, 264, 10, THEME.BG_PANEL, THEME.BORDER);
-      drawButton(ctx2, hits, 36, 368, 198, 24, "\u653B\u9632\u52A8\u91CF\u4E0E\u7403\u5458\u8BC4\u5206", () => {
-        this.recapTab = "analytics";
-      }, { active: this.recapTab === "analytics", fontSize: 11 });
-      drawButton(ctx2, hits, 242, 368, 148, 24, "\u672C\u8F6E\u5168\u90E8\u8D5B\u679C", () => {
-        this.recapTab = "results";
-      }, { active: this.recapTab === "results", fontSize: 11 });
-      if (this.recapTab === "analytics" && m) {
-        const smX = 36, smY = 414, smW = 574, smH = 194;
-        drawRoundRect(ctx2, smX, smY, smW, smH, 8, THEME.BG_CARD, THEME.BORDER);
-        const momBuckets = new Array(18).fill(0);
-        const momGoalBuckets = [];
-        for (const ev of m.events) {
-          const b = Math.max(0, Math.min(17, Math.floor(Math.max(0, ev.minute - 0.01) / 5)));
-          const sign = ev.team === "home" ? 1 : -1;
-          let w = 0;
-          if (ev.type === "goal") {
-            w = 5.5;
-            momGoalBuckets.push({ bucket: b, team: ev.team, minute: ev.minute });
-          } else if (ev.type === "shot" || ev.type === "save" || ev.type === "miss") {
-            w = 2.2 + (ev.xG ? ev.xG * 4.5 : 0);
-          } else if (ev.type === "corner") {
-            w = 1.4;
-          } else if (ev.type === "pass") {
-            w = 0.25;
-          } else if (ev.type === "tackle" || ev.type === "interception") {
-            w = 0.65;
-          }
-          momBuckets[b] += sign * w;
-        }
-        const maxMom = Math.max(4.5, ...momBuckets.map((v) => Math.abs(v)));
-        const mPadL = 34, mPadR = 14, mPadT = 22, mPadB = 22;
-        const mPlotW = smW - mPadL - mPadR;
-        const mPlotH = smH - mPadT - mPadB;
-        const midY = smY + mPadT + mPlotH / 2;
-        const halfH = mPlotH / 2 - 4;
-        ctx2.strokeStyle = "rgba(148, 163, 184, 0.28)";
-        ctx2.lineWidth = 1;
-        ctx2.beginPath();
-        ctx2.moveTo(smX + mPadL, midY);
-        ctx2.lineTo(smX + mPadL + mPlotW, midY);
-        ctx2.stroke();
-        ctx2.strokeStyle = "rgba(148, 163, 184, 0.12)";
-        ctx2.setLineDash([3, 3]);
-        [midY - halfH * 0.6, midY + halfH * 0.6].forEach((gy) => {
-          ctx2.beginPath();
-          ctx2.moveTo(smX + mPadL, gy);
-          ctx2.lineTo(smX + mPadL + mPlotW, gy);
-          ctx2.stroke();
-        });
-        ctx2.setLineDash([]);
-        drawText(ctx2, m.homeName.slice(0, 4), smX + 6, smY + mPadT + 10, { size: 9, bold: true, color: "#F87171" });
-        drawText(ctx2, m.awayName.slice(0, 4), smX + 6, smY + smH - mPadB - 10, { size: 9, bold: true, color: "#60A5FA" });
-        const momBarProg = easeOutCubic(Math.min(1, Math.max(0.08, this.recapEnterTimer / 0.62)));
-        const slotW = mPlotW / 18;
-        const barW = Math.max(10, slotW - 6);
-        const userIsHomeSide = m.homeName === club.name;
-        for (let bi = 0; bi < 18; bi++) {
-          const val = momBuckets[bi];
-          const ratio = Math.min(1, Math.abs(val) / maxMom);
-          const bh = Math.max(3, ratio * halfH * momBarProg);
-          const bx = smX + mPadL + bi * slotW + (slotW - barW) / 2;
-          if (val >= 0) {
-            const col = userIsHomeSide ? "#FB923C" : "#F87171";
-            drawRoundRect(ctx2, bx, midY - bh, barW, bh, 3, col);
-          } else {
-            const col = !userIsHomeSide ? "#38BDF8" : "#60A5FA";
-            drawRoundRect(ctx2, bx, midY, barW, bh, 3, col);
-          }
-        }
-        for (const gb of momGoalBuckets) {
-          const gx = smX + mPadL + (gb.bucket + 0.5) * slotW;
-          const gy = gb.team === "home" ? smY + mPadT + 8 : smY + smH - mPadB - 8;
-          ctx2.fillStyle = "#FACC15";
-          ctx2.beginPath();
-          ctx2.arc(gx, gy, 4.5, 0, Math.PI * 2);
-          ctx2.fill();
-          drawText(ctx2, `${gb.minute}'`, gx, gy + (gb.team === "home" ? -9 : 9), {
-            size: 8.5,
-            bold: true,
-            color: "#FACC15",
-            align: "center",
-            mono: true
-          });
-        }
-        [0, 15, 30, 45, 60, 75, 90].forEach((min) => {
-          const gx = smX + mPadL + min / 90 * mPlotW;
-          drawText(ctx2, min === 45 ? "HT" : `${min}'`, gx, smY + smH - 10, {
-            size: 9,
-            color: min === 45 ? THEME.GOLD_LIGHT : THEME.TX3,
-            align: "center",
-            mono: true
-          });
-        });
-        drawText(ctx2, `\u5206\u65F6\u6BB5\u653B\u9632\u52A8\u91CF\u56FE (0'~90') \xB7 ${m.homeName} (\u4E0A) vs ${m.awayName} (\u4E0B) \xB7 \u91D1\u70B9=\u8FDB\u7403`, smX + smW / 2, smY - 11, {
-          size: 11,
-          color: THEME.TX2,
-          align: "center"
-        });
-        const xgX = 638, xgY = 408, xgW = 606, xgH = 202;
-        drawRoundRect(ctx2, xgX, xgY, xgW, xgH, 8, THEME.BG_CARD, THEME.BORDER);
-        const userSide = m.homeName === club.name ? "home" : "away";
+      const userSide = m ? m.homeName === club.name ? "home" : "away" : "home";
+      const growthMap = league.getLastMatchGrowth();
+      const userSquadMap = new Map(club.squad.map((sp) => [sp.id, sp]));
+      const ratedList = [];
+      if (m) {
         const myScoreVal = userSide === "home" ? m.homeScore : m.awayScore;
         const oppScoreVal = userSide === "home" ? m.awayScore : m.homeScore;
         const teamBonus = myScoreVal > oppScoreVal ? 0.4 : myScoreVal === oppScoreVal ? 0.1 : -0.1;
-        const growthMap = league.getLastMatchGrowth();
-        const userSquadMap = new Map(club.squad.map((sp) => [sp.id, sp]));
-        const starters = m.players.filter((p) => p.team === userSide && !p.subbedIn).slice(0, 11);
-        const rated = starters.map((p) => {
+        const seenIds = /* @__PURE__ */ new Set();
+        const allUserPlayed = [...m.players, ...m.subbedOutPlayers ?? []].filter((p) => {
+          if (p.team !== userSide || seenIds.has(p.id)) return false;
+          seenIds.add(p.id);
+          return true;
+        });
+        for (const p of allUserPlayed) {
           const ms = p.matchStats;
           const g = growthMap[p.id];
           const dp = userSquadMap.get(p.id);
           const passAcc = ms.passes >= 6 ? ms.passesSuccess / ms.passes : 0.7;
           const chemBonus = g ? Math.min(0.45, g.chemGain * 0.025) : 0;
           const traitBonus = g?.unlockedTrait ? 0.55 : dp?.traits?.length || p.traits?.length ? 0.15 : 0;
-          const raw = 5.7 + teamBonus + ms.goals * 1.35 + ms.assists * 0.85 + ms.shots * 0.14 + ms.passesSuccess * 0.035 + (passAcc >= 0.82 ? 0.25 : 0) + (ms.tackles + ms.interceptions) * 0.24 + ms.saves * 0.42 + (p.role === "GK" && oppScoreVal === 0 ? 0.75 : 0) + chemBonus + traitBonus;
+          const subBonus = p.subbedIn && (ms.goals > 0 || ms.assists > 0) ? 0.3 : 0;
+          const raw = 5.7 + teamBonus + subBonus + ms.goals * 1.35 + ms.assists * 0.85 + ms.shots * 0.14 + ms.passesSuccess * 0.035 + (passAcc >= 0.82 ? 0.25 : 0) + (ms.tackles + ms.interceptions) * 0.24 + ms.saves * 0.42 + (p.role === "GK" && oppScoreVal === 0 ? 0.75 : 0) + chemBonus + traitBonus;
           const rating = Math.max(5.2, Math.min(10, Math.round(raw * 10) / 10));
           const statIcons = [];
           if (ms.goals > 0) statIcons.push({ ic: "ball", val: ms.goals });
@@ -38188,140 +38295,589 @@
             if (g && g.chemGain > 0) gainParts.push(`\u9ED8+${g.chemGain.toFixed(1)}`);
           }
           const keyTrait = g?.unlockedTrait ? void 0 : p.goldTraits?.[0] || p.traits?.[0] || dp?.traits?.[0];
-          return {
+          ratedList.push({
             player: p,
+            dp,
             rating,
             statIcons: statIcons.slice(0, 3),
             gainText: gainParts.join(" "),
             keyTrait,
             isUnlocked: !!g?.unlockedTrait,
             bestPartner: g?.bestPartner
+          });
+        }
+        ratedList.sort((a, b) => b.rating - a.rating);
+      }
+      ctx2.save();
+      ctx2.globalAlpha = pHero;
+      ctx2.translate(0, (1 - pHero) * 12);
+      if (m) {
+        const userIsHome = m.homeName === club.name;
+        const myScore = userIsHome ? m.homeScore : m.awayScore;
+        const oppScore = userIsHome ? m.awayScore : m.homeScore;
+        const isWin = myScore > oppScore;
+        const isDraw = myScore === oppScore;
+        const resultTag = isWin ? "\u6BD4\u8D5B\u80DC\u5229" : isDraw ? "\u63E1\u624B\u8A00\u548C" : "\u9057\u61BE\u60DC\u8D25";
+        const resultColor = isWin ? THEME.GREEN : isDraw ? THEME.GOLD_LIGHT : THEME.RED_LIGHT;
+        const homeClub = st.clubs.find((c) => c.name === m.homeName) || club;
+        const awayClub = st.clubs.find((c) => c.name === m.awayName) || club;
+        const storyTags = [];
+        if (isWin) {
+          let hCur = 0;
+          let aCur = 0;
+          let trailed = false;
+          let lastUserGoalMin = 0;
+          for (const ev of m.events) {
+            if (ev.type === "goal") {
+              if (ev.team === "home") hCur++;
+              else aCur++;
+              const myCur = userIsHome ? hCur : aCur;
+              const oppCur = userIsHome ? aCur : hCur;
+              if (myCur < oppCur) trailed = true;
+              if (ev.team === userSide) lastUserGoalMin = ev.minute;
+            }
+          }
+          if (lastUserGoalMin >= 85 && myScore - oppScore === 1) {
+            storyTags.push({ label: "\u8BFB\u79D2\u7EDD\u6740", bg: "#78350F", col: "#FDE047" });
+          }
+          if (trailed) {
+            storyTags.push({ label: "\u9006\u8F6C\u7FFB\u76D8", bg: "#4C1D95", col: "#E9D5FF" });
+          }
+          if (oppScore === 0) {
+            storyTags.push({ label: "\u96F6\u5C01\u9501\u6B7B", bg: "#064E3B", col: "#6EE7B7" });
+          }
+          if (myScore >= 3) {
+            storyTags.push({ label: "\u706B\u529B\u5168\u5F00", bg: "#7F1D1D", col: "#FCA5A5" });
+          }
+        }
+        drawChamferPanel(
+          ctx2,
+          16,
+          70,
+          780,
+          216,
+          12,
+          THEME.BG_PANEL,
+          isWin ? THEME.GREEN : isDraw ? THEME.BORDER_GOLD : THEME.RED_LIGHT,
+          1.5,
+          resultColor
+        );
+        if (isWin) {
+          drawFoilShimmer(ctx2, 16, 70, 780, 216, this.animClock * 0.7, "rgba(34, 197, 94, 0.14)");
+        }
+        drawBadge(ctx2, 32, 82, 92, 22, resultTag, "#1E293B", resultColor);
+        storyTags.slice(0, 3).forEach((tg, ti) => {
+          drawBadge(ctx2, 132 + ti * 86, 82, 78, 22, tg.label, tg.bg, tg.col);
+        });
+        drawClubCrest(ctx2, 162, 130, 24, homeClub);
+        drawText(ctx2, m.homeName + (homeClub.isUser ? " (\u6211)" : ""), 196, 130, {
+          size: 16,
+          bold: true,
+          color: homeClub.isUser ? THEME.GOLD_LIGHT : THEME.TX1
+        });
+        const animHomeScore = Math.round(m.homeScore * pScore);
+        const animAwayScore = Math.round(m.awayScore * pScore);
+        drawRoundRect(ctx2, 342, 102, 128, 50, 10, THEME.BG_CARD, THEME.GOLD, 1.4);
+        drawText(ctx2, `${animHomeScore} : ${animAwayScore}`, 406, 127, {
+          size: 28,
+          bold: true,
+          color: THEME.TX1,
+          align: "center",
+          mono: true
+        });
+        drawClubCrest(ctx2, 648, 130, 24, awayClub);
+        drawText(ctx2, m.awayName + (awayClub.isUser ? " (\u6211)" : ""), 614, 130, {
+          size: 16,
+          bold: true,
+          color: awayClub.isUser ? THEME.GOLD_LIGHT : THEME.TX1,
+          align: "right"
+        });
+        const h = m.stats.home;
+        const a = m.stats.away;
+        const totPoss = h.possessionTicks + a.possessionTicks || 1;
+        const hPoss = Math.round(h.possessionTicks / totPoss * 100);
+        const aPoss = 100 - hPoss;
+        const hDef = h.tackles + h.interceptions;
+        const aDef = a.tackles + a.interceptions;
+        const compRows = [
+          {
+            label: "\u63A7\u7403\u7387",
+            leftVal: hPoss,
+            rightVal: aPoss,
+            leftTxt: `${Math.round(hPoss * pBars)}%`,
+            rightTxt: `${Math.round(aPoss * pBars)}%`
+          },
+          {
+            label: "\u5C04\u95E8(\u6B63)",
+            leftVal: h.shots,
+            rightVal: a.shots,
+            leftTxt: `${Math.round(h.shots * pBars)}(${Math.round(h.shotsOnTarget * pBars)})`,
+            rightTxt: `${Math.round(a.shots * pBars)}(${Math.round(a.shotsOnTarget * pBars)})`
+          },
+          {
+            label: "\u9884\u671F\u8FDB\u7403 xG",
+            leftVal: h.xG,
+            rightVal: a.xG,
+            leftTxt: (h.xG * pBars).toFixed(2),
+            rightTxt: (a.xG * pBars).toFixed(2)
+          },
+          {
+            label: "\u62A2\u65AD / \u62E6\u622A",
+            leftVal: hDef,
+            rightVal: aDef,
+            leftTxt: `${Math.round(hDef * pBars)}`,
+            rightTxt: `${Math.round(aDef * pBars)}`
+          }
+        ];
+        const barCenterX = 406;
+        const halfBarMax = 218;
+        const leftColColor = userIsHome ? THEME.GOLD_LIGHT : "#F87171";
+        const rightColColor = !userIsHome ? "#38BDF8" : "#60A5FA";
+        compRows.forEach((cr, ci) => {
+          const ry = 166 + ci * 27;
+          const sum = Math.max(0.01, cr.leftVal + cr.rightVal);
+          const lRatio = cr.leftVal / sum * pBars;
+          const rRatio = cr.rightVal / sum * pBars;
+          const lW = Math.max(4, Math.round(lRatio * halfBarMax));
+          const rW = Math.max(4, Math.round(rRatio * halfBarMax));
+          drawText(ctx2, cr.leftTxt, barCenterX - halfBarMax - 12, ry + 8, {
+            size: 11.5,
+            bold: cr.leftVal >= cr.rightVal,
+            color: cr.leftVal >= cr.rightVal ? leftColColor : THEME.TX2,
+            align: "right",
+            mono: true
+          });
+          drawRoundRect(ctx2, barCenterX - halfBarMax - 4, ry + 3, halfBarMax, 10, 4, "rgba(15, 23, 42, 0.88)");
+          drawRoundRect(ctx2, barCenterX - 4 - lW, ry + 3, lW, 10, 4, leftColColor);
+          drawText(ctx2, cr.label, barCenterX, ry + 20, {
+            size: 9.5,
+            color: THEME.TX3,
+            align: "center"
+          });
+          drawRoundRect(ctx2, barCenterX + 4, ry + 3, halfBarMax, 10, 4, "rgba(15, 23, 42, 0.88)");
+          drawRoundRect(ctx2, barCenterX + 4, ry + 3, rW, 10, 4, rightColColor);
+          drawText(ctx2, cr.rightTxt, barCenterX + halfBarMax + 12, ry + 8, {
+            size: 11.5,
+            bold: cr.rightVal >= cr.leftVal,
+            color: cr.rightVal >= cr.leftVal ? rightColColor : THEME.TX2,
+            align: "left",
+            mono: true
+          });
+        });
+        const mvp = ratedList[0];
+        ctx2.save();
+        ctx2.globalAlpha = Math.max(0.05, Math.min(1, pMvp));
+        ctx2.translate(0, (1 - Math.min(1, pMvp)) * 10);
+        drawChamferPanel(ctx2, 810, 70, 454, 216, 12, "rgba(20, 26, 46, 0.96)", THEME.GOLD_LIGHT, 1.8, THEME.GOLD_LIGHT);
+        drawFoilShimmer(ctx2, 810, 70, 454, 216, this.animClock * 1.1, "rgba(250, 204, 21, 0.22)");
+        drawBadge(ctx2, 826, 82, 148, 22, "MATCH MVP \xB7 \u5168\u573A\u6700\u4F73", "#78350F", THEME.GOLD_LIGHT);
+        if (mvp) {
+          const mp = mvp.player;
+          const dp = mvp.dp;
+          const shirtTxt = mp.shirtNumber ? `#${mp.shirtNumber} ` : "";
+          if (mp.subbedIn) {
+            drawBadge(ctx2, 980, 82, 74, 22, "\u66FF\u8865\u5947\u5175", "#064E3B", "#6EE7B7");
+          }
+          const animRating = (mvp.rating * Math.min(1, pMvp)).toFixed(1);
+          drawRoundRect(ctx2, 1188, 78, 60, 42, 8, "#0F172A", THEME.GOLD_LIGHT, 1.6);
+          drawText(ctx2, animRating, 1218, 99, {
+            size: 21,
+            bold: true,
+            color: THEME.GOLD_LIGHT,
+            align: "center",
+            mono: true
+          });
+          const fakeDp = dp ?? {
+            id: mp.id,
+            name: mp.name,
+            role: mp.role,
+            shirtNumber: mp.shirtNumber,
+            attributes: mp.attributes,
+            traits: mp.traits,
+            fitness: mp.fitness,
+            ca: 75,
+            cost: 100,
+            tier: "A",
+            age: 25,
+            trait: mp.traits?.[0] ?? "",
+            seasonStats: { appearances: 1, goals: mp.matchStats.goals, assists: mp.matchStats.assists, cleanSheets: 0, yellowCards: 0, redCards: 0 }
           };
-        }).sort((a, b) => b.rating - a.rating);
-        const avgRating = rated.length > 0 ? (rated.reduce((s, r) => s + r.rating, 0) / rated.length).toFixed(1) : "6.5";
-        const totalChemGain = rated.reduce((s, r) => s + (growthMap[r.player.id]?.chemGain ?? 0), 0);
-        rated.forEach((item, idx) => {
-          const col = idx < 6 ? 0 : 1;
-          const row = idx < 6 ? idx : idx - 6;
-          const rx = xgX + 6 + col * 300;
-          const ry = xgY + 3 + row * 35;
-          const rw2 = 294;
-          const rh = 33;
-          const isMvp = idx === 0;
+          drawPlayerAvatar(ctx2, 828, 116, 68, 86, fakeDp, club, { radius: 8 });
+          drawBadge(ctx2, 908, 118, 36, 18, mp.role, "#1E293B", THEME.TX1);
+          if (dp?.tier) drawBadge(ctx2, 948, 118, 24, 18, dp.tier, tierColor(dp.tier));
+          drawText(ctx2, fitText(ctx2, `${shirtTxt}${mp.name}`, 196, 18, true), 908, 152, {
+            size: 18,
+            bold: true,
+            color: THEME.TX1
+          });
+          const ms = mp.matchStats;
+          const distKm = ((ms.distanceM ?? 0) / 1e3).toFixed(1);
+          const mvpLine1 = mp.role === "GK" ? `\u6251\u6551 ${ms.saves} \xB7 \u6210\u529F\u4F20\u7403 ${ms.passesSuccess} \xB7 \u8DD1\u52A8 ${distKm}km` : `\u8FDB\u7403 ${ms.goals} \xB7 \u52A9\u653B ${ms.assists} \xB7 \u62A2\u65AD\u62E6\u622A ${ms.tackles + ms.interceptions} \xB7 \u8DD1\u52A8 ${distKm}km`;
+          drawText(ctx2, mvpLine1, 908, 178, { size: 11.5, color: "#7DD3FC", mono: true });
+          const mvpNote = mvp.isUnlocked ? `\u2605 ${mvp.gainText}` : mvp.bestPartner ? `\u9EC4\u91D1\u8FDE\u7EBF\uFF1A${mvp.bestPartner} \xB7 ${mvp.gainText || "\u5168\u573A\u6838\u5FC3\u9A71\u52A8"}` : mvp.keyTrait ? `\u6838\u5FC3\u7279\u8D28\uFF1A\u3010${mvp.keyTrait}\u3011 \xB7 ${mvp.gainText || "\u7EDF\u6CBB\u5168\u573A"}` : mvp.gainText || "\u5168\u573A\u6838\u5FC3\u9A71\u52A8 \xB7 \u8BC4\u5206\u51A0\u7EDD\u5168\u961F";
+          drawRoundRect(ctx2, 908, 196, 340, 32, 6, "rgba(120, 53, 15, 0.28)", "rgba(250, 204, 21, 0.45)");
+          drawText(ctx2, fitText(ctx2, mvpNote, 324, 11, true), 918, 212, {
+            size: 11,
+            bold: true,
+            color: mvp.isUnlocked ? "#38BDF8" : THEME.GOLD_LIGHT
+          });
+          drawText(ctx2, "\u70B9\u51FB\u5361\u9762\u67E5\u770B\u7403\u5458\u5B8C\u6574\u6863\u6848 \u25B6", 1246, 266, { size: 10, color: THEME.TX3, align: "right" });
+          if (dp) {
+            hits.add(810, 70, 454, 216, () => {
+              SoundEngine.playClick();
+              this.fx.onInspectPlayer?.(dp);
+            });
+          }
+        }
+        ctx2.restore();
+      }
+      drawChamferPanel(ctx2, 16, 298, 620, 322, 10, THEME.BG_PANEL, THEME.BORDER);
+      drawText(ctx2, "\u653B\u9632\u52A8\u91CF\u4E0E\u6218\u672F\u65F6\u95F4\u8F74 (0'\u201390')", 32, 318, { size: 13.5, bold: true, color: THEME.GOLD_LIGHT });
+      drawText(ctx2, "\u91D1\u70B9=\u8FDB\u7403 \xB7 \u9752/\u7D2B\u6807=\u6362\u4EBA\u4E0E\u6218\u672F\u62D0\u70B9", 620, 318, { size: 10.5, color: THEME.TX3, align: "right" });
+      if (m) {
+        const smX = 30, smY = 334, smW = 592, smH = 204;
+        drawRoundRect(ctx2, smX, smY, smW, smH, 8, THEME.BG_CARD, THEME.BORDER);
+        const momBuckets = new Array(18).fill(0);
+        const momGoalBuckets = [];
+        const momTacticMarkers = [];
+        for (const ev of m.events) {
+          const b = Math.max(0, Math.min(17, Math.floor(Math.max(0, ev.minute - 0.01) / 5)));
+          const sign = ev.team === "home" ? 1 : -1;
+          let w = 0;
+          if (ev.type === "goal") {
+            w = 5.5;
+            momGoalBuckets.push({ bucket: b, team: ev.team, minute: ev.minute });
+          } else if (ev.type === "shot" || ev.type === "save" || ev.type === "miss") {
+            w = 2.2 + (ev.xG ? ev.xG * 4.5 : 0);
+          } else if (ev.type === "corner") {
+            w = 1.4;
+          } else if (ev.type === "pass") {
+            w = 0.25;
+          } else if (ev.type === "tackle" || ev.type === "interception") {
+            w = 0.65;
+          }
+          momBuckets[b] += sign * w;
+          if (ev.team === userSide && ev.type === "substitution") {
+            momTacticMarkers.push({ minute: ev.minute, kind: "sub", label: "\u6362" });
+          } else if (ev.team === userSide && (ev.type === "tactic" || ev.type === "commentary" && (ev.text.includes("Zone") || ev.text.includes("\u6307\u4EE4") || ev.text.includes("\u6838\u5FC3")))) {
+            momTacticMarkers.push({ minute: ev.minute, kind: "tactic", label: "\u7B56" });
+          }
+        }
+        const maxMom = Math.max(4.5, ...momBuckets.map((v) => Math.abs(v)));
+        const mPadL = 36, mPadR = 14, mPadT = 22, mPadB = 26;
+        const mPlotW = smW - mPadL - mPadR;
+        const mPlotH = smH - mPadT - mPadB;
+        const midY = smY + mPadT + mPlotH / 2;
+        const halfH = mPlotH / 2 - 4;
+        ctx2.strokeStyle = "rgba(148, 163, 184, 0.28)";
+        ctx2.lineWidth = 1;
+        ctx2.beginPath();
+        ctx2.moveTo(smX + mPadL, midY);
+        ctx2.lineTo(smX + mPadL + mPlotW, midY);
+        ctx2.stroke();
+        ctx2.strokeStyle = "rgba(148, 163, 184, 0.12)";
+        ctx2.setLineDash([3, 3]);
+        [midY - halfH * 0.6, midY + halfH * 0.6].forEach((gy) => {
+          ctx2.beginPath();
+          ctx2.moveTo(smX + mPadL, gy);
+          ctx2.lineTo(smX + mPadL + mPlotW, gy);
+          ctx2.stroke();
+        });
+        ctx2.setLineDash([]);
+        drawText(ctx2, m.homeName.slice(0, 4), smX + 6, smY + mPadT + 10, { size: 9, bold: true, color: "#F87171" });
+        drawText(ctx2, m.awayName.slice(0, 4), smX + 6, smY + smH - mPadB - 18, { size: 9, bold: true, color: "#60A5FA" });
+        const slotW = mPlotW / 18;
+        const barW = Math.max(10, slotW - 6);
+        const userIsHomeSide = m.homeName === club.name;
+        for (let bi = 0; bi < 18; bi++) {
+          const barProg = easeOutCubic(Math.max(0.06, Math.min(1, (t - 0.18 - bi * 0.025) / 0.34)));
+          const val = momBuckets[bi];
+          const ratio = Math.min(1, Math.abs(val) / maxMom);
+          const bh = Math.max(3, ratio * halfH * barProg);
+          const bx = smX + mPadL + bi * slotW + (slotW - barW) / 2;
+          if (val >= 0) {
+            const col = userIsHomeSide ? "#FB923C" : "#F87171";
+            drawRoundRect(ctx2, bx, midY - bh, barW, bh, 3, col);
+          } else {
+            const col = !userIsHomeSide ? "#38BDF8" : "#60A5FA";
+            drawRoundRect(ctx2, bx, midY, barW, bh, 3, col);
+          }
+        }
+        for (const gb of momGoalBuckets) {
+          const revealT = 0.18 + gb.bucket * 0.025 + 0.16;
+          if (t < revealT) continue;
+          const pop = easeOutBack(Math.min(1, (t - revealT) / 0.25));
+          const gx = smX + mPadL + (gb.bucket + 0.5) * slotW;
+          const gy = gb.team === "home" ? smY + mPadT + 8 : smY + smH - mPadB - 8;
+          ctx2.save();
+          ctx2.fillStyle = "#FACC15";
+          ctx2.beginPath();
+          ctx2.arc(gx, gy, 4.5 * Math.min(1.2, pop), 0, Math.PI * 2);
+          ctx2.fill();
+          drawText(ctx2, `${gb.minute}'`, gx, gy + (gb.team === "home" ? -9 : 9), {
+            size: 8.5,
+            bold: true,
+            color: "#FACC15",
+            align: "center",
+            mono: true
+          });
+          ctx2.restore();
+        }
+        const shownMarkerBuckets = /* @__PURE__ */ new Set();
+        for (const tm of momTacticMarkers.slice(0, 6)) {
+          const b = Math.max(0, Math.min(17, Math.floor(Math.max(0, tm.minute - 0.01) / 5)));
+          if (shownMarkerBuckets.has(b)) continue;
+          shownMarkerBuckets.add(b);
+          const mx = Math.max(smX + mPadL + 10, smX + mPadL + tm.minute / 90 * mPlotW);
+          const my = smY + smH - mPadB + 2;
+          const col = tm.kind === "sub" ? "#38BDF8" : "#C084FC";
+          drawRoundRect(ctx2, mx - 7, my - 7, 14, 14, 4, "#0F172A", col, 1.1);
+          drawText(ctx2, tm.label, mx, my, { size: 8.5, bold: true, color: col, align: "center" });
+        }
+        [0, 15, 30, 45, 60, 75, 90].forEach((min) => {
+          const gx = smX + mPadL + min / 90 * mPlotW;
+          drawText(ctx2, min === 45 ? "HT" : `${min}'`, gx, smY + smH - 9, {
+            size: 9,
+            color: min === 45 ? THEME.GOLD_LIGHT : THEME.TX3,
+            align: "center",
+            mono: true
+          });
+        });
+        const goals = m.events.filter((e) => e.type === "goal").slice(0, 3);
+        const evBoxY = 546;
+        drawRoundRect(ctx2, 30, evBoxY, 592, 62, 8, THEME.BG_CARD, THEME.BORDER);
+        if (goals.length === 0) {
+          drawText(ctx2, "\u672C\u573A\u53CC\u65B9\u4E92\u4EA4\u767D\u5377 \xB7 \u653B\u9632\u62C9\u952F\u6FC0\u70C8", 44, evBoxY + 20, { size: 11.5, color: THEME.TX2 });
+        } else {
+          goals.forEach((g, gi) => {
+            const gx = 40 + gi * 194;
+            const isUserGoal = g.team === userSide;
+            drawRoundRect(ctx2, gx, evBoxY + 8, 186, 22, 5, isUserGoal ? "rgba(20, 83, 45, 0.36)" : "rgba(127, 29, 29, 0.30)", isUserGoal ? THEME.GREEN : "#F87171", 0.9);
+            drawText(ctx2, fitText(ctx2, `${g.minute}' ${g.playerName}`, 174, 10.5, true), gx + 93, evBoxY + 19, {
+              size: 10.5,
+              bold: true,
+              color: isUserGoal ? "#86EFAC" : "#FCA5A5",
+              align: "center"
+            });
+          });
+        }
+        drawText(ctx2, fitText(ctx2, st.lastMatchReview || "\u6218\u672F\u6267\u884C\u7A33\u5065\uFF0C\u51C6\u5907\u8FCE\u63A5\u4E0B\u4E00\u8F6E\u6311\u6218", 568, 11), 42, evBoxY + 46, {
+          size: 11,
+          color: "#7DD3FC"
+        });
+      }
+      drawChamferPanel(ctx2, 650, 298, 614, 322, 10, THEME.BG_PANEL, THEME.BORDER);
+      drawButton(ctx2, hits, 666, 306, 200, 26, `\u51FA\u573A\u7403\u5458\u8BC4\u5206 (${ratedList.length}\u4EBA)`, () => {
+        this.recapTab = "analytics";
+      }, { active: this.recapTab === "analytics", fontSize: 11 });
+      drawButton(ctx2, hits, 874, 306, 150, 26, "\u672C\u8F6E\u5168\u8054\u76DF\u8D5B\u679C", () => {
+        this.recapTab = "results";
+      }, { active: this.recapTab === "results", fontSize: 11 });
+      if (this.recapTab === "analytics" && m) {
+        const pageSize = 6;
+        const totalPages = Math.max(1, Math.ceil(ratedList.length / pageSize));
+        if (this.ratingPage >= totalPages) this.ratingPage = totalPages - 1;
+        const slice = ratedList.slice(this.ratingPage * pageSize, (this.ratingPage + 1) * pageSize);
+        const avgRating = ratedList.length > 0 ? (ratedList.reduce((s, r) => s + r.rating, 0) / ratedList.length).toFixed(1) : "6.5";
+        const totalChemGain = ratedList.reduce((s, r) => s + (growthMap[r.player.id]?.chemGain ?? 0), 0);
+        drawText(ctx2, `\u5168\u961F\u5747\u5206 ${avgRating} \xB7 \u9ED8\u5951 +${totalChemGain.toFixed(0)}`, 1248, 319, {
+          size: 11,
+          bold: true,
+          color: THEME.GOLD_LIGHT,
+          align: "right"
+        });
+        slice.forEach((item, localIdx) => {
+          const globalIdx = this.ratingPage * pageSize + localIdx;
+          const rowP = easeOutCubic(Math.max(0.05, Math.min(1, (t - 0.25 - localIdx * 0.05) / 0.28)));
+          const rx = 666 + (1 - rowP) * 16;
+          const ry = 340 + localIdx * 40;
+          const rw2 = 582;
+          const rh = 36;
+          const isMvp = globalIdx === 0;
           const rColor = item.rating >= 8 ? THEME.GREEN : item.rating >= 7 ? THEME.GOLD_LIGHT : THEME.TX1;
+          ctx2.save();
+          ctx2.globalAlpha = rowP;
           drawRoundRect(
             ctx2,
             rx,
             ry,
             rw2,
             rh,
-            5,
-            isMvp ? "rgba(120, 53, 15, 0.34)" : "rgba(11, 17, 30, 0.78)",
-            isMvp ? THEME.GOLD_LIGHT : item.isUnlocked ? "#38BDF8" : "rgba(148, 163, 184, 0.16)",
-            isMvp || item.isUnlocked ? 1.2 : 0.8
+            6,
+            isMvp ? "rgba(120, 53, 15, 0.34)" : THEME.BG_CARD,
+            isMvp ? THEME.GOLD_LIGHT : item.isUnlocked ? "#38BDF8" : THEME.BORDER,
+            isMvp || item.isUnlocked ? 1.3 : 1
           );
           if (isMvp) {
-            drawBadge(ctx2, rx + 4, ry + 7, 30, 18, "MVP", "#78350F", THEME.GOLD_LIGHT);
+            drawBadge(ctx2, rx + 8, ry + 8, 36, 20, "MVP", "#78350F", THEME.GOLD_LIGHT);
           } else {
-            drawText(ctx2, `${idx + 1}`, rx + 13, ry + 16.5, { token: "MICRO", bold: true, color: THEME.TX3, align: "center", mono: true });
+            drawText(ctx2, `#${globalIdx + 1}`, rx + 24, ry + 18, { size: 11.5, bold: true, color: THEME.TX3, align: "center", mono: true });
           }
-          const nameX = isMvp ? rx + 38 : rx + 24;
-          drawBadge(ctx2, nameX, ry + 8, 28, 16, item.player.role, "#1E293B", THEME.TX2);
-          drawText(ctx2, fitText(ctx2, item.player.name, 84, FONT.MICRO, true, true), nameX + 32, ry + 10, {
-            token: "MICRO",
+          drawBadge(
+            ctx2,
+            rx + 50,
+            ry + 9,
+            34,
+            18,
+            item.player.subbedIn ? "\u66FF\u8865" : "\u9996\u53D1",
+            item.player.subbedIn ? "#0C4A6E" : "#1E293B",
+            item.player.subbedIn ? "#7DD3FC" : THEME.TX2
+          );
+          drawBadge(ctx2, rx + 88, ry + 9, 34, 18, item.player.role, "#1E293B", THEME.TX1);
+          drawText(ctx2, fitText(ctx2, item.player.name, 110, 12.5, true), rx + 128, ry + 18, {
+            size: 12.5,
             bold: true,
             color: isMvp ? THEME.GOLD_LIGHT : THEME.TX1
           });
-          let sx = nameX + 32;
+          let sx = rx + 246;
           item.statIcons.forEach((si) => {
-            sx += drawStatMicro(ctx2, si.ic, `${si.val}`, sx, ry + 24, {
-              iconSize: 10,
-              fontSize: 10,
+            sx += drawStatMicro(ctx2, si.ic, `${si.val}`, sx, ry + 18, {
+              iconSize: 11,
+              fontSize: 11,
               iconColor: THEME.TX3,
-              valueColor: THEME.TX2,
-              gap: 2
+              valueColor: THEME.TX1,
+              gap: 3
             });
-            sx += 6;
+            sx += 10;
           });
           if (item.gainText) {
-            drawText(ctx2, item.gainText, rx + rw2 - 42, ry + 24, {
-              token: "MICRO",
+            drawText(ctx2, item.gainText, rx + rw2 - 58, ry + 18, {
+              size: 10.5,
               bold: item.isUnlocked,
               color: item.isUnlocked ? "#38BDF8" : THEME.GREEN,
-              align: "right",
-              mono: !item.isUnlocked
+              align: "right"
             });
-          }
-          if (item.keyTrait) {
-            drawText(ctx2, `[${item.keyTrait.slice(0, 4)}]`, rx + rw2 - 42, ry + 10, {
-              token: "MICRO",
+          } else if (item.keyTrait) {
+            drawText(ctx2, `[${item.keyTrait.slice(0, 4)}]`, rx + rw2 - 58, ry + 18, {
+              size: 10,
               color: "#C4B5FD",
               align: "right"
             });
-          } else if (item.bestPartner && isMvp) {
-            drawText(ctx2, `\u8FDE\u7EBF:${item.bestPartner.slice(0, 3)}`, rx + rw2 - 42, ry + 10, {
-              token: "MICRO",
-              color: THEME.GOLD_LIGHT,
-              align: "right"
-            });
           }
-          drawRoundRect(ctx2, rx + rw2 - 36, ry + 5, 32, 23, 4, "#0F172A", rColor, 1);
-          drawText(ctx2, item.rating.toFixed(1), rx + rw2 - 20, ry + 16.5, {
-            token: "LABEL",
+          drawRoundRect(ctx2, rx + rw2 - 48, ry + 5, 40, 26, 5, "#0F172A", rColor, 1.1);
+          drawText(ctx2, item.rating.toFixed(1), rx + rw2 - 28, ry + 18, {
+            size: 13,
             bold: true,
             color: rColor,
             align: "center",
             mono: true
           });
+          ctx2.restore();
+          if (item.dp) {
+            hits.add(rx, ry, rw2, rh, () => {
+              SoundEngine.playClick();
+              this.fx.onInspectPlayer?.(item.dp);
+            });
+          }
         });
-        const sumX = xgX + 306;
-        const sumY = xgY + 3 + 5 * 35;
-        drawRoundRect(ctx2, sumX, sumY, 294, 33, 5, "rgba(30, 58, 95, 0.35)", THEME.BORDER_GOLD, 0.9);
-        drawText(ctx2, `\u9996\u53D1\u5747\u5206 ${avgRating} \xB7 \u9ED8\u5951\u603B\u5347\u6E29 +${totalChemGain.toFixed(0)}`, sumX + 147, sumY + 16.5, {
-          token: "MICRO",
-          bold: true,
-          color: THEME.GOLD_LIGHT,
+        drawButton(ctx2, hits, 666, 584, 86, 26, "\u25C0 \u4E0A\u9875", () => {
+          this.ratingPage = Math.max(0, this.ratingPage - 1);
+        }, { disabled: this.ratingPage === 0, fontSize: 10.5 });
+        drawText(ctx2, `\u7B2C ${this.ratingPage + 1} / ${totalPages} \u9875 (\u5171 ${ratedList.length} \u4EBA\u51FA\u573A \xB7 \u70B9\u51FB\u67E5\u770B\u8BE6\u60C5)`, 957, 597, {
+          size: 10.5,
+          color: THEME.TX2,
           align: "center"
         });
-        drawText(
-          ctx2,
-          "\u9996\u53D1 11 \u4EBA\u8D5B\u540E\u8BC4\u5206\u4E0E MVP \u8D21\u732E\u699C \xB7 \u8054\u52A8\u9ED8\u5951/\u9690\u85CF\u7279\u8D28\u4E0E\u672C\u573A\u63D0\u5347",
-          xgX + xgW / 2,
-          xgY - 11,
-          { size: 11, color: THEME.GOLD_LIGHT, align: "center" }
-        );
+        drawButton(ctx2, hits, 1162, 584, 86, 26, "\u4E0B\u9875 \u25B6", () => {
+          this.ratingPage = Math.min(totalPages - 1, this.ratingPage + 1);
+        }, { disabled: this.ratingPage >= totalPages - 1, fontSize: 10.5 });
       } else {
         const targetRound = rd ? rd.roundCompleted : st.currentRound - 1;
         const fixtures = st.fixtures.filter((f) => f.round === targetRound && f.played);
-        fixtures.slice(0, 4).forEach((fx, i) => {
+        const fPageSize = 8;
+        const fPages = Math.max(1, Math.ceil(fixtures.length / fPageSize));
+        if (this.resultsPage >= fPages) this.resultsPage = fPages - 1;
+        const fSlice = fixtures.slice(this.resultsPage * fPageSize, (this.resultsPage + 1) * fPageSize);
+        fSlice.forEach((fx, i) => {
           const col = i % 2;
           const row = Math.floor(i / 2);
-          const bx = 36 + col * 612;
-          const by = 414 + row * 94;
+          const bx = 666 + col * 296;
+          const by = 342 + row * 58;
           const h = st.clubs.find((c) => c.id === fx.homeClubId);
           const a = st.clubs.find((c) => c.id === fx.awayClubId);
           const hasUser = h.isUser || a.isUser;
-          drawRoundRect(ctx2, bx, by, 592, 78, 8, THEME.BG_CARD, hasUser ? THEME.GOLD : THEME.BORDER, hasUser ? 1.5 : 1);
-          drawText(ctx2, h.name, bx + 220, by + 39, { size: 15, bold: h.isUser, align: "right", color: h.isUser ? THEME.GOLD_LIGHT : THEME.TX1 });
-          drawText(ctx2, `${fx.homeGoals} : ${fx.awayGoals}`, bx + 296, by + 39, { size: 20, bold: true, align: "center", mono: true, color: THEME.GOLD_LIGHT });
-          drawText(ctx2, a.name, bx + 372, by + 39, { size: 15, bold: a.isUser, align: "left", color: a.isUser ? THEME.GOLD_LIGHT : THEME.TX1 });
+          drawRoundRect(ctx2, bx, by, 286, 50, 7, THEME.BG_CARD, hasUser ? THEME.GOLD : THEME.BORDER, hasUser ? 1.5 : 1);
+          drawText(ctx2, fitText(ctx2, h.name, 96, 11.5, h.isUser), bx + 114, by + 25, {
+            size: 11.5,
+            bold: h.isUser,
+            align: "right",
+            color: h.isUser ? THEME.GOLD_LIGHT : THEME.TX1
+          });
+          drawText(ctx2, `${fx.homeGoals}:${fx.awayGoals}`, bx + 143, by + 25, {
+            size: 14,
+            bold: true,
+            align: "center",
+            mono: true,
+            color: THEME.GOLD_LIGHT
+          });
+          drawText(ctx2, fitText(ctx2, a.name, 96, 11.5, a.isUser), bx + 172, by + 25, {
+            size: 11.5,
+            bold: a.isUser,
+            align: "left",
+            color: a.isUser ? THEME.GOLD_LIGHT : THEME.TX1
+          });
         });
+        if (fPages > 1) {
+          drawButton(ctx2, hits, 666, 584, 86, 26, "\u25C0 \u4E0A\u9875", () => {
+            this.resultsPage = Math.max(0, this.resultsPage - 1);
+          }, { disabled: this.resultsPage === 0, fontSize: 10.5 });
+          drawText(ctx2, `\u7B2C ${this.resultsPage + 1} / ${fPages} \u9875 (\u5171 ${fixtures.length} \u573A)`, 957, 597, {
+            size: 10.5,
+            color: THEME.TX2,
+            align: "center"
+          });
+          drawButton(ctx2, hits, 1162, 584, 86, 26, "\u4E0B\u9875 \u25B6", () => {
+            this.resultsPage = Math.min(fPages - 1, this.resultsPage + 1);
+          }, { disabled: this.resultsPage >= fPages - 1, fontSize: 10.5 });
+        }
       }
       ctx2.restore();
-      drawButton(
-        ctx2,
-        hits,
-        440,
-        642,
-        400,
-        54,
-        hasPendingReward ? "\u4E0B\u4E00\u6B65\uFF1A\u9886\u53D6\u8D5B\u540E\u8089\u9E3D\u5956\u52B1 (3\u90091) \u25B6" : rd ? "\u4E0B\u4E00\u6B65\uFF1A\u8D5B\u540E\u8865\u5F3A (\u9886\u8BCD\u6761 & \u6362\u65B0\u63F4) \u25B6" : "\u7EE7\u7EED\u4E0B\u4E00\u8F6E \xB7 \u8FD4\u56DE\u95E8\u6237\u9996\u9875 \u25B6",
-        goNext,
-        { variant: "gold", fontSize: 16 }
-      );
-      if (hasPendingReward || rd) {
-        drawFoilShimmer(ctx2, 440, 642, 400, 54, this.animClock * 1.15, "rgba(254, 240, 138, 0.30)");
+      drawChamferPanel(ctx2, 16, 632, 824, 74, 10, "rgba(13, 21, 38, 0.96)", THEME.BORDER_GOLD, 1.2);
+      const userWonNow = m ? (m.homeName === club.name ? m.homeScore : m.awayScore) > (m.homeName === club.name ? m.awayScore : m.homeScore) : true;
+      const rwThumb = AssetLoader.get(userWonNow ? "reward_win" : "reward_draw");
+      if (rwThumb && typeof ctx2.drawImage === "function") {
+        ctx2.save();
+        ctx2.beginPath();
+        ctx2.roundRect(26, 640, 92, 58, 6);
+        ctx2.clip();
+        ctx2.drawImage(rwThumb, 26, 640, 92, 58);
+        ctx2.restore();
+      } else {
+        drawRewardIllustration(ctx2, userWonNow, 26, 640, 92, 58);
       }
+      const rewardTitle = hasPendingCardUnlock ? "\u65B0\u6D41\u6D3E\u6218\u672F\u5361\u89E3\u9501\u5F85\u9886\u53D6" : hasPendingReward ? "\u8D5B\u540E 3 \u9009 1 \u6218\u5229\u54C1\u5DF2\u5C31\u7EEA" : rd ? "\u4E2D\u671F Re-Draft \u8865\u5F3A\u5DF2\u5F00\u542F" : "\u672C\u8F6E\u6536\u76CA\u5DF2\u7ED3\u7B97\u5165\u8D26";
+      drawText(ctx2, rewardTitle, 130, 653, { size: 13.5, bold: true, color: THEME.GOLD_LIGHT });
+      drawText(
+        ctx2,
+        hasPendingReward ? "\u8D5B\u5B63\u5723\u7269 \xB7 \u624B\u724C\u9644\u9B54 \xB7 \u661F\u76D8\u70B9\u6570\u7B49\u4F60\u6311\u9009" : "\u4FF1\u4E50\u90E8\u8D44\u91D1\u4E0E\u79EF\u5206\u699C\u6392\u540D\u5DF2\u5B9E\u65F6\u66F4\u65B0",
+        130,
+        673,
+        { size: 10.5, color: THEME.TX2 }
+      );
+      const popAlpha = Math.max(0.1, Math.min(1, pRewards));
+      ctx2.save();
+      ctx2.globalAlpha = popAlpha;
+      const fundsEarned = summary?.fundsEarned ?? 0;
+      const metaGain = summary?.metaGain ?? 0;
+      const standingsNow = league.getStandings();
+      const curRank = summary?.rankAfter ?? standingsNow.findIndex((r) => r.isUser) + 1;
+      const prevRank = summary?.rankBefore ?? curRank;
+      const rankDelta = prevRank - curRank;
+      const countFunds = Math.round(fundsEarned * Math.min(1, pRewards));
+      drawRoundRect(ctx2, 412, 644, 136, 50, 8, "rgba(20, 83, 45, 0.32)", THEME.GREEN, 1.1);
+      drawText(ctx2, "\u672C\u573A\u8D44\u91D1\u5165\u8D26", 480, 658, { size: 9.5, color: "#86EFAC", align: "center" });
+      drawText(ctx2, `+\xA5${countFunds}\u4E07`, 480, 678, { size: 14.5, bold: true, color: THEME.GREEN, align: "center", mono: true });
+      drawRoundRect(ctx2, 556, 644, 114, 50, 8, "rgba(30, 58, 95, 0.40)", "#38BDF8", 1.1);
+      drawText(ctx2, "\u661F\u76D8\u70B9\u6570", 613, 658, { size: 9.5, color: "#7DD3FC", align: "center" });
+      drawText(ctx2, `+${metaGain} pt`, 613, 678, { size: 14.5, bold: true, color: "#38BDF8", align: "center", mono: true });
+      const rankCol = rankDelta > 0 ? THEME.GREEN : rankDelta < 0 ? THEME.RED_LIGHT : THEME.GOLD_LIGHT;
+      const rankSub = rankDelta > 0 ? `\u25B2 \u5347 ${rankDelta} \u4F4D` : rankDelta < 0 ? `\u25BC \u964D ${Math.abs(rankDelta)} \u4F4D` : "\u540D\u6B21\u7A33\u56FA";
+      drawRoundRect(ctx2, 678, 644, 150, 50, 8, "rgba(120, 53, 15, 0.28)", rankCol, 1.1);
+      drawText(ctx2, `\u7B2C ${curRank} \u540D`, 753, 658, { size: 13, bold: true, color: THEME.GOLD_LIGHT, align: "center" });
+      drawText(ctx2, rankSub, 753, 678, { size: 10.5, bold: true, color: rankCol, align: "center" });
+      ctx2.restore();
+      drawButton(ctx2, hits, 856, 632, 408, 74, nextActionLabel, goNext, { variant: "gold", fontSize: 16.5 });
+      drawFoilShimmer(ctx2, 856, 632, 408, 74, this.animClock * 1.15, "rgba(254, 240, 138, 0.30)");
     }
     renderCardUnlockView(ctx2, hits, league, onContinue, onSave) {
       const st = league.getState();
@@ -40100,7 +40656,7 @@
           ctx2,
           `${summary.tierName ?? "\u8054\u8D5B"} \u7B2C ${summary.finalRank} \u540D \xB7 ${summary.points}\u5206 (${summary.gf}/${summary.ga}) \xB7 ${promoText} \xB7 +${summary.metaPointsEarned}pt`,
           154,
-          92,
+          88,
           { size: 12, color: summary.promotionStatus === "promoted" ? THEME.GREEN : summary.promotionStatus === "relegated" ? THEME.RED_LIGHT : THEME.TX2 }
         );
       }
@@ -40149,15 +40705,17 @@
       const summary = st.lastSummary;
       const isChamp = summary?.isChampion ?? false;
       const isPromo = summary?.promotionStatus === "promoted";
-      drawChamferPanel(ctx2, 64, 118, 460, 486, 12, "rgba(14, 22, 40, 0.88)", THEME.BORDER_GOLD, 1.2);
+      const panelTop = summary?.retiredLegend ? 150 : 122;
+      const panelH = summary?.retiredLegend ? 454 : 482;
+      drawChamferPanel(ctx2, 64, panelTop, 460, panelH, 12, "rgba(14, 22, 40, 0.88)", THEME.BORDER_GOLD, 1.2);
       const celebrateArt = AssetLoader.get("bg_season_ceremony") ?? AssetLoader.get("bg_champion");
       if (celebrateArt && typeof ctx2.drawImage === "function") {
         ctx2.save();
         ctx2.beginPath();
-        ctx2.rect(66, 120, 456, 108);
+        ctx2.rect(66, panelTop + 2, 456, 92);
         ctx2.clip();
         ctx2.globalAlpha = 0.55;
-        ctx2.drawImage(celebrateArt, 66, 110, 456, 148);
+        ctx2.drawImage(celebrateArt, 66, panelTop - 6, 456, 132);
         ctx2.restore();
       }
       const grandCup = AssetLoader.get("trophy_grand_cup");
@@ -40166,15 +40724,15 @@
         const cyOff = (1 - cupEnter) * 18;
         ctx2.save();
         ctx2.globalAlpha = 0.92;
-        ctx2.drawImage(grandCup, 426, 124 + cyOff, 86, 86);
+        ctx2.drawImage(grandCup, 434, panelTop + 6 + cyOff, 76, 76);
         ctx2.restore();
       }
-      drawText(ctx2, "\u8D5B\u5B63\u4E2A\u4EBA\u8363\u8A89\u6BBF\u5802 \xB7 SEASON AWARDS", 84, 144, { size: 14, bold: true, color: THEME.GOLD_LIGHT });
+      drawText(ctx2, "\u8D5B\u5B63\u4E2A\u4EBA\u8363\u8A89\u6BBF\u5802 \xB7 SEASON AWARDS", 84, panelTop + 26, { size: 14, bold: true, color: THEME.GOLD_LIGHT });
       drawText(
         ctx2,
         isChamp ? "\u51A0\u519B\u8363\u8000\u52A0\u5195\uFF01\u5168\u961F\u8F7D\u5165\u4FF1\u4E50\u90E8\u53F2\u518C" : isPromo ? "\u6210\u529F\u51B2\u7EA7\uFF01\u4E0B\u8D5B\u5B63\u8FCE\u6218\u66F4\u5F3A\u5BF9\u624B" : "\u8D5B\u5B63\u5F81\u7A0B\u5706\u6EE1\u6536\u5B98\uFF0C\u603B\u7ED3\u5F97\u5931\u518D\u51FA\u53D1",
         84,
-        168,
+        panelTop + 50,
         { size: 11.5, color: isChamp ? THEME.GOLD_LIGHT : isPromo ? THEME.GREEN : "#93C5FD" }
       );
       const awards = [
@@ -40209,19 +40767,20 @@
       ];
       awards.forEach((aw, i) => {
         const enterP = easeOutBack(Math.max(0, Math.min(1, (this.enterTimer - i * 0.08) / 0.35)));
-        const ay = 224 + i * 92 + (1 - enterP) * 18;
+        const ay = panelTop + 96 + i * 86 + (1 - enterP) * 18;
         ctx2.save();
         ctx2.globalAlpha = Math.max(0.1, enterP);
-        drawRoundRect(ctx2, 82, ay, 424, 78, 8, "rgba(14, 22, 40, 0.9)", aw.color + "88", 1.2);
+        drawRoundRect(ctx2, 82, ay, 424, 74, 8, "rgba(14, 22, 40, 0.9)", aw.color + "88", 1.2);
         drawBadge(ctx2, 96, ay + 12, 84, 22, aw.badge, "#1E293B", aw.color);
         drawText(ctx2, aw.title, 192, ay + 23, { size: 15, bold: true, color: THEME.TX1 });
         drawText(ctx2, aw.sub, 96, ay + 54, { size: 11.5, color: THEME.TX2 });
         drawText(ctx2, aw.value, 490, ay + 39, { size: 18, bold: true, color: aw.color, align: "right", mono: true });
         ctx2.restore();
       });
-      drawChamferPanel(ctx2, 544, 118, 672, 128, 12, THEME.BG_CARD, THEME.BORDER_GOLD, 1.2);
-      drawText(ctx2, "Meta \u6559\u7EC3\u70B9\u6570\u7ED3\u7B97\u660E\u7EC6", 564, 138, { size: 13.5, bold: true, color: THEME.GOLD_LIGHT });
-      drawText(ctx2, `\u5F53\u524D\u603B\u8BA1\uFF1A${st.metaPointsTotal} pt`, 1196, 138, { size: 14, bold: true, color: THEME.GREEN, align: "right", mono: true });
+      const metaTop = summary?.retiredLegend ? 150 : 122;
+      drawChamferPanel(ctx2, 544, metaTop, 672, 102, 12, THEME.BG_CARD, THEME.BORDER_GOLD, 1.2);
+      drawText(ctx2, "Meta \u6559\u7EC3\u70B9\u6570\u7ED3\u7B97\u660E\u7EC6", 564, metaTop + 18, { size: 13.5, bold: true, color: THEME.GOLD_LIGHT });
+      drawText(ctx2, `\u5F53\u524D\u603B\u8BA1\uFF1A${st.metaPointsTotal} pt`, 1196, metaTop + 18, { size: 14, bold: true, color: THEME.GREEN, align: "right", mono: true });
       const bd = summary?.metaBreakdown;
       const items = [
         ["\u6392\u540D\u57FA\u7840\u5956\u52B1", `+${bd?.rankBase ?? summary?.metaPointsEarned ?? 0} pt`, THEME.TX1],
@@ -40231,9 +40790,9 @@
       ];
       items.forEach(([lbl, val, col], idx) => {
         const ix = 564 + idx * 160;
-        drawRoundRect(ctx2, ix, 158, 148, 74, 8, "rgba(14, 22, 40, 0.85)", idx === 3 ? THEME.GOLD_LIGHT : THEME.BORDER);
-        drawText(ctx2, lbl, ix + 74, 180, { size: 10.5, color: THEME.TX2, align: "center" });
-        drawText(ctx2, val, ix + 74, 210, { size: 17, bold: true, color: col, align: "center", mono: true });
+        drawRoundRect(ctx2, ix, metaTop + 34, 148, 60, 8, "rgba(14, 22, 40, 0.85)", idx === 3 ? THEME.GOLD_LIGHT : THEME.BORDER);
+        drawText(ctx2, lbl, ix + 74, metaTop + 51, { size: 10.5, color: THEME.TX2, align: "center" });
+        drawText(ctx2, val, ix + 74, metaTop + 76, { size: 16.5, bold: true, color: col, align: "center", mono: true });
       });
       const memories = summary?.memories ?? [];
       if (memories.length > 0) {
@@ -40838,79 +41397,91 @@
       if (!detailed) {
         const roleMaxW = opts.statusBadge ? 38 : opts.isCaptain ? 42 : 48;
         const roleW2 = Math.min(roleMaxW, Math.max(30, opts.roleLabel.length * 7.5 + 8));
-        drawBadge(ctx2, x + 5, y + 4, roleW2, 14, opts.roleLabel, opts.roleBg, opts.roleFg);
+        drawBadge(ctx2, x + 5, y + 4, roleW2, IS_MOBILE ? 16 : 14, opts.roleLabel, opts.roleBg, opts.roleFg);
         if (opts.statusBadge) {
-          drawBadge(ctx2, x + w - 31, y + 4, 27, 14, opts.statusBadge.text, opts.statusBadge.bg, opts.statusBadge.fg);
+          drawBadge(ctx2, x + w - 33, y + 4, 29, IS_MOBILE ? 16 : 14, opts.statusBadge.text, opts.statusBadge.bg, opts.statusBadge.fg);
         } else if (opts.isCaptain) {
-          drawBadge(ctx2, x + w - 19, y + 4, 15, 14, "C", "#FACC15", "#080C14");
+          drawBadge(ctx2, x + w - 20, y + 4, 16, IS_MOBILE ? 16 : 14, "C", "#FACC15", "#080C14");
         }
-        const caRight2 = opts.statusBadge ? x + w - 34 : opts.isCaptain ? x + w - 22 : x + w - 5;
-        drawText(ctx2, `${player.ca}/${paVal}`, caRight2, y + 11, {
-          size: 11,
+        const caRight2 = opts.statusBadge ? x + w - 36 : opts.isCaptain ? x + w - 23 : x + w - 5;
+        drawText(ctx2, `${player.ca}/${paVal}`, caRight2, y + 12, {
+          size: IS_MOBILE ? 12.5 : 11,
+          rawSize: IS_MOBILE,
           bold: true,
           color: paVal - player.ca >= 8 ? "#E9D5FF" : THEME.GOLD_LIGHT,
           align: "right",
           mono: true
         });
-        drawPlayerAvatar(ctx2, x + 5, y + 20, 22, 24, player, club, { radius: 4, showFrame: false });
-        const nameStr2 = fitText(ctx2, `${hasGold ? "\u2605" : ""}${player.name}`, w - 34, 10.5, true);
-        drawText(ctx2, nameStr2, x + 30, y + 27, {
-          size: 10.5,
+        drawPlayerAvatar(ctx2, x + 5, y + 22, 22, 24, player, club, { radius: 4, showFrame: false });
+        const nameSize = IS_MOBILE ? 12 : 10.5;
+        const nameStr2 = fitText(ctx2, `${hasGold ? "\u2605" : ""}${player.name}`, w - 34, nameSize, true, IS_MOBILE);
+        drawText(ctx2, nameStr2, x + 30, y + 29, {
+          size: nameSize,
+          rawSize: IS_MOBILE,
           bold: true,
           color: hasGold || player.isNewSigning ? THEME.GOLD_LIGHT : THEME.TX1
         });
         const secTxt2 = player.secondaryRoles && player.secondaryRoles.length > 0 ? ` \xB7 ${player.secondaryRoles[0]}` : "";
-        drawText(ctx2, fitText(ctx2, `${player.age}${secTxt2}`, w - 34, 9), x + 30, y + 40, {
-          size: 9,
+        drawText(ctx2, fitText(ctx2, `${player.age}${secTxt2}`, w - 34, IS_MOBILE ? 10.5 : 9, false, IS_MOBILE), x + 30, y + 42, {
+          size: IS_MOBILE ? 10.5 : 9,
+          rawSize: IS_MOBILE,
           color: THEME.TX2,
           mono: true
         });
         const botY2 = y + h - 8;
         drawStatMicro(ctx2, "stat_fam", `${opts.fam}%`, x + 5, botY2, {
-          iconSize: 9.5,
-          fontSize: 9.5,
+          iconSize: IS_MOBILE ? 10.5 : 9.5,
+          fontSize: IS_MOBILE ? 10 : 9.5,
           iconColor: THEME.TX3,
           valueColor: famCol,
           gap: 2
         });
-        drawMiniBar(ctx2, x + w - 46, botY2 - 2, 20, 3.5, fit / 100, fit < 60 ? "#FBBF24" : THEME.GREEN);
+        drawMiniBar(ctx2, x + w - (IS_MOBILE ? 60 : 46), botY2 - 2, IS_MOBILE ? 22 : 20, 3.5, fit / 100, fit < 60 ? "#FBBF24" : THEME.GREEN);
         drawText(ctx2, `${fit}%`, x + w - 5, botY2, {
-          size: 9,
+          size: IS_MOBILE ? 10.5 : 9,
+          rawSize: IS_MOBILE,
           color: fit < 60 ? "#FBBF24" : THEME.TX2,
           align: "right",
           mono: true
         });
         return;
       }
-      const roleW = Math.min(50, Math.max(34, opts.roleLabel.length * 8.5 + 10));
-      drawBadge(ctx2, x + 8, y + 6, roleW, 16, opts.roleLabel, opts.roleBg, opts.roleFg);
+      const roleW = Math.min(54, Math.max(36, opts.roleLabel.length * 8.5 + 10));
+      const badgeH = IS_MOBILE ? 18 : 16;
+      drawBadge(ctx2, x + 8, y + 6, roleW, badgeH, opts.roleLabel, opts.roleBg, opts.roleFg);
       if (opts.statusBadge) {
-        drawBadge(ctx2, x + w - 36, y + 6, 28, 16, opts.statusBadge.text, opts.statusBadge.bg, opts.statusBadge.fg);
+        drawBadge(ctx2, x + w - (IS_MOBILE ? 44 : 36), y + 6, IS_MOBILE ? 36 : 28, badgeH, opts.statusBadge.text, opts.statusBadge.bg, opts.statusBadge.fg);
       } else if (opts.isCaptain) {
-        drawBadge(ctx2, x + w - 24, y + 6, 16, 16, "C", "#FACC15", "#080C14");
+        drawBadge(ctx2, x + w - 24, y + 6, 16, badgeH, "C", "#FACC15", "#080C14");
       }
-      const caRight = opts.statusBadge ? x + w - 40 : opts.isCaptain ? x + w - 27 : x + w - 8;
-      drawText(ctx2, `${player.ca}/${paVal}`, caRight, y + 14, {
-        size: 12,
+      const caRight = opts.statusBadge ? x + w - (IS_MOBILE ? 48 : 40) : opts.isCaptain ? x + w - 27 : x + w - 8;
+      drawText(ctx2, `${player.ca}/${paVal}`, caRight, y + 15, {
+        size: IS_MOBILE ? 14.5 : 12,
+        rawSize: IS_MOBILE,
         bold: true,
         color: paVal - player.ca >= 8 ? paColor : THEME.GOLD_LIGHT,
         align: "right",
         mono: true
       });
-      const nameStr = fitText(ctx2, `${hasGold ? "\u2605" : ""}${player.name}`, w - 52, 12, true);
-      drawPlayerAvatar(ctx2, x + 8, y + 26, 28, 34, player, club, { radius: 5, showFrame: true });
-      drawText(ctx2, nameStr, x + 42, y + 36, {
-        size: 12,
+      const avW = IS_MOBILE ? 36 : 28;
+      const avH = IS_MOBILE ? 44 : 34;
+      const dNameSize = IS_MOBILE ? 15 : 12;
+      const nameStr = fitText(ctx2, `${hasGold ? "\u2605" : ""}${player.name}`, w - avW - 26, dNameSize, true, IS_MOBILE);
+      drawPlayerAvatar(ctx2, x + 8, y + 28, avW, avH, player, club, { radius: 5, showFrame: true });
+      drawText(ctx2, nameStr, x + 14 + avW, y + (IS_MOBILE ? 40 : 36), {
+        size: dNameSize,
+        rawSize: IS_MOBILE,
         bold: true,
         color: hasGold || player.isNewSigning ? THEME.GOLD_LIGHT : THEME.TX1
       });
       const secTxt = player.secondaryRoles && player.secondaryRoles.length > 0 ? ` \xB7 ${player.secondaryRoles.slice(0, 2).join("/")}` : "";
-      drawText(ctx2, fitText(ctx2, `${player.age}y${secTxt}`, w - 52, 10), x + 42, y + 52, {
-        size: 10,
+      drawText(ctx2, fitText(ctx2, `${player.age}\u5C81${secTxt}`, w - avW - 26, IS_MOBILE ? 12.5 : 10, false, IS_MOBILE), x + 14 + avW, y + (IS_MOBILE ? 60 : 52), {
+        size: IS_MOBILE ? 12.5 : 10,
+        rawSize: IS_MOBILE,
         color: THEME.TX2,
         mono: true
       });
-      const statsRowY = y + 72;
+      const statsRowY = y + (IS_MOBILE ? 90 : 72);
       const statItems = player.role === "GK" ? [
         ["stat_gk", a.goalkeeping],
         ["stat_pos", a.positioning],
@@ -40921,40 +41492,40 @@
         ["stat_pass", a.passing],
         ["stat_def", a.defending]
       ];
-      const colStep = player.role === "GK" ? 48 : 36;
+      const colStep = IS_MOBILE ? player.role === "GK" ? 74 : 56 : player.role === "GK" ? 48 : 36;
       statItems.forEach(([ic, val], si) => {
-        drawStatMicro(ctx2, ic, `${val}`, x + 8 + si * colStep, statsRowY, {
-          iconSize: 10.5,
-          fontSize: 10.5,
+        drawStatMicro(ctx2, ic, `${val}`, x + 10 + si * colStep, statsRowY, {
+          iconSize: IS_MOBILE ? 13 : 10.5,
+          fontSize: IS_MOBILE ? 11.5 : 10.5,
           iconColor: THEME.TX3,
           valueColor: val >= 75 ? THEME.GOLD_LIGHT : THEME.TX1,
           bold: val >= 75,
-          gap: 2.5
+          gap: 3
         });
       });
-      const botY = y + h - 12;
-      const maxLx = x + w - 72;
+      const botY = y + h - (IS_MOBILE ? 15 : 12);
+      const maxLx = x + w - (IS_MOBILE ? 86 : 72);
       const g = player.seasonStats.goals;
       const ast = player.seasonStats.assists;
-      let lx = x + 8;
+      let lx = x + 10;
       lx += drawStatMicro(ctx2, "stat_fam", `${opts.fam}%`, lx, botY, {
-        iconSize: 10,
-        fontSize: 10,
+        iconSize: IS_MOBILE ? 12 : 10,
+        fontSize: IS_MOBILE ? 10.5 : 10,
         iconColor: THEME.TX3,
         valueColor: famCol,
         gap: 3
       });
-      if (g > 0 && lx + 26 < maxLx) {
+      if (g > 0 && lx + 30 < maxLx) {
+        lx += 6;
+        lx += drawStatMicro(ctx2, "ball", `${g}`, lx, botY, { iconSize: IS_MOBILE ? 12 : 10, fontSize: IS_MOBILE ? 10.5 : 10, iconColor: THEME.TX3, valueColor: THEME.TX1, gap: 2 });
+      }
+      if (ast > 0 && lx + 28 < maxLx) {
         lx += 5;
-        lx += drawStatMicro(ctx2, "ball", `${g}`, lx, botY, { iconSize: 10, fontSize: 10, iconColor: THEME.TX3, valueColor: THEME.TX1, gap: 2 });
+        drawStatMicro(ctx2, "stat_assist", `${ast}`, lx, botY, { iconSize: IS_MOBILE ? 12 : 10, fontSize: IS_MOBILE ? 10.5 : 10, iconColor: THEME.TX3, valueColor: THEME.TX1, gap: 2 });
       }
-      if (ast > 0 && lx + 24 < maxLx) {
-        lx += 4;
-        drawStatMicro(ctx2, "stat_assist", `${ast}`, lx, botY, { iconSize: 10, fontSize: 10, iconColor: THEME.TX3, valueColor: THEME.TX1, gap: 2 });
-      }
-      drawMiniBar(ctx2, x + w - 64, botY - 2, 24, 4, fit / 100, fit < 60 ? "#FBBF24" : THEME.GREEN);
-      drawText(ctx2, `${fit}%`, x + w - 8, botY, {
-        token: "MICRO",
+      drawMiniBar(ctx2, x + w - (IS_MOBILE ? 78 : 64), botY - 2, 26, 4, fit / 100, fit < 60 ? "#FBBF24" : THEME.GREEN);
+      drawText(ctx2, `${fit}%`, x + w - 10, botY, {
+        token: IS_MOBILE ? "LABEL" : "MICRO",
         color: fit < 60 ? "#FBBF24" : THEME.TX2,
         align: "right",
         mono: true
@@ -41271,8 +41842,8 @@
         const slotDuty = club.slotDuties?.[i] ?? "default";
         const dutyOpt = slotDuty !== "default" ? ROLE_DUTY_OPTIONS[slot.role]?.find((d) => d.duty === slotDuty) : void 0;
         const roleLabel = dutyOpt ? `${slot.role}\xB7${dutyOpt.label.slice(0, 2)}` : `${slot.role}${secondaryFit ? "\xB7\u517C" : ""}`;
-        const cw = 106;
-        const ch = 62;
+        const cw = IS_MOBILE ? 112 : 106;
+        const ch = IS_MOBILE ? 64 : 62;
         ctx2.save();
         if (isSelected) {
           const pulse = 0.65 + 0.35 * Math.sin(performance.now() / 220);
@@ -41454,23 +42025,24 @@
           this.benchPage = 0;
         }, { active: this.benchFilter === fk, fontSize: 10.5 });
       });
-      drawButton(ctx2, hits, 1148, 180, 98, 24, "\u26A1 \u6700\u4F73\u9996\u53D1", () => {
+      drawButton(ctx2, hits, 1142, 179, 104, 26, "\u26A1 \u6700\u4F73\u9996\u53D1", () => {
         league.updateUserTactics(club.formation, club.style);
         this.selectedStarterIdx = null;
         this.selectedBenchPlayerId = null;
         actions.onSave();
-      }, { variant: "ghost", fontSize: 10.5 });
-      const pageSize = 12;
+      }, { variant: "ghost", fontSize: IS_MOBILE ? 11 : 10.5 });
+      const cols = IS_MOBILE ? 2 : 3;
+      const pageSize = IS_MOBILE ? 6 : 12;
       const totalPages = Math.max(1, Math.ceil(benchSquad.length / pageSize));
       if (this.benchPage >= totalPages) this.benchPage = totalPages - 1;
       const visibleBench = benchSquad.slice(this.benchPage * pageSize, (this.benchPage + 1) * pageSize);
       visibleBench.forEach((p, idx) => {
-        const col = idx % 3;
-        const row = Math.floor(idx / 3);
-        const cw = 158;
-        const ch = 104;
-        const cx = 758 + col * 166;
-        const cy = 214 + row * 110;
+        const col = idx % cols;
+        const row = Math.floor(idx / cols);
+        const cw = IS_MOBILE ? 240 : 158;
+        const ch = IS_MOBILE ? 136 : 104;
+        const cx = 758 + col * (IS_MOBILE ? 248 : 166);
+        const cy = 214 + row * (IS_MOBILE ? 144 : 110);
         const isBenchSelected = this.selectedBenchPlayerId === p.id;
         const isSuspended = (p.suspendedRounds ?? 0) > 0;
         const isInjured = (p.injuredRounds ?? 0) > 0;
@@ -42192,6 +42764,320 @@
     }
   };
 
+  // packages/game-ui/src/AstrolabeVisuals.ts
+  var ASTROLABE_STYLE_GLYPH = {
+    tiki_taka: "tiki",
+    gegenpress: "press",
+    wing_play: "wing",
+    counter: "counter",
+    park_bus: "bus",
+    balanced: "balanced"
+  };
+  var ASTROLABE_SYSTEM_GLYPH = {
+    "4-back": "sys_4back",
+    "3-back": "sys_3back",
+    "5-back": "sys_5back"
+  };
+  var ASTROLABE_ZONE_COLOR = {
+    ATT: "#F43F5E",
+    MID: "#38BDF8",
+    DEF: "#22C55E"
+  };
+  var ASTROLABE_ZONE_LABEL = {
+    ATT: "\u524D\u573A",
+    MID: "\u4E2D\u573A",
+    DEF: "\u540E\u573A"
+  };
+  function getAstrolabePassiveGlyph(p) {
+    if (p.tier === "origin") {
+      if (p.style) return ASTROLABE_STYLE_GLYPH[p.style];
+      if (p.system) return ASTROLABE_SYSTEM_GLYPH[p.system];
+    }
+    const sd = p.statDelta;
+    const tm = p.tacticalMod;
+    if (sd?.shooting || tm?.longShotBias || tm?.boxCrashBonus) return "stat_shoot";
+    if (sd?.passing || sd?.composure || tm?.shortPassBias || tm?.throughPassBias) return "stat_pass";
+    if (sd?.defending || sd?.goalkeeping || p.blockBonus || p.oppShotXgPenalty || p.startingShields || (tm?.lineShift ?? 0) < 0) {
+      return "stat_def";
+    }
+    if (sd?.pace || tm?.crossBias || tm?.overlapDepthBonus || tm?.dualOverlap || tm?.pressDistBonus) return "stat_pace";
+    return "stat_fit";
+  }
+  function drawAstrolabeBackdropAndRings(ctx2, cx, cy, baseR, rect, animTime, rotFlashTimer, rotFlashRing, opts) {
+    const constImg = AssetLoader.get("bg_skill_constellation");
+    if (constImg && typeof ctx2.drawImage === "function") {
+      const iw = constImg.naturalWidth || constImg.width || 1024;
+      const ih = constImg.naturalHeight || constImg.height || 572;
+      const cover = Math.max(rect.w / iw, rect.h / ih);
+      ctx2.save();
+      ctx2.globalAlpha = opts?.backdropAlpha ?? 0.46;
+      ctx2.drawImage(
+        constImg,
+        rect.x + rect.w / 2 - iw * cover / 2,
+        rect.y + rect.h / 2 - ih * cover / 2,
+        iw * cover,
+        ih * cover
+      );
+      ctx2.restore();
+    }
+    const ringRadii = [0.2, 0.3, 0.4, 0.5, 0.6, 0.78, 0.9, 0.99];
+    ringRadii.forEach((ratio, idx) => {
+      const isFusionRing = idx === 3;
+      ctx2.strokeStyle = isFusionRing ? "rgba(250, 204, 21, 0.42)" : "rgba(148, 163, 184, 0.16)";
+      ctx2.lineWidth = isFusionRing ? 1.9 : 1;
+      if (idx === 1 || idx === 4 || idx === 5) ctx2.setLineDash([3, 6]);
+      else ctx2.setLineDash([]);
+      ctx2.beginPath();
+      ctx2.arc(cx, cy, baseR * ratio, 0, Math.PI * 2);
+      ctx2.stroke();
+    });
+    ctx2.setLineDash([]);
+    if (rotFlashTimer > 0) {
+      const p = 1 - Math.min(1, rotFlashTimer / 0.65);
+      const alpha = Math.max(0, (1 - p) * 0.9);
+      const pulseCol = rotFlashRing === "outer" ? "#38BDF8" : "#F59E0B";
+      ctx2.save();
+      ctx2.strokeStyle = `rgba(250, 204, 21, ${alpha.toFixed(3)})`;
+      ctx2.lineWidth = 3.8 * (1 - p * 0.55);
+      if (!IS_MOBILE) {
+        ctx2.shadowColor = THEME.GOLD_LIGHT;
+        ctx2.shadowBlur = 18;
+      }
+      ctx2.beginPath();
+      ctx2.arc(cx, cy, baseR * (0.48 + p * 0.15), 0, Math.PI * 2);
+      ctx2.stroke();
+      ctx2.strokeStyle = pulseCol;
+      ctx2.globalAlpha = alpha * 0.75;
+      ctx2.lineWidth = 2.6;
+      const ringR = rotFlashRing === "outer" ? 0.78 : 0.35;
+      ctx2.beginPath();
+      ctx2.arc(cx, cy, baseR * ringR, 0, Math.PI * 2);
+      ctx2.stroke();
+      const count = opts?.topArchOnly ? 1 : 6;
+      for (let idx = 0; idx < count; idx++) {
+        const ang = -Math.PI / 2 + idx * Math.PI / 3;
+        const fx = cx + Math.cos(ang) * (baseR * 0.5);
+        const fy = cy + Math.sin(ang) * (baseR * 0.5);
+        const flareR = (18 + p * 28) * Math.max(0.85, baseR / 280);
+        const grad = ctx2.createRadialGradient(fx, fy, 2, fx, fy, flareR);
+        grad.addColorStop(0, `rgba(254, 240, 138, ${alpha.toFixed(3)})`);
+        grad.addColorStop(0.45, `rgba(250, 204, 21, ${(alpha * 0.45).toFixed(3)})`);
+        grad.addColorStop(1, "rgba(250, 204, 21, 0)");
+        ctx2.fillStyle = grad;
+        ctx2.beginPath();
+        ctx2.arc(fx, fy, flareR, 0, Math.PI * 2);
+        ctx2.fill();
+      }
+      ctx2.restore();
+    }
+  }
+  function drawAstrolabeEdgeLine(ctx2, ax, ay, bx, by, bothUnlocked, reachable, color, animTime, isBridge = false, bounds) {
+    if (bounds) {
+      if (Math.max(ax, bx) < bounds.x - 20 || Math.min(ax, bx) > bounds.x + bounds.w + 20 || Math.max(ay, by) < bounds.y - 20 || Math.min(ay, by) > bounds.y + bounds.h + 20) {
+        return;
+      }
+    }
+    ctx2.save();
+    if (bothUnlocked) {
+      ctx2.strokeStyle = color;
+      ctx2.lineWidth = isBridge ? 2.6 : 1.9;
+      if (!IS_MOBILE) {
+        ctx2.shadowColor = color;
+        ctx2.shadowBlur = isBridge ? 10 : 6;
+      }
+      ctx2.beginPath();
+      ctx2.moveTo(ax, ay);
+      ctx2.lineTo(bx, by);
+      ctx2.stroke();
+      const t = (animTime * 0.48 + (ax + ay) % 100 * 0.01) % 1;
+      const sx = ax + (bx - ax) * t;
+      const sy = ay + (by - ay) * t;
+      ctx2.fillStyle = "#FEF08A";
+      if (!IS_MOBILE) ctx2.shadowBlur = 4;
+      ctx2.beginPath();
+      ctx2.arc(sx, sy, isBridge ? 2.4 : 1.7, 0, Math.PI * 2);
+      ctx2.fill();
+    } else if (reachable) {
+      ctx2.strokeStyle = isBridge ? "rgba(250, 204, 21, 0.78)" : "rgba(56, 189, 248, 0.72)";
+      ctx2.lineWidth = isBridge ? 2 : 1.45;
+      ctx2.setLineDash([4, 4]);
+      ctx2.lineDashOffset = -animTime * 16;
+      ctx2.beginPath();
+      ctx2.moveTo(ax, ay);
+      ctx2.lineTo(bx, by);
+      ctx2.stroke();
+      ctx2.setLineDash([]);
+    } else {
+      ctx2.strokeStyle = isBridge ? "rgba(250, 204, 21, 0.24)" : "rgba(100, 116, 139, 0.28)";
+      ctx2.lineWidth = isBridge ? 1.3 : 1;
+      ctx2.beginPath();
+      ctx2.moveTo(ax, ay);
+      ctx2.lineTo(bx, by);
+      ctx2.stroke();
+    }
+    ctx2.restore();
+  }
+  function drawAstrolabeCircleNode(ctx2, x, y, r, glyph, color, unlocked, reachable, selected, animTime, isOrigin = false) {
+    const rotSlow = animTime * 0.55;
+    ctx2.save();
+    if (!IS_MOBILE && (unlocked || reachable || selected)) {
+      ctx2.shadowColor = selected ? "#FFFFFF" : unlocked ? color : "#38BDF8";
+      ctx2.shadowBlur = selected ? 14 : unlocked ? 10 : 6;
+    }
+    ctx2.fillStyle = unlocked ? "#16213A" : reachable ? "#0F1D33" : "#090F1D";
+    ctx2.beginPath();
+    ctx2.arc(x, y, r, 0, Math.PI * 2);
+    ctx2.fill();
+    ctx2.lineWidth = selected ? 2.4 : isOrigin ? 2.2 : unlocked ? 1.8 : 1.2;
+    ctx2.strokeStyle = selected ? "#FFFFFF" : unlocked ? color : reachable ? "#38BDF8" : "#334155";
+    ctx2.stroke();
+    if (isOrigin && (unlocked || reachable)) {
+      ctx2.strokeStyle = unlocked ? THEME.GOLD_LIGHT : "rgba(56,189,248,0.65)";
+      ctx2.lineWidth = 1.15;
+      ctx2.setLineDash([4, 4]);
+      ctx2.beginPath();
+      ctx2.arc(x, y, r + 3.5, rotSlow, rotSlow + Math.PI * 1.5);
+      ctx2.stroke();
+      ctx2.setLineDash([]);
+    }
+    drawSkillGlyph(
+      ctx2,
+      glyph,
+      x,
+      y,
+      r * (isOrigin ? 1.42 : 1.26),
+      unlocked ? color : reachable ? "#7DD3FC" : "#64748B",
+      THEME.GOLD_LIGHT,
+      { dim: !unlocked && !reachable }
+    );
+    ctx2.restore();
+  }
+  function drawAstrolabeHexFusionNode(ctx2, x, y, r, unlocked, reachable, selected, animTime, label) {
+    const rotSlow = animTime * 0.55;
+    ctx2.save();
+    if (!IS_MOBILE && (unlocked || reachable || selected)) {
+      ctx2.shadowColor = selected ? "#FFFFFF" : THEME.GOLD_LIGHT;
+      ctx2.shadowBlur = unlocked ? 18 : 12;
+    }
+    ctx2.fillStyle = unlocked ? "#422006" : reachable ? "#1C1917" : "#0F172A";
+    ctx2.beginPath();
+    for (let h = 0; h < 6; h++) {
+      const ha = h * Math.PI / 3 - Math.PI / 6;
+      const hx = x + Math.cos(ha) * r;
+      const hy = y + Math.sin(ha) * r;
+      if (h === 0) ctx2.moveTo(hx, hy);
+      else ctx2.lineTo(hx, hy);
+    }
+    ctx2.closePath();
+    ctx2.fill();
+    ctx2.lineWidth = selected ? 2.6 : unlocked ? 2.4 : 1.6;
+    ctx2.strokeStyle = selected ? "#FFFFFF" : unlocked ? "#FEF08A" : reachable ? "#F59E0B" : "#64748B";
+    ctx2.stroke();
+    if (unlocked || reachable) {
+      ctx2.strokeStyle = unlocked ? "rgba(254,240,138,0.72)" : "rgba(245,158,11,0.55)";
+      ctx2.lineWidth = 1.15;
+      ctx2.setLineDash([4, 4]);
+      ctx2.beginPath();
+      ctx2.arc(x, y, r + 4, -rotSlow, -rotSlow + Math.PI * 1.45);
+      ctx2.stroke();
+      ctx2.setLineDash([]);
+    }
+    drawSkillGlyph(ctx2, "fusion", x, y, r * 1.38, unlocked ? "#FEF08A" : "#F59E0B", THEME.GOLD_LIGHT, {
+      dim: !unlocked && !reachable
+    });
+    ctx2.restore();
+    if (label) {
+      drawText(ctx2, label, x, y + r + 11, {
+        size: 10.5,
+        bold: true,
+        color: unlocked ? THEME.GOLD_LIGHT : "#FDE68A",
+        align: "center"
+      });
+    }
+  }
+  function drawAstrolabeDiamondSkillNode(ctx2, x, y, dr, glyph, unlocked, reachable, equipped, selected, label) {
+    ctx2.save();
+    if (!IS_MOBILE && (selected || equipped || unlocked)) {
+      ctx2.shadowColor = selected ? "#FFFFFF" : equipped ? "#4ADE80" : "#38BDF8";
+      ctx2.shadowBlur = selected ? 14 : 10;
+    }
+    ctx2.fillStyle = equipped ? "#0C4A6E" : unlocked ? "#172554" : reachable ? "#0E223A" : "#0B111F";
+    ctx2.beginPath();
+    ctx2.moveTo(x, y - dr);
+    ctx2.lineTo(x + dr, y);
+    ctx2.lineTo(x, y + dr);
+    ctx2.lineTo(x - dr, y);
+    ctx2.closePath();
+    ctx2.fill();
+    ctx2.lineWidth = selected ? 2.4 : equipped ? 2.1 : unlocked ? 1.8 : 1.2;
+    ctx2.strokeStyle = selected ? "#FFFFFF" : equipped ? "#4ADE80" : unlocked ? "#38BDF8" : reachable ? "#7DD3FC" : "#334155";
+    ctx2.stroke();
+    const idr = dr * 0.72;
+    ctx2.strokeStyle = equipped ? "rgba(74,222,128,0.55)" : unlocked ? "rgba(250,204,21,0.45)" : "rgba(100,116,139,0.22)";
+    ctx2.lineWidth = 0.9;
+    ctx2.beginPath();
+    ctx2.moveTo(x, y - idr);
+    ctx2.lineTo(x + idr, y);
+    ctx2.lineTo(x, y + idr);
+    ctx2.lineTo(x - idr, y);
+    ctx2.closePath();
+    ctx2.stroke();
+    drawSkillGlyph(ctx2, glyph, x, y, dr * 1.12, unlocked ? "#7DD3FC" : "#64748B", THEME.GOLD_LIGHT, {
+      dim: !unlocked && !reachable
+    });
+    ctx2.restore();
+    if (label) {
+      drawText(ctx2, label, x, y + dr + 9, {
+        size: 9,
+        bold: equipped || selected,
+        color: equipped ? "#4ADE80" : unlocked ? "#7DD3FC" : THEME.TX3,
+        align: "center"
+      });
+    }
+  }
+  function drawAstrolabeDirectiveNode(ctx2, cx, cy, x, y, nr, tendency, zone, unlocked, reachable, equipped, selected, sats, label) {
+    const subAngle = Math.atan2(y - cy, x - cx);
+    ctx2.save();
+    if (!IS_MOBILE && (selected || equipped || unlocked)) {
+      ctx2.shadowColor = selected ? "#FFFFFF" : equipped ? "#4ADE80" : ASTROLABE_ZONE_COLOR[zone];
+      ctx2.shadowBlur = selected ? 12 : equipped ? 9 : 5;
+    }
+    ctx2.fillStyle = unlocked ? equipped ? "#14532D" : "#1E293B" : reachable ? "#101C32" : "#0B111F";
+    ctx2.beginPath();
+    ctx2.arc(x, y, nr, 0, Math.PI * 2);
+    ctx2.fill();
+    ctx2.lineWidth = selected ? 2.4 : equipped ? 2.1 : unlocked ? 1.6 : 1.1;
+    ctx2.strokeStyle = selected ? "#FFFFFF" : equipped ? "#4ADE80" : unlocked ? ASTROLABE_ZONE_COLOR[zone] : reachable ? "#38BDF8" : "#334155";
+    ctx2.stroke();
+    drawIcon(
+      ctx2,
+      tendency === "ATK" ? "sword" : "shield",
+      x,
+      y,
+      nr * 1.15,
+      unlocked ? equipped ? "#86EFAC" : ASTROLABE_ZONE_COLOR[zone] : reachable ? "#7DD3FC" : "#475569"
+    );
+    ["A", "B", "C"].forEach((sk, si) => {
+      const sa = subAngle - 0.55 + si * 0.55;
+      const sx = x + Math.cos(sa) * (nr + 3.4);
+      const sy = y + Math.sin(sa) * (nr + 3.4);
+      const lit = sats.includes(sk);
+      ctx2.fillStyle = lit ? sk === "C" ? THEME.GOLD_LIGHT : sk === "B" ? "#38BDF8" : "#4ADE80" : "rgba(100,116,139,0.35)";
+      ctx2.beginPath();
+      ctx2.arc(sx, sy, lit ? 2.1 : 1.2, 0, Math.PI * 2);
+      ctx2.fill();
+    });
+    ctx2.restore();
+    if (label) {
+      drawText(ctx2, label, x, y + nr + 8, {
+        size: 8.5,
+        bold: selected || equipped,
+        color: equipped ? "#4ADE80" : unlocked ? THEME.TX1 : THEME.TX3,
+        align: "center"
+      });
+    }
+  }
+
   // packages/game-ui/src/screens/TitleScreen.ts
   var HOME_PRIMARY_PALETTE = ["#DC2626", "#2563EB", "#059669", "#EA580C", "#7C3AED", "#0284C7"];
   var HOME_SECONDARY_PALETTE = ["#FACC15", "#F8FAFC", "#1E293B", "#38BDF8", "#F59E0B"];
@@ -42199,13 +43085,32 @@
   var AWAY_SECONDARY_PALETTE = ["#0F172A", "#DC2626", "#2563EB", "#FACC15", "#F8FAFC"];
   var SYS_TABS = ["4-back", "3-back", "5-back"];
   var STYLE_LIST2 = ["tiki_taka", "gegenpress", "balanced", "wing_play", "counter", "park_bus"];
-  var STYLE_HINTS = {
-    balanced: "\u653B\u5B88\u5E73\u8861 \xB7 \u4E2D\u4F4D\u9632\u7EBF\uFF0C\u9002\u5408\u901A\u7528\u9635\u5BB9\u7A33\u624E\u7A33\u6253",
-    tiki_taka: "\u4F20\u63A7\u6E17\u900F \xB7 \u77ED\u4F20\u914D\u5408\u4E0E\u9AD8\u4F4D\u63A7\u7403\uFF0C\u538B\u5236\u5BF9\u624B\u6301\u7403\u65F6\u95F4",
-    gegenpress: "\u9AD8\u4F4D\u903C\u62A2 \xB7 \u6781\u9AD8\u9632\u7EBF\u4E0E\u75AF\u72C2\u53CD\u62A2\uFF0C\u8282\u594F\u6700\u5FEB\u4F46\u4F53\u80FD\u6D88\u8017\u5927",
-    counter: "\u5FEB\u901F\u53CD\u51FB \xB7 \u6DF1\u5EA6\u56DE\u6536\u8BF1\u654C\u6DF1\u5165\uFF0C\u65AD\u7403\u540E\u76F4\u585E\u6253\u8EAB\u540E",
-    wing_play: "\u4E24\u7FFC\u9F50\u98DE \xB7 \u62C9\u5F00\u7403\u573A\u5BBD\u5EA6\uFF0C\u8FB9\u8DEF\u7A81\u7834\u4E0E\u4F20\u4E2D\u5236\u9020\u6740\u673A",
-    park_bus: "\u94C1\u6876\u9632\u53CD \xB7 \u6781\u9650\u4F4E\u4F4D\u9632\u5B88\u5BC6\u5EA6\uFF0C\u4E13\u514B\u5F3A\u961F\u5E76\u4F3A\u673A\u5077\u88AD"
+  var STYLE_BASE_RADAR = {
+    // [控球组织, 前场逼抢, 防线稳固, 边路推进, 反击纵深]
+    tiki_taka: [94, 72, 62, 64, 52],
+    gegenpress: [70, 96, 56, 74, 78],
+    wing_play: [66, 68, 60, 96, 72],
+    counter: [46, 54, 78, 72, 96],
+    park_bus: [38, 42, 96, 50, 76],
+    balanced: [76, 72, 76, 72, 72]
+  };
+  var SYSTEM_RADAR_DELTA = {
+    "4-back": [6, 4, 2, 4, 2],
+    "3-back": [4, 10, -8, 12, 6],
+    "5-back": [-8, -6, 14, -4, 10]
+  };
+  var STYLE_PROS_CONS = {
+    tiki_taka: { pros: "\u9635\u5730\u4F20\u5BFC\u6781\u5F3A \xB7 \u808B\u90E8\u6E17\u900F\u7834\u94C1\u6876", cons: "\u9632\u7EBF\u504F\u9AD8 \xB7 \u6015\u9AD8\u4F4D\u75AF\u72C2\u53CD\u62A2" },
+    gegenpress: { pros: "\u62A2\u65AD\u8F6C\u6362\u6781\u5FEB \xB7 \u538B\u8FEB\u4F20\u63A7\u51FA\u7403", cons: "\u4F53\u80FD\u6D88\u8017\u6781\u5927 \xB7 \u8EAB\u540E\u6613\u7559\u7A7A\u5F53" },
+    wing_play: { pros: "\u53CC\u7FFC\u5BBD\u5EA6\u62C9\u6EE1 \xB7 \u4F20\u4E2D\u9020\u89D2\u80FD\u529B\u5F3A", cons: "\u4E2D\u8DEF\u5BC6\u5EA6\u7565\u964D \xB7 \u5FCC\u4E94\u540E\u536B\u94C1\u6876" },
+    counter: { pros: "\u7EB5\u6DF1\u76F4\u585E\u81F4\u547D \xB7 \u4E13\u514B\u9AD8\u4F4D\u903C\u62A2", cons: "\u63A7\u7403\u7387\u504F\u4F4E \xB7 \u9762\u5BF9\u94C1\u6876\u96BE\u7834\u95E8" },
+    park_bus: { pros: "\u7981\u533A\u5C01\u5835\u62C9\u6EE1 \xB7 \u5F3A\u961F\u514B\u661F\u62A4\u76FE\u591A", cons: "\u8FDB\u653B\u5175\u529B\u6709\u9650 \xB7 \u9635\u5730\u63A8\u8FDB\u8F83\u6162" },
+    balanced: { pros: "\u65E0\u660E\u663E\u77ED\u677F \xB7 \u8DE8\u6D41\u6D3E\u624B\u724C\u60E9\u7F5A\u51CF\u534A", cons: "\u5355\u70B9\u6781\u9650\u7206\u53D1\u7565\u900A\u4E13\u7CBE\u6D41\u6D3E" }
+  };
+  var SYSTEM_NOTE = {
+    "4-back": "\u56DB\u540E\u536B\u653B\u5B88\u5747\u8861",
+    "3-back": "\u4E09\u540E\u536B\u8FB9\u7FFC\u524D\u538B",
+    "5-back": "\u4E94\u540E\u536B\u7981\u533A\u94C1\u95F8"
   };
   var TitleScreen = class {
     constructor() {
@@ -42223,6 +43128,14 @@
       this.style = "tiki_taka";
       this.enterTime = 0;
       this.ambientTime = 0;
+      // Step 2 星盘震撼降临动画与弹簧旋转状态
+      this.step2AnimTime = 1.2;
+      this.outerRotOffset = 0;
+      this.outerRotVel = 0;
+      this.innerRotOffset = 0;
+      this.innerRotVel = 0;
+      this.rotFlashTimer = 0;
+      this.rotFlashRing = "outer";
     }
     resetEnterAnim() {
       this.enterTime = 0;
@@ -42231,10 +43144,99 @@
       this.wizardStep = 1;
       this.previewKitMode = "home";
       this.wizardOpen = true;
+      this.step2AnimTime = 1.2;
+      this.outerRotOffset = 0;
+      this.outerRotVel = 0;
+      this.innerRotOffset = 0;
+      this.innerRotVel = 0;
+      this.rotFlashTimer = 0;
+    }
+    isAnimating() {
+      if (!this.wizardOpen) return false;
+      return this.step2AnimTime < 1.05 || Math.abs(this.outerRotOffset) > 2e-3 || Math.abs(this.outerRotVel) > 2e-3 || Math.abs(this.innerRotOffset) > 2e-3 || Math.abs(this.innerRotVel) > 2e-3 || this.rotFlashTimer > 0;
+    }
+    enterStep2() {
+      if (this.wizardStep === 2) return;
+      this.wizardStep = 2;
+      this.step2AnimTime = 0;
+      this.outerRotOffset = Math.PI / 2.2;
+      this.outerRotVel = -1.9;
+      this.innerRotOffset = -Math.PI / 1.7;
+      this.innerRotVel = 2.6;
+      this.rotFlashTimer = 0.72;
+      this.rotFlashRing = "outer";
+      SoundEngine.playAstrolabeLock();
+    }
+    selectStyle(nextStyle) {
+      if (this.style === nextStyle) return;
+      const prevIdx = Math.max(0, OUTER_RING_STYLES.indexOf(this.style));
+      const nextIdx = Math.max(0, OUTER_RING_STYLES.indexOf(nextStyle));
+      let delta = nextIdx - prevIdx;
+      if (delta > 3) delta -= 6;
+      if (delta < -3) delta += 6;
+      if (delta === 0) delta = 1;
+      this.style = nextStyle;
+      this.outerRotOffset -= delta * (Math.PI / 3);
+      this.outerRotVel = delta * 1.75;
+      this.rotFlashTimer = 0.65;
+      this.rotFlashRing = "outer";
+      SoundEngine.playAstrolabeRotate("outer");
+    }
+    selectFormation(nextFm) {
+      const prevSys = getDefenseSystem(this.formation);
+      const nextSys = getDefenseSystem(nextFm);
+      this.formation = nextFm;
+      this.sysTab = nextSys;
+      if (prevSys !== nextSys) {
+        const prevIdx = Math.max(0, INNER_RING_SYSTEMS.indexOf(prevSys));
+        const nextIdx = Math.max(0, INNER_RING_SYSTEMS.indexOf(nextSys));
+        let delta = nextIdx - prevIdx;
+        if (delta > 1) delta -= 3;
+        if (delta < -1) delta += 3;
+        if (delta === 0) delta = 1;
+        this.innerRotOffset -= delta * (2 * Math.PI / 3);
+        this.innerRotVel = delta * 2.2;
+        this.rotFlashTimer = 0.65;
+        this.rotFlashRing = "inner";
+        SoundEngine.playAstrolabeRotate("inner");
+      } else {
+        this.rotFlashTimer = Math.max(this.rotFlashTimer, 0.36);
+        this.rotFlashRing = "inner";
+        SoundEngine.playClick();
+      }
     }
     update(dtSec) {
-      this.enterTime += dtSec;
-      this.ambientTime += dtSec;
+      const dt = Math.min(0.05, Math.max(1e-3, dtSec));
+      this.enterTime += dt;
+      this.ambientTime += dt;
+      if (this.wizardOpen && this.wizardStep === 2) {
+        if (this.step2AnimTime < 1.5) {
+          this.step2AnimTime += dt;
+        }
+        const stiffness = 175;
+        const damping = 18.5;
+        if (Math.abs(this.outerRotOffset) > 5e-4 || Math.abs(this.outerRotVel) > 5e-4) {
+          const acc = -stiffness * this.outerRotOffset - damping * this.outerRotVel;
+          this.outerRotVel += acc * dt;
+          this.outerRotOffset += this.outerRotVel * dt;
+          if (Math.abs(this.outerRotOffset) < 15e-4 && Math.abs(this.outerRotVel) < 0.015) {
+            this.outerRotOffset = 0;
+            this.outerRotVel = 0;
+          }
+        }
+        if (Math.abs(this.innerRotOffset) > 5e-4 || Math.abs(this.innerRotVel) > 5e-4) {
+          const acc = -stiffness * this.innerRotOffset - damping * this.innerRotVel;
+          this.innerRotVel += acc * dt;
+          this.innerRotOffset += this.innerRotVel * dt;
+          if (Math.abs(this.innerRotOffset) < 15e-4 && Math.abs(this.innerRotVel) < 0.015) {
+            this.innerRotOffset = 0;
+            this.innerRotVel = 0;
+          }
+        }
+        if (this.rotFlashTimer > 0) {
+          this.rotFlashTimer = Math.max(0, this.rotFlashTimer - dt);
+        }
+      }
     }
     selectTemplate(clubId) {
       const tpl = FICTIONAL_CLUBS.find((c) => c.id === clubId) || FICTIONAL_CLUBS[0];
@@ -42439,31 +43441,66 @@
       }
     }
     renderWizardModal(ctx2, hits, metaLv, actions) {
-      ctx2.fillStyle = "rgba(4, 7, 14, 0.84)";
+      ctx2.fillStyle = "rgba(4, 7, 14, 0.86)";
       ctx2.fillRect(0, 0, THEME.W, THEME.H);
       hits.clear();
-      const mx = 152;
-      const my = 66;
-      const mw = 976;
-      const mh = 588;
+      const mx = 136;
+      const my = 58;
+      const mw = 1008;
+      const mh = 604;
       drawChamferPanel(ctx2, mx, my, mw, mh, 14, "rgba(12, 19, 36, 0.98)", THEME.BORDER_GOLD, 1.6, THEME.GOLD_LIGHT);
-      drawText(ctx2, "\u65B0\u8D5B\u5B63\u5EFA\u961F\u5411\u5BFC", mx + 28, my + 34, { size: 20, bold: true, color: THEME.GOLD_LIGHT });
+      drawText(ctx2, "\u65B0\u8D5B\u5B63\u5EFA\u961F\u5411\u5BFC", mx + 26, my + 34, { size: 20, bold: true, color: THEME.GOLD_LIGHT });
       const steps = [
         [1, "1. \u4FF1\u4E50\u90E8\u5F62\u8C61\u5BA4"],
-        [2, "2. \u9635\u578B\u4E0E\u6218\u672F\u54F2\u5B66"]
+        [2, "2. \u9635\u578B\u4E0E\u6218\u672F\u661F\u76D8"]
       ];
       steps.forEach(([s, lbl], i) => {
         drawButton(ctx2, hits, mx + 236 + i * 204, my + 18, 190, 32, lbl, () => {
-          this.wizardStep = s;
+          if (s === 2) this.enterStep2();
+          else this.wizardStep = 1;
         }, { active: this.wizardStep === s, fontSize: 12.5 });
       });
       drawButton(ctx2, hits, mx + mw - 100, my + 18, 76, 32, "\u5173\u95ED", () => {
         this.wizardOpen = false;
       }, { variant: "ghost", fontSize: 12, icon: "close" });
-      const sx = mx + 26;
-      const sy = my + 70;
-      const sw = 286;
-      const sh = 492;
+      const sx = mx + 24;
+      const sy = my + 68;
+      const sw = this.wizardStep === 2 ? 324 : 286;
+      const sh = 508;
+      if (this.wizardStep === 1) {
+        this.renderStep1LeftShowcase(ctx2, hits, sx, sy, sw, sh, metaLv);
+      } else {
+        this.renderStep2AstrolabeViewport(ctx2, sx, sy, sw, sh);
+      }
+      const rx = sx + sw + 20;
+      const ry = my + 68;
+      const rw = mx + mw - rx - 24;
+      if (this.wizardStep === 1) {
+        this.renderStep1RightPanel(ctx2, hits, rx, ry, rw, actions);
+        drawButton(ctx2, hits, mx + mw - 246, my + mh - 58, 222, 42, "\u4E0B\u4E00\u6B65\uFF1A\u661F\u76D8\u4E0E\u54F2\u5B66 \u25B6", () => {
+          this.enterStep2();
+        }, { variant: "gold", fontSize: 13.5, icon: "sparkle" });
+      } else {
+        this.renderStep2RightPanel(ctx2, hits, rx, ry, rw);
+        drawButton(ctx2, hits, rx, my + mh - 58, 146, 42, "\u25C0 \u4E0A\u4E00\u6B65", () => {
+          this.wizardStep = 1;
+        }, { variant: "ghost", fontSize: 13 });
+        drawButton(ctx2, hits, mx + mw - 304, my + mh - 58, 280, 42, "\u786E\u8BA4\u5EFA\u961F \xB7 \u5F00\u542F\u6838\u5FC3\u5F00\u5305 \u25B6", () => {
+          this.wizardOpen = false;
+          actions.onStartNewSeason({
+            clubId: this.selectedClubId,
+            customName: this.customName,
+            primaryColor: this.primaryColor,
+            secondaryColor: this.secondaryColor,
+            awayPrimaryColor: this.awayPrimaryColor,
+            awaySecondaryColor: this.awaySecondaryColor,
+            formation: this.formation,
+            style: this.style
+          });
+        }, { variant: "gold", fontSize: 14, icon: "sparkle" });
+      }
+    }
+    renderStep1LeftShowcase(ctx2, hits, sx, sy, sw, sh, metaLv) {
       const isHome = this.previewKitMode === "home";
       const activeKit = {
         id: this.selectedClubId,
@@ -42491,196 +43528,608 @@
         this.previewKitMode = "away";
       }, { active: !isHome, variant: !isHome ? "primary" : "ghost", fontSize: 11.5 });
       const jerseyFloat = Math.sin(this.ambientTime * 2.1) * 3;
-      drawJerseyIcon(ctx2, sx + sw / 2, sy + 172 + jerseyFloat, 118, activeKit, 10);
+      drawJerseyIcon(ctx2, sx + sw / 2, sy + 176 + jerseyFloat, 118, activeKit, 10);
       drawRoundRect(ctx2, sx + sw - 74, sy + 64, 56, 56, 28, "rgba(8, 13, 24, 0.92)", THEME.BORDER_GOLD, 1.4);
       drawClubCrest(ctx2, sx + sw - 46, sy + 92, 22, crestClub);
       drawBadge(
         ctx2,
         sx + sw / 2 - 64,
-        sy + 260,
+        sy + 266,
         128,
         22,
         isHome ? "HOME KIT \xB7 \u4E3B\u573A" : "AWAY KIT \xB7 \u5BA2\u573A",
         isHome ? "rgba(212,168,67,0.18)" : "rgba(56,189,248,0.18)",
         isHome ? THEME.GOLD_LIGHT : "#7DD3FC"
       );
-      drawText(ctx2, this.customName.slice(0, 12), sx + sw / 2, sy + 312, {
+      drawText(ctx2, this.customName.slice(0, 12), sx + sw / 2, sy + 318, {
         size: 21,
         bold: true,
         color: THEME.TX1,
         align: "center"
       });
-      drawText(ctx2, fitText(ctx2, `EST. 2026 \xB7 ${this.formation} \xB7 ${TACTICAL_PRESETS[this.style].name}`, sw - 28, FONT.LABEL, false, true), sx + sw / 2, sy + 340, {
+      drawText(ctx2, fitText(ctx2, `EST. 2026 \xB7 ${this.formation} \xB7 ${TACTICAL_PRESETS[this.style].name}`, sw - 28, FONT.LABEL, false, true), sx + sw / 2, sy + 346, {
         token: "LABEL",
         color: THEME.GOLD_LIGHT,
         align: "center"
       });
-      drawRoundRect(ctx2, sx + 18, sy + 368, sw - 36, 106, 8, "rgba(15, 23, 42, 0.86)", THEME.BORDER);
+      drawRoundRect(ctx2, sx + 18, sy + 378, sw - 36, 110, 8, "rgba(15, 23, 42, 0.86)", THEME.BORDER);
       const startFunds = 900 + (metaLv.finance || 0) * 150;
-      drawText(ctx2, "\u521D\u59CB\u8D44\u91D1", sx + 30, sy + 392, { token: "MICRO", color: THEME.TX2 });
-      drawText(ctx2, formatFunds(startFunds), sx + sw - 30, sy + 392, { token: "BODY", bold: true, color: THEME.GREEN, align: "right", mono: true });
-      drawText(ctx2, "\u5EFA\u961F\u6D41\u7A0B", sx + 30, sy + 422, { token: "MICRO", color: THEME.TX2 });
-      drawText(ctx2, "3\u6838\u5FC3\u5305 \u2192 \u590F\u7A9726\u4EBA", sx + sw - 30, sy + 422, { token: "LABEL", bold: true, color: THEME.GOLD_LIGHT, align: "right" });
-      drawText(ctx2, "\u9632\u649E\u8272", sx + 30, sy + 452, { token: "MICRO", color: THEME.TX2 });
-      drawText(ctx2, "\u5DF2\u542F\u7528 \xB7 \u5BA2\u573A\u81EA\u52A8\u5207\u6362", sx + sw - 30, sy + 452, { token: "MICRO", color: "#38BDF8", align: "right" });
-      const rx = sx + sw + 22;
-      const ry = my + 70;
-      const rw = mx + mw - rx - 26;
-      if (this.wizardStep === 1) {
-        drawText(ctx2, "\u4FF1\u4E50\u90E8\u540D\u79F0", rx, ry + 14, { size: 14, bold: true, color: THEME.GOLD_LIGHT });
-        drawText(ctx2, "\u70B9\u51FB\u8F93\u5165\u6846\u81EA\u5B9A\u4E49\uFF08\u6700\u591A 12 \u5B57\uFF09\u6216\u968F\u673A\u751F\u6210", rx + 96, ry + 14, { size: 11.5, color: THEME.TX2 });
-        const nameBoxW = rw - 156;
-        drawRoundRect(ctx2, rx, ry + 32, nameBoxW, 46, 8, THEME.BG_CARD, hits.isHovered(rx, ry + 32, nameBoxW, 46) ? THEME.GOLD : THEME.BORDER_GOLD);
-        drawText(ctx2, this.customName, rx + 18, ry + 55, { size: 19, bold: true, color: THEME.TX1 });
-        drawIcon(ctx2, "edit", rx + nameBoxW - 72, ry + 55, 13, THEME.GOLD_LIGHT);
-        drawText(ctx2, "\u7F16\u8F91", rx + nameBoxW - 16, ry + 55, { size: 11.5, color: THEME.GOLD_LIGHT, align: "right" });
-        if (actions.onEditName) {
-          hits.add(rx, ry + 32, nameBoxW, 46, () => {
-            SoundEngine.playClick();
-            actions.onEditName(this.customName, (next) => {
-              this.customName = next;
-            });
+      drawText(ctx2, "\u521D\u59CB\u8D44\u91D1", sx + 30, sy + 402, { token: "MICRO", color: THEME.TX2 });
+      drawText(ctx2, formatFunds(startFunds), sx + sw - 30, sy + 402, { token: "BODY", bold: true, color: THEME.GREEN, align: "right", mono: true });
+      drawText(ctx2, "\u5EFA\u961F\u6D41\u7A0B", sx + 30, sy + 434, { token: "MICRO", color: THEME.TX2 });
+      drawText(ctx2, "3\u6838\u5FC3\u5305 \u2192 \u590F\u7A9726\u4EBA", sx + sw - 30, sy + 434, { token: "LABEL", bold: true, color: THEME.GOLD_LIGHT, align: "right" });
+      drawText(ctx2, "\u9632\u649E\u8272", sx + 30, sy + 466, { token: "MICRO", color: THEME.TX2 });
+      drawText(ctx2, "\u5DF2\u542F\u7528 \xB7 \u5BA2\u573A\u81EA\u52A8\u5207\u6362", sx + sw - 30, sy + 466, { token: "MICRO", color: "#38BDF8", align: "right" });
+    }
+    renderStep1RightPanel(ctx2, hits, rx, ry, rw, actions) {
+      drawText(ctx2, "\u4FF1\u4E50\u90E8\u540D\u79F0", rx, ry + 14, { size: 14, bold: true, color: THEME.GOLD_LIGHT });
+      drawText(ctx2, "\u70B9\u51FB\u8F93\u5165\u6846\u81EA\u5B9A\u4E49\uFF08\u6700\u591A 12 \u5B57\uFF09\u6216\u968F\u673A\u751F\u6210", rx + 96, ry + 14, { size: 11.5, color: THEME.TX2 });
+      const nameBoxW = rw - 156;
+      drawRoundRect(ctx2, rx, ry + 32, nameBoxW, 46, 8, THEME.BG_CARD, hits.isHovered(rx, ry + 32, nameBoxW, 46) ? THEME.GOLD : THEME.BORDER_GOLD);
+      drawText(ctx2, this.customName, rx + 18, ry + 55, { size: 19, bold: true, color: THEME.TX1 });
+      drawIcon(ctx2, "edit", rx + nameBoxW - 72, ry + 55, 13, THEME.GOLD_LIGHT);
+      drawText(ctx2, "\u7F16\u8F91", rx + nameBoxW - 16, ry + 55, { size: 11.5, color: THEME.GOLD_LIGHT, align: "right" });
+      if (actions.onEditName) {
+        hits.add(rx, ry + 32, nameBoxW, 46, () => {
+          SoundEngine.playClick();
+          actions.onEditName(this.customName, (next) => {
+            this.customName = next;
           });
+        });
+      }
+      drawButton(ctx2, hits, rx + nameBoxW + 10, ry + 32, 146, 46, "\u968F\u673A\u961F\u540D", () => {
+        this.customName = generateFictionalClubName();
+      }, { variant: "primary", fontSize: 12.5, icon: "dice" });
+      drawText(ctx2, "\u9009\u62E9\u961F\u5FBD\u4E0E\u5E95\u8272\u6A21\u677F", rx, ry + 102, { size: 14, bold: true, color: THEME.GOLD_LIGHT });
+      FICTIONAL_CLUBS.forEach((c, idx) => {
+        const col = idx % 2;
+        const row = Math.floor(idx / 2);
+        const bw = Math.floor((rw - 12) / 2);
+        const bx = rx + col * (bw + 12);
+        const by = ry + 122 + row * 44;
+        const active = this.selectedClubId === c.id;
+        drawRoundRect(ctx2, bx, by, bw, 38, 7, active ? "#1E293B" : THEME.BG_CARD, active ? THEME.GOLD : THEME.BORDER, active ? 1.8 : 1);
+        drawClubCrest(ctx2, bx + 22, by + 19, 13, c);
+        drawText(ctx2, c.name, bx + 44, by + 19, { size: 12.5, bold: active, color: active ? THEME.GOLD_LIGHT : THEME.TX1 });
+        drawRoundRect(ctx2, bx + bw - 42, by + 13, 12, 12, 6, c.primaryColor, "#FFFFFF", 0.8);
+        drawRoundRect(ctx2, bx + bw - 24, by + 13, 12, 12, 6, c.secondaryColor, "#FFFFFF", 0.8);
+        hits.add(bx, by, bw, 38, () => {
+          SoundEngine.playClick();
+          this.selectTemplate(c.id);
+        });
+      });
+      const isHome = this.previewKitMode === "home";
+      const palY = ry + 314;
+      drawChamferPanel(ctx2, rx, palY, rw, 126, 10, "rgba(15, 23, 42, 0.78)", isHome ? THEME.BORDER_GOLD : "rgba(56,189,248,0.45)");
+      drawText(
+        ctx2,
+        isHome ? "\u81EA\u5B9A\u4E49\u4E3B\u573A\u6218\u888D\u914D\u8272" : "\u81EA\u5B9A\u4E49\u5BA2\u573A\u6218\u888D\u914D\u8272",
+        rx + 16,
+        palY + 22,
+        { size: 13.5, bold: true, color: isHome ? THEME.GOLD_LIGHT : "#7DD3FC" }
+      );
+      drawButton(ctx2, hits, rx + rw - 150, palY + 8, 136, 26, isHome ? "\u5207\u6362\u7F16\u8F91\u5BA2\u573A \u21C4" : "\u5207\u6362\u7F16\u8F91\u4E3B\u573A \u21C4", () => {
+        this.previewKitMode = isHome ? "away" : "home";
+      }, { variant: "ghost", fontSize: 11 });
+      const curPrimPalette = isHome ? HOME_PRIMARY_PALETTE : AWAY_PRIMARY_PALETTE;
+      const curSecPalette = isHome ? HOME_SECONDARY_PALETTE : AWAY_SECONDARY_PALETTE;
+      const curPrimVal = isHome ? this.primaryColor : this.awayPrimaryColor;
+      const curSecVal = isHome ? this.secondaryColor : this.awaySecondaryColor;
+      drawText(ctx2, "\u4E3B\u8272:", rx + 16, palY + 62, { size: 12, color: THEME.TX2 });
+      curPrimPalette.forEach((col, i) => {
+        const px = rx + 66 + i * 42;
+        const sel = curPrimVal === col;
+        drawRoundRect(ctx2, px, palY + 46, 32, 30, 6, col, sel ? "#FFFFFF" : THEME.BORDER, sel ? 2.5 : 1);
+        if (sel) {
+          const chk = col === "#F8FAFC" || col === "#FACC15" ? "#090D16" : "#FFFFFF";
+          drawIcon(ctx2, "check", px + 16, palY + 61, 12, chk);
         }
-        drawButton(ctx2, hits, rx + nameBoxW + 10, ry + 32, 146, 46, "\u968F\u673A\u961F\u540D", () => {
-          this.customName = generateFictionalClubName();
-        }, { variant: "primary", fontSize: 12.5, icon: "dice" });
-        drawText(ctx2, "\u9009\u62E9\u961F\u5FBD\u4E0E\u5E95\u8272\u6A21\u677F", rx, ry + 102, { size: 14, bold: true, color: THEME.GOLD_LIGHT });
-        FICTIONAL_CLUBS.forEach((c, idx) => {
-          const col = idx % 2;
-          const row = Math.floor(idx / 2);
-          const bw = Math.floor((rw - 12) / 2);
-          const bx = rx + col * (bw + 12);
-          const by = ry + 122 + row * 44;
-          const active = this.selectedClubId === c.id;
-          drawRoundRect(ctx2, bx, by, bw, 38, 7, active ? "#1E293B" : THEME.BG_CARD, active ? THEME.GOLD : THEME.BORDER, active ? 1.8 : 1);
-          drawClubCrest(ctx2, bx + 22, by + 19, 13, c);
-          drawText(ctx2, c.name, bx + 44, by + 19, { size: 12.5, bold: active, color: active ? THEME.GOLD_LIGHT : THEME.TX1 });
-          drawRoundRect(ctx2, bx + bw - 42, by + 13, 12, 12, 6, c.primaryColor, "#FFFFFF", 0.8);
-          drawRoundRect(ctx2, bx + bw - 24, by + 13, 12, 12, 6, c.secondaryColor, "#FFFFFF", 0.8);
-          hits.add(bx, by, bw, 38, () => {
-            SoundEngine.playClick();
-            this.selectTemplate(c.id);
-          });
+        hits.addTouchTarget(px, palY + 46, 32, 30, () => {
+          SoundEngine.playClick();
+          if (isHome) this.primaryColor = col;
+          else this.awayPrimaryColor = col;
         });
-        const palY = ry + 314;
-        drawChamferPanel(ctx2, rx, palY, rw, 122, 10, "rgba(15, 23, 42, 0.78)", isHome ? THEME.BORDER_GOLD : "rgba(56,189,248,0.45)");
-        drawText(
+      });
+      drawText(ctx2, "\u526F\u8272:", rx + 344, palY + 62, { size: 12, color: THEME.TX2 });
+      curSecPalette.forEach((col, i) => {
+        const px = rx + 392 + i * 42;
+        const sel = curSecVal === col;
+        drawRoundRect(ctx2, px, palY + 46, 32, 30, 6, col, sel ? THEME.GOLD_LIGHT : THEME.BORDER, sel ? 2.5 : 1);
+        if (sel) {
+          const chk = col === "#F8FAFC" || col === "#FACC15" ? "#090D16" : "#FFFFFF";
+          drawIcon(ctx2, "check", px + 16, palY + 61, 12, chk);
+        }
+        hits.addTouchTarget(px, palY + 46, 32, 30, () => {
+          SoundEngine.playClick();
+          if (isHome) this.secondaryColor = col;
+          else this.awaySecondaryColor = col;
+        });
+      });
+      drawText(
+        ctx2,
+        "\u63D0\u793A\uFF1A\u5DE6\u4FA7\u5C55\u793A\u53F0\u4F1A\u5B9E\u65F6\u540C\u6B65\u6240\u9009\u6218\u888D\uFF1B\u6BD4\u8D5B\u65E5\u4E0E\u5BF9\u624B\u649E\u8272\u65F6\u81EA\u52A8\u542F\u7528\u5BA2\u573A\u6218\u888D",
+        rx + 16,
+        palY + 102,
+        { size: 11, color: THEME.TX3 }
+      );
+    }
+    /**
+     * Step 2 左侧：放大后的八卦星盘正上方局部视口
+     * - 100% 复用星盘视觉与弹簧旋转，只展示当前选中的阵型(内环)、打法(外环)及二者碰撞的融合奇点
+     */
+    renderStep2AstrolabeViewport(ctx2, sx, sy, sw, sh) {
+      const sys = getDefenseSystem(this.formation);
+      const styleInfo = STYLE_LABELS[this.style];
+      const sysInfo = SYSTEM_LABELS[sys];
+      const fusion = V6_FUSION_KEYSTONES.find((f) => f.system === sys && f.style === this.style);
+      const pEnter = Math.min(1, this.step2AnimTime / 0.55);
+      const pScale = easeOutCubic(pEnter);
+      const pFade = Math.min(1, this.step2AnimTime / 0.28);
+      const scaleFactor = 0.62 + 0.38 * pScale;
+      drawChamferPanel(ctx2, sx, sy, sw, sh, 12, "rgba(7, 12, 24, 0.98)", THEME.BORDER_GOLD, 1.4, styleInfo.color);
+      ctx2.save();
+      ctx2.beginPath();
+      ctx2.rect(sx + 2, sy + 2, sw - 4, sh - 4);
+      ctx2.clip();
+      ctx2.globalAlpha = pFade;
+      const cx = sx + sw / 2;
+      const baseR = 408 * scaleFactor;
+      const cy = sy + sh + 40;
+      drawAstrolabeBackdropAndRings(
+        ctx2,
+        cx,
+        cy,
+        baseR,
+        { x: sx, y: sy, w: sw, h: sh },
+        this.ambientTime,
+        this.rotFlashTimer,
+        this.rotFlashRing,
+        { backdropAlpha: 0.52, topArchOnly: true }
+      );
+      if (this.step2AnimTime < 0.85) {
+        const bp = this.step2AnimTime / 0.85;
+        const bAlpha = Math.max(0, (1 - bp) * 0.72);
+        const fx = cx;
+        const fy = cy - baseR * 0.5;
+        ctx2.save();
+        const burstGrad = ctx2.createRadialGradient(fx, fy, 4, fx, fy, 220 * (0.4 + bp * 0.9));
+        burstGrad.addColorStop(0, `rgba(254, 240, 138, ${bAlpha.toFixed(3)})`);
+        burstGrad.addColorStop(0.35, `${styleInfo.color}${Math.round(bAlpha * 140).toString(16).padStart(2, "0")}`);
+        burstGrad.addColorStop(1, "rgba(8, 13, 24, 0)");
+        ctx2.fillStyle = burstGrad;
+        ctx2.fillRect(sx, sy, sw, sh);
+        ctx2.strokeStyle = `rgba(254, 240, 138, ${(bAlpha * 0.55).toFixed(3)})`;
+        ctx2.lineWidth = 1.6;
+        for (let ri = 0; ri < 8; ri++) {
+          const ra = -Math.PI / 2 + (ri - 3.5) * 0.22;
+          const rLen = 70 + bp * 190;
+          ctx2.beginPath();
+          ctx2.moveTo(fx + Math.cos(ra) * 18, fy + Math.sin(ra) * 18);
+          ctx2.lineTo(fx + Math.cos(ra) * rLen, fy + Math.sin(ra) * rLen);
+          ctx2.stroke();
+        }
+        ctx2.restore();
+      }
+      const outerAngle = -Math.PI / 2 + this.outerRotOffset;
+      const innerAngle = -Math.PI / 2 + this.innerRotOffset;
+      ctx2.save();
+      ctx2.beginPath();
+      ctx2.moveTo(cx, cy);
+      ctx2.arc(cx, cy, baseR * 1.04, outerAngle - Math.PI / 6, outerAngle + Math.PI / 6);
+      ctx2.closePath();
+      const wedgeGrad = ctx2.createRadialGradient(cx, cy, baseR * 0.45, cx, cy, baseR * 1.02);
+      wedgeGrad.addColorStop(0, `${styleInfo.color}08`);
+      wedgeGrad.addColorStop(0.55, `${styleInfo.color}24`);
+      wedgeGrad.addColorStop(1, `${styleInfo.color}0A`);
+      ctx2.fillStyle = wedgeGrad;
+      ctx2.fill();
+      ctx2.strokeStyle = `${styleInfo.color}66`;
+      ctx2.lineWidth = 1.4;
+      ctx2.stroke();
+      ctx2.restore();
+      ctx2.save();
+      ctx2.beginPath();
+      ctx2.moveTo(cx, cy);
+      ctx2.arc(cx, cy, baseR * 0.48, innerAngle - Math.PI / 5, innerAngle + Math.PI / 5);
+      ctx2.closePath();
+      ctx2.fillStyle = `${sysInfo.color}1C`;
+      ctx2.fill();
+      ctx2.strokeStyle = `${sysInfo.color}55`;
+      ctx2.lineWidth = 1.2;
+      ctx2.stroke();
+      ctx2.restore();
+      const polar = (ang, ratio) => ({
+        x: cx + Math.cos(ang) * (baseR * ratio),
+        y: cy + Math.sin(ang) * (baseR * ratio)
+      });
+      const sysOriginId = SYSTEM_ORIGIN_PASSIVE[sys];
+      const sysOriginDef = V6_PASSIVE_MAP[sysOriginId];
+      const sysOriginPos = polar(innerAngle, 0.295);
+      const formPos = polar(innerAngle, 0.4);
+      const fusionPos = polar(-Math.PI / 2, 0.5);
+      const styleOriginId = STYLE_ORIGIN_PASSIVE[this.style];
+      const styleOriginDef = V6_PASSIVE_MAP[styleOriginId];
+      const styleOriginPos = polar(outerAngle, 0.595);
+      const stylePassives = V6_STYLE_PASSIVES.filter((p) => p.style === this.style && p.id !== styleOriginId);
+      const atkPassive = stylePassives.find((p) => p.tendency === "ATK");
+      const defPassive = stylePassives.find((p) => p.tendency === "DEF");
+      const atkPassivePos = polar(outerAngle - 0.145, 0.685);
+      const defPassivePos = polar(outerAngle + 0.145, 0.685);
+      const styleSkills = V6_ACTIVE_SKILLS.filter((s) => s.source === "style" && s.style === this.style);
+      const atkSkill = styleSkills.find((s) => s.tendency !== "DEF") ?? styleSkills[0];
+      const defSkill = styleSkills.find((s) => s.tendency === "DEF") ?? styleSkills[1];
+      const atkSkillPos = polar(outerAngle - 0.162, 0.79);
+      const defSkillPos = polar(outerAngle + 0.162, 0.79);
+      const styleDirs = V6_DIRECTIVES.filter((d) => d.source === "style" && d.style === this.style && d.route === "steady");
+      const atkDir = styleDirs.find((d) => d.tendency === "ATK") ?? styleDirs[0];
+      const defDir = styleDirs.find((d) => d.tendency === "DEF") ?? styleDirs[1];
+      const atkDirPos = polar(outerAngle - 0.115, 0.895);
+      const defDirPos = polar(outerAngle + 0.115, 0.895);
+      const emblemPos = polar(outerAngle, 0.725);
+      drawAstrolabeEdgeLine(ctx2, sysOriginPos.x, sysOriginPos.y, formPos.x, formPos.y, true, false, sysInfo.color, this.ambientTime, false);
+      drawAstrolabeEdgeLine(ctx2, sysOriginPos.x, sysOriginPos.y, fusionPos.x, fusionPos.y, true, false, THEME.GOLD_LIGHT, this.ambientTime, true);
+      drawAstrolabeEdgeLine(ctx2, fusionPos.x, fusionPos.y, styleOriginPos.x, styleOriginPos.y, true, false, THEME.GOLD_LIGHT, this.ambientTime, true);
+      if (atkPassive) {
+        drawAstrolabeEdgeLine(ctx2, styleOriginPos.x, styleOriginPos.y, atkPassivePos.x, atkPassivePos.y, true, false, styleInfo.color, this.ambientTime);
+      }
+      if (defPassive) {
+        drawAstrolabeEdgeLine(ctx2, styleOriginPos.x, styleOriginPos.y, defPassivePos.x, defPassivePos.y, true, false, styleInfo.color, this.ambientTime);
+      }
+      if (atkSkill && atkPassive) {
+        drawAstrolabeEdgeLine(ctx2, atkPassivePos.x, atkPassivePos.y, atkSkillPos.x, atkSkillPos.y, true, false, "#38BDF8", this.ambientTime);
+      }
+      if (defSkill && defPassive) {
+        drawAstrolabeEdgeLine(ctx2, defPassivePos.x, defPassivePos.y, defSkillPos.x, defSkillPos.y, true, false, "#38BDF8", this.ambientTime);
+      }
+      if (atkDir && atkPassive) {
+        drawAstrolabeEdgeLine(ctx2, atkPassivePos.x, atkPassivePos.y, atkDirPos.x, atkDirPos.y, true, false, ASTROLABE_ZONE_COLOR[atkDir.zone], this.ambientTime);
+      }
+      if (defDir && defPassive) {
+        drawAstrolabeEdgeLine(ctx2, defPassivePos.x, defPassivePos.y, defDirPos.x, defDirPos.y, true, false, ASTROLABE_ZONE_COLOR[defDir.zone], this.ambientTime);
+      }
+      if (sysOriginDef) {
+        drawAstrolabeCircleNode(
           ctx2,
-          isHome ? "\u81EA\u5B9A\u4E49\u4E3B\u573A\u6218\u888D\u914D\u8272" : "\u81EA\u5B9A\u4E49\u5BA2\u573A\u6218\u888D\u914D\u8272",
-          rx + 16,
-          palY + 22,
-          { size: 13.5, bold: true, color: isHome ? THEME.GOLD_LIGHT : "#7DD3FC" }
+          sysOriginPos.x,
+          sysOriginPos.y,
+          12,
+          getAstrolabePassiveGlyph(sysOriginDef),
+          sysInfo.color,
+          true,
+          false,
+          false,
+          this.ambientTime,
+          true
         );
-        drawButton(ctx2, hits, rx + rw - 150, palY + 8, 136, 26, isHome ? "\u5207\u6362\u7F16\u8F91\u5BA2\u573A \u21C4" : "\u5207\u6362\u7F16\u8F91\u4E3B\u573A \u21C4", () => {
-          this.previewKitMode = isHome ? "away" : "home";
-        }, { variant: "ghost", fontSize: 11 });
-        const curPrimPalette = isHome ? HOME_PRIMARY_PALETTE : AWAY_PRIMARY_PALETTE;
-        const curSecPalette = isHome ? HOME_SECONDARY_PALETTE : AWAY_SECONDARY_PALETTE;
-        const curPrimVal = isHome ? this.primaryColor : this.awayPrimaryColor;
-        const curSecVal = isHome ? this.secondaryColor : this.awaySecondaryColor;
-        drawText(ctx2, "\u4E3B\u8272:", rx + 16, palY + 62, { size: 12, color: THEME.TX2 });
-        curPrimPalette.forEach((col, i) => {
-          const px = rx + 66 + i * 42;
-          const sel = curPrimVal === col;
-          drawRoundRect(ctx2, px, palY + 46, 32, 30, 6, col, sel ? "#FFFFFF" : THEME.BORDER, sel ? 2.5 : 1);
-          if (sel) {
-            const chk = col === "#F8FAFC" || col === "#FACC15" ? "#090D16" : "#FFFFFF";
-            drawIcon(ctx2, "check", px + 16, palY + 61, 12, chk);
-          }
-          hits.addTouchTarget(px, palY + 46, 32, 30, () => {
-            SoundEngine.playClick();
-            if (isHome) this.primaryColor = col;
-            else this.awayPrimaryColor = col;
-          });
-        });
-        drawText(ctx2, "\u526F\u8272:", rx + 344, palY + 62, { size: 12, color: THEME.TX2 });
-        curSecPalette.forEach((col, i) => {
-          const px = rx + 392 + i * 42;
-          const sel = curSecVal === col;
-          drawRoundRect(ctx2, px, palY + 46, 32, 30, 6, col, sel ? THEME.GOLD_LIGHT : THEME.BORDER, sel ? 2.5 : 1);
-          if (sel) {
-            const chk = col === "#F8FAFC" || col === "#FACC15" ? "#090D16" : "#FFFFFF";
-            drawIcon(ctx2, "check", px + 16, palY + 61, 12, chk);
-          }
-          hits.addTouchTarget(px, palY + 46, 32, 30, () => {
-            SoundEngine.playClick();
-            if (isHome) this.secondaryColor = col;
-            else this.awaySecondaryColor = col;
-          });
-        });
-        drawText(
-          ctx2,
-          "\u63D0\u793A\uFF1A\u5DE6\u4FA7\u5C55\u793A\u53F0\u4F1A\u5B9E\u65F6\u540C\u6B65\u6240\u9009\u6218\u888D\uFF1B\u6BD4\u8D5B\u65E5\u4E0E\u5BF9\u624B\u649E\u8272\u65F6\u81EA\u52A8\u542F\u7528\u5BA2\u573A\u6218\u888D",
-          rx + 16,
-          palY + 100,
-          { size: 11, color: THEME.TX3 }
-        );
-      } else {
-        drawText(ctx2, "\u9009\u62E9\u521D\u59CB\u9635\u578B (4/3/5\u540E\u536B)", rx, ry + 14, { size: 14.5, bold: true, color: THEME.GOLD_LIGHT });
-        SYS_TABS.forEach((sys, si) => {
-          const lbl = sys === "4-back" ? "\u56DB\u540E\u536B (8)" : sys === "3-back" ? "\u4E09\u540E\u536B (4)" : "\u4E94\u540E\u536B (4)";
-          drawButton(ctx2, hits, rx + 236 + si * 126, ry + 2, 118, 26, lbl, () => {
-            this.sysTab = sys;
-          }, { active: this.sysTab === sys, fontSize: 11.5 });
-        });
-        const forms = FORMATION_SYSTEMS[this.sysTab].formations;
-        const fw = Math.floor((rw - 30) / 4);
-        forms.forEach((f, i) => {
-          const col = i % 4;
-          const row = Math.floor(i / 4);
-          drawButton(ctx2, hits, rx + col * (fw + 10), ry + 40 + row * 38, fw, 32, f, () => {
-            this.formation = f;
-            this.sysTab = getDefenseSystem(f);
-          }, { active: this.formation === f, fontSize: 12.5 });
-        });
-        drawText(ctx2, "\u9009\u62E9\u6218\u672F\u54F2\u5B66", rx, ry + 138, { size: 14.5, bold: true, color: THEME.GOLD_LIGHT });
-        const swBtn = Math.floor((rw - 24) / 3);
-        STYLE_LIST2.forEach((s, i) => {
-          const col = i % 3;
-          const row = Math.floor(i / 3);
-          drawButton(ctx2, hits, rx + col * (swBtn + 12), ry + 164 + row * 54, swBtn, 44, TACTICAL_PRESETS[s].name, () => {
-            this.style = s;
-          }, { active: this.style === s, fontSize: 13 });
-        });
-        const preset = TACTICAL_PRESETS[this.style];
-        drawChamferPanel(ctx2, rx, ry + 292, rw, 116, 10, THEME.BG_CARD, THEME.BORDER_GOLD);
-        drawText(ctx2, `\u5F53\u524D\u54F2\u5B66\uFF1A${preset.name}`, rx + 18, ry + 320, { size: 15, bold: true, color: THEME.GOLD_LIGHT });
-        drawText(
-          ctx2,
-          `\u9632\u7EBF ${preset.lineHeight >= 0 ? "+" : ""}${preset.lineHeight}m \xB7 \u8282\u594F ${preset.tempo.toFixed(2)}x \xB7 \u538B\u8FEB ${preset.pressIntensity.toFixed(2)}x`,
-          rx + rw - 18,
-          ry + 320,
-          { size: 11.5, color: "#38BDF8", align: "right", mono: true }
-        );
-        drawText(ctx2, STYLE_HINTS[this.style], rx + 18, ry + 358, { size: 13, color: THEME.TX1 });
-        drawText(ctx2, "\u5EFA\u961F\u540E\u5C06\u8FDB\u5165 3 \u8F6E\u6838\u5FC3\u5F00\u5305\uFF08\u9632\u7EBF / \u4E2D\u573A / \u950B\u7EBF\u5404 3 \u9009 1\uFF09\uFF0C\u968F\u540E\u8FDB\u5165\u590F\u5B63\u8F6C\u4F1A\u7A97\u8865\u9F50 26 \u4EBA\u5927\u540D\u5355", rx + 18, ry + 388, {
-          size: 11.5,
-          color: THEME.TX2
+        drawText(ctx2, sysInfo.name.slice(0, 3), sysOriginPos.x + 18, sysOriginPos.y + 4, {
+          size: 9.5,
+          bold: true,
+          color: sysInfo.color
         });
       }
-      if (this.wizardStep === 1) {
-        drawButton(ctx2, hits, mx + mw - 236, my + mh - 62, 210, 44, "\u4E0B\u4E00\u6B65\uFF1A\u9635\u578B\u4E0E\u54F2\u5B66 \u25B6", () => {
-          this.wizardStep = 2;
-        }, { variant: "primary", fontSize: 13.5, icon: "play" });
-      } else {
-        drawButton(ctx2, hits, rx, my + mh - 62, 150, 44, "\u25C0 \u4E0A\u4E00\u6B65", () => {
-          this.wizardStep = 1;
-        }, { variant: "ghost", fontSize: 13 });
-        drawButton(ctx2, hits, mx + mw - 306, my + mh - 62, 280, 44, "\u786E\u8BA4\u5EFA\u961F \xB7 \u5F00\u542F\u6838\u5FC3\u5F00\u5305 \u25B6", () => {
-          this.wizardOpen = false;
-          actions.onStartNewSeason({
-            clubId: this.selectedClubId,
-            customName: this.customName,
-            primaryColor: this.primaryColor,
-            secondaryColor: this.secondaryColor,
-            awayPrimaryColor: this.awayPrimaryColor,
-            awaySecondaryColor: this.awaySecondaryColor,
-            formation: this.formation,
-            style: this.style
-          });
-        }, { variant: "gold", fontSize: 14, icon: "sparkle" });
+      ctx2.save();
+      if (!IS_MOBILE) {
+        ctx2.shadowColor = THEME.GREEN;
+        ctx2.shadowBlur = 12;
       }
+      ctx2.fillStyle = "#064E3B";
+      ctx2.beginPath();
+      ctx2.arc(formPos.x, formPos.y, 11.5, 0, Math.PI * 2);
+      ctx2.fill();
+      ctx2.lineWidth = 2.4;
+      ctx2.strokeStyle = THEME.GREEN;
+      ctx2.stroke();
+      ctx2.restore();
+      drawText(ctx2, this.formation, formPos.x, formPos.y + 1, {
+        size: 9,
+        bold: true,
+        color: "#ECFDF5",
+        align: "center",
+        mono: true
+      });
+      drawAstrolabeHexFusionNode(
+        ctx2,
+        fusionPos.x,
+        fusionPos.y,
+        15.5,
+        true,
+        false,
+        true,
+        this.ambientTime
+      );
+      if (styleOriginDef) {
+        drawAstrolabeCircleNode(
+          ctx2,
+          styleOriginPos.x,
+          styleOriginPos.y,
+          13,
+          getAstrolabePassiveGlyph(styleOriginDef),
+          styleInfo.color,
+          true,
+          false,
+          false,
+          this.ambientTime,
+          true
+        );
+      }
+      ctx2.save();
+      if (!IS_MOBILE) {
+        ctx2.shadowColor = styleInfo.color;
+        ctx2.shadowBlur = 16;
+      }
+      ctx2.fillStyle = "#13233E";
+      ctx2.beginPath();
+      ctx2.arc(emblemPos.x, emblemPos.y, 20, 0, Math.PI * 2);
+      ctx2.fill();
+      ctx2.lineWidth = 2.2;
+      ctx2.strokeStyle = THEME.GOLD_LIGHT;
+      ctx2.stroke();
+      ctx2.strokeStyle = `${styleInfo.color}88`;
+      ctx2.lineWidth = 1.2;
+      ctx2.setLineDash([4, 4]);
+      ctx2.beginPath();
+      ctx2.arc(emblemPos.x, emblemPos.y, 24.5, this.ambientTime * 0.55, this.ambientTime * 0.55 + Math.PI * 1.5);
+      ctx2.stroke();
+      ctx2.setLineDash([]);
+      drawSkillGlyph(ctx2, ASTROLABE_STYLE_GLYPH[this.style], emblemPos.x, emblemPos.y, 24, styleInfo.color, THEME.GOLD_LIGHT);
+      ctx2.restore();
+      if (atkPassive) {
+        drawAstrolabeCircleNode(ctx2, atkPassivePos.x, atkPassivePos.y, 8.5, getAstrolabePassiveGlyph(atkPassive), styleInfo.color, true, false, false, this.ambientTime);
+      }
+      if (defPassive) {
+        drawAstrolabeCircleNode(ctx2, defPassivePos.x, defPassivePos.y, 8.5, getAstrolabePassiveGlyph(defPassive), styleInfo.color, true, false, false, this.ambientTime);
+      }
+      if (atkSkill) {
+        drawAstrolabeDiamondSkillNode(ctx2, atkSkillPos.x, atkSkillPos.y, 10.5, ASTROLABE_STYLE_GLYPH[this.style], true, false, true, false, atkSkill.name.slice(0, 4));
+      }
+      if (defSkill) {
+        drawAstrolabeDiamondSkillNode(ctx2, defSkillPos.x, defSkillPos.y, 10.5, ASTROLABE_STYLE_GLYPH[this.style], true, false, true, false, defSkill.name.slice(0, 4));
+      }
+      if (atkDir) {
+        drawAstrolabeDirectiveNode(ctx2, cx, cy, atkDirPos.x, atkDirPos.y, 9, atkDir.tendency, atkDir.zone, true, false, true, false, [], atkDir.name.slice(0, 4));
+      }
+      if (defDir) {
+        drawAstrolabeDirectiveNode(ctx2, cx, cy, defDirPos.x, defDirPos.y, 9, defDir.tendency, defDir.zone, true, false, true, false, [], defDir.name.slice(0, 4));
+      }
+      drawRoundRect(ctx2, sx + 12, sy + 12, sw - 24, 46, 8, "rgba(8, 13, 25, 0.88)", styleInfo.color, 1.1);
+      drawSkillGlyph(ctx2, ASTROLABE_SYSTEM_GLYPH[sys], sx + 32, sy + 35, 19, sysInfo.color, THEME.GOLD_LIGHT);
+      drawText(ctx2, `${styleInfo.name} \xD7 ${this.formation}`, sx + sw / 2, sy + 28, {
+        size: 13.5,
+        bold: true,
+        color: THEME.TX1,
+        align: "center"
+      });
+      drawText(ctx2, `\u661F\u76D8\u6B63\u4E0A\u65B9 \xB7 \u5DF2\u9009\u5171\u9E23\u9884\u89C8`, sx + sw / 2, sy + 46, {
+        size: 10,
+        color: styleInfo.color,
+        align: "center"
+      });
+      drawSkillGlyph(ctx2, ASTROLABE_STYLE_GLYPH[this.style], sx + sw - 32, sy + 35, 19, styleInfo.color, THEME.GOLD_LIGHT);
+      drawRoundRect(ctx2, sx + 12, sy + sh - 62, sw - 24, 50, 8, "rgba(24, 15, 6, 0.90)", THEME.BORDER_GOLD, 1.3);
+      drawText(ctx2, `\u2726 \u78B0\u649E\u5947\u70B9\uFF1A${fusion.name}`, sx + sw / 2, sy + sh - 44, {
+        size: 12.5,
+        bold: true,
+        color: THEME.GOLD_LIGHT,
+        align: "center"
+      });
+      drawText(ctx2, `${fusion.branchA.label} / ${fusion.branchB.label}`, sx + sw / 2, sy + sh - 24, {
+        size: 10.5,
+        color: "#FDE68A",
+        align: "center"
+      });
+      ctx2.restore();
+    }
+    renderStep2RightPanel(ctx2, hits, rx, ry, rw) {
+      const pRight = easeOutCubic(Math.min(1, Math.max(0, (this.step2AnimTime - 0.08) / 0.42)));
+      const yOff = Math.round((1 - pRight) * 14);
+      ctx2.save();
+      ctx2.globalAlpha = Math.max(0.05, pRight);
+      const baseY = ry + yOff;
+      drawText(ctx2, "\u9009\u62E9\u521D\u59CB\u9635\u578B (\u5185\u73AF\u9632\u7EBF)", rx, baseY + 12, { size: 13.5, bold: true, color: THEME.GOLD_LIGHT });
+      SYS_TABS.forEach((sys2, si) => {
+        const lbl = sys2 === "4-back" ? "\u56DB\u540E\u536B (8)" : sys2 === "3-back" ? "\u4E09\u540E\u536B (4)" : "\u4E94\u540E\u536B (4)";
+        drawButton(ctx2, hits, rx + rw - 372 + si * 126, baseY + 1, 118, 24, lbl, () => {
+          this.sysTab = sys2;
+        }, { active: this.sysTab === sys2, fontSize: 11 });
+      });
+      const forms = FORMATION_SYSTEMS[this.sysTab].formations;
+      const fw = Math.floor((rw - 30) / 4);
+      forms.forEach((f, i) => {
+        const col = i % 4;
+        const row = Math.floor(i / 4);
+        drawButton(ctx2, hits, rx + col * (fw + 10), baseY + 32 + row * 34, fw, 29, f, () => {
+          this.selectFormation(f);
+        }, { active: this.formation === f, fontSize: 12 });
+      });
+      const styleY = baseY + 108;
+      drawText(ctx2, "\u9009\u62E9\u6218\u672F\u54F2\u5B66 (\u5916\u73AF\u6253\u6CD5)", rx, styleY + 10, { size: 13.5, bold: true, color: THEME.GOLD_LIGHT });
+      const swBtn = Math.floor((rw - 20) / 3);
+      STYLE_LIST2.forEach((s, i) => {
+        const col = i % 3;
+        const row = Math.floor(i / 3);
+        const bx = rx + col * (swBtn + 10);
+        const by = styleY + 26 + row * 40;
+        const active = this.style === s;
+        const sCol = STYLE_LABELS[s].color;
+        drawRoundRect(
+          ctx2,
+          bx,
+          by,
+          swBtn,
+          34,
+          7,
+          active ? "rgba(24, 38, 66, 0.96)" : THEME.BG_CARD,
+          active ? sCol : hits.isHovered(bx, by, swBtn, 34) ? THEME.GOLD : THEME.BORDER,
+          active ? 1.8 : 1
+        );
+        ctx2.fillStyle = sCol;
+        ctx2.beginPath();
+        ctx2.arc(bx + 16, by + 17, 4.5, 0, Math.PI * 2);
+        ctx2.fill();
+        drawText(ctx2, TACTICAL_PRESETS[s].name, bx + 28, by + 17, {
+          size: 12.5,
+          bold: active,
+          color: active ? "#FFFFFF" : THEME.TX1
+        });
+        if (active) {
+          drawText(ctx2, "\u2605", bx + swBtn - 16, by + 17, { size: 11, color: sCol, align: "center" });
+        }
+        hits.add(bx, by, swBtn, 34, () => {
+          this.selectStyle(s);
+        });
+      });
+      const dashY = styleY + 114;
+      const dashH = 226;
+      const sys = getDefenseSystem(this.formation);
+      const styleInfo = STYLE_LABELS[this.style];
+      drawChamferPanel(ctx2, rx, dashY, rw, dashH, 10, "rgba(9, 15, 29, 0.94)", THEME.BORDER_GOLD, 1.2, styleInfo.color);
+      const leftW = 266;
+      drawText(ctx2, `\u6218\u672F\u753B\u50CF \xB7 ${SYSTEM_NOTE[sys]}`, rx + 14, dashY + 18, {
+        size: 11.5,
+        bold: true,
+        color: styleInfo.color
+      });
+      const baseAxes = STYLE_BASE_RADAR[this.style];
+      const sysDelta = SYSTEM_RADAR_DELTA[sys];
+      const axes = baseAxes.map((v, idx) => Math.max(20, Math.min(98, v + sysDelta[idx])));
+      this.drawTacticalRadar(
+        ctx2,
+        rx + leftW / 2,
+        dashY + 102,
+        50,
+        axes,
+        ["\u63A7\u7403", "\u903C\u62A2", "\u9632\u5B88", "\u8FB9\u8DEF", "\u53CD\u51FB"],
+        styleInfo.color
+      );
+      const pc = STYLE_PROS_CONS[this.style];
+      drawRoundRect(ctx2, rx + 12, dashY + 168, leftW - 20, 22, 5, "rgba(20, 83, 45, 0.30)", "rgba(34, 197, 94, 0.45)");
+      drawText(ctx2, `\u4F18\u52BF\uFF1A${fitText(ctx2, pc.pros, leftW - 36, 10)}`, rx + 20, dashY + 179, {
+        size: 10,
+        color: "#86EFAC"
+      });
+      drawRoundRect(ctx2, rx + 12, dashY + 195, leftW - 20, 22, 5, "rgba(127, 29, 29, 0.28)", "rgba(248, 113, 113, 0.42)");
+      drawText(ctx2, `\u77ED\u677F\uFF1A${fitText(ctx2, pc.cons, leftW - 36, 10)}`, rx + 20, dashY + 206, {
+        size: 10,
+        color: "#FCA5A5"
+      });
+      ctx2.strokeStyle = "rgba(148, 163, 184, 0.18)";
+      ctx2.lineWidth = 1;
+      ctx2.beginPath();
+      ctx2.moveTo(rx + leftW + 4, dashY + 12);
+      ctx2.lineTo(rx + leftW + 4, dashY + dashH - 12);
+      ctx2.stroke();
+      const rColX = rx + leftW + 16;
+      const rColW = rw - leftW - 28;
+      const styleSkill = V6_ACTIVE_SKILLS.find((s) => s.source === "style" && s.style === this.style);
+      const formSkill = V6_ACTIVE_SKILLS.find((s) => s.source === "formation" && s.formation === this.formation);
+      const repSkills = [styleSkill, formSkill].filter((x) => !!x).slice(0, 2);
+      drawText(ctx2, "\u4EE3\u8868\u4E3B\u52A8\u6280 (\u661F\u76D8\u89E3\u9501\u540E F \u952E\u77AC\u53D1)", rColX, dashY + 18, {
+        size: 11,
+        bold: true,
+        color: "#7DD3FC"
+      });
+      repSkills.forEach((sk, idx) => {
+        const cardY = dashY + 30 + idx * 42;
+        drawRoundRect(ctx2, rColX, cardY, rColW, 36, 6, "rgba(12, 54, 86, 0.42)", "#38BDF8", 1);
+        drawBadge(ctx2, rColX + 6, cardY + 8, 42, 20, sk.source === "formation" ? "\u9635\u578B\u6280" : "\u6D41\u6D3E\u6280", "#0F172A", "#38BDF8");
+        drawText(ctx2, sk.name, rColX + 54, cardY + 13, { size: 11.5, bold: true, color: "#FFFFFF" });
+        drawText(ctx2, fitText(ctx2, `${sk.situationLabel} \xB7 ${sk.instantLabel}`, rColW - 62, 9.5), rColX + 54, cardY + 27, {
+          size: 9.5,
+          color: "#BAE6FD"
+        });
+      });
+      const styleDir = V6_DIRECTIVES.find((d) => d.source === "style" && d.style === this.style && d.route === "steady");
+      const formDir = V6_DIRECTIVES.find((d) => d.source === "formation" && d.formation === this.formation) ?? V6_DIRECTIVES.find((d) => d.source === "style" && d.style === this.style && d.id !== styleDir?.id);
+      const repDirs = [styleDir, formDir].filter((x) => !!x).slice(0, 2);
+      const dirTitleY = dashY + 124;
+      drawText(ctx2, "\u4EE3\u8868\u4E34\u573A\u624B\u724C (\u6BD4\u8D5B\u56DB\u8D5B\u6BB5\u62CD\u677F)", rColX, dirTitleY, {
+        size: 11,
+        bold: true,
+        color: THEME.GOLD_LIGHT
+      });
+      repDirs.forEach((d, idx) => {
+        const cardY = dirTitleY + 12 + idx * 44;
+        const zCol = ASTROLABE_ZONE_COLOR[d.zone];
+        drawRoundRect(ctx2, rColX, cardY, rColW, 38, 6, "rgba(18, 29, 51, 0.90)", zCol, 1);
+        ctx2.fillStyle = zCol;
+        ctx2.fillRect(rColX + 2, cardY + 4, 3, 30);
+        drawBadge(ctx2, rColX + 10, cardY + 9, 36, 20, `${d.tpCost}TP`, "#78350F", THEME.GOLD_LIGHT);
+        drawText(ctx2, `${d.name} (${ASTROLABE_ZONE_LABEL[d.zone]}\xB7${d.tendency === "ATK" ? "\u653B" : "\u5B88"})`, rColX + 52, cardY + 13, {
+          size: 11,
+          bold: true,
+          color: THEME.TX1
+        });
+        drawText(ctx2, fitText(ctx2, d.benefitSummary, rColW - 60, 9.5), rColX + 52, cardY + 28, {
+          size: 9.5,
+          color: "#86EFAC"
+        });
+      });
+      ctx2.restore();
+    }
+    drawTacticalRadar(ctx2, cx, cy, maxR, values, labels, accentColor) {
+      const n = 5;
+      ctx2.save();
+      for (const scale of [0.35, 0.68, 1]) {
+        ctx2.beginPath();
+        for (let i = 0; i < n; i++) {
+          const ang = -Math.PI / 2 + i * 2 * Math.PI / n;
+          const px = cx + Math.cos(ang) * maxR * scale;
+          const py = cy + Math.sin(ang) * maxR * scale;
+          if (i === 0) ctx2.moveTo(px, py);
+          else ctx2.lineTo(px, py);
+        }
+        ctx2.closePath();
+        ctx2.strokeStyle = scale === 1 ? "rgba(148, 163, 184, 0.35)" : "rgba(148, 163, 184, 0.16)";
+        ctx2.lineWidth = 1;
+        ctx2.stroke();
+      }
+      for (let i = 0; i < n; i++) {
+        const ang = -Math.PI / 2 + i * 2 * Math.PI / n;
+        const ex = cx + Math.cos(ang) * maxR;
+        const ey = cy + Math.sin(ang) * maxR;
+        ctx2.strokeStyle = "rgba(148, 163, 184, 0.20)";
+        ctx2.beginPath();
+        ctx2.moveTo(cx, cy);
+        ctx2.lineTo(ex, ey);
+        ctx2.stroke();
+        const lx = cx + Math.cos(ang) * (maxR + 15);
+        const ly = cy + Math.sin(ang) * (maxR + 13);
+        drawText(ctx2, `${labels[i]}`, lx, ly, {
+          size: 9.5,
+          bold: true,
+          color: "#CBD5E1",
+          align: "center"
+        });
+      }
+      ctx2.beginPath();
+      const pts = [];
+      for (let i = 0; i < n; i++) {
+        const ang = -Math.PI / 2 + i * 2 * Math.PI / n;
+        const r = maxR * (values[i] / 100);
+        const px = cx + Math.cos(ang) * r;
+        const py = cy + Math.sin(ang) * r;
+        pts.push({ x: px, y: py });
+        if (i === 0) ctx2.moveTo(px, py);
+        else ctx2.lineTo(px, py);
+      }
+      ctx2.closePath();
+      ctx2.fillStyle = `${accentColor}44`;
+      ctx2.fill();
+      ctx2.lineWidth = 2;
+      ctx2.strokeStyle = accentColor;
+      if (!IS_MOBILE) {
+        ctx2.shadowColor = accentColor;
+        ctx2.shadowBlur = 10;
+      }
+      ctx2.stroke();
+      ctx2.shadowBlur = 0;
+      for (const pt of pts) {
+        ctx2.fillStyle = "#FFFFFF";
+        ctx2.beginPath();
+        ctx2.arc(pt.x, pt.y, 2.6, 0, Math.PI * 2);
+        ctx2.fill();
+      }
+      ctx2.restore();
     }
   };
 
@@ -43017,6 +44466,9 @@
     }
     needsHighFps() {
       if (!this.bootIntro.isDone() || this.transition.isActive() || this.toast !== null || this.textInputModal.isOpen()) {
+        return true;
+      }
+      if (this.route === "title" && this.titleScreen.isAnimating()) {
         return true;
       }
       if (this.route === "meta" && this.metaScreen.isAnimating()) {
@@ -43518,7 +44970,7 @@
         ctx2.font = `bold 12px ${THEME.FONT_FAMILY}`;
         const tw = Math.min(580, Math.max(240, ctx2.measureText(this.toast.text).width + 48));
         const tx = 640 - tw / 2;
-        const ty = 668 + slide;
+        const ty = 72 - slide;
         if (!IS_MOBILE) {
           ctx2.shadowColor = "rgba(0,0,0,0.65)";
           ctx2.shadowBlur = 18;
@@ -43785,6 +45237,23 @@
         },
         getRoute: () => app.route,
         getState: () => app.league.getState(),
+        // 当前帧所有可点热区。Canvas 没有 DOM 定位器，自动化只能靠它枚举
+        // 「这一页到底有哪些可点区域」，否则只能靠源码里手抄坐标，极易漂移。
+        getHits: () => {
+          const hits = app.hits;
+          return (hits?.regions ?? []).map((r) => ({ x: r.x, y: r.y, w: r.w, h: r.h }));
+        },
+        // 当前打开了哪些弹窗，用于断言「弹窗确实开了 / 确实关了」
+        getModals: () => {
+          const a = app;
+          const names = ["playerModal", "confirmModal", "settingsModal", "saveSlotModal", "textInputModal"];
+          const open = names.filter((n) => a[n]?.isOpen?.());
+          const storyPending = !!app.league.getState().pendingStoryEvent;
+          if (storyPending) open.push("storyModal");
+          return open;
+        },
+        // 新手引导进度：TutorialOverlay 按 step 判定是否遮挡，进度全在 LeagueManager
+        getTutorial: () => app.league.getTutorialProgress(),
         // 比赛内部调试状态：Canvas 游戏没有 DOM 定位器，序章强制教程（“打出某张卡/换人”）
         // 只能靠这个接口让自动化脚本知道该点哪张牌，否则只能盲等 180s 超时。
         getMatchDebug: () => {

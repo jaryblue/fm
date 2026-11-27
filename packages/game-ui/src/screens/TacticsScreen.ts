@@ -186,43 +186,47 @@ export class TacticsScreen {
     const paColor = paVal - player.ca >= 8 ? '#C084FC' : '#7DD3FC';
 
     if (!detailed) {
-      // 紧凑版球场首发卡 (106×60)：灰阶微图标 + 进度条，零文字前缀拥挤
+      // 紧凑版球场首发卡 (桌面 106×62 / 移动 112×64)：灰阶微图标 + 进度条，零文字前缀拥挤
       const roleMaxW = opts.statusBadge ? 38 : opts.isCaptain ? 42 : 48;
       const roleW = Math.min(roleMaxW, Math.max(30, opts.roleLabel.length * 7.5 + 8));
-      drawBadge(ctx, x + 5, y + 4, roleW, 14, opts.roleLabel, opts.roleBg, opts.roleFg);
+      drawBadge(ctx, x + 5, y + 4, roleW, IS_MOBILE ? 16 : 14, opts.roleLabel, opts.roleBg, opts.roleFg);
 
       if (opts.statusBadge) {
-        drawBadge(ctx, x + w - 31, y + 4, 27, 14, opts.statusBadge.text, opts.statusBadge.bg, opts.statusBadge.fg);
+        drawBadge(ctx, x + w - 33, y + 4, 29, IS_MOBILE ? 16 : 14, opts.statusBadge.text, opts.statusBadge.bg, opts.statusBadge.fg);
       } else if (opts.isCaptain) {
-        drawBadge(ctx, x + w - 19, y + 4, 15, 14, 'C', '#FACC15', '#080C14');
+        drawBadge(ctx, x + w - 20, y + 4, 16, IS_MOBILE ? 16 : 14, 'C', '#FACC15', '#080C14');
       }
 
-      const caRight = opts.statusBadge ? x + w - 34 : opts.isCaptain ? x + w - 22 : x + w - 5;
-      drawText(ctx, `${player.ca}/${paVal}`, caRight, y + 11, {
-        size: 11,
+      const caRight = opts.statusBadge ? x + w - 36 : opts.isCaptain ? x + w - 23 : x + w - 5;
+      drawText(ctx, `${player.ca}/${paVal}`, caRight, y + 12, {
+        size: IS_MOBILE ? 12.5 : 11,
+        rawSize: IS_MOBILE,
         bold: true,
         color: paVal - player.ca >= 8 ? '#E9D5FF' : THEME.GOLD_LIGHT,
         align: 'right',
         mono: true,
       });
 
-      drawPlayerAvatar(ctx, x + 5, y + 20, 22, 24, player, club, { radius: 4, showFrame: false });
-      const nameStr = fitText(ctx, `${hasGold ? '★' : ''}${player.name}`, w - 34, 10.5, true);
-      drawText(ctx, nameStr, x + 30, y + 27, {
-        size: 10.5,
+      drawPlayerAvatar(ctx, x + 5, y + 22, 22, 24, player, club, { radius: 4, showFrame: false });
+      const nameSize = IS_MOBILE ? 12 : 10.5;
+      const nameStr = fitText(ctx, `${hasGold ? '★' : ''}${player.name}`, w - 34, nameSize, true, IS_MOBILE);
+      drawText(ctx, nameStr, x + 30, y + 29, {
+        size: nameSize,
+        rawSize: IS_MOBILE,
         bold: true,
         color: hasGold || player.isNewSigning ? THEME.GOLD_LIGHT : THEME.TX1,
       });
       const secTxt = player.secondaryRoles && player.secondaryRoles.length > 0 ? ` · ${player.secondaryRoles[0]}` : '';
-      drawText(ctx, fitText(ctx, `${player.age}${secTxt}`, w - 34, 9), x + 30, y + 40, {
-        size: 9,
+      drawText(ctx, fitText(ctx, `${player.age}${secTxt}`, w - 34, IS_MOBILE ? 10.5 : 9, false, IS_MOBILE), x + 30, y + 42, {
+        size: IS_MOBILE ? 10.5 : 9,
+        rawSize: IS_MOBILE,
         color: THEME.TX2,
         mono: true,
       });
 
       const botY = y + h - 8;
       drawStatMicro(ctx, 'stat_fam', `${opts.fam}%`, x + 5, botY, {
-        iconSize: 9.5,
+        iconSize: IS_MOBILE ? 10.5 : 9.5,
         fontSize: IS_MOBILE ? 10 : 9.5,
         iconColor: THEME.TX3,
         valueColor: famCol,
@@ -230,7 +234,7 @@ export class TacticsScreen {
       });
       drawMiniBar(ctx, x + w - (IS_MOBILE ? 60 : 46), botY - 2, IS_MOBILE ? 22 : 20, 3.5, fit / 100, fit < 60 ? '#FBBF24' : THEME.GREEN);
       drawText(ctx, `${fit}%`, x + w - 5, botY, {
-        size: IS_MOBILE ? 10 : 9,
+        size: IS_MOBILE ? 10.5 : 9,
         rawSize: IS_MOBILE,
         color: fit < 60 ? '#FBBF24' : THEME.TX2,
         align: 'right',
@@ -239,42 +243,49 @@ export class TacticsScreen {
       return;
     }
 
-    // 详细版替补席卡片 (158×104)：灰阶微图标 + 数值，充裕留白与 i18n 冗余
-    const roleW = Math.min(50, Math.max(34, opts.roleLabel.length * 8.5 + 10));
-    drawBadge(ctx, x + 8, y + 6, roleW, 16, opts.roleLabel, opts.roleBg, opts.roleFg);
+    // 详细版替补席卡片 (桌面 158×104 / 移动 240×136)：灰阶微图标 + 数值，充裕留白
+    const roleW = Math.min(54, Math.max(36, opts.roleLabel.length * 8.5 + 10));
+    const badgeH = IS_MOBILE ? 18 : 16;
+    drawBadge(ctx, x + 8, y + 6, roleW, badgeH, opts.roleLabel, opts.roleBg, opts.roleFg);
 
     if (opts.statusBadge) {
-      drawBadge(ctx, x + w - (IS_MOBILE ? 42 : 36), y + 6, IS_MOBILE ? 34 : 28, IS_MOBILE ? 17 : 16, opts.statusBadge.text, opts.statusBadge.bg, opts.statusBadge.fg);
+      drawBadge(ctx, x + w - (IS_MOBILE ? 44 : 36), y + 6, IS_MOBILE ? 36 : 28, badgeH, opts.statusBadge.text, opts.statusBadge.bg, opts.statusBadge.fg);
     } else if (opts.isCaptain) {
-      drawBadge(ctx, x + w - 24, y + 6, 16, 16, 'C', '#FACC15', '#080C14');
+      drawBadge(ctx, x + w - 24, y + 6, 16, badgeH, 'C', '#FACC15', '#080C14');
     }
 
-    const caRight = opts.statusBadge ? x + w - (IS_MOBILE ? 46 : 40) : opts.isCaptain ? x + w - 27 : x + w - 8;
-    drawText(ctx, `${player.ca}/${paVal}`, caRight, y + 14, {
-      size: 12,
+    const caRight = opts.statusBadge ? x + w - (IS_MOBILE ? 48 : 40) : opts.isCaptain ? x + w - 27 : x + w - 8;
+    drawText(ctx, `${player.ca}/${paVal}`, caRight, y + 15, {
+      size: IS_MOBILE ? 14.5 : 12,
+      rawSize: IS_MOBILE,
       bold: true,
       color: paVal - player.ca >= 8 ? paColor : THEME.GOLD_LIGHT,
       align: 'right',
       mono: true,
     });
 
-    const nameStr = fitText(ctx, `${hasGold ? '★' : ''}${player.name}`, w - 52, 12, true);
-    drawPlayerAvatar(ctx, x + 8, y + 26, 28, 34, player, club, { radius: 5, showFrame: true });
-    drawText(ctx, nameStr, x + 42, y + 36, {
-      size: 12,
+    const avW = IS_MOBILE ? 36 : 28;
+    const avH = IS_MOBILE ? 44 : 34;
+    const dNameSize = IS_MOBILE ? 15 : 12;
+    const nameStr = fitText(ctx, `${hasGold ? '★' : ''}${player.name}`, w - avW - 26, dNameSize, true, IS_MOBILE);
+    drawPlayerAvatar(ctx, x + 8, y + 28, avW, avH, player, club, { radius: 5, showFrame: true });
+    drawText(ctx, nameStr, x + 14 + avW, y + (IS_MOBILE ? 40 : 36), {
+      size: dNameSize,
+      rawSize: IS_MOBILE,
       bold: true,
       color: hasGold || player.isNewSigning ? THEME.GOLD_LIGHT : THEME.TX1,
     });
 
     const secTxt = player.secondaryRoles && player.secondaryRoles.length > 0 ? ` · ${player.secondaryRoles.slice(0, 2).join('/')}` : '';
-    drawText(ctx, fitText(ctx, `${player.age}y${secTxt}`, w - 52, 10), x + 42, y + 52, {
-      size: 10,
+    drawText(ctx, fitText(ctx, `${player.age}岁${secTxt}`, w - avW - 26, IS_MOBILE ? 12.5 : 10, false, IS_MOBILE), x + 14 + avW, y + (IS_MOBILE ? 60 : 52), {
+      size: IS_MOBILE ? 12.5 : 10,
+      rawSize: IS_MOBILE,
       color: THEME.TX2,
       mono: true,
     });
 
     // 四维 / 门将三维：灰阶微图标 + 清晰数字
-    const statsRowY = y + 72;
+    const statsRowY = y + (IS_MOBILE ? 90 : 72);
     const statItems: Array<['stat_pace' | 'stat_shoot' | 'stat_pass' | 'stat_def' | 'stat_gk' | 'stat_pos' | 'stat_calm', number]> = player.role === 'GK'
       ? [
           ['stat_gk', a.goalkeeping],
@@ -287,42 +298,42 @@ export class TacticsScreen {
           ['stat_pass', a.passing],
           ['stat_def', a.defending],
         ];
-    const colStep = player.role === 'GK' ? 48 : 36;
+    const colStep = IS_MOBILE ? (player.role === 'GK' ? 74 : 56) : (player.role === 'GK' ? 48 : 36);
     statItems.forEach(([ic, val], si) => {
-      drawStatMicro(ctx, ic, `${val}`, x + 8 + si * colStep, statsRowY, {
-        iconSize: 10.5,
-        fontSize: 10.5,
+      drawStatMicro(ctx, ic, `${val}`, x + 10 + si * colStep, statsRowY, {
+        iconSize: IS_MOBILE ? 13 : 10.5,
+        fontSize: IS_MOBILE ? 11.5 : 10.5,
         iconColor: THEME.TX3,
         valueColor: val >= 75 ? THEME.GOLD_LIGHT : THEME.TX1,
         bold: val >= 75,
-        gap: 2.5,
+        gap: 3,
       });
     });
 
-    // 底部行：熟悉度微图标 + 进度条 + 体能（右侧留出 70px 避免顶到体能条）
-    const botY = y + h - 12;
-    const maxLx = x + w - 72;
+    // 底部行：熟悉度微图标 + 进度条 + 体能（右侧留出空间避免顶到体能条）
+    const botY = y + h - (IS_MOBILE ? 15 : 12);
+    const maxLx = x + w - (IS_MOBILE ? 86 : 72);
     const g = player.seasonStats.goals;
     const ast = player.seasonStats.assists;
-    let lx = x + 8;
+    let lx = x + 10;
     lx += drawStatMicro(ctx, 'stat_fam', `${opts.fam}%`, lx, botY, {
-      iconSize: 10,
-      fontSize: 10,
+      iconSize: IS_MOBILE ? 12 : 10,
+      fontSize: IS_MOBILE ? 10.5 : 10,
       iconColor: THEME.TX3,
       valueColor: famCol,
       gap: 3,
     });
-    if (g > 0 && lx + 26 < maxLx) {
+    if (g > 0 && lx + 30 < maxLx) {
+      lx += 6;
+      lx += drawStatMicro(ctx, 'ball', `${g}`, lx, botY, { iconSize: IS_MOBILE ? 12 : 10, fontSize: IS_MOBILE ? 10.5 : 10, iconColor: THEME.TX3, valueColor: THEME.TX1, gap: 2 });
+    }
+    if (ast > 0 && lx + 28 < maxLx) {
       lx += 5;
-      lx += drawStatMicro(ctx, 'ball', `${g}`, lx, botY, { iconSize: 10, fontSize: 10, iconColor: THEME.TX3, valueColor: THEME.TX1, gap: 2 });
+      drawStatMicro(ctx, 'stat_assist', `${ast}`, lx, botY, { iconSize: IS_MOBILE ? 12 : 10, fontSize: IS_MOBILE ? 10.5 : 10, iconColor: THEME.TX3, valueColor: THEME.TX1, gap: 2 });
     }
-    if (ast > 0 && lx + 24 < maxLx) {
-      lx += 4;
-      drawStatMicro(ctx, 'stat_assist', `${ast}`, lx, botY, { iconSize: 10, fontSize: 10, iconColor: THEME.TX3, valueColor: THEME.TX1, gap: 2 });
-    }
-    drawMiniBar(ctx, x + w - 64, botY - 2, 24, 4, fit / 100, fit < 60 ? '#FBBF24' : THEME.GREEN);
-    drawText(ctx, `${fit}%`, x + w - 8, botY, {
-      token: 'MICRO',
+    drawMiniBar(ctx, x + w - (IS_MOBILE ? 78 : 64), botY - 2, 26, 4, fit / 100, fit < 60 ? '#FBBF24' : THEME.GREEN);
+    drawText(ctx, `${fit}%`, x + w - 10, botY, {
+      token: IS_MOBILE ? 'LABEL' : 'MICRO',
       color: fit < 60 ? '#FBBF24' : THEME.TX2,
       align: 'right',
       mono: true,
@@ -714,8 +725,8 @@ export class TacticsScreen {
       const slotDuty = club.slotDuties?.[i] ?? 'default';
       const dutyOpt = slotDuty !== 'default' ? ROLE_DUTY_OPTIONS[slot.role]?.find(d => d.duty === slotDuty) : undefined;
       const roleLabel = dutyOpt ? `${slot.role}·${dutyOpt.label.slice(0, 2)}` : `${slot.role}${secondaryFit ? '·兼' : ''}`;
-      const cw = 106;
-      const ch = 62;
+      const cw = IS_MOBILE ? 112 : 106;
+      const ch = IS_MOBILE ? 64 : 62;
 
       ctx.save();
       if (isSelected) {
@@ -929,18 +940,19 @@ export class TacticsScreen {
       actions.onSave();
     }, { variant: 'ghost', fontSize: IS_MOBILE ? 11 : 10.5 });
 
-    const pageSize = 12; // 3列 × 4行 = 12张高呼吸感卡片
+    const cols = IS_MOBILE ? 2 : 3;
+    const pageSize = IS_MOBILE ? 6 : 12; // 移动端 2×3 大卡，桌面端 3×4
     const totalPages = Math.max(1, Math.ceil(benchSquad.length / pageSize));
     if (this.benchPage >= totalPages) this.benchPage = totalPages - 1;
     const visibleBench = benchSquad.slice(this.benchPage * pageSize, (this.benchPage + 1) * pageSize);
 
     visibleBench.forEach((p, idx) => {
-      const col = idx % 3;
-      const row = Math.floor(idx / 3);
-      const cw = 158;
-      const ch = 104;
-      const cx = 758 + col * 166;
-      const cy = 214 + row * 110;
+      const col = idx % cols;
+      const row = Math.floor(idx / cols);
+      const cw = IS_MOBILE ? 240 : 158;
+      const ch = IS_MOBILE ? 136 : 104;
+      const cx = 758 + col * (IS_MOBILE ? 248 : 166);
+      const cy = 214 + row * (IS_MOBILE ? 144 : 110);
 
       const isBenchSelected = this.selectedBenchPlayerId === p.id;
       const isSuspended = (p.suspendedRounds ?? 0) > 0;
