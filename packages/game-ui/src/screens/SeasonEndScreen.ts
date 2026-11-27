@@ -127,10 +127,14 @@ export class SeasonEndScreen {
 
     if (summary?.retiredLegend) {
       const rl = summary.retiredLegend;
+      const cs = summary.captainSuccessor;
+      const bannerText = cs?.chosenPlayerName
+        ? `游子归家 · 传奇挂靴：#10 ${rl.name} 转任主教练 · 衣钵传人【${cs.chosenPlayerName}】已觉醒金标【${cs.grantedTrait}】！`
+        : `游子归家 · 传奇挂靴转教练：#10 ${rl.name} (${rl.age}岁 · 本季 ${rl.appearances}场 ${rl.goals}球${rl.assists}助) 正式退役接过教鞭，传承【老队长的怒吼】+50 Meta！`;
       drawRoundRect(ctx, 64, 108, 1152, 26, 6, 'rgba(120, 53, 15, 0.45)', THEME.GOLD, 1);
       drawText(
         ctx,
-        `游子归家 · 传奇挂靴转教练：#10 ${rl.name} (${rl.age}岁 · 本季 ${rl.appearances}场 ${rl.goals}球${rl.assists}助) 正式退役接过教鞭，传承【老队长的怒吼】+50 Meta！`,
+        bannerText,
         640,
         121,
         { size: 11.5, bold: true, color: THEME.GOLD_LIGHT, align: 'center' }
@@ -139,10 +143,13 @@ export class SeasonEndScreen {
 
     if (this.viewMode === 'ceremony') {
       this.renderCeremonyView(ctx, hits, league, actions);
-      return;
+    } else {
+      this.renderRosterPrepView(ctx, hits, league, actions);
     }
 
-    this.renderRosterPrepView(ctx, hits, league, actions);
+    if (summary?.captainSuccessor?.pending) {
+      this.renderCaptainSuccessorModal(ctx, hits, league, actions);
+    }
   }
 
   private renderCeremonyView(
@@ -688,6 +695,132 @@ export class SeasonEndScreen {
       variant: 'gold',
       fontSize: 15,
       icon: 'play',
+    });
+  }
+
+  private renderCaptainSuccessorModal(
+    ctx: CanvasRenderingContext2D,
+    hits: HitRegistry,
+    league: LeagueManager,
+    actions: {
+      onSave?: () => void;
+      onToast?: (msg: string, color?: string) => void;
+      onBurst?: (x: number, y: number, color?: string) => void;
+    }
+  ): void {
+    const st = league.getState();
+    const club = league.getUserClub();
+    const cs = st.lastSummary?.captainSuccessor;
+    if (!cs || !cs.pending) return;
+
+    const roster = league.getClubRoster();
+    const candidates = cs.candidateIds
+      .map(id => club.squad.find(p => p.id === id) ?? roster.find(p => p.id === id))
+      .filter((p): p is NonNullable<typeof p> => !!p);
+    if (candidates.length === 0) return;
+
+    ctx.save();
+    ctx.fillStyle = 'rgba(4, 8, 16, 0.82)';
+    ctx.fillRect(0, 0, THEME.W, THEME.H);
+    ctx.restore();
+    hits.add(0, 0, THEME.W, THEME.H, () => {});
+
+    const mx = 110;
+    const my = 88;
+    const mw = 1060;
+    const mh = 544;
+    drawChamferPanel(ctx, mx, my, mw, mh, 16, 'rgba(11, 18, 34, 0.98)', THEME.GOLD_LIGHT, 2, THEME.GOLD_LIGHT);
+    drawFoilShimmer(ctx, mx, my, mw, mh, this.animClock * 0.8, 'rgba(250, 204, 21, 0.14)');
+
+    drawBadge(ctx, mx + 32, my + 24, 152, 24, '传奇挂靴 · 薪火相传', '#78350F', THEME.GOLD_LIGHT);
+    drawText(ctx, `#10 ${cs.captainName} 退役传承 · 请亲手钦点 1 名「衣钵传人」`, mx + 198, my + 36, {
+      size: 21,
+      bold: true,
+      color: THEME.GOLD_LIGHT,
+    });
+    drawText(
+      ctx,
+      `老队长已正式转任主教练，以下 ${candidates.length} 名队内青年才俊翘首以盼：选中后永久继承核心属性 +3、PA 突破与金标特质！`,
+      mx + 32,
+      my + 68,
+      { size: 12.5, color: '#CBD5E1' }
+    );
+
+    const count = candidates.length;
+    const gap = 18;
+    const cw = Math.min(242, Math.floor((mw - 64 - gap * (count - 1)) / count));
+    const totalCardsW = cw * count + gap * (count - 1);
+    const startX = mx + Math.floor((mw - totalCardsW) / 2);
+    const cy = my + 98;
+    const ch = 414;
+
+    candidates.forEach((p, idx) => {
+      const cx = startX + idx * (cw + gap);
+      const hovered = hits.isHovered(cx, cy, cw, ch);
+      drawChamferPanel(
+        ctx,
+        cx,
+        cy,
+        cw,
+        ch,
+        12,
+        hovered ? '#1B2B4B' : 'rgba(16, 25, 45, 0.94)',
+        hovered ? THEME.GOLD_LIGHT : THEME.BORDER_GOLD,
+        hovered ? 2.2 : 1.3,
+        THEME.GOLD_LIGHT
+      );
+
+      drawPlayerAvatar(ctx, cx + (cw - 76) / 2, cy + 16, 76, 92, p, club, { radius: 8 });
+      drawBadge(ctx, cx + 14, cy + 118, 28, 20, p.tier, tierColor(p.tier), p.tier === 'S' ? '#090D16' : '#FFFFFF');
+      drawBadge(ctx, cx + 46, cy + 118, 38, 20, p.role, '#1E293B', THEME.TX2);
+      drawBadge(ctx, cx + cw - 62, cy + 118, 48, 20, `${p.age}岁`, '#0F172A', '#7DD3FC');
+
+      drawText(ctx, p.name, cx + cw / 2, cy + 154, {
+        size: 16,
+        bold: true,
+        color: hovered ? THEME.GOLD_LIGHT : THEME.TX1,
+        align: 'center',
+      });
+      drawText(ctx, `当前 CA ${p.ca}  ·  潜力 PA ${p.pa ?? p.ca}`, cx + cw / 2, cy + 178, {
+        size: 11.5,
+        bold: true,
+        color: '#7DD3FC',
+        align: 'center',
+        mono: true,
+      });
+
+      const statLine = p.role === 'GK'
+        ? `扑${p.attributes.goalkeeping} 站${p.attributes.positioning} 传${p.attributes.passing}`
+        : `速${p.attributes.pace} 射${p.attributes.shooting} 传${p.attributes.passing} 防${p.attributes.defending}`;
+      drawText(ctx, statLine, cx + cw / 2, cy + 200, { size: 11, color: THEME.TX2, align: 'center' });
+
+      const hasMaster = (p.goldTraits ?? []).includes('大赛先生');
+      const nextGold = !hasMaster ? '大赛先生' : !(p.goldTraits ?? []).includes('远射重炮') ? '远射重炮' : '球场领袖';
+      const isDefRole = p.role === 'CB' || p.role === 'LB' || p.role === 'RB' || p.role === 'LWB' || p.role === 'RWB' || p.role === 'CDM';
+      const mainAttr = isDefRole ? '防守+3' : p.role === 'GK' ? '门将+3' : '射门+3';
+
+      drawRoundRect(ctx, cx + 14, cy + 220, cw - 28, 128, 8, 'rgba(120, 53, 15, 0.22)', 'rgba(250, 204, 21, 0.38)', 1);
+      drawText(ctx, '继承老队长衣钵加成', cx + cw / 2, cy + 238, { size: 11, bold: true, color: THEME.GOLD_LIGHT, align: 'center' });
+      drawText(ctx, `• 传球+3 · 冷静+3 · ${mainAttr}`, cx + 24, cy + 262, { size: 11, color: THEME.GREEN });
+      drawText(ctx, `• 潜力上限 PA 突破提升`, cx + 24, cy + 284, { size: 11, color: '#7DD3FC' });
+      drawText(ctx, `• 觉醒金标【${nextGold}】`, cx + 24, cy + 306, { size: 11, bold: true, color: THEME.GOLD_LIGHT });
+      drawText(ctx, `• 永久铭刻「衣钵传人」`, cx + 24, cy + 328, { size: 11, color: '#FDE68A' });
+
+      const pick = () => {
+        const res = league.selectCaptainSuccessor(p.id);
+        if (res.ok) {
+          SoundEngine.playFanfare();
+          actions.onBurst?.(cx + cw / 2, cy + ch / 2, THEME.GOLD_LIGHT);
+          actions.onToast?.(`${res.playerName} 已继承林锋衣钵，觉醒金标【${res.grantedTrait}】！`, THEME.GOLD_LIGHT);
+          actions.onSave?.();
+        }
+      };
+      drawButton(ctx, hits, cx + 16, cy + ch - 52, cw - 32, 36, '钦点接班 ▶', pick, {
+        variant: 'gold',
+        fontSize: 13,
+        icon: 'star',
+      });
+      hits.add(cx, cy, cw, ch, pick);
     });
   }
 }

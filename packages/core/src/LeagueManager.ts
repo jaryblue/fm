@@ -1338,6 +1338,14 @@ export class LeagueManager {
     style: TacticalStyle = 'tiki_taka',
     carryOverSquad = false
   ): LeagueSaveState {
+    if (
+      carryOverSquad &&
+      this.state?.phase === 'SEASON_END' &&
+      this.state.lastSummary?.captainSuccessor?.pending &&
+      this.state.lastSummary.captainSuccessor.candidateIds.length > 0
+    ) {
+      this.selectCaptainSuccessor(this.state.lastSummary.captainSuccessor.candidateIds[0]);
+    }
     const baseClub = this.state ? this.getUserClub() : null;
     const opts: NewSeasonOptions = typeof clubOrOpts === 'string'
       ? {
@@ -6561,8 +6569,9 @@ export class LeagueManager {
     // 休赛期默契度微幅回落
     decayChemistryOffSeason(this.getChemistryLinks());
 
-    // 游子归家老队长 #10 林锋：首季圆满落幕，传奇挂靴转任主教练并传承【老队长的怒吼】+50 Meta
+    // 游子归家老队长 #10 林锋：首季圆满落幕，传奇挂靴转任主教练并传承【老队长的怒吼】+50 Meta + 钦点衣钵传人
     let retiredLegend: SeasonSummary['retiredLegend'] = null;
+    let captainSuccessor: SeasonSummary['captainSuccessor'] = null;
     const capIdx = userClub.squad.findIndex(p => p.isPrologueCaptain || p.id === 'captain_lin_feng');
     const rosterCapIdx = roster.findIndex(p => p.isPrologueCaptain || p.id === 'captain_lin_feng');
     const capEntity = capIdx >= 0 ? userClub.squad[capIdx] : rosterCapIdx >= 0 ? roster[rosterCapIdx] : null;
@@ -6615,6 +6624,24 @@ export class LeagueManager {
       }
       this.state.metaPointsTotal += vetMetaBonus;
       metaEarned += vetMetaBonus;
+    }
+
+    if (capEntity) {
+      const pool = userClub.squad.length > 0 ? userClub.squad : roster;
+      const u23Outfield = pool
+        .filter(p => p.role !== 'GK' && (p.age ?? 24) <= 23)
+        .sort((a, b) => (b.pa ?? b.ca) - (a.pa ?? a.ca) || a.age - b.age || b.ca - a.ca);
+      const fallbackOutfield = pool
+        .filter(p => p.role !== 'GK' && !u23Outfield.some(u => u.id === p.id))
+        .sort((a, b) => a.age - b.age || (b.pa ?? b.ca) - (a.pa ?? a.ca));
+      const candidates = [...u23Outfield, ...fallbackOutfield].slice(0, 4);
+      if (candidates.length > 0) {
+        captainSuccessor = {
+          pending: true,
+          captainName: capEntity.name,
+          candidateIds: candidates.map(c => c.id),
+        };
+      }
     }
 
     this.state.persistentSquad = JSON.parse(JSON.stringify(userClub.squad));
@@ -6681,6 +6708,7 @@ export class LeagueManager {
       newTier,
       memories,
       retiredLegend,
+      captainSuccessor,
     };
 
     this.state.lastSummary = summary;
@@ -6689,6 +6717,58 @@ export class LeagueManager {
     this.advanceYouthAcademyEndSeason();
     this.state.transferMarket = null;
     this.getTransferMarketState();
+  }
+
+  public selectCaptainSuccessor(playerId: string): { ok: boolean; playerName?: string; grantedTrait?: string; reason?: string } {
+    const sum = this.state.lastSummary;
+    if (this.state.phase !== 'SEASON_END' || !sum?.captainSuccessor) {
+      return { ok: false, reason: '当前没有待选定的衣钵传人' };
+    }
+    if (!sum.captainSuccessor.pending) {
+      return { ok: false, reason: '本赛季已完成衣钵传人钦点' };
+    }
+    const club = this.getUserClub();
+    const roster = this.getClubRoster();
+    const target = club.squad.find(p => p.id === playerId) ?? roster.find(p => p.id === playerId);
+    if (!target) {
+      return { ok: false, reason: '未在队内名单中找到该小将' };
+    }
+    const clampAttr = (v: number) => Math.max(20, Math.min(99, v));
+    const applyInheritance = (p: DraftPlayer, grantedTrait: string) => {
+      p.attributes.passing = clampAttr(p.attributes.passing + 3);
+      p.attributes.composure = clampAttr(p.attributes.composure + 3);
+      if (p.role === 'CB' || p.role === 'LB' || p.role === 'RB' || p.role === 'LWB' || p.role === 'RWB' || p.role === 'CDM') {
+        p.attributes.defending = clampAttr(p.attributes.defending + 3);
+      } else if (p.role === 'GK') {
+        p.attributes.goalkeeping = clampAttr(p.attributes.goalkeeping + 3);
+      } else {
+        p.attributes.shooting = clampAttr(p.attributes.shooting + 3);
+      }
+      p.pa = Math.min(99, Math.max(p.pa ?? p.ca + 4, p.ca + 5));
+      p.ca = computeWeightedCA(p.role, p.attributes);
+      p.goldTraits = Array.from(new Set([...(p.goldTraits ?? []), grantedTrait]));
+      p.traits = Array.from(new Set([...(p.traits ?? []), grantedTrait]));
+      p.isCaptainSuccessor = true;
+    };
+    const existingGold = new Set(target.goldTraits ?? []);
+    const grantedTrait = !existingGold.has('大赛先生') ? '大赛先生' : !existingGold.has('远射重炮') ? '远射重炮' : '球场领袖';
+    const inSquad = club.squad.find(p => p.id === playerId);
+    if (inSquad) applyInheritance(inSquad, grantedTrait);
+    const inRoster = roster.find(p => p.id === playerId);
+    if (inRoster) applyInheritance(inRoster, grantedTrait);
+    if (this.state.persistentSquad) {
+      const inPersist = this.state.persistentSquad.find(p => p.id === playerId);
+      if (inPersist) applyInheritance(inPersist, grantedTrait);
+    }
+    sum.captainSuccessor = {
+      ...sum.captainSuccessor,
+      pending: false,
+      chosenPlayerId: target.id,
+      chosenPlayerName: target.name,
+      grantedTrait,
+      note: `${target.name} 正式接过 #10 ${sum.captainSuccessor.captainName} 衣钵，核心属性 +3、PA 突破并觉醒金标【${grantedTrait}】！`,
+    };
+    return { ok: true, playerName: target.name, grantedTrait };
   }
 
   public pickSeasonBonusReward(optionId: string): { ok: boolean; summary?: string; reason?: string } {

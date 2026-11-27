@@ -333,6 +333,7 @@ export class MetaScreen {
       return;
     }
 
+    const isBeginnerMode = !ast.fogCleared && league.getCurrentTierInfo().tier >= 6;
     let rx = baseX + totalW;
     rx -= 96;
     const isCatalogOpen = this.drawerOpen && (this.selected.kind === 'catalog_directives' || this.selected.kind === 'catalog_skills');
@@ -342,9 +343,9 @@ export class MetaScreen {
       this.drawerOpen = true;
     }, { active: isCatalogOpen, fontSize: 11 });
 
-    if (!ast.fogCleared && league.getCurrentTierInfo().tier >= 6) {
-      rx -= 80;
-      drawButton(ctx, hits, rx, 74, 74, 30, '破雾', () => {
+    if (isBeginnerMode) {
+      rx -= 94;
+      drawButton(ctx, hits, rx, 74, 88, 30, '展开全盘', () => {
         league.clearV6AstrolabeFog();
         this.notice = '已驱散新手迷雾，六大流派全盘展示！';
         actions.onSave();
@@ -392,13 +393,17 @@ export class MetaScreen {
     this.renderSideRotateDials(ctx, hits, league, mapX, mapY, mapW, mapH, actions.onSave);
 
     // 顶部提示与统计徽章
+    const defaultNotice = '宏观罗盘可用两侧星轨拨盘旋转双环碰撞 6 大融合奇点 · 点击流派纹章或滚轮放大进入星宿特写';
+    const displayNotice = isBeginnerMode && this.notice === defaultNotice
+      ? `新手引导：点击【${STYLE_LABELS[club.style].name}】纹章展开星宿，或点右上「展开全盘」解锁全图`
+      : this.notice;
     drawBadge(
       ctx,
       mapX + 12,
       mapY + 12,
       Math.min(490, mapW - 360),
       24,
-      this.notice,
+      displayNotice,
       'rgba(11, 17, 32, 0.90)',
       ast.locked ? THEME.GOLD_LIGHT : '#7DD3FC'
     );
@@ -445,13 +450,14 @@ export class MetaScreen {
       color: !isMacroNow ? THEME.GOLD_LIGHT : '#94A3B8',
       align: 'center',
     });
-    hits.add(pillX, pillY, pillW / 2, pillH, () => {
+    const pillPadY = IS_MOBILE ? 8 : 0;
+    hits.add(pillX, pillY - pillPadY, pillW / 2, pillH + pillPadY * 2, () => {
       this.zoom = 0.96;
       this.panX = 0;
       this.panY = 0;
       this.notice = '宏观罗盘视图：可用两侧拨盘旋转双环，点击流派纹章展开星宿';
     });
-    hits.add(pillX + pillW / 2, pillY, pillW / 2, pillH, () => {
+    hits.add(pillX + pillW / 2, pillY - pillPadY, pillW / 2, pillH + pillPadY * 2, () => {
       const myStyleIdx = Math.max(0, [0, 1, 2, 3, 4, 5].find(k => OUTER_RING_STYLES[((k - ast.outerRingStep) % 6 + 6) % 6] === club.style) ?? 0);
       const focusAng = -Math.PI / 2 + (myStyleIdx * Math.PI) / 3;
       this.zoom = 1.88;
@@ -460,10 +466,13 @@ export class MetaScreen {
       this.panY = Math.round(-Math.sin(focusAng) * unitR * 0.62);
       this.notice = `星宿特写视图：已聚焦【${STYLE_LABELS[club.style].name}】扇区，双指捏合/滚轮缩放`;
     });
-    drawButton(ctx, hits, pillX + pillW + 8, pillY, 28, pillH, '－', () => {
+    const zoomBtnW = IS_MOBILE ? 36 : 28;
+    const zoomBtnH = IS_MOBILE ? 32 : pillH;
+    const zoomBtnY = IS_MOBILE ? pillY - 2 : pillY;
+    drawButton(ctx, hits, pillX + pillW + 8, zoomBtnY, zoomBtnW, zoomBtnH, '－', () => {
       this.applyZoomAt(0.82, mapX + mapW / 2, mapY + mapH / 2);
     }, { variant: 'ghost', fontSize: 12 });
-    drawButton(ctx, hits, pillX + pillW + 40, pillY, 28, pillH, '＋', () => {
+    drawButton(ctx, hits, pillX + pillW + 12 + zoomBtnW, zoomBtnY, zoomBtnW, zoomBtnH, '＋', () => {
       this.applyZoomAt(1.22, mapX + mapW / 2, mapY + mapH / 2);
     }, { variant: 'ghost', fontSize: 12 });
 
@@ -648,6 +657,8 @@ export class MetaScreen {
   ): void {
     const ast = league.getV6Astrolabe();
     if (ast.locked) return;
+    const isBeginnerMode = !ast.fogCleared && league.getCurrentTierInfo().tier >= 6;
+    if (isBeginnerMode && this.zoom < 1.32) return;
 
     const triggerRotate = (ring: 'outer' | 'inner', dir: 1 | -1) => {
       const r = league.rotateV6Astrolabe(ring, dir);
@@ -726,8 +737,8 @@ export class MetaScreen {
       hits.add(px, py, pw, ph, onClick);
     };
 
-    const pw = 54;
-    const ph = 62;
+    const pw = IS_MOBILE ? 64 : 54;
+    const ph = IS_MOBILE ? 72 : 62;
     const midY = mapY + mapH / 2;
     const leftX = mapX + 14;
     const rightLimit = this.drawerOpen ? mapX + mapW - 422 : mapX + mapW - 14;
@@ -879,12 +890,15 @@ export class MetaScreen {
 
       const labelX = cx + Math.cos(centerAngle) * (baseR * 1.07);
       const labelY = cy + Math.sin(centerAngle) * (baseR * 1.07);
-      drawText(ctx, visible ? info.name : '迷雾流派', labelX, labelY, {
-        size: Math.max(10, Math.min(13, 11.5 * this.zoom)),
-        bold: true,
-        color: visible ? info.color : '#64748B',
-        align: 'center',
-      });
+      const isBeginnerMode = !ast.fogCleared && tier >= 6;
+      if (visible || !isBeginnerMode) {
+        drawText(ctx, visible ? info.name : '迷雾流派', labelX, labelY, {
+          size: Math.max(10, Math.min(13, 11.5 * this.zoom)),
+          bold: true,
+          color: visible ? info.color : '#64748B',
+          align: 'center',
+        });
+      }
 
       if (!visible) continue;
 
@@ -1096,6 +1110,9 @@ export class MetaScreen {
     // ==================== Pass 3：两级语义缩放绘制（宏观罗盘大纹章 vs 星宿特写精细节点） ====================
     const rotSlow = this.animTime * 0.55;
 
+    const isBeginnerMode = !ast.fogCleared && tier >= 6;
+    const nodeHitR = (r: number, pad = 4) => (IS_MOBILE ? Math.max(r + 10, 22) : r + pad);
+
     // 3a. 外环 6 扇区：宏观罗盘绘制 44px 流派大纹章（点击推入特写），特写绘制完整 26 星宿节点
     if (isMacro) {
       for (const sec of outerSectors) {
@@ -1105,16 +1122,18 @@ export class MetaScreen {
         const my = cy + Math.sin(sec.centerAngle) * (baseR * 0.78);
         const mr = 23;
         if (!sec.visible) {
-          ctx.save();
-          ctx.fillStyle = 'rgba(15, 23, 42, 0.82)';
-          ctx.beginPath();
-          ctx.arc(mx, my, mr, 0, Math.PI * 2);
-          ctx.fill();
-          ctx.strokeStyle = '#334155';
-          ctx.lineWidth = 1.5;
-          ctx.stroke();
-          drawIcon(ctx, 'lock', mx, my, 16, '#64748B');
-          ctx.restore();
+          if (!isBeginnerMode) {
+            ctx.save();
+            ctx.fillStyle = 'rgba(15, 23, 42, 0.82)';
+            ctx.beginPath();
+            ctx.arc(mx, my, mr, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.strokeStyle = '#334155';
+            ctx.lineWidth = 1.5;
+            ctx.stroke();
+            drawIcon(ctx, 'lock', mx, my, 16, '#64748B');
+            ctx.restore();
+          }
           continue;
         }
         const unlCount =
@@ -1231,7 +1250,8 @@ export class MetaScreen {
           });
         }
         if (canHit(pos.x, pos.y)) {
-          hits.add(pos.x - nr - 4, pos.y - nr - 4, (nr + 4) * 2, (nr + 4) * 2, () => {
+          const hr = nodeHitR(nr);
+          hits.add(pos.x - hr, pos.y - hr, hr * 2, hr * 2, () => {
             SoundEngine.playClick();
             this.selected = { kind: 'passive', id: p.id };
             this.drawerOpen = true;
@@ -1291,7 +1311,8 @@ export class MetaScreen {
           });
         }
         if (canHit(pos.x, pos.y)) {
-          hits.add(pos.x - dr - 4, pos.y - dr - 4, (dr + 4) * 2, (dr + 4) * 2, () => {
+          const hr = nodeHitR(dr);
+          hits.add(pos.x - hr, pos.y - hr, hr * 2, hr * 2, () => {
             SoundEngine.playClick();
             this.selected = { kind: 'skill', id: sk.id };
             this.drawerOpen = true;
@@ -1353,7 +1374,8 @@ export class MetaScreen {
           });
         }
         if (canHit(pos.x, pos.y)) {
-          hits.add(pos.x - nr - 4, pos.y - nr - 4, (nr + 4) * 2, (nr + 4) * 2, () => {
+          const hr = nodeHitR(nr);
+          hits.add(pos.x - hr, pos.y - hr, hr * 2, hr * 2, () => {
             SoundEngine.playClick();
             this.selected = { kind: 'directive', id: dir.id };
             this.drawerOpen = true;
@@ -1404,14 +1426,17 @@ export class MetaScreen {
       });
       ctx.restore();
 
-      drawText(ctx, al.fusion.name.slice(0, 5), pos.x, pos.y + r + 10, {
-        size: 9.5,
-        bold: true,
-        color: pos.unlocked ? THEME.GOLD_LIGHT : pos.reachable ? '#FDE68A' : '#94A3B8',
-        align: 'center',
-      });
+      if (!isBeginnerMode || !isMacro || al.style === club.style || pos.unlocked) {
+        drawText(ctx, al.fusion.name.slice(0, 5), pos.x, pos.y + r + 10, {
+          size: 9.5,
+          bold: true,
+          color: pos.unlocked ? THEME.GOLD_LIGHT : pos.reachable ? '#FDE68A' : '#94A3B8',
+          align: 'center',
+        });
+      }
       if (canHit(pos.x, pos.y)) {
-        hits.add(pos.x - r - 6, pos.y - r - 6, (r + 6) * 2, (r + 6) * 2, () => {
+        const hr = nodeHitR(r, 6);
+        hits.add(pos.x - hr, pos.y - hr, hr * 2, hr * 2, () => {
           SoundEngine.playClick();
           this.selected = { kind: 'fusion', id: al.fusion.id };
           this.drawerOpen = true;
@@ -1456,7 +1481,8 @@ export class MetaScreen {
         });
       }
       if (canHit(pos.x, pos.y)) {
-        hits.add(pos.x - r - 4, pos.y - r - 4, (r + 4) * 2, (r + 4) * 2, () => {
+        const hr = nodeHitR(r);
+        hits.add(pos.x - hr, pos.y - hr, hr * 2, hr * 2, () => {
           SoundEngine.playClick();
           this.selected = { kind: 'passive', id: sp.id };
           this.drawerOpen = true;
@@ -1498,7 +1524,8 @@ export class MetaScreen {
           });
         }
         if (canHit(pos.x, pos.y)) {
-          hits.add(pos.x - r - 5, pos.y - r - 5, (r + 5) * 2, (r + 5) * 2, () => {
+          const hr = nodeHitR(r, 5);
+          hits.add(pos.x - hr, pos.y - hr, hr * 2, hr * 2, () => {
             SoundEngine.playClick();
             this.selected = { kind: 'formation', formation: fm };
             this.drawerOpen = true;
@@ -1534,7 +1561,8 @@ export class MetaScreen {
       ctx.restore();
 
       if (canHit(pos.x, pos.y)) {
-        hits.add(pos.x - r - 5, pos.y - r - 5, (r + 5) * 2, (r + 5) * 2, () => {
+        const hr = nodeHitR(r, 5);
+        hits.add(pos.x - hr, pos.y - hr, hr * 2, hr * 2, () => {
           SoundEngine.playClick();
           this.selected = { kind: 'seal', id: seal.id };
           this.drawerOpen = true;

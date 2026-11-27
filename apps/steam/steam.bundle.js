@@ -4985,7 +4985,9 @@
       });
     }
     if (!opts.disabled) {
-      hits.add(x, y, w, h, () => {
+      const padX = IS_MOBILE ? w < 44 ? Math.ceil((44 - w) / 2) : 4 : 0;
+      const padY = IS_MOBILE ? h < 44 ? Math.ceil((44 - h) / 2) : 4 : 0;
+      hits.add(x - padX, y - padY, w + padX * 2, h + padY * 2, () => {
         SoundEngine.playClick();
         onClick();
       });
@@ -5096,7 +5098,8 @@
       const col = isAct ? THEME.GOLD_LIGHT : hovered ? THEME.TX1 : THEME.TX2;
       drawIcon(ctx2, item.icon, 48, iy + 22, 18, col);
       drawText(ctx2, item.label, 48, iy + 45, { size: 11, bold: isAct, color: col, align: "center" });
-      hits.add(20, iy, 56, 60, () => {
+      const navPad = IS_MOBILE ? 6 : 0;
+      hits.add(20 - navPad, iy - navPad / 2, 56 + navPad * 2, 60 + navPad, () => {
         SoundEngine.playClick();
         onNavigate(item.key);
       });
@@ -5106,7 +5109,8 @@
     if (hHover) drawRoundRect(ctx2, 20, hy, 56, 58, 8, "rgba(30,45,77,0.7)", THEME.BORDER);
     drawIcon(ctx2, "home", 48, hy + 20, 18, hHover ? THEME.TX1 : THEME.TX2);
     drawText(ctx2, "\u4E3B\u9875", 48, hy + 44, { size: 10.5, color: hHover ? THEME.TX1 : THEME.TX2, align: "center" });
-    hits.add(20, hy, 56, 58, () => {
+    const homePad = IS_MOBILE ? 6 : 0;
+    hits.add(20 - homePad, hy - homePad / 2, 56 + homePad * 2, 58 + homePad, () => {
       SoundEngine.playClick();
       onNavigate("title");
     });
@@ -20118,6 +20122,9 @@
      * 开启新赛季（支持保留常驻班底跳过重抽，或重新选秀开局）
      */
     startNewSeason(clubOrOpts = "club_star", formation = "4-3-3", style = "tiki_taka", carryOverSquad = false) {
+      if (carryOverSquad && this.state?.phase === "SEASON_END" && this.state.lastSummary?.captainSuccessor?.pending && this.state.lastSummary.captainSuccessor.candidateIds.length > 0) {
+        this.selectCaptainSuccessor(this.state.lastSummary.captainSuccessor.candidateIds[0]);
+      }
       const baseClub = this.state ? this.getUserClub() : null;
       const opts = typeof clubOrOpts === "string" ? {
         clubId: clubOrOpts === "club_star" && carryOverSquad && baseClub ? baseClub.id : clubOrOpts,
@@ -24836,6 +24843,7 @@
       }
       decayChemistryOffSeason(this.getChemistryLinks());
       let retiredLegend = null;
+      let captainSuccessor = null;
       const capIdx = userClub.squad.findIndex((p) => p.isPrologueCaptain || p.id === "captain_lin_feng");
       const rosterCapIdx = roster.findIndex((p) => p.isPrologueCaptain || p.id === "captain_lin_feng");
       const capEntity = capIdx >= 0 ? userClub.squad[capIdx] : rosterCapIdx >= 0 ? roster[rosterCapIdx] : null;
@@ -24886,6 +24894,19 @@
         }
         this.state.metaPointsTotal += vetMetaBonus;
         metaEarned += vetMetaBonus;
+      }
+      if (capEntity) {
+        const pool = userClub.squad.length > 0 ? userClub.squad : roster;
+        const u23Outfield = pool.filter((p) => p.role !== "GK" && (p.age ?? 24) <= 23).sort((a, b) => (b.pa ?? b.ca) - (a.pa ?? a.ca) || a.age - b.age || b.ca - a.ca);
+        const fallbackOutfield = pool.filter((p) => p.role !== "GK" && !u23Outfield.some((u) => u.id === p.id)).sort((a, b) => a.age - b.age || (b.pa ?? b.ca) - (a.pa ?? a.ca));
+        const candidates = [...u23Outfield, ...fallbackOutfield].slice(0, 4);
+        if (candidates.length > 0) {
+          captainSuccessor = {
+            pending: true,
+            captainName: capEntity.name,
+            candidateIds: candidates.map((c) => c.id)
+          };
+        }
       }
       this.state.persistentSquad = JSON.parse(JSON.stringify(userClub.squad));
       const rewardCount = metaLv.scout >= 4 ? 4 : 3;
@@ -24946,7 +24967,8 @@
         promotionStatus,
         newTier,
         memories,
-        retiredLegend
+        retiredLegend,
+        captainSuccessor
       };
       this.state.lastSummary = summary;
       this.state.phase = "SEASON_END";
@@ -24954,6 +24976,57 @@
       this.advanceYouthAcademyEndSeason();
       this.state.transferMarket = null;
       this.getTransferMarketState();
+    }
+    selectCaptainSuccessor(playerId) {
+      const sum = this.state.lastSummary;
+      if (this.state.phase !== "SEASON_END" || !sum?.captainSuccessor) {
+        return { ok: false, reason: "\u5F53\u524D\u6CA1\u6709\u5F85\u9009\u5B9A\u7684\u8863\u94B5\u4F20\u4EBA" };
+      }
+      if (!sum.captainSuccessor.pending) {
+        return { ok: false, reason: "\u672C\u8D5B\u5B63\u5DF2\u5B8C\u6210\u8863\u94B5\u4F20\u4EBA\u94A6\u70B9" };
+      }
+      const club = this.getUserClub();
+      const roster = this.getClubRoster();
+      const target = club.squad.find((p) => p.id === playerId) ?? roster.find((p) => p.id === playerId);
+      if (!target) {
+        return { ok: false, reason: "\u672A\u5728\u961F\u5185\u540D\u5355\u4E2D\u627E\u5230\u8BE5\u5C0F\u5C06" };
+      }
+      const clampAttr2 = (v) => Math.max(20, Math.min(99, v));
+      const applyInheritance = (p, grantedTrait2) => {
+        p.attributes.passing = clampAttr2(p.attributes.passing + 3);
+        p.attributes.composure = clampAttr2(p.attributes.composure + 3);
+        if (p.role === "CB" || p.role === "LB" || p.role === "RB" || p.role === "LWB" || p.role === "RWB" || p.role === "CDM") {
+          p.attributes.defending = clampAttr2(p.attributes.defending + 3);
+        } else if (p.role === "GK") {
+          p.attributes.goalkeeping = clampAttr2(p.attributes.goalkeeping + 3);
+        } else {
+          p.attributes.shooting = clampAttr2(p.attributes.shooting + 3);
+        }
+        p.pa = Math.min(99, Math.max(p.pa ?? p.ca + 4, p.ca + 5));
+        p.ca = computeWeightedCA(p.role, p.attributes);
+        p.goldTraits = Array.from(/* @__PURE__ */ new Set([...p.goldTraits ?? [], grantedTrait2]));
+        p.traits = Array.from(/* @__PURE__ */ new Set([...p.traits ?? [], grantedTrait2]));
+        p.isCaptainSuccessor = true;
+      };
+      const existingGold = new Set(target.goldTraits ?? []);
+      const grantedTrait = !existingGold.has("\u5927\u8D5B\u5148\u751F") ? "\u5927\u8D5B\u5148\u751F" : !existingGold.has("\u8FDC\u5C04\u91CD\u70AE") ? "\u8FDC\u5C04\u91CD\u70AE" : "\u7403\u573A\u9886\u8896";
+      const inSquad = club.squad.find((p) => p.id === playerId);
+      if (inSquad) applyInheritance(inSquad, grantedTrait);
+      const inRoster = roster.find((p) => p.id === playerId);
+      if (inRoster) applyInheritance(inRoster, grantedTrait);
+      if (this.state.persistentSquad) {
+        const inPersist = this.state.persistentSquad.find((p) => p.id === playerId);
+        if (inPersist) applyInheritance(inPersist, grantedTrait);
+      }
+      sum.captainSuccessor = {
+        ...sum.captainSuccessor,
+        pending: false,
+        chosenPlayerId: target.id,
+        chosenPlayerName: target.name,
+        grantedTrait,
+        note: `${target.name} \u6B63\u5F0F\u63A5\u8FC7 #10 ${sum.captainSuccessor.captainName} \u8863\u94B5\uFF0C\u6838\u5FC3\u5C5E\u6027 +3\u3001PA \u7A81\u7834\u5E76\u89C9\u9192\u91D1\u6807\u3010${grantedTrait}\u3011\uFF01`
+      };
+      return { ok: true, playerName: target.name, grantedTrait };
     }
     pickSeasonBonusReward(optionId) {
       const sum = this.state.lastSummary;
@@ -27831,6 +27904,39 @@
       }
     }
   };
+
+  // packages/game-ui/src/RuntimeInfo.ts
+  function getRunningVersion() {
+    const v = window.__FM_NATIVE_VERSION__;
+    if (v) return v;
+    const h = window.__FM_NATIVE_HASH__;
+    return h ? `dev+${h}` : "dev";
+  }
+  async function getOtaStatus() {
+    try {
+      if (window.electronBridge?.getOtaStatus) {
+        return await window.electronBridge.getOtaStatus();
+      }
+      if (window.AndroidOtaBridge) {
+        const raw = window.AndroidOtaBridge.getOtaStatus();
+        return raw ? JSON.parse(raw) : null;
+      }
+    } catch {
+    }
+    return null;
+  }
+  function restartAppForUpdate() {
+    try {
+      if (window.electronBridge?.restartApp) {
+        window.electronBridge.restartApp();
+        return;
+      }
+      if (window.AndroidOtaBridge) {
+        window.AndroidOtaBridge.restartApp();
+      }
+    } catch {
+    }
+  }
 
   // packages/game-ui/src/SaveSlotModal.ts
   var PHASE_LABEL = {
@@ -34554,6 +34660,7 @@
         this.renderClubInfrastructure(ctx2, hits, league, baseX, totalW, actions);
         return;
       }
+      const isBeginnerMode = !ast.fogCleared && league.getCurrentTierInfo().tier >= 6;
       let rx = baseX + totalW;
       rx -= 96;
       const isCatalogOpen = this.drawerOpen && (this.selected.kind === "catalog_directives" || this.selected.kind === "catalog_skills");
@@ -34562,9 +34669,9 @@
         this.catalogPage = 0;
         this.drawerOpen = true;
       }, { active: isCatalogOpen, fontSize: 11 });
-      if (!ast.fogCleared && league.getCurrentTierInfo().tier >= 6) {
-        rx -= 80;
-        drawButton(ctx2, hits, rx, 74, 74, 30, "\u7834\u96FE", () => {
+      if (isBeginnerMode) {
+        rx -= 94;
+        drawButton(ctx2, hits, rx, 74, 88, 30, "\u5C55\u5F00\u5168\u76D8", () => {
           league.clearV6AstrolabeFog();
           this.notice = "\u5DF2\u9A71\u6563\u65B0\u624B\u8FF7\u96FE\uFF0C\u516D\u5927\u6D41\u6D3E\u5168\u76D8\u5C55\u793A\uFF01";
           actions.onSave();
@@ -34605,13 +34712,15 @@
       drawChamferPanel(ctx2, mapX, mapY, mapW, mapH, 12, "rgba(8, 13, 24, 0.96)", ast.locked ? THEME.BORDER_GOLD : "#38BDF8", 1.4);
       this.renderAstrolabeCanvas(ctx2, hits, league, mapX, mapY, mapW, mapH);
       this.renderSideRotateDials(ctx2, hits, league, mapX, mapY, mapW, mapH, actions.onSave);
+      const defaultNotice = "\u5B8F\u89C2\u7F57\u76D8\u53EF\u7528\u4E24\u4FA7\u661F\u8F68\u62E8\u76D8\u65CB\u8F6C\u53CC\u73AF\u78B0\u649E 6 \u5927\u878D\u5408\u5947\u70B9 \xB7 \u70B9\u51FB\u6D41\u6D3E\u7EB9\u7AE0\u6216\u6EDA\u8F6E\u653E\u5927\u8FDB\u5165\u661F\u5BBF\u7279\u5199";
+      const displayNotice = isBeginnerMode && this.notice === defaultNotice ? `\u65B0\u624B\u5F15\u5BFC\uFF1A\u70B9\u51FB\u3010${STYLE_LABELS[club.style].name}\u3011\u7EB9\u7AE0\u5C55\u5F00\u661F\u5BBF\uFF0C\u6216\u70B9\u53F3\u4E0A\u300C\u5C55\u5F00\u5168\u76D8\u300D\u89E3\u9501\u5168\u56FE` : this.notice;
       drawBadge(
         ctx2,
         mapX + 12,
         mapY + 12,
         Math.min(490, mapW - 360),
         24,
-        this.notice,
+        displayNotice,
         "rgba(11, 17, 32, 0.90)",
         ast.locked ? THEME.GOLD_LIGHT : "#7DD3FC"
       );
@@ -34655,13 +34764,14 @@
         color: !isMacroNow ? THEME.GOLD_LIGHT : "#94A3B8",
         align: "center"
       });
-      hits.add(pillX, pillY, pillW / 2, pillH, () => {
+      const pillPadY = IS_MOBILE ? 8 : 0;
+      hits.add(pillX, pillY - pillPadY, pillW / 2, pillH + pillPadY * 2, () => {
         this.zoom = 0.96;
         this.panX = 0;
         this.panY = 0;
         this.notice = "\u5B8F\u89C2\u7F57\u76D8\u89C6\u56FE\uFF1A\u53EF\u7528\u4E24\u4FA7\u62E8\u76D8\u65CB\u8F6C\u53CC\u73AF\uFF0C\u70B9\u51FB\u6D41\u6D3E\u7EB9\u7AE0\u5C55\u5F00\u661F\u5BBF";
       });
-      hits.add(pillX + pillW / 2, pillY, pillW / 2, pillH, () => {
+      hits.add(pillX + pillW / 2, pillY - pillPadY, pillW / 2, pillH + pillPadY * 2, () => {
         const myStyleIdx = Math.max(0, [0, 1, 2, 3, 4, 5].find((k) => OUTER_RING_STYLES[((k - ast.outerRingStep) % 6 + 6) % 6] === club.style) ?? 0);
         const focusAng = -Math.PI / 2 + myStyleIdx * Math.PI / 3;
         this.zoom = 1.88;
@@ -34670,10 +34780,13 @@
         this.panY = Math.round(-Math.sin(focusAng) * unitR * 0.62);
         this.notice = `\u661F\u5BBF\u7279\u5199\u89C6\u56FE\uFF1A\u5DF2\u805A\u7126\u3010${STYLE_LABELS[club.style].name}\u3011\u6247\u533A\uFF0C\u53CC\u6307\u634F\u5408/\u6EDA\u8F6E\u7F29\u653E`;
       });
-      drawButton(ctx2, hits, pillX + pillW + 8, pillY, 28, pillH, "\uFF0D", () => {
+      const zoomBtnW = IS_MOBILE ? 36 : 28;
+      const zoomBtnH = IS_MOBILE ? 32 : pillH;
+      const zoomBtnY = IS_MOBILE ? pillY - 2 : pillY;
+      drawButton(ctx2, hits, pillX + pillW + 8, zoomBtnY, zoomBtnW, zoomBtnH, "\uFF0D", () => {
         this.applyZoomAt(0.82, mapX + mapW / 2, mapY + mapH / 2);
       }, { variant: "ghost", fontSize: 12 });
-      drawButton(ctx2, hits, pillX + pillW + 40, pillY, 28, pillH, "\uFF0B", () => {
+      drawButton(ctx2, hits, pillX + pillW + 12 + zoomBtnW, zoomBtnY, zoomBtnW, zoomBtnH, "\uFF0B", () => {
         this.applyZoomAt(1.22, mapX + mapW / 2, mapY + mapH / 2);
       }, { variant: "ghost", fontSize: 12 });
       if (this.drawerOpen) {
@@ -34815,6 +34928,8 @@
     renderSideRotateDials(ctx2, hits, league, mapX, mapY, mapW, mapH, onSave) {
       const ast = league.getV6Astrolabe();
       if (ast.locked) return;
+      const isBeginnerMode = !ast.fogCleared && league.getCurrentTierInfo().tier >= 6;
+      if (isBeginnerMode && this.zoom < 1.32) return;
       const triggerRotate = (ring, dir) => {
         const r = league.rotateV6Astrolabe(ring, dir);
         if (!r.ok) return;
@@ -34874,8 +34989,8 @@
         ctx2.restore();
         hits.add(px, py, pw2, ph2, onClick);
       };
-      const pw = 54;
-      const ph = 62;
+      const pw = IS_MOBILE ? 64 : 54;
+      const ph = IS_MOBILE ? 72 : 62;
       const midY = mapY + mapH / 2;
       const leftX = mapX + 14;
       const rightLimit = this.drawerOpen ? mapX + mapW - 422 : mapX + mapW - 14;
@@ -34985,12 +35100,15 @@
         ctx2.restore();
         const labelX = cx + Math.cos(centerAngle) * (baseR * 1.07);
         const labelY = cy + Math.sin(centerAngle) * (baseR * 1.07);
-        drawText(ctx2, visible ? info.name : "\u8FF7\u96FE\u6D41\u6D3E", labelX, labelY, {
-          size: Math.max(10, Math.min(13, 11.5 * this.zoom)),
-          bold: true,
-          color: visible ? info.color : "#64748B",
-          align: "center"
-        });
+        const isBeginnerMode2 = !ast.fogCleared && tier >= 6;
+        if (visible || !isBeginnerMode2) {
+          drawText(ctx2, visible ? info.name : "\u8FF7\u96FE\u6D41\u6D3E", labelX, labelY, {
+            size: Math.max(10, Math.min(13, 11.5 * this.zoom)),
+            bold: true,
+            color: visible ? info.color : "#64748B",
+            align: "center"
+          });
+        }
         if (!visible) continue;
         const stylePassives = V6_STYLE_PASSIVES.filter((p) => p.style === style);
         const originId = STYLE_ORIGIN_PASSIVE[style];
@@ -35174,6 +35292,8 @@
         }
       }
       const rotSlow = this.animTime * 0.55;
+      const isBeginnerMode = !ast.fogCleared && tier >= 6;
+      const nodeHitR = (r, pad = 4) => IS_MOBILE ? Math.max(r + 10, 22) : r + pad;
       if (isMacro) {
         for (const sec of outerSectors) {
           const style = sec.style;
@@ -35182,16 +35302,18 @@
           const my = cy + Math.sin(sec.centerAngle) * (baseR * 0.78);
           const mr = 23;
           if (!sec.visible) {
-            ctx2.save();
-            ctx2.fillStyle = "rgba(15, 23, 42, 0.82)";
-            ctx2.beginPath();
-            ctx2.arc(mx, my, mr, 0, Math.PI * 2);
-            ctx2.fill();
-            ctx2.strokeStyle = "#334155";
-            ctx2.lineWidth = 1.5;
-            ctx2.stroke();
-            drawIcon(ctx2, "lock", mx, my, 16, "#64748B");
-            ctx2.restore();
+            if (!isBeginnerMode) {
+              ctx2.save();
+              ctx2.fillStyle = "rgba(15, 23, 42, 0.82)";
+              ctx2.beginPath();
+              ctx2.arc(mx, my, mr, 0, Math.PI * 2);
+              ctx2.fill();
+              ctx2.strokeStyle = "#334155";
+              ctx2.lineWidth = 1.5;
+              ctx2.stroke();
+              drawIcon(ctx2, "lock", mx, my, 16, "#64748B");
+              ctx2.restore();
+            }
             continue;
           }
           const unlCount = V6_STYLE_PASSIVES.filter((p) => p.style === style && unlockedPassiveSet.has(p.id)).length + V6_ACTIVE_SKILLS.filter((s) => s.source === "style" && s.style === style && unlockedSkillSet.has(s.id)).length + V6_DIRECTIVES.filter((d) => d.source === "style" && d.style === style && unlockedDirSet.has(d.id)).length;
@@ -35289,7 +35411,8 @@
             });
           }
           if (canHit(pos.x, pos.y)) {
-            hits.add(pos.x - nr - 4, pos.y - nr - 4, (nr + 4) * 2, (nr + 4) * 2, () => {
+            const hr = nodeHitR(nr);
+            hits.add(pos.x - hr, pos.y - hr, hr * 2, hr * 2, () => {
               SoundEngine.playClick();
               this.selected = { kind: "passive", id: p.id };
               this.drawerOpen = true;
@@ -35342,7 +35465,8 @@
             });
           }
           if (canHit(pos.x, pos.y)) {
-            hits.add(pos.x - dr - 4, pos.y - dr - 4, (dr + 4) * 2, (dr + 4) * 2, () => {
+            const hr = nodeHitR(dr);
+            hits.add(pos.x - hr, pos.y - hr, hr * 2, hr * 2, () => {
               SoundEngine.playClick();
               this.selected = { kind: "skill", id: sk.id };
               this.drawerOpen = true;
@@ -35398,7 +35522,8 @@
             });
           }
           if (canHit(pos.x, pos.y)) {
-            hits.add(pos.x - nr - 4, pos.y - nr - 4, (nr + 4) * 2, (nr + 4) * 2, () => {
+            const hr = nodeHitR(nr);
+            hits.add(pos.x - hr, pos.y - hr, hr * 2, hr * 2, () => {
               SoundEngine.playClick();
               this.selected = { kind: "directive", id: dir.id };
               this.drawerOpen = true;
@@ -35443,14 +35568,17 @@
           dim: !pos.unlocked && !pos.reachable
         });
         ctx2.restore();
-        drawText(ctx2, al.fusion.name.slice(0, 5), pos.x, pos.y + r + 10, {
-          size: 9.5,
-          bold: true,
-          color: pos.unlocked ? THEME.GOLD_LIGHT : pos.reachable ? "#FDE68A" : "#94A3B8",
-          align: "center"
-        });
+        if (!isBeginnerMode || !isMacro || al.style === club.style || pos.unlocked) {
+          drawText(ctx2, al.fusion.name.slice(0, 5), pos.x, pos.y + r + 10, {
+            size: 9.5,
+            bold: true,
+            color: pos.unlocked ? THEME.GOLD_LIGHT : pos.reachable ? "#FDE68A" : "#94A3B8",
+            align: "center"
+          });
+        }
         if (canHit(pos.x, pos.y)) {
-          hits.add(pos.x - r - 6, pos.y - r - 6, (r + 6) * 2, (r + 6) * 2, () => {
+          const hr = nodeHitR(r, 6);
+          hits.add(pos.x - hr, pos.y - hr, hr * 2, hr * 2, () => {
             SoundEngine.playClick();
             this.selected = { kind: "fusion", id: al.fusion.id };
             this.drawerOpen = true;
@@ -35490,7 +35618,8 @@
           });
         }
         if (canHit(pos.x, pos.y)) {
-          hits.add(pos.x - r - 4, pos.y - r - 4, (r + 4) * 2, (r + 4) * 2, () => {
+          const hr = nodeHitR(r);
+          hits.add(pos.x - hr, pos.y - hr, hr * 2, hr * 2, () => {
             SoundEngine.playClick();
             this.selected = { kind: "passive", id: sp.id };
             this.drawerOpen = true;
@@ -35529,7 +35658,8 @@
             });
           }
           if (canHit(pos.x, pos.y)) {
-            hits.add(pos.x - r - 5, pos.y - r - 5, (r + 5) * 2, (r + 5) * 2, () => {
+            const hr = nodeHitR(r, 5);
+            hits.add(pos.x - hr, pos.y - hr, hr * 2, hr * 2, () => {
               SoundEngine.playClick();
               this.selected = { kind: "formation", formation: fm };
               this.drawerOpen = true;
@@ -35560,7 +35690,8 @@
         });
         ctx2.restore();
         if (canHit(pos.x, pos.y)) {
-          hits.add(pos.x - r - 5, pos.y - r - 5, (r + 5) * 2, (r + 5) * 2, () => {
+          const hr = nodeHitR(r, 5);
+          hits.add(pos.x - hr, pos.y - hr, hr * 2, hr * 2, () => {
             SoundEngine.playClick();
             this.selected = { kind: "seal", id: seal.id };
             this.drawerOpen = true;
@@ -39736,10 +39867,12 @@
       });
       if (summary?.retiredLegend) {
         const rl = summary.retiredLegend;
+        const cs = summary.captainSuccessor;
+        const bannerText = cs?.chosenPlayerName ? `\u6E38\u5B50\u5F52\u5BB6 \xB7 \u4F20\u5947\u6302\u9774\uFF1A#10 ${rl.name} \u8F6C\u4EFB\u4E3B\u6559\u7EC3 \xB7 \u8863\u94B5\u4F20\u4EBA\u3010${cs.chosenPlayerName}\u3011\u5DF2\u89C9\u9192\u91D1\u6807\u3010${cs.grantedTrait}\u3011\uFF01` : `\u6E38\u5B50\u5F52\u5BB6 \xB7 \u4F20\u5947\u6302\u9774\u8F6C\u6559\u7EC3\uFF1A#10 ${rl.name} (${rl.age}\u5C81 \xB7 \u672C\u5B63 ${rl.appearances}\u573A ${rl.goals}\u7403${rl.assists}\u52A9) \u6B63\u5F0F\u9000\u5F79\u63A5\u8FC7\u6559\u97AD\uFF0C\u4F20\u627F\u3010\u8001\u961F\u957F\u7684\u6012\u543C\u3011+50 Meta\uFF01`;
         drawRoundRect(ctx2, 64, 108, 1152, 26, 6, "rgba(120, 53, 15, 0.45)", THEME.GOLD, 1);
         drawText(
           ctx2,
-          `\u6E38\u5B50\u5F52\u5BB6 \xB7 \u4F20\u5947\u6302\u9774\u8F6C\u6559\u7EC3\uFF1A#10 ${rl.name} (${rl.age}\u5C81 \xB7 \u672C\u5B63 ${rl.appearances}\u573A ${rl.goals}\u7403${rl.assists}\u52A9) \u6B63\u5F0F\u9000\u5F79\u63A5\u8FC7\u6559\u97AD\uFF0C\u4F20\u627F\u3010\u8001\u961F\u957F\u7684\u6012\u543C\u3011+50 Meta\uFF01`,
+          bannerText,
           640,
           121,
           { size: 11.5, bold: true, color: THEME.GOLD_LIGHT, align: "center" }
@@ -39747,9 +39880,12 @@
       }
       if (this.viewMode === "ceremony") {
         this.renderCeremonyView(ctx2, hits, league, actions);
-        return;
+      } else {
+        this.renderRosterPrepView(ctx2, hits, league, actions);
       }
-      this.renderRosterPrepView(ctx2, hits, league, actions);
+      if (summary?.captainSuccessor?.pending) {
+        this.renderCaptainSuccessorModal(ctx2, hits, league, actions);
+      }
     }
     renderCeremonyView(ctx2, hits, league, actions) {
       const st = league.getState();
@@ -40236,6 +40372,107 @@
         variant: "gold",
         fontSize: 15,
         icon: "play"
+      });
+    }
+    renderCaptainSuccessorModal(ctx2, hits, league, actions) {
+      const st = league.getState();
+      const club = league.getUserClub();
+      const cs = st.lastSummary?.captainSuccessor;
+      if (!cs || !cs.pending) return;
+      const roster = league.getClubRoster();
+      const candidates = cs.candidateIds.map((id) => club.squad.find((p) => p.id === id) ?? roster.find((p) => p.id === id)).filter((p) => !!p);
+      if (candidates.length === 0) return;
+      ctx2.save();
+      ctx2.fillStyle = "rgba(4, 8, 16, 0.82)";
+      ctx2.fillRect(0, 0, THEME.W, THEME.H);
+      ctx2.restore();
+      hits.add(0, 0, THEME.W, THEME.H, () => {
+      });
+      const mx = 110;
+      const my = 88;
+      const mw = 1060;
+      const mh = 544;
+      drawChamferPanel(ctx2, mx, my, mw, mh, 16, "rgba(11, 18, 34, 0.98)", THEME.GOLD_LIGHT, 2, THEME.GOLD_LIGHT);
+      drawFoilShimmer(ctx2, mx, my, mw, mh, this.animClock * 0.8, "rgba(250, 204, 21, 0.14)");
+      drawBadge(ctx2, mx + 32, my + 24, 152, 24, "\u4F20\u5947\u6302\u9774 \xB7 \u85AA\u706B\u76F8\u4F20", "#78350F", THEME.GOLD_LIGHT);
+      drawText(ctx2, `#10 ${cs.captainName} \u9000\u5F79\u4F20\u627F \xB7 \u8BF7\u4EB2\u624B\u94A6\u70B9 1 \u540D\u300C\u8863\u94B5\u4F20\u4EBA\u300D`, mx + 198, my + 36, {
+        size: 21,
+        bold: true,
+        color: THEME.GOLD_LIGHT
+      });
+      drawText(
+        ctx2,
+        `\u8001\u961F\u957F\u5DF2\u6B63\u5F0F\u8F6C\u4EFB\u4E3B\u6559\u7EC3\uFF0C\u4EE5\u4E0B ${candidates.length} \u540D\u961F\u5185\u9752\u5E74\u624D\u4FCA\u7FD8\u9996\u4EE5\u76FC\uFF1A\u9009\u4E2D\u540E\u6C38\u4E45\u7EE7\u627F\u6838\u5FC3\u5C5E\u6027 +3\u3001PA \u7A81\u7834\u4E0E\u91D1\u6807\u7279\u8D28\uFF01`,
+        mx + 32,
+        my + 68,
+        { size: 12.5, color: "#CBD5E1" }
+      );
+      const count = candidates.length;
+      const gap = 18;
+      const cw = Math.min(242, Math.floor((mw - 64 - gap * (count - 1)) / count));
+      const totalCardsW = cw * count + gap * (count - 1);
+      const startX = mx + Math.floor((mw - totalCardsW) / 2);
+      const cy = my + 98;
+      const ch = 414;
+      candidates.forEach((p, idx) => {
+        const cx = startX + idx * (cw + gap);
+        const hovered = hits.isHovered(cx, cy, cw, ch);
+        drawChamferPanel(
+          ctx2,
+          cx,
+          cy,
+          cw,
+          ch,
+          12,
+          hovered ? "#1B2B4B" : "rgba(16, 25, 45, 0.94)",
+          hovered ? THEME.GOLD_LIGHT : THEME.BORDER_GOLD,
+          hovered ? 2.2 : 1.3,
+          THEME.GOLD_LIGHT
+        );
+        drawPlayerAvatar(ctx2, cx + (cw - 76) / 2, cy + 16, 76, 92, p, club, { radius: 8 });
+        drawBadge(ctx2, cx + 14, cy + 118, 28, 20, p.tier, tierColor(p.tier), p.tier === "S" ? "#090D16" : "#FFFFFF");
+        drawBadge(ctx2, cx + 46, cy + 118, 38, 20, p.role, "#1E293B", THEME.TX2);
+        drawBadge(ctx2, cx + cw - 62, cy + 118, 48, 20, `${p.age}\u5C81`, "#0F172A", "#7DD3FC");
+        drawText(ctx2, p.name, cx + cw / 2, cy + 154, {
+          size: 16,
+          bold: true,
+          color: hovered ? THEME.GOLD_LIGHT : THEME.TX1,
+          align: "center"
+        });
+        drawText(ctx2, `\u5F53\u524D CA ${p.ca}  \xB7  \u6F5C\u529B PA ${p.pa ?? p.ca}`, cx + cw / 2, cy + 178, {
+          size: 11.5,
+          bold: true,
+          color: "#7DD3FC",
+          align: "center",
+          mono: true
+        });
+        const statLine = p.role === "GK" ? `\u6251${p.attributes.goalkeeping} \u7AD9${p.attributes.positioning} \u4F20${p.attributes.passing}` : `\u901F${p.attributes.pace} \u5C04${p.attributes.shooting} \u4F20${p.attributes.passing} \u9632${p.attributes.defending}`;
+        drawText(ctx2, statLine, cx + cw / 2, cy + 200, { size: 11, color: THEME.TX2, align: "center" });
+        const hasMaster = (p.goldTraits ?? []).includes("\u5927\u8D5B\u5148\u751F");
+        const nextGold = !hasMaster ? "\u5927\u8D5B\u5148\u751F" : !(p.goldTraits ?? []).includes("\u8FDC\u5C04\u91CD\u70AE") ? "\u8FDC\u5C04\u91CD\u70AE" : "\u7403\u573A\u9886\u8896";
+        const isDefRole = p.role === "CB" || p.role === "LB" || p.role === "RB" || p.role === "LWB" || p.role === "RWB" || p.role === "CDM";
+        const mainAttr = isDefRole ? "\u9632\u5B88+3" : p.role === "GK" ? "\u95E8\u5C06+3" : "\u5C04\u95E8+3";
+        drawRoundRect(ctx2, cx + 14, cy + 220, cw - 28, 128, 8, "rgba(120, 53, 15, 0.22)", "rgba(250, 204, 21, 0.38)", 1);
+        drawText(ctx2, "\u7EE7\u627F\u8001\u961F\u957F\u8863\u94B5\u52A0\u6210", cx + cw / 2, cy + 238, { size: 11, bold: true, color: THEME.GOLD_LIGHT, align: "center" });
+        drawText(ctx2, `\u2022 \u4F20\u7403+3 \xB7 \u51B7\u9759+3 \xB7 ${mainAttr}`, cx + 24, cy + 262, { size: 11, color: THEME.GREEN });
+        drawText(ctx2, `\u2022 \u6F5C\u529B\u4E0A\u9650 PA \u7A81\u7834\u63D0\u5347`, cx + 24, cy + 284, { size: 11, color: "#7DD3FC" });
+        drawText(ctx2, `\u2022 \u89C9\u9192\u91D1\u6807\u3010${nextGold}\u3011`, cx + 24, cy + 306, { size: 11, bold: true, color: THEME.GOLD_LIGHT });
+        drawText(ctx2, `\u2022 \u6C38\u4E45\u94ED\u523B\u300C\u8863\u94B5\u4F20\u4EBA\u300D`, cx + 24, cy + 328, { size: 11, color: "#FDE68A" });
+        const pick3 = () => {
+          const res = league.selectCaptainSuccessor(p.id);
+          if (res.ok) {
+            SoundEngine.playFanfare();
+            actions.onBurst?.(cx + cw / 2, cy + ch / 2, THEME.GOLD_LIGHT);
+            actions.onToast?.(`${res.playerName} \u5DF2\u7EE7\u627F\u6797\u950B\u8863\u94B5\uFF0C\u89C9\u9192\u91D1\u6807\u3010${res.grantedTrait}\u3011\uFF01`, THEME.GOLD_LIGHT);
+            actions.onSave?.();
+          }
+        };
+        drawButton(ctx2, hits, cx + 16, cy + ch - 52, cw - 32, 36, "\u94A6\u70B9\u63A5\u73ED \u25B6", pick3, {
+          variant: "gold",
+          fontSize: 13,
+          icon: "star"
+        });
+        hits.add(cx, cy, cw, ch, pick3);
       });
     }
   };
@@ -41933,6 +42170,17 @@
         icon: "trophy"
       });
       ctx2.restore();
+      if (!this.wizardOpen) {
+        const verText = getRunningVersion();
+        const verW = Math.max(118, verText.length * 6.2 + 20);
+        drawRoundRect(ctx2, THEME.W - verW - 8, THEME.H - 30, verW, 24, 5, "rgba(4,7,14,0.66)", THEME.BORDER);
+        drawText(ctx2, verText, THEME.W - 18, THEME.H - 13, {
+          size: 10.5,
+          color: "#94A3B8",
+          align: "right",
+          mono: true
+        });
+      }
       if (this.wizardOpen) {
         this.renderWizardModal(ctx2, hits, metaLv, actions);
       }
@@ -42202,6 +42450,8 @@
       this.textInputModal = new TextInputModal();
       this.settingsModal = new SettingsModal();
       this.saveSlotModal = new SaveSlotModal();
+      this.otaPromptShown = false;
+      this.otaCheckTimers = [];
       this.tutorialOverlay = new TutorialOverlay();
       this.knownAchievements = /* @__PURE__ */ new Set();
       this.toast = null;
@@ -42238,6 +42488,36 @@
       this.bootIntro = new BootIntro(() => {
         this.titleScreen.resetEnterAnim();
       });
+      this.scheduleOtaChecks();
+    }
+    /**
+     * OTA 检查：原生层下载是异步的，启动瞬间可能还没完成。
+     * 分几次轮询，只要任一时刻发现待生效版本就提示一次；用户点「稍后」后本局不再打扰。
+     */
+    scheduleOtaChecks() {
+      for (const delay of [1200, 5e3, 12e3]) {
+        const t = window.setTimeout(() => void this.checkOtaOnce(), delay);
+        this.otaCheckTimers.push(t);
+      }
+    }
+    async checkOtaOnce() {
+      if (this.otaPromptShown || this.confirmModal.isOpen()) return;
+      if (this.route !== "title") return;
+      const status = await getOtaStatus();
+      if (!status?.pendingVersion || this.otaPromptShown) return;
+      this.otaPromptShown = true;
+      for (const t of this.otaCheckTimers) window.clearTimeout(t);
+      this.otaCheckTimers = [];
+      this.confirmModal.open(
+        "\u53D1\u73B0\u65B0\u7248\u672C",
+        `\u65B0\u7248\u672C ${status.pendingVersion} \u5DF2\u4E0B\u8F7D\u5B8C\u6210\uFF0C\u91CD\u542F\u540E\u7ACB\u5373\u751F\u6548\u3002\u5F53\u524D\u8FDB\u5EA6\u5DF2\u81EA\u52A8\u4FDD\u5B58\uFF0C\u662F\u5426\u73B0\u5728\u91CD\u542F\uFF1F`,
+        () => {
+          this.save();
+          restartAppForUpdate();
+        },
+        "\u7ACB\u5373\u91CD\u542F",
+        "primary"
+      );
     }
     loadPersistedSettings() {
       const raw = this.platform.loadSettings?.();
@@ -43225,6 +43505,38 @@
   }
   function boot() {
     const app = new GameApp(steamPlatform);
+    let e2eEnabled = false;
+    try {
+      e2eEnabled = new URLSearchParams(window.location.search).get("e2e") === "1" || window.localStorage.getItem("fm_e2e") === "1";
+    } catch {
+      e2eEnabled = false;
+    }
+    if (e2eEnabled) {
+      const g = globalThis;
+      g.__FM_TEST__ = {
+        version: "1.0",
+        // 设计坐标（1280×720）点击，走真实 GameApp 事件链，等价于玩家触摸
+        tap: (x, y) => {
+          app.onPointerDown(x, y);
+          app.onPointerUp(x, y);
+          return true;
+        },
+        move: (x, y) => {
+          app.onPointerMove(x, y);
+          return true;
+        },
+        key: (code, key) => {
+          app.onKeyDown(code, key);
+          return true;
+        },
+        getRoute: () => app.route,
+        getState: () => app.league.getState(),
+        getRunningVersion: () => window.__FM_NATIVE_VERSION__ ?? null,
+        getCanvasSize: () => ({ width: canvas.width, height: canvas.height }),
+        screenshot: () => canvas.toDataURL("image/png")
+      };
+      console.log("[FM-TEST] bridge ready");
+    }
     let lastInteractionMs = performance.now();
     const markActive = () => {
       lastInteractionMs = performance.now();

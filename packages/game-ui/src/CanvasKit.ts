@@ -450,7 +450,9 @@ export function drawButton(
   }
 
   if (!opts.disabled) {
-    hits.add(x, y, w, h, () => {
+    const padX = IS_MOBILE ? (w < 44 ? Math.ceil((44 - w) / 2) : 4) : 0;
+    const padY = IS_MOBILE ? (h < 44 ? Math.ceil((44 - h) / 2) : 4) : 0;
+    hits.add(x - padX, y - padY, w + padX * 2, h + padY * 2, () => {
       SoundEngine.playClick();
       onClick();
     });
@@ -602,7 +604,8 @@ export function drawNavRail(
     const col = isAct ? THEME.GOLD_LIGHT : hovered ? THEME.TX1 : THEME.TX2;
     drawIcon(ctx, item.icon, 48, iy + 22, 18, col);
     drawText(ctx, item.label, 48, iy + 45, { size: 11, bold: isAct, color: col, align: 'center' });
-    hits.add(20, iy, 56, 60, () => {
+    const navPad = IS_MOBILE ? 6 : 0;
+    hits.add(20 - navPad, iy - navPad / 2, 56 + navPad * 2, 60 + navPad, () => {
       SoundEngine.playClick();
       onNavigate(item.key);
     });
@@ -614,7 +617,8 @@ export function drawNavRail(
   if (hHover) drawRoundRect(ctx, 20, hy, 56, 58, 8, 'rgba(30,45,77,0.7)', THEME.BORDER);
   drawIcon(ctx, 'home', 48, hy + 20, 18, hHover ? THEME.TX1 : THEME.TX2);
   drawText(ctx, '主页', 48, hy + 44, { size: 10.5, color: hHover ? THEME.TX1 : THEME.TX2, align: 'center' });
-  hits.add(20, hy, 56, 58, () => {
+  const homePad = IS_MOBILE ? 6 : 0;
+  hits.add(20 - homePad, hy - homePad / 2, 56 + homePad * 2, 58 + homePad, () => {
     SoundEngine.playClick();
     onNavigate('title');
   });
