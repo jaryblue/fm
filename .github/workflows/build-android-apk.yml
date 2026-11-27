@@ -31,11 +31,27 @@ jobs:
           npm ci
           npm run android:sync
 
+      - name: Configure Gradle Maven Central mirror
+        run: |
+          mkdir -p ~/.gradle/init.d
+          cat << 'EOF' > ~/.gradle/init.d/maven-mirror.gradle
+          allprojects {
+              buildscript {
+                  repositories {
+                      maven { url "https://maven-central.storage-download.googleapis.com/maven2/" }
+                  }
+              }
+              repositories {
+                  maven { url "https://maven-central.storage-download.googleapis.com/maven2/" }
+              }
+          }
+          EOF
+
       - name: Build Debug APK
         working-directory: android
         run: |
           chmod +x gradlew
-          ./gradlew assembleDebug
+          ./gradlew assembleDebug --no-daemon
 
       - name: Rename APK
         run: |
