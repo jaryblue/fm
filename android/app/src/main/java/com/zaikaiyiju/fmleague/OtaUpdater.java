@@ -34,7 +34,31 @@ public final class OtaUpdater {
     private static final String KEY_PENDING_VERSION = "pending_version";
     private static final String KEY_PENDING_HASH = "pending_hash";
 
+    /**
+     * 进程启动时 WebView 实际加载的 bundle 版本/hash。
+     * 必须在下载激活新包之前记录（见 MainActivity.onCreate），
+     * 否则磁盘激活路径已被改写，会把「下载完成」误判为「已重启生效」。
+     */
+    private static volatile String bootHash = "";
+    private static volatile String bootVersion = "";
+
     private OtaUpdater() {}
+
+    /** 在 WebView 尚未被 OTA 改写激活路径前，快照当前实际加载的版本 */
+    public static void captureBootVersion(Context context) {
+        JSONObject manifest = readActiveManifest(context);
+        if (manifest == null) {
+            bootHash = "";
+            bootVersion = "";
+            return;
+        }
+        bootHash = manifest.optString("hash", "").trim();
+        String v = manifest.optString("version", "").trim();
+        bootVersion = !v.isEmpty() ? v : bootHash;
+    }
+
+    public static String getBootHash() { return bootHash; }
+    public static String getBootVersion() { return bootVersion; }
 
     /** 返回已下载待生效的版本号；若已与当前运行版本一致则自动清理并返回 null */
     public static String getPendingVersion(Context context) {
@@ -44,11 +68,16 @@ public final class OtaUpdater {
         String pendingHash = prefs.getString(KEY_PENDING_HASH, null);
         if (pendingVersion == null || pendingVersion.isEmpty()) return null;
 
-        String activeHash = readActiveHash(context);
-        String activeVersion = getActiveVersion(context);
+        // 判定基准必须是「本次进程实际加载的版本」，不是磁盘激活路径。
+        // download 完成后 activateRelease 会立刻改写磁盘激活路径，但旧 WebView 进程仍在跑老 bundle；
+        // 用磁盘路径判定会把「下载完成」误当成「重启已生效」，导致 pending 被提前清掉、弹窗永不出现。
+        String runningHash = bootHash;
+        if (runningHash == null || runningHash.isEmpty()) runningHash = readActiveHash(context);
+        String runningVersion = bootVersion;
+        if (runningVersion == null || runningVersion.isEmpty()) runningVersion = getActiveVersion(context);
         boolean alreadyActive =
-            (pendingHash != null && !pendingHash.isEmpty() && pendingHash.equals(activeHash))
-            || (activeVersion != null && !activeVersion.isEmpty() && pendingVersion.equals(activeVersion));
+            (pendingHash != null && !pendingHash.isEmpty() && pendingHash.equals(runningHash))
+            || (pendingVersion.equals(runningVersion));
         if (alreadyActive) {
             prefs.edit().remove(KEY_PENDING_VERSION).remove(KEY_PENDING_HASH).commit();
             return null;
@@ -107,7 +136,12 @@ public final class OtaUpdater {
                 String bundleZip = manifest.optString("bundleZip", "ota-bundle.zip").trim();
                 String expectedSha256 = manifest.optString("zipSha256", "").trim();
 
-                if (remoteHash.isEmpty() || remoteHash.equals(currentHash)) {
+                // 以「本次进程实际运行的版本」为准判断是否已是最新。
+                // 磁盘激活路径在下载完成后就会被改写，若用它比较，重启后的新进程会误以为
+                // 远端与本地一致而清掉刚写入的 pending（虽然那种场景 pending 本就该清，
+                // 但反过来在「已下载、未重启」的旧进程里，磁盘路径已是新版本，也会命中此分支）。
+                String runningHash = (bootHash != null && !bootHash.isEmpty()) ? bootHash : currentHash;
+                if (remoteHash.isEmpty() || remoteHash.equals(runningHash)) {
                     appContext.getSharedPreferences(PREFS_OTA, Activity.MODE_PRIVATE)
                         .edit().remove(KEY_PENDING_VERSION).remove(KEY_PENDING_HASH).commit();
                     return;

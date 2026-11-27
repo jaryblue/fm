@@ -15,6 +15,9 @@ public class MainActivity extends BridgeActivity {
     public void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         applyImmersiveFullscreen();
+        // 在后台 OTA 改写磁盘激活路径之前，快照 WebView 本次实际加载的版本。
+        // 这个基准用于判定 pending 是否「已重启生效」，不能等下载完成后再读磁盘。
+        OtaUpdater.captureBootVersion(this);
         // OTA 状态桥接：让 WebView 内的 JS 查询待生效更新并触发重启
         if (getBridge() != null && getBridge().getWebView() != null) {
             getBridge().getWebView().addJavascriptInterface(new OtaJsBridge(this), "AndroidOtaBridge");
@@ -33,7 +36,10 @@ public class MainActivity extends BridgeActivity {
         @JavascriptInterface
         public String getOtaStatus() {
             String pending = OtaUpdater.getPendingVersion(ctx);
-            String active = OtaUpdater.getActiveVersion(ctx);
+            // activeVersion 表示「当前进程实际运行的版本」，与前端 __FM_NATIVE_VERSION__ 对齐；
+            // 不能用磁盘激活路径（下载完成后会提前指向新包，误导前端判定）。
+            String active = OtaUpdater.getBootVersion();
+            if (active == null || active.isEmpty()) active = OtaUpdater.getActiveVersion(ctx);
             android.util.Log.d("OtaJsBridge", "getOtaStatus pending=" + pending + " active=" + active);
             org.json.JSONObject obj = new org.json.JSONObject();
             try {
