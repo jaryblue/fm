@@ -42,6 +42,8 @@ export class PostMatchReDraftScreen {
   private recapTab: 'analytics' | 'results' = 'analytics';
   private selectedCandidateId: string | null = null;
   private selectedDropId: string | null = null;
+  private ratingPage = 0;
+  private resultsPage = 0;
   private statTargetPage = 0;
   private statTargetFilter: 'all' | 'starters' | 'bench' = 'all';
 
@@ -67,6 +69,9 @@ export class PostMatchReDraftScreen {
   public setLastMatch(match: MatchState): void {
     this.lastMatch = match;
     this.viewMode = 'recap';
+    this.recapTab = 'analytics';
+    this.ratingPage = 0;
+    this.resultsPage = 0;
     this.selectedCandidateId = null;
     this.selectedDropId = null;
     this.statTargetPage = 0;
@@ -80,6 +85,8 @@ export class PostMatchReDraftScreen {
   public dispose(): void {
     this.lastMatch = null;
     this.packAnim = null;
+    this.ratingPage = 0;
+    this.resultsPage = 0;
     this.selectedCandidateId = null;
     this.selectedDropId = null;
     this.statTargetPage = 0;
@@ -182,16 +189,18 @@ export class PostMatchReDraftScreen {
     const rd = st.reDraft;
     const rw = st.pendingPostMatchReward;
     const m = this.lastMatch;
+    const summary = league.getLastMatchSummary();
+    const tierInfo = league.getCurrentTierInfo();
 
     const hasPendingCardUnlock = !!(rw?.tutorialCardUnlock && !rw.tutorialCardUnlock.claimed);
     const hasPendingReward = !!(rw && !rw.completed);
     const nextActionLabel = hasPendingCardUnlock
       ? '领取新解锁战术卡 ▶'
       : hasPendingReward
-      ? '领取赛后肉鸽奖励 (3选1) ▶'
+      ? '领取赛后战利品 (3选1) ▶'
       : rd
       ? '进入赛后补强 (2步) ▶'
-      : '返回门户首页 ▶';
+      : '继续下一轮 · 返回门户 ▶';
     const goNext = () => {
       if (hasPendingCardUnlock) {
         this.viewMode = 'card_unlock';
@@ -208,257 +217,60 @@ export class PostMatchReDraftScreen {
       }
     };
 
-    // 顶栏
-    drawRoundRect(ctx, 16, 14, 1248, 56, 10, THEME.BG_PANEL, THEME.BORDER);
-    drawText(ctx, '赛后战报与奖励结算', 34, 42, { size: 18, bold: true, color: THEME.GOLD_LIGHT });
-    drawButton(ctx, hits, 1018, 24, 232, 36, nextActionLabel, goNext, { variant: 'gold' });
+    const t = this.recapEnterTimer;
+    const pHero = easeOutCubic(Math.min(1, Math.max(0.05, t / 0.34)));
+    const pScore = easeOutCubic(Math.min(1, Math.max(0.01, t / 0.35)));
+    const pBars = easeOutCubic(Math.min(1, Math.max(0, (t - 0.14) / 0.50)));
+    const pMvp = easeOutBack(Math.min(1, Math.max(0, (t - 0.18) / 0.42)));
+    const pRewards = easeOutBack(Math.min(1, Math.max(0, (t - 0.42) / 0.45)));
 
-    const pHero = easeOutCubic(Math.min(1, Math.max(0.05, this.recapEnterTimer / 0.36)));
-    ctx.save();
-    ctx.globalAlpha = pHero;
-    ctx.translate(0, (1 - pHero) * 14);
-
-    // 1. 胜平负主视觉横幅
+    // ==================== 1. 顶部广播级演播室顶栏 (y: 12..60, h: 48) ====================
+    drawRoundRect(ctx, 16, 12, 1248, 48, 10, THEME.BG_PANEL, THEME.BORDER);
+    const roundLabel = summary?.roundNumber ?? (rd ? rd.roundCompleted : Math.max(1, st.currentRound - 1));
+    drawBadge(ctx, 28, 23, 140, 26, `${tierInfo.name} · 第${roundLabel}轮`, '#1E3A5F', '#7DD3FC');
+    drawText(ctx, '赛后演播室 · 战报与战术复盘', 182, 36, { size: 17, bold: true, color: THEME.GOLD_LIGHT });
     if (m) {
-      const userIsHome = m.homeName === club.name;
-      const myScore = userIsHome ? m.homeScore : m.awayScore;
-      const oppScore = userIsHome ? m.awayScore : m.homeScore;
-      const resultTag = myScore > oppScore ? '比赛胜利' : myScore === oppScore ? '握手言和' : '遗憾惜败';
-      const resultColor = myScore > oppScore ? THEME.GREEN : myScore === oppScore ? THEME.GOLD_LIGHT : THEME.RED_LIGHT;
-      const homeClub = st.clubs.find(c => c.name === m.homeName) || club;
-      const awayClub = st.clubs.find(c => c.name === m.awayName) || club;
-
-      drawRoundRect(ctx, 16, 84, 760, 260, 12, THEME.BG_PANEL, myScore > oppScore ? THEME.GREEN : THEME.BORDER_GOLD, 1.5);
-      drawBadge(ctx, 36, 104, 130, 26, resultTag, '#1E293B', resultColor);
-      drawText(ctx, m.minute + "' 全场结束", 752, 117, { size: 13, color: THEME.TX2, align: 'right' });
-
-      drawClubCrest(ctx, 176, 186, 30, homeClub);
-      drawText(ctx, m.homeName + (homeClub.isUser ? ' (我)' : ''), 176, 236, {
-        size: 18,
-        bold: true,
-        color: homeClub.isUser ? THEME.GOLD_LIGHT : THEME.TX1,
-        align: 'center',
-      });
-
-      drawRoundRect(ctx, 316, 152, 160, 68, 10, THEME.BG_CARD, THEME.GOLD);
-      drawText(ctx, `${m.homeScore} : ${m.awayScore}`, 396, 186, {
-        size: 32,
-        bold: true,
-        color: THEME.TX1,
-        align: 'center',
-        mono: true,
-      });
-
-      drawClubCrest(ctx, 616, 186, 30, awayClub);
-      drawText(ctx, m.awayName + (awayClub.isUser ? ' (我)' : ''), 616, 236, {
-        size: 18,
-        bold: true,
-        color: awayClub.isUser ? THEME.GOLD_LIGHT : THEME.TX1,
-        align: 'center',
-      });
-
-      // 关键比赛数据条
-      const h = m.stats.home;
-      const a = m.stats.away;
-      const totPoss = h.possessionTicks + a.possessionTicks || 1;
-      const hPoss = Math.round((h.possessionTicks / totPoss) * 100);
-      drawRoundRect(ctx, 36, 268, 720, 56, 8, THEME.BG_CARD, THEME.BORDER);
-      const reviewTxt = st.lastMatchReview;
-      drawText(
-        ctx,
-        `控球 ${hPoss}% : ${100 - hPoss}%   |   射门 ${h.shots}(正${h.shotsOnTarget}) : ${a.shots}(正${a.shotsOnTarget})   |   xG ${h.xG.toFixed(2)} : ${a.xG.toFixed(2)}`,
-        396,
-        reviewTxt ? 284 : 296,
-        { size: reviewTxt ? 12 : 13, bold: true, color: THEME.TX1, align: 'center' }
-      );
-      if (reviewTxt) {
-        drawText(ctx, reviewTxt, 396, 307, {
-          size: 11,
-          color: '#7DD3FC',
-          align: 'center',
-        });
-      }
-
-      // 右上：本场收获与奖励插画
-      drawChamferPanel(ctx, 792, 84, 472, 260, 12, THEME.BG_PANEL, THEME.BORDER_GOLD, 1.2, THEME.GOLD_LIGHT);
-      drawText(ctx, '本场战利品与关键事件', 814, 110, { size: 15, bold: true, color: THEME.GOLD_LIGHT });
-
-      const rwImg = AssetLoader.get(myScore > oppScore ? 'reward_win' : 'reward_draw');
-      drawChamferPanel(ctx, 814, 130, 168, 96, 6, THEME.BG_CARD, THEME.BORDER);
-      if (rwImg && typeof ctx.drawImage === 'function') {
-        ctx.save();
-        ctx.beginPath();
-        ctx.rect(816, 132, 164, 92);
-        ctx.clip();
-        ctx.drawImage(rwImg, 816, 132, 164, 92);
-        ctx.restore();
-      } else {
-        drawRewardIllustration(ctx, myScore > oppScore, 816, 132, 164, 92);
-      }
-
-      drawRoundRect(ctx, 994, 130, 248, 96, 8, THEME.BG_CARD, THEME.BORDER);
-      drawText(ctx, '赛后 3 选 1 战利品已就绪', 1010, 158, { size: 14.5, bold: true, color: THEME.GOLD_LIGHT });
-      drawWrappedText(ctx, '可领取赛季圣物、手牌暗金附魔或永久星盘点', 1010, 178, 224, 16, { size: 10.5, color: THEME.TX2, maxLines: 2 });
-
-      const goals = m.events.filter(e => e.type === 'goal').slice(0, 3);
-      if (goals.length === 0) {
-        drawText(ctx, '本场双方握手言和，未产生进球。', 814, 250, { size: 12, color: THEME.TX3 });
-      } else {
-        goals.forEach((g, gi) => {
-          drawText(ctx, `[进球] ${g.minute}' ${g.playerName} (${g.team === 'home' ? m.homeName : m.awayName})`, 814, 244 + gi * 22, {
-            size: 12,
-            color: THEME.TX1,
-          });
-        });
-      }
-
-      if (m.unlockedHiddenTraits && m.unlockedHiddenTraits.length > 0) {
-        const u = m.unlockedHiddenTraits[0];
-        drawRoundRect(ctx, 812, 310, 430, 24, 6, 'rgba(12, 74, 110, 0.45)', '#38BDF8', 1);
-        drawText(ctx, `隐藏特质觉醒：${u.playerName} 解锁【${u.trait}】`, 822, 322, {
-          size: 11.5,
-          bold: true,
-          color: '#7DD3FC',
-        });
-      }
+      drawText(ctx, `${m.minute}' 全场终场哨响`, 1246, 36, { size: 12, color: THEME.TX2, align: 'right', mono: true });
     }
 
-    // 2. 下方：分时段攻防动量图 + 首发 11 人赛后评分与 MVP 关键贡献榜 | 本轮全部比赛结果
-    drawRoundRect(ctx, 16, 360, 1248, 264, 10, THEME.BG_PANEL, THEME.BORDER);
-    drawButton(ctx, hits, 36, 368, 198, 24, '攻防动量与球员评分', () => {
-      this.recapTab = 'analytics';
-    }, { active: this.recapTab === 'analytics', fontSize: 11 });
-    drawButton(ctx, hits, 242, 368, 148, 24, '本轮全部赛果', () => {
-      this.recapTab = 'results';
-    }, { active: this.recapTab === 'results', fontSize: 11 });
+    // ==================== 2. 预先计算我方全部出场球员评分（含首发、被换下、替补登场） ====================
+    const userSide = m ? (m.homeName === club.name ? 'home' : 'away') : 'home';
+    const growthMap = league.getLastMatchGrowth();
+    const userSquadMap = new Map(club.squad.map(sp => [sp.id, sp]));
+    const ratedList: Array<{
+      player: MatchState['players'][number];
+      dp?: DraftPlayer;
+      rating: number;
+      statIcons: Array<{ ic: 'ball' | 'stat_assist' | 'stat_gk' | 'stat_pass' | 'stat_def' | 'stat_shoot'; val: number }>;
+      gainText: string;
+      keyTrait?: string;
+      isUnlocked: boolean;
+      bestPartner?: string;
+    }> = [];
 
-    if (this.recapTab === 'analytics' && m) {
-      // 左半区：分时段攻防动量图 (Match Momentum · 5分钟一档 0'~90')
-      const smX = 36, smY = 414, smW = 574, smH = 194;
-      drawRoundRect(ctx, smX, smY, smW, smH, 8, THEME.BG_CARD, THEME.BORDER);
-
-      const momBuckets = new Array(18).fill(0);
-      const momGoalBuckets: Array<{ bucket: number; team: 'home' | 'away'; minute: number }> = [];
-      for (const ev of m.events) {
-        const b = Math.max(0, Math.min(17, Math.floor(Math.max(0, ev.minute - 0.01) / 5)));
-        const sign = ev.team === 'home' ? 1 : -1;
-        let w = 0;
-        if (ev.type === 'goal') {
-          w = 5.5;
-          momGoalBuckets.push({ bucket: b, team: ev.team, minute: ev.minute });
-        } else if (ev.type === 'shot' || ev.type === 'save' || ev.type === 'miss') {
-          w = 2.2 + (ev.xG ? ev.xG * 4.5 : 0);
-        } else if (ev.type === 'corner') {
-          w = 1.4;
-        } else if (ev.type === 'pass') {
-          w = 0.25;
-        } else if (ev.type === 'tackle' || ev.type === 'interception') {
-          w = 0.65;
-        }
-        momBuckets[b] += sign * w;
-      }
-      const maxMom = Math.max(4.5, ...momBuckets.map(v => Math.abs(v)));
-      const mPadL = 34, mPadR = 14, mPadT = 22, mPadB = 22;
-      const mPlotW = smW - mPadL - mPadR;
-      const mPlotH = smH - mPadT - mPadB;
-      const midY = smY + mPadT + mPlotH / 2;
-      const halfH = mPlotH / 2 - 4;
-
-      // 网格与中线
-      ctx.strokeStyle = 'rgba(148, 163, 184, 0.28)';
-      ctx.lineWidth = 1;
-      ctx.beginPath();
-      ctx.moveTo(smX + mPadL, midY);
-      ctx.lineTo(smX + mPadL + mPlotW, midY);
-      ctx.stroke();
-
-      ctx.strokeStyle = 'rgba(148, 163, 184, 0.12)';
-      ctx.setLineDash([3, 3]);
-      [midY - halfH * 0.6, midY + halfH * 0.6].forEach(gy => {
-        ctx.beginPath();
-        ctx.moveTo(smX + mPadL, gy);
-        ctx.lineTo(smX + mPadL + mPlotW, gy);
-        ctx.stroke();
-      });
-      ctx.setLineDash([]);
-
-      // 主/客队标签
-      drawText(ctx, m.homeName.slice(0, 4), smX + 6, smY + mPadT + 10, { size: 9, bold: true, color: '#F87171' });
-      drawText(ctx, m.awayName.slice(0, 4), smX + 6, smY + smH - mPadB - 10, { size: 9, bold: true, color: '#60A5FA' });
-
-      const momBarProg = easeOutCubic(Math.min(1, Math.max(0.08, this.recapEnterTimer / 0.62)));
-      const slotW = mPlotW / 18;
-      const barW = Math.max(10, slotW - 6);
-      const userIsHomeSide = m.homeName === club.name;
-      for (let bi = 0; bi < 18; bi++) {
-        const val = momBuckets[bi];
-        const ratio = Math.min(1, Math.abs(val) / maxMom);
-        const bh = Math.max(3, ratio * halfH * momBarProg);
-        const bx = smX + mPadL + bi * slotW + (slotW - barW) / 2;
-        if (val >= 0) {
-          const col = userIsHomeSide ? '#FB923C' : '#F87171';
-          drawRoundRect(ctx, bx, midY - bh, barW, bh, 3, col);
-        } else {
-          const col = !userIsHomeSide ? '#38BDF8' : '#60A5FA';
-          drawRoundRect(ctx, bx, midY, barW, bh, 3, col);
-        }
-      }
-      // 进球标记
-      for (const gb of momGoalBuckets) {
-        const gx = smX + mPadL + (gb.bucket + 0.5) * slotW;
-        const gy = gb.team === 'home' ? smY + mPadT + 8 : smY + smH - mPadB - 8;
-        ctx.fillStyle = '#FACC15';
-        ctx.beginPath();
-        ctx.arc(gx, gy, 4.5, 0, Math.PI * 2);
-        ctx.fill();
-        drawText(ctx, `${gb.minute}'`, gx, gy + (gb.team === 'home' ? -9 : 9), {
-          size: 8.5,
-          bold: true,
-          color: '#FACC15',
-          align: 'center',
-          mono: true,
-        });
-      }
-      [0, 15, 30, 45, 60, 75, 90].forEach(min => {
-        const gx = smX + mPadL + (min / 90) * mPlotW;
-        drawText(ctx, min === 45 ? 'HT' : `${min}'`, gx, smY + smH - 10, {
-          size: 9,
-          color: min === 45 ? THEME.GOLD_LIGHT : THEME.TX3,
-          align: 'center',
-          mono: true,
-        });
-      });
-
-      drawText(ctx, `分时段攻防动量图 (0'~90') · ${m.homeName} (上) vs ${m.awayName} (下) · 金点=进球`, smX + smW / 2, smY - 11, {
-        size: 11,
-        color: THEME.TX2,
-        align: 'center',
-      });
-
-      // 右半区：首发 11 人赛后评分与 MVP 关键贡献榜（灰阶微图标 + 31px 行高）
-      const xgX = 638, xgY = 408, xgW = 606, xgH = 202;
-      drawRoundRect(ctx, xgX, xgY, xgW, xgH, 8, THEME.BG_CARD, THEME.BORDER);
-
-      const userSide = m.homeName === club.name ? 'home' : 'away';
+    if (m) {
       const myScoreVal = userSide === 'home' ? m.homeScore : m.awayScore;
       const oppScoreVal = userSide === 'home' ? m.awayScore : m.homeScore;
       const teamBonus = myScoreVal > oppScoreVal ? 0.4 : myScoreVal === oppScoreVal ? 0.1 : -0.1;
-      const growthMap = league.getLastMatchGrowth();
-      const userSquadMap = new Map(club.squad.map(sp => [sp.id, sp]));
+      const seenIds = new Set<string>();
+      const allUserPlayed = [...m.players, ...(m.subbedOutPlayers ?? [])].filter(p => {
+        if (p.team !== userSide || seenIds.has(p.id)) return false;
+        seenIds.add(p.id);
+        return true;
+      });
 
-      const starters = m.players
-        .filter(p => p.team === userSide && !p.subbedIn)
-        .slice(0, 11);
-      const rated = starters.map(p => {
+      for (const p of allUserPlayed) {
         const ms = p.matchStats;
         const g = growthMap[p.id];
         const dp = userSquadMap.get(p.id);
         const passAcc = ms.passes >= 6 ? ms.passesSuccess / ms.passes : 0.7;
         const chemBonus = g ? Math.min(0.45, g.chemGain * 0.025) : 0;
         const traitBonus = g?.unlockedTrait ? 0.55 : (dp?.traits?.length || p.traits?.length) ? 0.15 : 0;
+        const subBonus = p.subbedIn && (ms.goals > 0 || ms.assists > 0) ? 0.3 : 0;
         const raw =
           5.7 +
           teamBonus +
+          subBonus +
           ms.goals * 1.35 +
           ms.assists * 0.85 +
           ms.shots * 0.14 +
@@ -490,160 +302,688 @@ export class PostMatchReDraftScreen {
           if (g && g.famGain > 0) gainParts.push(`熟+${g.famGain}`);
           if (g && g.chemGain > 0) gainParts.push(`默+${g.chemGain.toFixed(1)}`);
         }
-        const keyTrait = g?.unlockedTrait
-          ? undefined
-          : (p.goldTraits?.[0] || p.traits?.[0] || dp?.traits?.[0]);
+        const keyTrait = g?.unlockedTrait ? undefined : (p.goldTraits?.[0] || p.traits?.[0] || dp?.traits?.[0]);
 
-        return {
+        ratedList.push({
           player: p,
+          dp,
           rating,
           statIcons: statIcons.slice(0, 3),
           gainText: gainParts.join(' '),
           keyTrait,
           isUnlocked: !!g?.unlockedTrait,
           bestPartner: g?.bestPartner,
+        });
+      }
+      ratedList.sort((a, b) => b.rating - a.rating);
+    }
+
+    // ==================== 3. Hero Row (y: 70..286, h: 216) ====================
+    ctx.save();
+    ctx.globalAlpha = pHero;
+    ctx.translate(0, (1 - pHero) * 12);
+
+    if (m) {
+      const userIsHome = m.homeName === club.name;
+      const myScore = userIsHome ? m.homeScore : m.awayScore;
+      const oppScore = userIsHome ? m.awayScore : m.homeScore;
+      const isWin = myScore > oppScore;
+      const isDraw = myScore === oppScore;
+      const resultTag = isWin ? '比赛胜利' : isDraw ? '握手言和' : '遗憾惜败';
+      const resultColor = isWin ? THEME.GREEN : isDraw ? THEME.GOLD_LIGHT : THEME.RED_LIGHT;
+      const homeClub = st.clubs.find(c => c.name === m.homeName) || club;
+      const awayClub = st.clubs.find(c => c.name === m.awayName) || club;
+
+      // 检测高光叙事标签（绝杀 / 逆转 / 零封 / 火力全开）
+      const storyTags: Array<{ label: string; bg: string; col: string }> = [];
+      if (isWin) {
+        let hCur = 0;
+        let aCur = 0;
+        let trailed = false;
+        let lastUserGoalMin = 0;
+        for (const ev of m.events) {
+          if (ev.type === 'goal') {
+            if (ev.team === 'home') hCur++;
+            else aCur++;
+            const myCur = userIsHome ? hCur : aCur;
+            const oppCur = userIsHome ? aCur : hCur;
+            if (myCur < oppCur) trailed = true;
+            if (ev.team === userSide) lastUserGoalMin = ev.minute;
+          }
+        }
+        if (lastUserGoalMin >= 85 && myScore - oppScore === 1) {
+          storyTags.push({ label: '读秒绝杀', bg: '#78350F', col: '#FDE047' });
+        }
+        if (trailed) {
+          storyTags.push({ label: '逆转翻盘', bg: '#4C1D95', col: '#E9D5FF' });
+        }
+        if (oppScore === 0) {
+          storyTags.push({ label: '零封锁死', bg: '#064E3B', col: '#6EE7B7' });
+        }
+        if (myScore >= 3) {
+          storyTags.push({ label: '火力全开', bg: '#7F1D1D', col: '#FCA5A5' });
+        }
+      }
+
+      // 左侧比分与双向数据对比条卡片 (x: 16..796, w: 780, h: 216)
+      drawChamferPanel(
+        ctx,
+        16,
+        70,
+        780,
+        216,
+        12,
+        THEME.BG_PANEL,
+        isWin ? THEME.GREEN : isDraw ? THEME.BORDER_GOLD : THEME.RED_LIGHT,
+        1.5,
+        resultColor
+      );
+      if (isWin) {
+        drawFoilShimmer(ctx, 16, 70, 780, 216, this.animClock * 0.7, 'rgba(34, 197, 94, 0.14)');
+      }
+
+      drawBadge(ctx, 32, 82, 92, 22, resultTag, '#1E293B', resultColor);
+      storyTags.slice(0, 3).forEach((tg, ti) => {
+        drawBadge(ctx, 132 + ti * 86, 82, 78, 22, tg.label, tg.bg, tg.col);
+      });
+
+      // 队徽与动态计数比分
+      drawClubCrest(ctx, 162, 130, 24, homeClub);
+      drawText(ctx, m.homeName + (homeClub.isUser ? ' (我)' : ''), 196, 130, {
+        size: 16,
+        bold: true,
+        color: homeClub.isUser ? THEME.GOLD_LIGHT : THEME.TX1,
+      });
+
+      const animHomeScore = Math.round(m.homeScore * pScore);
+      const animAwayScore = Math.round(m.awayScore * pScore);
+      drawRoundRect(ctx, 342, 102, 128, 50, 10, THEME.BG_CARD, THEME.GOLD, 1.4);
+      drawText(ctx, `${animHomeScore} : ${animAwayScore}`, 406, 127, {
+        size: 28,
+        bold: true,
+        color: THEME.TX1,
+        align: 'center',
+        mono: true,
+      });
+
+      drawClubCrest(ctx, 648, 130, 24, awayClub);
+      drawText(ctx, m.awayName + (awayClub.isUser ? ' (我)' : ''), 614, 130, {
+        size: 16,
+        bold: true,
+        color: awayClub.isUser ? THEME.GOLD_LIGHT : THEME.TX1,
+        align: 'right',
+      });
+
+      // 4 条双向数据对比条 (y: 164..274)
+      const h = m.stats.home;
+      const a = m.stats.away;
+      const totPoss = h.possessionTicks + a.possessionTicks || 1;
+      const hPoss = Math.round((h.possessionTicks / totPoss) * 100);
+      const aPoss = 100 - hPoss;
+      const hDef = h.tackles + h.interceptions;
+      const aDef = a.tackles + a.interceptions;
+
+      const compRows: Array<{
+        label: string;
+        leftVal: number;
+        rightVal: number;
+        leftTxt: string;
+        rightTxt: string;
+      }> = [
+        {
+          label: '控球率',
+          leftVal: hPoss,
+          rightVal: aPoss,
+          leftTxt: `${Math.round(hPoss * pBars)}%`,
+          rightTxt: `${Math.round(aPoss * pBars)}%`,
+        },
+        {
+          label: '射门(正)',
+          leftVal: h.shots,
+          rightVal: a.shots,
+          leftTxt: `${Math.round(h.shots * pBars)}(${Math.round(h.shotsOnTarget * pBars)})`,
+          rightTxt: `${Math.round(a.shots * pBars)}(${Math.round(a.shotsOnTarget * pBars)})`,
+        },
+        {
+          label: '预期进球 xG',
+          leftVal: h.xG,
+          rightVal: a.xG,
+          leftTxt: (h.xG * pBars).toFixed(2),
+          rightTxt: (a.xG * pBars).toFixed(2),
+        },
+        {
+          label: '抢断 / 拦截',
+          leftVal: hDef,
+          rightVal: aDef,
+          leftTxt: `${Math.round(hDef * pBars)}`,
+          rightTxt: `${Math.round(aDef * pBars)}`,
+        },
+      ];
+
+      const barCenterX = 406;
+      const halfBarMax = 218;
+      const leftColColor = userIsHome ? THEME.GOLD_LIGHT : '#F87171';
+      const rightColColor = !userIsHome ? '#38BDF8' : '#60A5FA';
+
+      compRows.forEach((cr, ci) => {
+        const ry = 166 + ci * 27;
+        const sum = Math.max(0.01, cr.leftVal + cr.rightVal);
+        const lRatio = (cr.leftVal / sum) * pBars;
+        const rRatio = (cr.rightVal / sum) * pBars;
+        const lW = Math.max(4, Math.round(lRatio * halfBarMax));
+        const rW = Math.max(4, Math.round(rRatio * halfBarMax));
+
+        drawText(ctx, cr.leftTxt, barCenterX - halfBarMax - 12, ry + 8, {
+          size: 11.5,
+          bold: cr.leftVal >= cr.rightVal,
+          color: cr.leftVal >= cr.rightVal ? leftColColor : THEME.TX2,
+          align: 'right',
+          mono: true,
+        });
+        drawRoundRect(ctx, barCenterX - halfBarMax - 4, ry + 3, halfBarMax, 10, 4, 'rgba(15, 23, 42, 0.88)');
+        drawRoundRect(ctx, barCenterX - 4 - lW, ry + 3, lW, 10, 4, leftColColor);
+
+        drawText(ctx, cr.label, barCenterX, ry + 20, {
+          size: 9.5,
+          color: THEME.TX3,
+          align: 'center',
+        });
+
+        drawRoundRect(ctx, barCenterX + 4, ry + 3, halfBarMax, 10, 4, 'rgba(15, 23, 42, 0.88)');
+        drawRoundRect(ctx, barCenterX + 4, ry + 3, rW, 10, 4, rightColColor);
+        drawText(ctx, cr.rightTxt, barCenterX + halfBarMax + 12, ry + 8, {
+          size: 11.5,
+          bold: cr.rightVal >= cr.leftVal,
+          color: cr.rightVal >= cr.leftVal ? rightColColor : THEME.TX2,
+          align: 'left',
+          mono: true,
+        });
+      });
+
+      // 右侧 MVP 英雄聚光灯卡 (x: 810..1264, w: 454, h: 216)
+      const mvp = ratedList[0];
+      ctx.save();
+      ctx.globalAlpha = Math.max(0.05, Math.min(1, pMvp));
+      ctx.translate(0, (1 - Math.min(1, pMvp)) * 10);
+      drawChamferPanel(ctx, 810, 70, 454, 216, 12, 'rgba(20, 26, 46, 0.96)', THEME.GOLD_LIGHT, 1.8, THEME.GOLD_LIGHT);
+      drawFoilShimmer(ctx, 810, 70, 454, 216, this.animClock * 1.1, 'rgba(250, 204, 21, 0.22)');
+
+      drawBadge(ctx, 826, 82, 148, 22, 'MATCH MVP · 全场最佳', '#78350F', THEME.GOLD_LIGHT);
+      if (mvp) {
+        const mp = mvp.player;
+        const dp = mvp.dp;
+        const shirtTxt = mp.shirtNumber ? `#${mp.shirtNumber} ` : '';
+        if (mp.subbedIn) {
+          drawBadge(ctx, 980, 82, 74, 22, '替补奇兵', '#064E3B', '#6EE7B7');
+        }
+        // 评分徽章（计数跳动）
+        const animRating = (mvp.rating * Math.min(1, pMvp)).toFixed(1);
+        drawRoundRect(ctx, 1188, 78, 60, 42, 8, '#0F172A', THEME.GOLD_LIGHT, 1.6);
+        drawText(ctx, animRating, 1218, 99, {
+          size: 21,
+          bold: true,
+          color: THEME.GOLD_LIGHT,
+          align: 'center',
+          mono: true,
+        });
+
+        const fakeDp: DraftPlayer = dp ?? {
+          id: mp.id,
+          name: mp.name,
+          role: mp.role,
+          shirtNumber: mp.shirtNumber,
+          attributes: mp.attributes,
+          traits: mp.traits,
+          fitness: mp.fitness,
+          ca: 75,
+          cost: 100,
+          tier: 'A',
+          age: 25,
+          trait: mp.traits?.[0] ?? '',
+          seasonStats: { appearances: 1, goals: mp.matchStats.goals, assists: mp.matchStats.assists, cleanSheets: 0, yellowCards: 0, redCards: 0 },
         };
-      }).sort((a, b) => b.rating - a.rating);
+        drawPlayerAvatar(ctx, 828, 116, 68, 86, fakeDp, club, { radius: 8 });
 
-      const avgRating = rated.length > 0
-        ? (rated.reduce((s, r) => s + r.rating, 0) / rated.length).toFixed(1)
+        drawBadge(ctx, 908, 118, 36, 18, mp.role, '#1E293B', THEME.TX1);
+        if (dp?.tier) drawBadge(ctx, 948, 118, 24, 18, dp.tier, tierColor(dp.tier));
+        drawText(ctx, fitText(ctx, `${shirtTxt}${mp.name}`, 196, 18, true), 908, 152, {
+          size: 18,
+          bold: true,
+          color: THEME.TX1,
+        });
+
+        const ms = mp.matchStats;
+        const distKm = ((ms.distanceM ?? 0) / 1000).toFixed(1);
+        const mvpLine1 = mp.role === 'GK'
+          ? `扑救 ${ms.saves} · 成功传球 ${ms.passesSuccess} · 跑动 ${distKm}km`
+          : `进球 ${ms.goals} · 助攻 ${ms.assists} · 抢断拦截 ${ms.tackles + ms.interceptions} · 跑动 ${distKm}km`;
+        drawText(ctx, mvpLine1, 908, 178, { size: 11.5, color: '#7DD3FC', mono: true });
+
+        const mvpNote = mvp.isUnlocked
+          ? `★ ${mvp.gainText}`
+          : mvp.bestPartner
+          ? `黄金连线：${mvp.bestPartner} · ${mvp.gainText || '全场核心驱动'}`
+          : mvp.keyTrait
+          ? `核心特质：【${mvp.keyTrait}】 · ${mvp.gainText || '统治全场'}`
+          : mvp.gainText || '全场核心驱动 · 评分冠绝全队';
+        drawRoundRect(ctx, 908, 196, 340, 32, 6, 'rgba(120, 53, 15, 0.28)', 'rgba(250, 204, 21, 0.45)');
+        drawText(ctx, fitText(ctx, mvpNote, 324, 11, true), 918, 212, {
+          size: 11,
+          bold: true,
+          color: mvp.isUnlocked ? '#38BDF8' : THEME.GOLD_LIGHT,
+        });
+
+        drawText(ctx, '点击卡面查看球员完整档案 ▶', 1246, 266, { size: 10, color: THEME.TX3, align: 'right' });
+        if (dp) {
+          hits.add(810, 70, 454, 216, () => {
+            SoundEngine.playClick();
+            this.fx.onInspectPlayer?.(dp);
+          });
+        }
+      }
+      ctx.restore();
+    }
+
+    // ==================== 4. Middle Row (y: 298..620, h: 322) ====================
+    // 左栏：战术时间轴 × 攻防动量图 (x: 16..636, w: 620, h: 322)
+    drawChamferPanel(ctx, 16, 298, 620, 322, 10, THEME.BG_PANEL, THEME.BORDER);
+    drawText(ctx, '攻防动量与战术时间轴 (0\'–90\')', 32, 318, { size: 13.5, bold: true, color: THEME.GOLD_LIGHT });
+    drawText(ctx, '金点=进球 · 青/紫标=换人与战术拐点', 620, 318, { size: 10.5, color: THEME.TX3, align: 'right' });
+
+    if (m) {
+      const smX = 30, smY = 334, smW = 592, smH = 204;
+      drawRoundRect(ctx, smX, smY, smW, smH, 8, THEME.BG_CARD, THEME.BORDER);
+
+      const momBuckets = new Array(18).fill(0);
+      const momGoalBuckets: Array<{ bucket: number; team: 'home' | 'away'; minute: number }> = [];
+      const momTacticMarkers: Array<{ minute: number; kind: 'sub' | 'tactic'; label: string }> = [];
+      for (const ev of m.events) {
+        const b = Math.max(0, Math.min(17, Math.floor(Math.max(0, ev.minute - 0.01) / 5)));
+        const sign = ev.team === 'home' ? 1 : -1;
+        let w = 0;
+        if (ev.type === 'goal') {
+          w = 5.5;
+          momGoalBuckets.push({ bucket: b, team: ev.team, minute: ev.minute });
+        } else if (ev.type === 'shot' || ev.type === 'save' || ev.type === 'miss') {
+          w = 2.2 + (ev.xG ? ev.xG * 4.5 : 0);
+        } else if (ev.type === 'corner') {
+          w = 1.4;
+        } else if (ev.type === 'pass') {
+          w = 0.25;
+        } else if (ev.type === 'tackle' || ev.type === 'interception') {
+          w = 0.65;
+        }
+        momBuckets[b] += sign * w;
+
+        if (ev.team === userSide && ev.type === 'substitution') {
+          momTacticMarkers.push({ minute: ev.minute, kind: 'sub', label: '换' });
+        } else if (
+          ev.team === userSide &&
+          (ev.type === 'tactic' || (ev.type === 'commentary' && (ev.text.includes('Zone') || ev.text.includes('指令') || ev.text.includes('核心'))))
+        ) {
+          momTacticMarkers.push({ minute: ev.minute, kind: 'tactic', label: '策' });
+        }
+      }
+      const maxMom = Math.max(4.5, ...momBuckets.map(v => Math.abs(v)));
+      const mPadL = 36, mPadR = 14, mPadT = 22, mPadB = 26;
+      const mPlotW = smW - mPadL - mPadR;
+      const mPlotH = smH - mPadT - mPadB;
+      const midY = smY + mPadT + mPlotH / 2;
+      const halfH = mPlotH / 2 - 4;
+
+      ctx.strokeStyle = 'rgba(148, 163, 184, 0.28)';
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(smX + mPadL, midY);
+      ctx.lineTo(smX + mPadL + mPlotW, midY);
+      ctx.stroke();
+
+      ctx.strokeStyle = 'rgba(148, 163, 184, 0.12)';
+      ctx.setLineDash([3, 3]);
+      [midY - halfH * 0.6, midY + halfH * 0.6].forEach(gy => {
+        ctx.beginPath();
+        ctx.moveTo(smX + mPadL, gy);
+        ctx.lineTo(smX + mPadL + mPlotW, gy);
+        ctx.stroke();
+      });
+      ctx.setLineDash([]);
+
+      drawText(ctx, m.homeName.slice(0, 4), smX + 6, smY + mPadT + 10, { size: 9, bold: true, color: '#F87171' });
+      drawText(ctx, m.awayName.slice(0, 4), smX + 6, smY + smH - mPadB - 18, { size: 9, bold: true, color: '#60A5FA' });
+
+      const slotW = mPlotW / 18;
+      const barW = Math.max(10, slotW - 6);
+      const userIsHomeSide = m.homeName === club.name;
+      for (let bi = 0; bi < 18; bi++) {
+        // 波浪逐根升起动效 (0.18s -> 0.96s)
+        const barProg = easeOutCubic(Math.max(0.06, Math.min(1, (t - 0.18 - bi * 0.025) / 0.34)));
+        const val = momBuckets[bi];
+        const ratio = Math.min(1, Math.abs(val) / maxMom);
+        const bh = Math.max(3, ratio * halfH * barProg);
+        const bx = smX + mPadL + bi * slotW + (slotW - barW) / 2;
+        if (val >= 0) {
+          const col = userIsHomeSide ? '#FB923C' : '#F87171';
+          drawRoundRect(ctx, bx, midY - bh, barW, bh, 3, col);
+        } else {
+          const col = !userIsHomeSide ? '#38BDF8' : '#60A5FA';
+          drawRoundRect(ctx, bx, midY, barW, bh, 3, col);
+        }
+      }
+
+      // 进球标记（随扫描时间顺次点亮）
+      for (const gb of momGoalBuckets) {
+        const revealT = 0.18 + gb.bucket * 0.025 + 0.16;
+        if (t < revealT) continue;
+        const pop = easeOutBack(Math.min(1, (t - revealT) / 0.25));
+        const gx = smX + mPadL + (gb.bucket + 0.5) * slotW;
+        const gy = gb.team === 'home' ? smY + mPadT + 8 : smY + smH - mPadB - 8;
+        ctx.save();
+        ctx.fillStyle = '#FACC15';
+        ctx.beginPath();
+        ctx.arc(gx, gy, 4.5 * Math.min(1.2, pop), 0, Math.PI * 2);
+        ctx.fill();
+        drawText(ctx, `${gb.minute}'`, gx, gy + (gb.team === 'home' ? -9 : 9), {
+          size: 8.5,
+          bold: true,
+          color: '#FACC15',
+          align: 'center',
+          mono: true,
+        });
+        ctx.restore();
+      }
+
+      // 战术换人/指令决策标记（沿时间轴下方展示）
+      const shownMarkerBuckets = new Set<number>();
+      for (const tm of momTacticMarkers.slice(0, 6)) {
+        const b = Math.max(0, Math.min(17, Math.floor(Math.max(0, tm.minute - 0.01) / 5)));
+        if (shownMarkerBuckets.has(b)) continue;
+        shownMarkerBuckets.add(b);
+        const mx = Math.max(smX + mPadL + 10, smX + mPadL + (tm.minute / 90) * mPlotW);
+        const my = smY + smH - mPadB + 2;
+        const col = tm.kind === 'sub' ? '#38BDF8' : '#C084FC';
+        drawRoundRect(ctx, mx - 7, my - 7, 14, 14, 4, '#0F172A', col, 1.1);
+        drawText(ctx, tm.label, mx, my, { size: 8.5, bold: true, color: col, align: 'center' });
+      }
+
+      [0, 15, 30, 45, 60, 75, 90].forEach(min => {
+        const gx = smX + mPadL + (min / 90) * mPlotW;
+        drawText(ctx, min === 45 ? 'HT' : `${min}'`, gx, smY + smH - 9, {
+          size: 9,
+          color: min === 45 ? THEME.GOLD_LIGHT : THEME.TX3,
+          align: 'center',
+          mono: true,
+        });
+      });
+
+      // 下方关键进球胶囊与一句话复盘
+      const goals = m.events.filter(e => e.type === 'goal').slice(0, 3);
+      const evBoxY = 546;
+      drawRoundRect(ctx, 30, evBoxY, 592, 62, 8, THEME.BG_CARD, THEME.BORDER);
+      if (goals.length === 0) {
+        drawText(ctx, '本场双方互交白卷 · 攻防拉锯激烈', 44, evBoxY + 20, { size: 11.5, color: THEME.TX2 });
+      } else {
+        goals.forEach((g, gi) => {
+          const gx = 40 + gi * 194;
+          const isUserGoal = g.team === userSide;
+          drawRoundRect(ctx, gx, evBoxY + 8, 186, 22, 5, isUserGoal ? 'rgba(20, 83, 45, 0.36)' : 'rgba(127, 29, 29, 0.30)', isUserGoal ? THEME.GREEN : '#F87171', 0.9);
+          drawText(ctx, fitText(ctx, `${g.minute}' ${g.playerName}`, 174, 10.5, true), gx + 93, evBoxY + 19, {
+            size: 10.5,
+            bold: true,
+            color: isUserGoal ? '#86EFAC' : '#FCA5A5',
+            align: 'center',
+          });
+        });
+      }
+      drawText(ctx, fitText(ctx, st.lastMatchReview || '战术执行稳健，准备迎接下一轮挑战', 568, 11), 42, evBoxY + 46, {
+        size: 11,
+        color: '#7DD3FC',
+      });
+    }
+
+    // 右栏：双 Tab 面板 (x: 650..1264, w: 614, h: 322) -> Top 6 评分翻页 / 本轮全联盟赛果
+    drawChamferPanel(ctx, 650, 298, 614, 322, 10, THEME.BG_PANEL, THEME.BORDER);
+    drawButton(ctx, hits, 666, 306, 200, 26, `出场球员评分 (${ratedList.length}人)`, () => {
+      this.recapTab = 'analytics';
+    }, { active: this.recapTab === 'analytics', fontSize: 11 });
+    drawButton(ctx, hits, 874, 306, 150, 26, '本轮全联盟赛果', () => {
+      this.recapTab = 'results';
+    }, { active: this.recapTab === 'results', fontSize: 11 });
+
+    if (this.recapTab === 'analytics' && m) {
+      const pageSize = 6;
+      const totalPages = Math.max(1, Math.ceil(ratedList.length / pageSize));
+      if (this.ratingPage >= totalPages) this.ratingPage = totalPages - 1;
+      const slice = ratedList.slice(this.ratingPage * pageSize, (this.ratingPage + 1) * pageSize);
+
+      const avgRating = ratedList.length > 0
+        ? (ratedList.reduce((s, r) => s + r.rating, 0) / ratedList.length).toFixed(1)
         : '6.5';
-      const totalChemGain = rated.reduce((s, r) => s + (growthMap[r.player.id]?.chemGain ?? 0), 0);
+      const totalChemGain = ratedList.reduce((s, r) => s + (growthMap[r.player.id]?.chemGain ?? 0), 0);
+      drawText(ctx, `全队均分 ${avgRating} · 默契 +${totalChemGain.toFixed(0)}`, 1248, 319, {
+        size: 11,
+        bold: true,
+        color: THEME.GOLD_LIGHT,
+        align: 'right',
+      });
 
-      rated.forEach((item, idx) => {
-        const col = idx < 6 ? 0 : 1;
-        const row = idx < 6 ? idx : idx - 6;
-        const rx = xgX + 6 + col * 300;
-        const ry = xgY + 3 + row * 35;
-        const rw = 294;
-        const rh = 33;
-        const isMvp = idx === 0;
+      slice.forEach((item, localIdx) => {
+        const globalIdx = this.ratingPage * pageSize + localIdx;
+        const rowP = easeOutCubic(Math.max(0.05, Math.min(1, (t - 0.25 - localIdx * 0.05) / 0.28)));
+        const rx = 666 + (1 - rowP) * 16;
+        const ry = 340 + localIdx * 40;
+        const rw = 582;
+        const rh = 36;
+        const isMvp = globalIdx === 0;
         const rColor = item.rating >= 8.0 ? THEME.GREEN : item.rating >= 7.0 ? THEME.GOLD_LIGHT : THEME.TX1;
 
+        ctx.save();
+        ctx.globalAlpha = rowP;
         drawRoundRect(
           ctx,
           rx,
           ry,
           rw,
           rh,
-          5,
-          isMvp ? 'rgba(120, 53, 15, 0.34)' : 'rgba(11, 17, 30, 0.78)',
-          isMvp ? THEME.GOLD_LIGHT : item.isUnlocked ? '#38BDF8' : 'rgba(148, 163, 184, 0.16)',
-          isMvp || item.isUnlocked ? 1.2 : 0.8
+          6,
+          isMvp ? 'rgba(120, 53, 15, 0.34)' : THEME.BG_CARD,
+          isMvp ? THEME.GOLD_LIGHT : item.isUnlocked ? '#38BDF8' : THEME.BORDER,
+          isMvp || item.isUnlocked ? 1.3 : 1
         );
 
         if (isMvp) {
-          drawBadge(ctx, rx + 4, ry + 7, 30, 18, 'MVP', '#78350F', THEME.GOLD_LIGHT);
+          drawBadge(ctx, rx + 8, ry + 8, 36, 20, 'MVP', '#78350F', THEME.GOLD_LIGHT);
         } else {
-          drawText(ctx, `${idx + 1}`, rx + 13, ry + 16.5, { token: 'MICRO', bold: true, color: THEME.TX3, align: 'center', mono: true });
+          drawText(ctx, `#${globalIdx + 1}`, rx + 24, ry + 18, { size: 11.5, bold: true, color: THEME.TX3, align: 'center', mono: true });
         }
-        const nameX = isMvp ? rx + 38 : rx + 24;
-        drawBadge(ctx, nameX, ry + 8, 28, 16, item.player.role, '#1E293B', THEME.TX2);
-        drawText(ctx, fitText(ctx, item.player.name, 84, FONT.MICRO, true, true), nameX + 32, ry + 10, {
-          token: 'MICRO',
+        drawBadge(
+          ctx,
+          rx + 50,
+          ry + 9,
+          34,
+          18,
+          item.player.subbedIn ? '替补' : '首发',
+          item.player.subbedIn ? '#0C4A6E' : '#1E293B',
+          item.player.subbedIn ? '#7DD3FC' : THEME.TX2
+        );
+        drawBadge(ctx, rx + 88, ry + 9, 34, 18, item.player.role, '#1E293B', THEME.TX1);
+        drawText(ctx, fitText(ctx, item.player.name, 110, 12.5, true), rx + 128, ry + 18, {
+          size: 12.5,
           bold: true,
           color: isMvp ? THEME.GOLD_LIGHT : THEME.TX1,
         });
 
-        let sx = nameX + 32;
+        let sx = rx + 246;
         item.statIcons.forEach(si => {
-          sx += drawStatMicro(ctx, si.ic, `${si.val}`, sx, ry + 24, {
-            iconSize: 10,
-            fontSize: 10,
+          sx += drawStatMicro(ctx, si.ic, `${si.val}`, sx, ry + 18, {
+            iconSize: 11,
+            fontSize: 11,
             iconColor: THEME.TX3,
-            valueColor: THEME.TX2,
-            gap: 2,
+            valueColor: THEME.TX1,
+            gap: 3,
           });
-          sx += 6;
+          sx += 10;
         });
+
         if (item.gainText) {
-          drawText(ctx, item.gainText, rx + rw - 42, ry + 24, {
-            token: 'MICRO',
+          drawText(ctx, item.gainText, rx + rw - 58, ry + 18, {
+            size: 10.5,
             bold: item.isUnlocked,
             color: item.isUnlocked ? '#38BDF8' : THEME.GREEN,
             align: 'right',
-            mono: !item.isUnlocked,
           });
-        }
-        if (item.keyTrait) {
-          drawText(ctx, `[${item.keyTrait.slice(0, 4)}]`, rx + rw - 42, ry + 10, {
-            token: 'MICRO',
+        } else if (item.keyTrait) {
+          drawText(ctx, `[${item.keyTrait.slice(0, 4)}]`, rx + rw - 58, ry + 18, {
+            size: 10,
             color: '#C4B5FD',
-            align: 'right',
-          });
-        } else if (item.bestPartner && isMvp) {
-          drawText(ctx, `连线:${item.bestPartner.slice(0, 3)}`, rx + rw - 42, ry + 10, {
-            token: 'MICRO',
-            color: THEME.GOLD_LIGHT,
             align: 'right',
           });
         }
 
-        drawRoundRect(ctx, rx + rw - 36, ry + 5, 32, 23, 4, '#0F172A', rColor, 1);
-        drawText(ctx, item.rating.toFixed(1), rx + rw - 20, ry + 16.5, {
-          token: 'LABEL',
+        drawRoundRect(ctx, rx + rw - 48, ry + 5, 40, 26, 5, '#0F172A', rColor, 1.1);
+        drawText(ctx, item.rating.toFixed(1), rx + rw - 28, ry + 18, {
+          size: 13,
           bold: true,
           color: rColor,
           align: 'center',
           mono: true,
         });
+        ctx.restore();
+
+        if (item.dp) {
+          hits.add(rx, ry, rw, rh, () => {
+            SoundEngine.playClick();
+            this.fx.onInspectPlayer?.(item.dp!);
+          });
+        }
       });
 
-      const sumX = xgX + 306;
-      const sumY = xgY + 3 + 5 * 35;
-      drawRoundRect(ctx, sumX, sumY, 294, 33, 5, 'rgba(30, 58, 95, 0.35)', THEME.BORDER_GOLD, 0.9);
-      drawText(ctx, `首发均分 ${avgRating} · 默契总升温 +${totalChemGain.toFixed(0)}`, sumX + 147, sumY + 16.5, {
-        token: 'MICRO',
-        bold: true,
-        color: THEME.GOLD_LIGHT,
+      // 分页控制条 (y: 584..612)
+      drawButton(ctx, hits, 666, 584, 86, 26, '◀ 上页', () => {
+        this.ratingPage = Math.max(0, this.ratingPage - 1);
+      }, { disabled: this.ratingPage === 0, fontSize: 10.5 });
+      drawText(ctx, `第 ${this.ratingPage + 1} / ${totalPages} 页 (共 ${ratedList.length} 人出场 · 点击查看详情)`, 957, 597, {
+        size: 10.5,
+        color: THEME.TX2,
         align: 'center',
       });
-
-      drawText(
-        ctx,
-        '首发 11 人赛后评分与 MVP 贡献榜 · 联动默契/隐藏特质与本场提升',
-        xgX + xgW / 2,
-        xgY - 11,
-        { size: 11, color: THEME.GOLD_LIGHT, align: 'center' }
-      );
+      drawButton(ctx, hits, 1162, 584, 86, 26, '下页 ▶', () => {
+        this.ratingPage = Math.min(totalPages - 1, this.ratingPage + 1);
+      }, { disabled: this.ratingPage >= totalPages - 1, fontSize: 10.5 });
     } else {
       const targetRound = rd ? rd.roundCompleted : st.currentRound - 1;
       const fixtures = st.fixtures.filter(f => f.round === targetRound && f.played);
-      fixtures.slice(0, 4).forEach((fx, i) => {
+      const fPageSize = 8;
+      const fPages = Math.max(1, Math.ceil(fixtures.length / fPageSize));
+      if (this.resultsPage >= fPages) this.resultsPage = fPages - 1;
+      const fSlice = fixtures.slice(this.resultsPage * fPageSize, (this.resultsPage + 1) * fPageSize);
+
+      fSlice.forEach((fx, i) => {
         const col = i % 2;
         const row = Math.floor(i / 2);
-        const bx = 36 + col * 612;
-        const by = 414 + row * 94;
+        const bx = 666 + col * 296;
+        const by = 342 + row * 58;
         const h = st.clubs.find(c => c.id === fx.homeClubId)!;
         const a = st.clubs.find(c => c.id === fx.awayClubId)!;
         const hasUser = h.isUser || a.isUser;
-        drawRoundRect(ctx, bx, by, 592, 78, 8, THEME.BG_CARD, hasUser ? THEME.GOLD : THEME.BORDER, hasUser ? 1.5 : 1);
-        drawText(ctx, h.name, bx + 220, by + 39, { size: 15, bold: h.isUser, align: 'right', color: h.isUser ? THEME.GOLD_LIGHT : THEME.TX1 });
-        drawText(ctx, `${fx.homeGoals} : ${fx.awayGoals}`, bx + 296, by + 39, { size: 20, bold: true, align: 'center', mono: true, color: THEME.GOLD_LIGHT });
-        drawText(ctx, a.name, bx + 372, by + 39, { size: 15, bold: a.isUser, align: 'left', color: a.isUser ? THEME.GOLD_LIGHT : THEME.TX1 });
+        drawRoundRect(ctx, bx, by, 286, 50, 7, THEME.BG_CARD, hasUser ? THEME.GOLD : THEME.BORDER, hasUser ? 1.5 : 1);
+        drawText(ctx, fitText(ctx, h.name, 96, 11.5, h.isUser), bx + 114, by + 25, {
+          size: 11.5,
+          bold: h.isUser,
+          align: 'right',
+          color: h.isUser ? THEME.GOLD_LIGHT : THEME.TX1,
+        });
+        drawText(ctx, `${fx.homeGoals}:${fx.awayGoals}`, bx + 143, by + 25, {
+          size: 14,
+          bold: true,
+          align: 'center',
+          mono: true,
+          color: THEME.GOLD_LIGHT,
+        });
+        drawText(ctx, fitText(ctx, a.name, 96, 11.5, a.isUser), bx + 172, by + 25, {
+          size: 11.5,
+          bold: a.isUser,
+          align: 'left',
+          color: a.isUser ? THEME.GOLD_LIGHT : THEME.TX1,
+        });
       });
+
+      if (fPages > 1) {
+        drawButton(ctx, hits, 666, 584, 86, 26, '◀ 上页', () => {
+          this.resultsPage = Math.max(0, this.resultsPage - 1);
+        }, { disabled: this.resultsPage === 0, fontSize: 10.5 });
+        drawText(ctx, `第 ${this.resultsPage + 1} / ${fPages} 页 (共 ${fixtures.length} 场)`, 957, 597, {
+          size: 10.5,
+          color: THEME.TX2,
+          align: 'center',
+        });
+        drawButton(ctx, hits, 1162, 584, 86, 26, '下页 ▶', () => {
+          this.resultsPage = Math.min(fPages - 1, this.resultsPage + 1);
+        }, { disabled: this.resultsPage >= fPages - 1, fontSize: 10.5 });
+      }
     }
     ctx.restore();
 
-    // 底部醒目主行动按钮
-    drawButton(
-      ctx,
-      hits,
-      440,
-      642,
-      400,
-      54,
-      hasPendingReward
-        ? '下一步：领取赛后肉鸽奖励 (3选1) ▶'
-        : rd
-        ? '下一步：赛后补强 (领词条 & 换新援) ▶'
-        : '继续下一轮 · 返回门户首页 ▶',
-      goNext,
-      { variant: 'gold', fontSize: 16 }
-    );
-    if (hasPendingReward || rd) {
-      drawFoilShimmer(ctx, 440, 642, 400, 54, this.animClock * 1.15, 'rgba(254, 240, 138, 0.30)');
+    // ==================== 5. Bottom Action & Rewards Bar (y: 632..706, h: 74) ====================
+    drawChamferPanel(ctx, 16, 632, 824, 74, 10, 'rgba(13, 21, 38, 0.96)', THEME.BORDER_GOLD, 1.2);
+    const userWonNow = m ? ((m.homeName === club.name ? m.homeScore : m.awayScore) > (m.homeName === club.name ? m.awayScore : m.homeScore)) : true;
+    const rwThumb = AssetLoader.get(userWonNow ? 'reward_win' : 'reward_draw');
+    if (rwThumb && typeof ctx.drawImage === 'function') {
+      ctx.save();
+      ctx.beginPath();
+      ctx.roundRect(26, 640, 92, 58, 6);
+      ctx.clip();
+      ctx.drawImage(rwThumb, 26, 640, 92, 58);
+      ctx.restore();
+    } else {
+      drawRewardIllustration(ctx, userWonNow, 26, 640, 92, 58);
     }
+
+    const rewardTitle = hasPendingCardUnlock
+      ? '新流派战术卡解锁待领取'
+      : hasPendingReward
+      ? '赛后 3 选 1 战利品已就绪'
+      : rd
+      ? '中期 Re-Draft 补强已开启'
+      : '本轮收益已结算入账';
+    drawText(ctx, rewardTitle, 130, 653, { size: 13.5, bold: true, color: THEME.GOLD_LIGHT });
+    drawText(
+      ctx,
+      hasPendingReward ? '赛季圣物 · 手牌附魔 · 星盘点数等你挑选' : '俱乐部资金与积分榜排名已实时更新',
+      130,
+      673,
+      { size: 10.5, color: THEME.TX2 }
+    );
+
+    // 3 个动效计数胶囊：资金入账 / 星盘点 / 排名变化
+    const popAlpha = Math.max(0.1, Math.min(1, pRewards));
+    ctx.save();
+    ctx.globalAlpha = popAlpha;
+    const fundsEarned = summary?.fundsEarned ?? 0;
+    const metaGain = summary?.metaGain ?? 0;
+    const standingsNow = league.getStandings();
+    const curRank = summary?.rankAfter ?? (standingsNow.findIndex(r => r.isUser) + 1);
+    const prevRank = summary?.rankBefore ?? curRank;
+    const rankDelta = prevRank - curRank; // >0 表示名次上升
+
+    const countFunds = Math.round(fundsEarned * Math.min(1, pRewards));
+    drawRoundRect(ctx, 412, 644, 136, 50, 8, 'rgba(20, 83, 45, 0.32)', THEME.GREEN, 1.1);
+    drawText(ctx, '本场资金入账', 480, 658, { size: 9.5, color: '#86EFAC', align: 'center' });
+    drawText(ctx, `+¥${countFunds}万`, 480, 678, { size: 14.5, bold: true, color: THEME.GREEN, align: 'center', mono: true });
+
+    drawRoundRect(ctx, 556, 644, 114, 50, 8, 'rgba(30, 58, 95, 0.40)', '#38BDF8', 1.1);
+    drawText(ctx, '星盘点数', 613, 658, { size: 9.5, color: '#7DD3FC', align: 'center' });
+    drawText(ctx, `+${metaGain} pt`, 613, 678, { size: 14.5, bold: true, color: '#38BDF8', align: 'center', mono: true });
+
+    const rankCol = rankDelta > 0 ? THEME.GREEN : rankDelta < 0 ? THEME.RED_LIGHT : THEME.GOLD_LIGHT;
+    const rankSub = rankDelta > 0 ? `▲ 升 ${rankDelta} 位` : rankDelta < 0 ? `▼ 降 ${Math.abs(rankDelta)} 位` : '名次稳固';
+    drawRoundRect(ctx, 678, 644, 150, 50, 8, 'rgba(120, 53, 15, 0.28)', rankCol, 1.1);
+    drawText(ctx, `第 ${curRank} 名`, 753, 658, { size: 13, bold: true, color: THEME.GOLD_LIGHT, align: 'center' });
+    drawText(ctx, rankSub, 753, 678, { size: 10.5, bold: true, color: rankCol, align: 'center' });
+    ctx.restore();
+
+    // 唯一主行动按钮 (x: 856..1264, w: 408, h: 74)
+    drawButton(ctx, hits, 856, 632, 408, 74, nextActionLabel, goNext, { variant: 'gold', fontSize: 16.5 });
+    drawFoilShimmer(ctx, 856, 632, 408, 74, this.animClock * 1.15, 'rgba(254, 240, 138, 0.30)');
   }
 
   private renderCardUnlockView(

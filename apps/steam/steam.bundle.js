@@ -5422,7 +5422,7 @@
   var TACTICAL_PRESETS = {
     balanced: {
       name: "\u5747\u8861\u9635\u5730",
-      lineHeight: 0,
+      lineHeight: 2,
       widthScale: 1,
       directness: 0.5,
       tempo: 1.01,
@@ -5969,9 +5969,9 @@
       const dx = p.targetPos.x - p.pos.x;
       const dy = p.targetPos.y - p.pos.y;
       const dist = Math.sqrt(dx * dx + dy * dy);
-      if (dist < 0.35) {
-        p.vel.x *= 0.6;
-        p.vel.y *= 0.6;
+      if (dist < 0.6) {
+        p.vel.x *= 0.55;
+        p.vel.y *= 0.55;
       } else {
         const desiredSpeed = dist < 2 ? maxSpeed * (dist / 2) : maxSpeed;
         const desiredVx = dx / dist * desiredSpeed;
@@ -6322,9 +6322,13 @@
       }
       if (pressers.has(p.id)) {
         const dir2 = p.team === "home" ? homeDir : homeDir === 1 ? -1 : 1;
+        const presserArr = Array.from(pressers);
+        const pIdx = presserArr.indexOf(p.id);
+        const laneOffsetY = pIdx === 0 ? 0 : p.pos.y >= ball.pos.y ? 3.2 : -3.2;
+        const laneOffsetX = pIdx === 0 ? -dir2 * 0.6 : -dir2 * 2.4;
         p.targetPos = {
-          x: clamp(ball.pos.x - dir2 * 0.6, 2, PITCH.LENGTH - 2),
-          y: clamp(ball.pos.y, 2, PITCH.WIDTH - 2)
+          x: clamp(ball.pos.x + laneOffsetX, 2, PITCH.LENGTH - 2),
+          y: clamp(ball.pos.y + laneOffsetY, 2, PITCH.WIDTH - 2)
         };
         continue;
       }
@@ -6376,10 +6380,16 @@
           }
         }
       }
-      p.targetPos = {
-        x: clamp(clampOnside(tx), 3, PITCH.LENGTH - 3),
-        y: clamp(ty, 4, PITCH.WIDTH - 4)
-      };
+      const rawTx = clamp(clampOnside(tx), 3, PITCH.LENGTH - 3);
+      const rawTy = clamp(ty, 4, PITCH.WIDTH - 4);
+      const moveDist = dist2D(p.targetPos, { x: rawTx, y: rawTy });
+      if (moveDist >= 0.8) {
+        const damp = moveDist > 18 ? 0.45 : 0.28;
+        p.targetPos = {
+          x: p.targetPos.x + (rawTx - p.targetPos.x) * damp,
+          y: p.targetPos.y + (rawTy - p.targetPos.y) * damp
+        };
+      }
     }
   }
 
@@ -7257,6 +7267,7 @@
         homeScore: 0,
         awayScore: 0,
         players,
+        subbedOutPlayers: [],
         homeSubs: home.subs ? [...home.subs] : [],
         awaySubs: away.subs ? [...away.subs] : [],
         homeSubsUsed: 0,
@@ -7670,6 +7681,7 @@
         newPlayer.attributes.passing = Math.min(99, newPlayer.attributes.passing + 10);
         newPlayer.fitness = Math.min(100, newPlayer.fitness + 15);
       }
+      (s.subbedOutPlayers ??= []).push(outPlayer);
       s.players[pIdx] = newPlayer;
       if (wasHolding) s.ball.holderId = newPlayer.id;
       if (team === "home") s.homeSubsUsed++;
@@ -12867,34 +12879,13 @@
     return { mode: "all", prereqs: [] };
   }
   function getV6TierCaps(bestTier) {
-    if (bestTier >= 6) {
-      return {
-        maxPassives: 5,
-        maxSkills: 2,
-        maxDirectives: 4,
-        maxSatelliteLevel: 0,
-        maxRelics: 2,
-        allowFusion: false,
-        allowMastery: false
-      };
-    }
-    if (bestTier >= 4) {
-      return {
-        maxPassives: 9,
-        maxSkills: 3,
-        maxDirectives: 6,
-        maxSatelliteLevel: 2,
-        maxRelics: 3,
-        allowFusion: true,
-        allowMastery: false
-      };
-    }
+    const maxRelics = bestTier >= 6 ? 2 : bestTier >= 4 ? 3 : 5;
     return {
-      maxPassives: 99,
-      maxSkills: 4,
-      maxDirectives: 99,
+      maxPassives: 999,
+      maxSkills: 99,
+      maxDirectives: 999,
       maxSatelliteLevel: 3,
-      maxRelics: 5,
+      maxRelics,
       allowFusion: true,
       allowMastery: true
     };
@@ -19288,6 +19279,7 @@
   var LeagueManager = class _LeagueManager {
     constructor(initialState) {
       this.lastMatchGrowth = {};
+      this.lastMatchSummary = null;
       if (initialState) {
         this.state = JSON.parse(JSON.stringify(initialState));
         this.migrateState();
@@ -19474,6 +19466,9 @@
     }
     getLastMatchGrowth() {
       return this.lastMatchGrowth;
+    }
+    getLastMatchSummary() {
+      return this.lastMatchSummary;
     }
     getStandings() {
       return computeStandings(this.state.clubs, this.state.fixtures);
@@ -19934,10 +19929,6 @@
       const p = V6_PASSIVE_MAP[passiveId];
       if (!p) return { ok: false, reason: "\u672A\u627E\u5230\u8BE5\u88AB\u52A8\u8282\u70B9" };
       if (ast.unlockedPassives.includes(passiveId)) return { ok: false, reason: "\u5DF2\u70B9\u4EAE" };
-      const caps = getV6TierCaps(this.getBestTierReached());
-      if (ast.unlockedPassives.length >= caps.maxPassives) {
-        return { ok: false, reason: `\u5F53\u524D\u7EA7\u522B\u88AB\u52A8\u69FD\u4F4D\u5DF2\u6EE1 (${caps.maxPassives})\uFF0C\u5347\u5165\u66F4\u9AD8\u7EA7\u522B\u8054\u8D5B\u540E\u89E3\u9501\u66F4\u591A` };
-      }
       const prereq = canUnlockV6Node(ast, "passive", passiveId);
       if (!prereq.ok) return { ok: false, reason: prereq.reason };
       if (this.state.metaPointsTotal < p.unlockCost) return { ok: false, reason: `Meta \u70B9\u6570\u4E0D\u8DB3 (\u9700 ${p.unlockCost} pt)` };
@@ -19951,10 +19942,6 @@
       const d = V6_DIRECTIVE_MAP[directiveId];
       if (!d) return { ok: false, reason: "\u672A\u627E\u5230\u8BE5\u4E09\u533A\u624B\u724C" };
       if (ast.unlockedDirectives.includes(directiveId)) return { ok: false, reason: "\u5DF2\u89E3\u9501" };
-      const caps = getV6TierCaps(this.getBestTierReached());
-      if (ast.unlockedDirectives.length >= caps.maxDirectives) {
-        return { ok: false, reason: `\u5F53\u524D\u7EA7\u522B\u624B\u724C\u5E93\u4E0A\u9650\u4E3A ${caps.maxDirectives} \u5F20\uFF0C\u5347\u5165\u66F4\u9AD8\u7EA7\u522B\u8054\u8D5B\u540E\u6269\u5BB9` };
-      }
       const prereq = canUnlockV6Node(ast, "directive", directiveId);
       if (!prereq.ok) return { ok: false, reason: prereq.reason };
       if (this.state.metaPointsTotal < d.unlockCost) return { ok: false, reason: `Meta \u70B9\u6570\u4E0D\u8DB3 (\u9700 ${d.unlockCost} pt)` };
@@ -19968,13 +19955,6 @@
       const d = V6_DIRECTIVE_MAP[directiveId];
       if (!d) return { ok: false, reason: "\u672A\u627E\u5230\u8BE5\u624B\u724C" };
       if (!ast.unlockedDirectives.includes(directiveId)) return { ok: false, reason: "\u8BF7\u5148\u89E3\u9501\u8BE5\u624B\u724C\u672C\u4F53" };
-      const caps = getV6TierCaps(this.getBestTierReached());
-      if (caps.maxSatelliteLevel === 0) {
-        return { ok: false, reason: "\u9700\u66FE\u664B\u7EA7\u7B2C 5 \u7EA7\u6216\u66F4\u9AD8\u8054\u8D5B\u540E\u5F00\u653E\u624B\u724C\u536B\u661F\u6539\u9020" };
-      }
-      if (sat === "C" && caps.maxSatelliteLevel < 3) {
-        return { ok: false, reason: "\u9700\u66FE\u664B\u7EA7\u7B2C 3 \u7EA7\u6216\u66F4\u9AD8\u8054\u8D5B\u540E\u5F00\u653E C \u536B\u661F\u5B97\u5E08\u6539\u9020" };
-      }
       const cur = ast.directiveSatellites[directiveId] ?? [];
       if (cur.includes(sat)) return { ok: false, reason: "\u8BE5\u536B\u661F\u6539\u9020\u5DF2\u70B9\u4EAE" };
       const cost = d.satellites[sat].cost;
@@ -19991,10 +19971,6 @@
       if (ast.unlockedSkills.includes(skillId)) return { ok: false, reason: "\u5DF2\u89E3\u9501" };
       if (sk.source === "mastery" || sk.source === "core") {
         return { ok: false, reason: "\u5B97\u5E08\u7EC8\u6781\u6280\u9700\u901A\u8FC7\u70B9\u4EAE\u5BF9\u5E94\u5B97\u5E08\u5370\u6216\u5706\u5FC3\u89E3\u9501" };
-      }
-      const caps = getV6TierCaps(this.getBestTierReached());
-      if (ast.unlockedSkills.length >= caps.maxSkills) {
-        return { ok: false, reason: `\u5F53\u524D\u7EA7\u522B\u4E3B\u52A8\u6280\u4E0A\u9650\u4E3A ${caps.maxSkills} \u4E2A\uFF0C\u5347\u5165\u66F4\u9AD8\u7EA7\u522B\u8054\u8D5B\u540E\u89E3\u9501\u66F4\u591A` };
       }
       const prereq = canUnlockV6Node(ast, "skill", skillId);
       if (!prereq.ok) return { ok: false, reason: prereq.reason };
@@ -20017,10 +19993,6 @@
       const f = V6_FUSION_MAP[fusionId];
       if (!f) return { ok: false, reason: "\u672A\u627E\u5230\u8BE5\u878D\u5408\u5947\u70B9" };
       if (ast.unlockedFusions.includes(fusionId)) return { ok: false, reason: "\u5DF2\u70B9\u4EAE" };
-      const caps = getV6TierCaps(this.getBestTierReached());
-      if (!caps.allowFusion) {
-        return { ok: false, reason: "\u9700\u66FE\u664B\u7EA7\u7B2C 5 \u7EA7\u6216\u66F4\u9AD8\u8054\u8D5B\u540E\u89E3\u9501\u878D\u5408\u5947\u70B9" };
-      }
       const prereq = canUnlockV6Node(ast, "fusion", fusionId);
       if (!prereq.ok) return { ok: false, reason: prereq.reason };
       if (this.state.metaPointsTotal < f.unlockCost) return { ok: false, reason: `Meta \u70B9\u6570\u4E0D\u8DB3 (\u9700 ${f.unlockCost} pt)` };
@@ -20044,10 +20016,6 @@
       const seal = V6_MASTERY_SEAL_MAP[sealId];
       if (!seal) return { ok: false, reason: "\u672A\u627E\u5230\u8BE5\u5B97\u5E08\u5370" };
       if (ast.unlockedMasterySeals.includes(sealId)) return { ok: false, reason: "\u5DF2\u70B9\u4EAE" };
-      const caps = getV6TierCaps(this.getBestTierReached());
-      if (!caps.allowMastery) {
-        return { ok: false, reason: "\u9700\u66FE\u664B\u7EA7\u7B2C 3 \u7EA7\u6216\u66F4\u9AD8\u8054\u8D5B\u540E\u89E3\u9501\u5B97\u5E08\u5370" };
-      }
       const check = canUnlockMasterySeal(ast, seal.style);
       if (!check.ok) return check;
       if (this.state.metaPointsTotal < seal.unlockCost) return { ok: false, reason: `Meta \u70B9\u6570\u4E0D\u8DB3 (\u9700 ${seal.unlockCost} pt)` };
@@ -22363,6 +22331,7 @@
     completeCurrentRoundWithUserResult(userMatchResult) {
       const userFixture = this.getUserCurrentFixture();
       if (!userFixture) return;
+      const rankBefore = this.getStandings().findIndex((r) => r.isUser) + 1;
       this.applyMatchOutcome(userFixture, userMatchResult);
       const pendingInRound = this.state.fixtures.filter(
         (f) => f.round === this.state.currentRound && !f.played
@@ -22373,12 +22342,12 @@
         const a = this.state.clubs.find((c) => c.id === fx.awayClubId);
         const engine = new MatchEngine(this.buildTeamSetup(h, a.id), this.buildTeamSetup(a, h.id));
         const res = engine.simulateMatch();
-        for (const mp of res.players) aiMatchFitness.set(mp.id, mp.fitness);
+        for (const mp of [...res.players, ...res.subbedOutPlayers ?? []]) aiMatchFitness.set(mp.id, mp.fitness);
         this.applyMatchOutcome(fx, res);
       }
       const userSquadIds = new Set(this.getUserClub().squad.map((p) => p.id));
       const userEndFitness = /* @__PURE__ */ new Map();
-      for (const mp of userMatchResult.players) {
+      for (const mp of [...userMatchResult.players, ...userMatchResult.subbedOutPlayers ?? []]) {
         if (userSquadIds.has(mp.id)) {
           userEndFitness.set(mp.id, mp.fitness);
         } else {
@@ -22526,16 +22495,26 @@
       const finBonusRates = [0, 0.15, 0.25, 0.35, 0.35, 0.35, 0.35, 0.5, 0.6];
       const homeMul = userIsHome ? 1 + (stadBonusRates[metaNow.stadium ?? 0] ?? 0) : 1;
       const finMul = 1 + (finBonusRates[metaNow.finance ?? 0] ?? 0);
-      this.addClubFunds(Math.round(baseMatchFunds * tierFundScale * homeMul * finMul));
+      const fundsEarned = Math.round(baseMatchFunds * tierFundScale * homeMul * finMul);
+      this.addClubFunds(fundsEarned);
       const v6MetaGain = userWon ? 2 : myGoals === oppGoals ? 1 : 0;
       this.state.metaPointsTotal += v6MetaGain;
+      const rankAfter = this.getStandings().findIndex((r) => r.isUser) + 1;
+      this.lastMatchSummary = {
+        roundNumber: userFixture.round,
+        fundsEarned,
+        metaGain: v6MetaGain,
+        rankBefore: rankBefore > 0 ? rankBefore : rankAfter,
+        rankAfter,
+        totalTeams: this.state.clubs.length
+      };
       this.lastMatchGrowth = {};
       const unlockedTraitMap = /* @__PURE__ */ new Map();
       for (const u of userMatchResult.unlockedHiddenTraits || []) {
         if (u.team === userSide) unlockedTraitMap.set(u.playerId, u.trait);
       }
       const matchStatsByPlayer = new Map(
-        userMatchResult.players.filter((mp) => mp.team === userSide).map((mp) => [mp.id, mp.matchStats])
+        [...userMatchResult.players, ...userMatchResult.subbedOutPlayers ?? []].filter((mp) => mp.team === userSide).map((mp) => [mp.id, mp.matchStats])
       );
       const webUnlocked = this.getSkillWebUnlocked();
       const hasFormNode = webUnlocked.includes(`fm_${userClubNow.formation}`);
@@ -23851,7 +23830,10 @@
           if (!dp.traits.includes(u.trait)) dp.traits.push(u.trait);
         }
       }
-      for (const mp of res.players) {
+      const seenPlayedIds = /* @__PURE__ */ new Set();
+      for (const mp of [...res.players, ...res.subbedOutPlayers ?? []]) {
+        if (seenPlayedIds.has(mp.id)) continue;
+        seenPlayedIds.add(mp.id);
         const dp = playerMap.get(mp.id);
         if (!dp) continue;
         dp.seasonStats.appearances++;
@@ -28614,24 +28596,33 @@
         ctx2.fillRect(ix + 18 + tw, iy + 12, 2, 24);
         ctx2.restore();
       }
-      drawText(ctx2, `${this.value.length}/${this.maxLen}`, ix + iw - 14, iy + ih / 2, {
-        size: 11,
-        color: THEME.TX3,
-        align: "right",
-        mono: true
-      });
-      drawButton(ctx2, hits, mx + 24, my + mh - 58, 108, 38, "\u968F\u673A\u961F\u540D", () => {
+      if (this.value.length > 0) {
+        drawText(ctx2, `${this.value.length}/${this.maxLen}`, ix + iw - 44, iy + ih / 2, {
+          size: 11,
+          color: THEME.TX3,
+          align: "right",
+          mono: true
+        });
+        drawButton(ctx2, hits, ix + iw - 36, iy + 9, 28, 30, "\xD7", () => {
+          this.value = "";
+          SoundEngine.playClick();
+        }, { variant: "ghost", fontSize: 14 });
+      } else {
+        drawText(ctx2, `${this.value.length}/${this.maxLen}`, ix + iw - 14, iy + ih / 2, {
+          size: 11,
+          color: THEME.TX3,
+          align: "right",
+          mono: true
+        });
+      }
+      drawButton(ctx2, hits, mx + 24, my + mh - 58, 124, 38, "\u968F\u673A\u961F\u540D", () => {
         this.value = generateFictionalClubName().slice(0, this.maxLen);
         SoundEngine.playClick();
-      }, { variant: "primary", fontSize: 12, icon: "dice" });
-      drawButton(ctx2, hits, mx + 140, my + mh - 58, 72, 38, "\u6E05\u7A7A", () => {
-        this.value = "";
-        SoundEngine.playClick();
-      }, { variant: "ghost", fontSize: 12 });
-      drawButton(ctx2, hits, mx + mw - 210, my + mh - 58, 86, 38, "\u53D6\u6D88", () => {
+      }, { variant: "primary", fontSize: 12.5, icon: "dice" });
+      drawButton(ctx2, hits, mx + mw - 224, my + mh - 58, 92, 38, "\u53D6\u6D88", () => {
         this.close();
       }, { variant: "ghost", fontSize: 12.5 });
-      drawButton(ctx2, hits, mx + mw - 114, my + mh - 58, 90, 38, "\u786E\u8BA4", () => {
+      drawButton(ctx2, hits, mx + mw - 120, my + mh - 58, 96, 38, "\u786E\u8BA4", () => {
         this.confirm();
       }, { variant: "gold", fontSize: 13, disabled: this.value.trim().length === 0 });
     }
@@ -28643,12 +28634,12 @@
       stepNum: "\u5F15\u5BFC 1/8 \xB7 \u6838\u5FC3\u5F00\u5305",
       title: "\u6BCF\u8F6E 5 \u9009 3 \u7EC4\u5EFA\u9AA8\u67B6",
       body: "\u4ECE 5 \u540D\u8BD5\u8BAD\u7403\u5458\u4E2D\u6311\u9009 3 \u4EBA\u5165\u961F\uFF0C\u9009\u6EE1\u540E\u70B9\u5E95\u90E8\u786E\u8BA4\u3002",
-      x: 330,
-      y: 604,
-      w: 640,
-      h: 108,
+      x: 340,
+      y: 486,
+      w: 620,
+      h: 104,
       highlight: { x: 52, y: 168, w: 1176, h: 432 },
-      arrowTo: { x: 640, y: 598 }
+      arrowTo: { x: 640, y: 478 }
     },
     portal_summer: {
       stepNum: "\u5F15\u5BFC 2/8 \xB7 \u5B63\u524D\u590F\u7A97",
@@ -29066,48 +29057,52 @@
     renderRosterWallTab(ctx2, hits, league, actions, baseX, totalW, panelY, panelH, displayRoster, isLocked) {
       const club = league.getUserClub();
       const selectedSet = new Set(club.squad.map((p) => p.id));
-      const lbW = 316;
+      const lbW = IS_MOBILE ? 344 : 316;
       const wallX = baseX + lbW + 12;
       const wallW = totalW - lbW - 12;
       drawChamferPanel(ctx2, baseX, panelY, lbW, panelH, 12, "rgba(14, 22, 40, 0.94)", THEME.BORDER_GOLD);
-      drawText(ctx2, "\u961F\u5185\u6570\u636E\u699C\u5355 \xB7 LEADERBOARD", baseX + 16, panelY + 20, { size: 13.5, bold: true, color: THEME.GOLD_LIGHT });
-      drawText(ctx2, "\u4E00\u7EBF\u961F\u5B9E\u7EE9\u6392\u884C\uFF08\u70B9\u51FB\u67E5\u770B\u8BE6\u60C5\uFF09", baseX + 16, panelY + 38, { size: 10, color: THEME.TX2 });
+      drawText(ctx2, "\u961F\u5185\u6570\u636E\u699C\u5355 \xB7 LEADERBOARD", baseX + 16, panelY + 20, { size: IS_MOBILE ? 14.5 : 13.5, bold: true, color: THEME.GOLD_LIGHT });
+      drawText(ctx2, "\u4E00\u7EBF\u961F\u5B9E\u7EE9\u6392\u884C\uFF08\u70B9\u51FB\u67E5\u770B\u8BE6\u60C5\uFF09", baseX + 16, panelY + 38, { size: IS_MOBILE ? 11 : 10, color: THEME.TX2 });
+      const lbTabW = Math.floor((lbW - 32) / 3);
       LB_TABS.forEach((tab, ti) => {
         const col = ti % 3;
         const row = Math.floor(ti / 3);
-        drawButton(ctx2, hits, baseX + 12 + col * 98, panelY + 50 + row * 28, 92, 23, tab.label, () => {
+        drawButton(ctx2, hits, baseX + 12 + col * (lbTabW + 4), panelY + 50 + row * 29, lbTabW, IS_MOBILE ? 25 : 23, tab.label, () => {
           this.lbTab = tab.key;
-        }, { active: this.lbTab === tab.key, fontSize: 10 });
+        }, { active: this.lbTab === tab.key, fontSize: IS_MOBILE ? 11 : 10 });
       });
       const lbPool = (this.lbTab === "gk" ? displayRoster.filter((p) => p.role === "GK") : displayRoster).map((p) => ({ p, val: this.getLbValue(p, this.lbTab) })).sort((a, b) => b.val.score !== a.val.score ? b.val.score - a.val.score : b.p.ca - a.p.ca);
       const listStartY = panelY + 114;
-      lbPool.slice(0, 10).forEach((entry, idx) => {
+      const maxLbRows = IS_MOBILE ? 8 : 10;
+      const lbRowStep = IS_MOBILE ? 52 : 43;
+      const lbRowH = IS_MOBILE ? 48 : 40;
+      lbPool.slice(0, maxLbRows).forEach((entry, idx) => {
         const { p, val } = entry;
-        const ry = listStartY + idx * 43;
-        if (ry + 38 > panelY + panelH - 6) return;
+        const ry = listStartY + idx * lbRowStep;
+        if (ry + lbRowH - 2 > panelY + panelH - 6) return;
         const rankCol = idx === 0 ? THEME.GOLD_LIGHT : idx === 1 ? "#CBD5E1" : idx === 2 ? "#D97706" : THEME.TX3;
         drawRoundRect(
           ctx2,
           baseX + 12,
           ry,
           lbW - 24,
-          40,
+          lbRowH,
           6,
           idx === 0 ? "rgba(212, 168, 67, 0.12)" : THEME.BG_CARD,
           idx === 0 ? THEME.BORDER_GOLD : THEME.BORDER
         );
-        drawText(ctx2, `${idx + 1}`, baseX + 24, ry + 20, { token: "LABEL", bold: true, color: rankCol, align: "center", mono: true });
-        drawBadge(ctx2, baseX + 38, ry + 11, 32, 18, p.role, tierColor(p.tier));
-        drawText(ctx2, fitText(ctx2, p.name, lbW - 154, FONT.LABEL, true, true), baseX + 76, ry + 13, { token: "LABEL", bold: true, color: THEME.TX1 });
-        drawText(ctx2, `${p.age}\u5C81 \xB7 ${p.ca}/${p.pa ?? p.ca}`, baseX + 76, ry + 29, { token: "MICRO", color: THEME.TX2, mono: true });
-        drawText(ctx2, val.text, baseX + lbW - 18, ry + 20, {
-          token: "LABEL",
+        drawText(ctx2, `${idx + 1}`, baseX + 24, ry + lbRowH / 2, { token: IS_MOBILE ? "BODY" : "LABEL", bold: true, color: rankCol, align: "center", mono: true });
+        drawBadge(ctx2, baseX + 38, ry + (lbRowH - 18) / 2, 34, 18, p.role, tierColor(p.tier));
+        drawText(ctx2, fitText(ctx2, p.name, lbW - 166, IS_MOBILE ? FONT.BODY : FONT.LABEL, true, true), baseX + 78, ry + (IS_MOBILE ? 15 : 13), { token: IS_MOBILE ? "BODY" : "LABEL", bold: true, color: THEME.TX1 });
+        drawText(ctx2, `${p.age}\u5C81 \xB7 ${p.ca}/${p.pa ?? p.ca}`, baseX + 78, ry + (IS_MOBILE ? 34 : 29), { token: IS_MOBILE ? "LABEL" : "MICRO", color: THEME.TX2, mono: true });
+        drawText(ctx2, val.text, baseX + lbW - 18, ry + lbRowH / 2, {
+          token: IS_MOBILE ? "BODY" : "LABEL",
           bold: true,
           color: idx < 3 ? rankCol : "#7DD3FC",
           align: "right",
           mono: true
         });
-        hits.addTouchTarget(baseX + 12, ry, lbW - 24, 40, () => {
+        hits.addTouchTarget(baseX + 12, ry, lbW - 24, lbRowH, () => {
           SoundEngine.playClick();
           actions.onInspectPlayer(p);
         });
@@ -29203,18 +29198,20 @@
         }
         return b.ca - a.ca;
       });
-      const pageSize = 9;
+      const cols = IS_MOBILE ? 2 : 3;
+      const pageSize = IS_MOBILE ? 6 : 9;
       const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize));
       if (this.page >= totalPages) this.page = totalPages - 1;
       const visible = filtered.slice(this.page * pageSize, (this.page + 1) * pageSize);
-      const cw = Math.floor((wallW - 44) / 3);
-      const gap = Math.floor((wallW - 24 - cw * 3) / 2);
-      const ch = 132;
+      const gap = IS_MOBILE ? 14 : 10;
+      const cw = Math.floor((wallW - 24 - gap * (cols - 1)) / cols);
+      const ch = IS_MOBILE ? 136 : 132;
+      const rowStep = IS_MOBILE ? 141 : 138;
       visible.forEach((p, idx) => {
-        const col = idx % 3;
-        const row = Math.floor(idx / 3);
+        const col = idx % cols;
+        const row = Math.floor(idx / cols);
         const px = wallX + 12 + col * (cw + gap);
-        const py = panelY + 104 + row * 138;
+        const py = panelY + (IS_MOBILE ? 102 : 104) + row * rowStep;
         const isSel = selectedSet.has(p.id);
         const isSuspended = (p.suspendedRounds ?? 0) > 0;
         const paVal = p.pa ?? p.ca;
@@ -29248,62 +29245,115 @@
         if (isSuspended) drawBadge(ctx2, px + 148, py + 7, 28, 15, "\u505C\u8D5B", "#991B1B", "#FECACA");
         drawText(ctx2, fitText(ctx2, p.name, cw - 122, FONT.BODY, true, true), px + 52, py + 32, { token: "BODY", bold: true, color: THEME.TX1 });
         const secText = p.secondaryRoles && p.secondaryRoles.length > 0 ? `\u517C:${p.secondaryRoles.join("/")}` : "\u4E13\u804C";
-        drawText(ctx2, fitText(ctx2, `${secText} \xB7 ${formatFunds(p.marketValue ?? p.cost)}`, cw - 122, FONT.MICRO, false, true), px + 52, py + 47, {
-          token: "MICRO",
+        drawText(ctx2, fitText(ctx2, `${secText} \xB7 ${formatFunds(p.marketValue ?? p.cost)}`, cw - 122, IS_MOBILE ? FONT.LABEL : FONT.MICRO, false, true), px + 52, py + 47, {
+          token: IS_MOBILE ? "LABEL" : "MICRO",
           color: "#7DD3FC"
         });
         drawText(ctx2, `${p.ca}`, px + cw - 10, py + 15, { token: "TITLE", bold: true, color: THEME.GOLD_LIGHT, align: "right", mono: true });
         drawStatBar(ctx2, p.ca, 99, px + cw - 52, py + 25, 42, 3, THEME.GOLD_LIGHT);
-        drawText(ctx2, `PA ${paVal}`, px + cw - 10, py + 36, { token: "MICRO", bold: true, color: paVal >= 85 ? THEME.GOLD_LIGHT : "#38BDF8", align: "right", mono: true });
-        const attrPairs = p.role === "GK" ? [
-          ["stat_gk", p.attributes.goalkeeping],
-          ["stat_pos", p.attributes.positioning],
-          ["stat_calm", p.attributes.composure],
-          ["stat_pass", p.attributes.passing],
-          ["shield", p.attributes.strength],
-          ["stat_fit", p.attributes.stamina]
-        ] : [
-          ["stat_pace", p.attributes.pace],
-          ["stat_shoot", p.attributes.shooting],
-          ["stat_pass", p.attributes.passing],
-          ["ball", p.attributes.dribbling],
-          ["stat_def", p.attributes.defending],
-          ["stat_fit", p.attributes.stamina]
-        ];
-        const boxW = Math.floor((cw - 28) / 3);
-        attrPairs.forEach(([ic, val], ai) => {
-          const acol = ai % 3;
-          const arow = Math.floor(ai / 3);
-          const ax = px + 10 + acol * (boxW + 4);
-          const ay = py + 56 + arow * 20;
-          drawRoundRect(ctx2, ax, ay, boxW, 17, 4, "rgba(11, 17, 30, 0.85)", "rgba(148, 163, 184, 0.20)");
-          drawIcon(ctx2, ic, ax + 11, ay + 8.5, 10, THEME.TX3);
-          drawText(ctx2, `${val}`, ax + boxW - 6, ay + 8.5, { size: 10.5, bold: true, color: this.statColor(val), align: "right", mono: true });
-        });
+        drawText(ctx2, `PA ${paVal}`, px + cw - 10, py + 36, { token: IS_MOBILE ? "LABEL" : "MICRO", bold: true, color: paVal >= 85 ? THEME.GOLD_LIGHT : "#38BDF8", align: "right", mono: true });
+        if (IS_MOBILE) {
+          const keyAttrs = p.role === "GK" ? [
+            ["stat_gk", "\u6251\u6551", p.attributes.goalkeeping],
+            ["stat_pos", "\u7AD9\u4F4D", p.attributes.positioning],
+            ["stat_calm", "\u51B7\u9759", p.attributes.composure],
+            ["stat_pass", "\u4F20\u7403", p.attributes.passing]
+          ] : [
+            ["stat_pace", "\u901F\u5EA6", p.attributes.pace],
+            ["stat_shoot", "\u5C04\u95E8", p.attributes.shooting],
+            ["stat_pass", "\u4F20\u7403", p.attributes.passing],
+            ["stat_def", "\u9632\u5B88", p.attributes.defending]
+          ];
+          const barColW = Math.floor((cw - 28) / 2);
+          keyAttrs.forEach(([ic, lbl, val], ai) => {
+            const acol = ai % 2;
+            const arow = Math.floor(ai / 2);
+            const ax = px + 10 + acol * (barColW + 8);
+            const ay = py + 58 + arow * 20;
+            const col2 = this.statColor(val);
+            drawIcon(ctx2, ic, ax + 6, ay + 8, 11, THEME.TX3);
+            drawText(ctx2, lbl, ax + 16, ay + 8, { size: 11, rawSize: true, color: THEME.TX2 });
+            drawStatBar(ctx2, val, 99, ax + 46, ay + 6, barColW - 76, 5, col2);
+            drawText(ctx2, `${val}`, ax + barColW - 2, ay + 8, { size: 11.5, rawSize: true, bold: true, color: col2, align: "right", mono: true });
+          });
+        } else {
+          const attrPairs = p.role === "GK" ? [
+            ["stat_gk", p.attributes.goalkeeping],
+            ["stat_pos", p.attributes.positioning],
+            ["stat_calm", p.attributes.composure],
+            ["stat_pass", p.attributes.passing],
+            ["shield", p.attributes.strength],
+            ["stat_fit", p.attributes.stamina]
+          ] : [
+            ["stat_pace", p.attributes.pace],
+            ["stat_shoot", p.attributes.shooting],
+            ["stat_pass", p.attributes.passing],
+            ["ball", p.attributes.dribbling],
+            ["stat_def", p.attributes.defending],
+            ["stat_fit", p.attributes.stamina]
+          ];
+          const boxW = Math.floor((cw - 28) / 3);
+          attrPairs.forEach(([ic, val], ai) => {
+            const acol = ai % 3;
+            const arow = Math.floor(ai / 3);
+            const ax = px + 10 + acol * (boxW + 4);
+            const ay = py + 56 + arow * 20;
+            drawRoundRect(ctx2, ax, ay, boxW, 17, 4, "rgba(11, 17, 30, 0.85)", "rgba(148, 163, 184, 0.20)");
+            drawIcon(ctx2, ic, ax + 11, ay + 8.5, 10, THEME.TX3);
+            drawText(ctx2, `${val}`, ax + boxW - 6, ay + 8.5, { size: 10.5, bold: true, color: this.statColor(val), align: "right", mono: true });
+          });
+        }
         const traitText = p.traits && p.traits.length > 0 ? p.traits.slice(0, 2).join(" \xB7 ") : "\u5747\u8861\u578B\u7403\u5458";
-        drawText(ctx2, fitText(ctx2, traitText, cw - 60, FONT.MICRO, false, true), px + 12, py + 103, { token: "MICRO", color: "#A5B4FC" });
-        drawButton(ctx2, hits, px + cw - 42, py + 93, 34, 18, p.isStarred ? "\u2605" : "\u2606", () => {
+        drawText(ctx2, fitText(ctx2, traitText, cw - 60, IS_MOBILE ? FONT.LABEL : FONT.MICRO, false, true), px + 12, py + (IS_MOBILE ? 105 : 103), {
+          token: IS_MOBILE ? "LABEL" : "MICRO",
+          color: "#A5B4FC"
+        });
+        drawButton(ctx2, hits, px + cw - 42, py + (IS_MOBILE ? 95 : 93), 34, 18, p.isStarred ? "\u2605" : "\u2606", () => {
           const next = league.toggleStarPlayer(p.id);
           actions.onSave();
           actions.onToast?.(next ? `\u5DF2\u6536\u85CF\u3010${p.name}\u3011\uFF0C\u6362\u4EBA\u65F6\u5C06\u4F18\u5148\u7F6E\u9876` : `\u5DF2\u53D6\u6D88\u6536\u85CF\u3010${p.name}\u3011`, next ? THEME.GOLD_LIGHT : THEME.TX2);
-        }, { variant: p.isStarred ? "gold" : "ghost", fontSize: 10 });
+        }, { variant: p.isStarred ? "gold" : "ghost", fontSize: IS_MOBILE ? 11 : 10 });
         const apps = p.seasonStats.appearances ?? 0;
-        const botY = py + 120;
+        const botY = py + (IS_MOBILE ? 123 : 120);
         let lx = px + 12;
-        drawText(ctx2, `${apps}\u573A`, lx, botY, { token: "MICRO", color: THEME.TX2, mono: true });
-        lx += 32;
+        drawText(ctx2, `${apps}\u573A`, lx, botY, { token: IS_MOBILE ? "LABEL" : "MICRO", color: THEME.TX2, mono: true });
+        lx += IS_MOBILE ? 38 : 32;
         if (p.role === "GK") {
-          lx += drawStatMicro(ctx2, "stat_gk", `${p.seasonStats.saves ?? 0}`, lx, botY, { iconSize: 10, fontSize: 10, iconColor: THEME.TX3, valueColor: THEME.TX1, gap: 2 });
-          lx += 7;
-          drawStatMicro(ctx2, "shield", `${p.seasonStats.cleanSheets ?? 0}`, lx, botY, { iconSize: 10, fontSize: 10, iconColor: THEME.TX3, valueColor: THEME.GREEN, gap: 2 });
+          lx += drawStatMicro(ctx2, "stat_gk", `${p.seasonStats.saves ?? 0}`, lx, botY, {
+            iconSize: IS_MOBILE ? 12 : 10,
+            fontSize: IS_MOBILE ? 11.5 : 10,
+            iconColor: THEME.TX3,
+            valueColor: THEME.TX1,
+            gap: 2
+          });
+          lx += 8;
+          drawStatMicro(ctx2, "shield", `${p.seasonStats.cleanSheets ?? 0}`, lx, botY, {
+            iconSize: IS_MOBILE ? 12 : 10,
+            fontSize: IS_MOBILE ? 11.5 : 10,
+            iconColor: THEME.TX3,
+            valueColor: THEME.GREEN,
+            gap: 2
+          });
         } else {
-          lx += drawStatMicro(ctx2, "ball", `${p.seasonStats.goals ?? 0}`, lx, botY, { iconSize: 10, fontSize: 10, iconColor: THEME.TX3, valueColor: THEME.TX1, gap: 2 });
-          lx += 7;
-          drawStatMicro(ctx2, "stat_assist", `${p.seasonStats.assists ?? 0}`, lx, botY, { iconSize: 10, fontSize: 10, iconColor: THEME.TX3, valueColor: THEME.TX1, gap: 2 });
+          lx += drawStatMicro(ctx2, "ball", `${p.seasonStats.goals ?? 0}`, lx, botY, {
+            iconSize: IS_MOBILE ? 12 : 10,
+            fontSize: IS_MOBILE ? 11.5 : 10,
+            iconColor: THEME.TX3,
+            valueColor: THEME.TX1,
+            gap: 2
+          });
+          lx += 8;
+          drawStatMicro(ctx2, "stat_assist", `${p.seasonStats.assists ?? 0}`, lx, botY, {
+            iconSize: IS_MOBILE ? 12 : 10,
+            fontSize: IS_MOBILE ? 11.5 : 10,
+            iconColor: THEME.TX3,
+            valueColor: THEME.TX1,
+            gap: 2
+          });
         }
         const fitPct = Math.round(p.fitness ?? 100);
-        drawMiniBar(ctx2, px + cw - 68, botY - 2, 26, 4, fitPct / 100, fitPct < 60 ? "#FBBF24" : THEME.GREEN);
-        drawText(ctx2, `${fitPct}%`, px + cw - 10, botY, { token: "MICRO", color: fitPct < 60 ? "#FBBF24" : THEME.TX2, align: "right", mono: true });
+        drawMiniBar(ctx2, px + cw - (IS_MOBILE ? 76 : 68), botY - 2, 26, 4, fitPct / 100, fitPct < 60 ? "#FBBF24" : THEME.GREEN);
+        drawText(ctx2, `${fitPct}%`, px + cw - 10, botY, { token: IS_MOBILE ? "LABEL" : "MICRO", color: fitPct < 60 ? "#FBBF24" : THEME.TX2, align: "right", mono: true });
         hits.add(px, py, cw, ch, () => {
           SoundEngine.playClick();
           actions.onInspectPlayer(p);
@@ -31141,6 +31191,7 @@
       this.storyTags = /* @__PURE__ */ new Map();
       this.playerCaMap = /* @__PURE__ */ new Map();
       this.elapsedSec = 0;
+      this.prologueWaitTimer = 0;
       this.goalScorePopTimer = 0;
       this.memoryHighlightTimer = 0;
       this.kickoffIntroTimer = 0;
@@ -31929,6 +31980,8 @@
         }
       } else if (!this.isPaused && st.phase !== "full_time" && this.hitStopTimer <= 0) {
         const tutState = this.isPrologueMode ? this.engine.getPrologueTutorialState() : null;
+        const isWaitingPrologue = !!(this.isPrologueMode && (tutState?.waitingForSub || tutState?.waitingForCard || st.activeSkillPrompt));
+        this.prologueWaitTimer = isWaitingPrologue ? this.prologueWaitTimer + dtSec : 0;
         const effSpeed = st.activeSkillPrompt ? 0.25 : tutState?.waitingForSub || tutState?.waitingForCard ? 0.55 : this.v6HoveringCard ? 0.25 : this.speed;
         this.tickAcc += dtSec * 10 * effSpeed;
         let steps = 0;
@@ -32867,8 +32920,8 @@
       const minLY = PITCH_RECT.y + 2;
       const maxLY = PITCH_RECT.y + PITCH_RECT.h - 2;
       for (const { p, sp } of labelOrder) {
-        const lw = Math.max(IS_MOBILE ? 26 : 20, p.role.length * (IS_MOBILE ? 7.5 : 6) + 8);
-        const lh = IS_MOBILE ? 14 : 11;
+        const lw = Math.max(IS_MOBILE ? 28 : 20, p.role.length * (IS_MOBILE ? 8 : 6) + 8);
+        const lh = IS_MOBILE ? 15 : 11;
         const candidates = [
           { cx: sp.x, cy: sp.y + (IS_MOBILE ? 21 : 18) },
           { cx: sp.x, cy: sp.y - (IS_MOBILE ? 26 : 23) },
@@ -32895,9 +32948,9 @@
         }
         if (chosen && chosenCenter) {
           occupiedRects.push(chosen);
-          drawRoundRect(ctx2, chosen.x, chosen.y, chosen.w, chosen.h, 3, "rgba(8, 12, 20, 0.72)");
+          drawRoundRect(ctx2, chosen.x, chosen.y, chosen.w, chosen.h, 3, "rgba(8, 12, 20, 0.78)");
           drawText(ctx2, p.role, chosenCenter.cx, chosenCenter.cy, {
-            size: IS_MOBILE ? 10.5 : 8.5,
+            size: IS_MOBILE ? 11 : 8.5,
             rawSize: true,
             bold: isPriority,
             color: p.customOffset ? "#38BDF8" : p.hasBall ? "#FEF08A" : "rgba(241,245,249,0.92)",
@@ -33405,7 +33458,8 @@
         drawText(ctx2, tipMsg, 438, 470, { size: 12.5, bold: true, color: "#FEF08A" });
         ctx2.save();
         ctx2.globalAlpha = pulse;
-        drawText(ctx2, "\u25BC \u76F4\u63A5\u70B9\u51FB\u4E0B\u65B9\u9AD8\u4EAE\u8FDB\u653B\u624B\u724C\u5373\u53EF\u6253\u51FA", 715, 550, { size: 11.5, bold: true, color: THEME.GOLD_LIGHT, align: "center" });
+        const waitHint = this.prologueWaitTimer >= 25 ? "\u23F1 \u6BD4\u8D5B\u6B63\u7B49\u5F85\u4F60\u51FA\u724C\uFF1A\u8BF7\u70B9\u51FB\u4E0B\u65B9\u95EA\u70C1\u7684\u91D1\u8272\u624B\u724C\u7EE7\u7EED" : "\u25BC \u76F4\u63A5\u70B9\u51FB\u4E0B\u65B9\u9AD8\u4EAE\u8FDB\u653B\u624B\u724C\u5373\u53EF\u6253\u51FA";
+        drawText(ctx2, waitHint, 715, 550, { size: 12, bold: true, color: THEME.GOLD_LIGHT, align: "center" });
         ctx2.restore();
       }
       this.v6HoveredZone = null;
@@ -33508,8 +33562,9 @@
             used ? "#1E293B" : isDisc ? "#065F46" : canPlay ? "#78350F" : "#1E293B",
             used ? THEME.TX3 : isDisc ? "#6EE7B7" : canPlay ? "#FEF08A" : THEME.TX3
           );
-          drawWrappedText(ctx2, def.name, cx + 7, cyL + 26, cw - 14, 15, {
-            token: "MICRO",
+          drawWrappedText(ctx2, def.name, cx + 7, cyL + 26, cw - 14, IS_MOBILE ? 16 : 15, {
+            size: IS_MOBILE ? 11.5 : FONT.MICRO,
+            rawSize: IS_MOBILE,
             bold: true,
             color: used ? THEME.TX3 : THEME.TX1,
             maxLines: 2
@@ -33522,11 +33577,17 @@
             drawBadge(ctx2, cx + 10, cyL + 65, cw - 20, 16, `${"\u2605".repeat(satCount)}${entry.isOverclocked ? "\u8D85\u9891" : "\u6539\u9020"}`, "#1E293B", THEME.GOLD_LIGHT);
           } else {
             const routeTag = def.source === "fusion" ? "\u878D\u5408\u738B\u724C" : def.source === "formation" ? "\u9635\u578B\u4E13\u5C5E" : def.route === "gamble" ? "\u9AD8\u8D54\u8C6A\u8D4C" : "\u7A33\u5065\u62FC\u56FE";
-            drawText(ctx2, routeTag, cx + cw / 2, cyL + 73, { token: "MICRO", color: used ? THEME.TX3 : "#94A3B8", align: "center" });
+            drawText(ctx2, routeTag, cx + cw / 2, cyL + 73, {
+              size: IS_MOBILE ? 11 : FONT.MICRO,
+              rawSize: IS_MOBILE,
+              color: used ? THEME.TX3 : "#94A3B8",
+              align: "center"
+            });
           }
           const statusTxt = used ? "\u672C\u6BB5\u5DF2\u62CD \u2713" : playCapFull ? "\u672C\u6BB5\u6EE1\u989D" : canPlay ? "\u26A1 \u70B9\u51FB\u62CD\u677F" : `\u9700 ${effCost} TP`;
           drawText(ctx2, statusTxt, cx + cw / 2, cyL + 93, {
-            token: "MICRO",
+            size: IS_MOBILE ? 11 : FONT.MICRO,
+            rawSize: IS_MOBILE,
             bold: true,
             color: used ? "#64748B" : canPlay ? THEME.GOLD_LIGHT : THEME.TX3,
             align: "center"
@@ -33878,11 +33939,11 @@
           for (const [label, hv, av, ratio] of rows) {
             drawText(ctx2, hv, 1046, ry, { token: "TITLE", bold: true, mono: true });
             drawText(ctx2, av, 1248, ry, { token: "TITLE", bold: true, align: "right", mono: true });
-            drawText(ctx2, label, 1147, ry, { token: "LABEL", color: THEME.TX2, align: "center" });
-            drawRoundRect(ctx2, 1046, ry + 13, 202, 5, 2, "#1E293B");
+            drawText(ctx2, label, 1147, ry, { size: IS_MOBILE ? 12.5 : 11, rawSize: IS_MOBILE, color: THEME.TX2, align: "center" });
+            drawRoundRect(ctx2, 1046, ry + (IS_MOBILE ? 15 : 13), 202, 5, 2, "#1E293B");
             const r = Math.max(0.05, Math.min(0.95, isNaN(ratio) ? 0.5 : ratio));
-            drawRoundRect(ctx2, 1046, ry + 13, 202 * r, 5, 2, homeKit.primary);
-            drawRoundRect(ctx2, 1046 + 202 * r, ry + 13, 202 * (1 - r), 5, 2, awayKit.primary);
+            drawRoundRect(ctx2, 1046, ry + (IS_MOBILE ? 15 : 13), 202 * r, 5, 2, homeKit.primary);
+            drawRoundRect(ctx2, 1046 + 202 * r, ry + (IS_MOBILE ? 15 : 13), 202 * (1 - r), 5, 2, awayKit.primary);
             ry += 62;
           }
         } else {
@@ -34484,8 +34545,8 @@
       drawText(ctx2, "VS", 0, -8, { size: 26, bold: true, italic: true, color: THEME.GOLD_LIGHT, align: "center", mono: true });
       drawText(ctx2, "KICK OFF", 0, 20, { size: 9.5, bold: true, color: THEME.FLAME_LIGHT, align: "center", mono: true });
       ctx2.restore();
-      drawText(ctx2, "\u70B9\u51FB\u4EFB\u610F\u4F4D\u7F6E\u6216\u6309 \u7A7A\u683C/\u56DE\u8F66 \u7ACB\u5373\u5F00\u54E8", cx, cy + 144, {
-        size: 12,
+      drawText(ctx2, "\u70B9\u51FB\u4EFB\u610F\u4F4D\u7F6E\u6216\u6309 \u7A7A\u683C/\u56DE\u8F66 \u7ACB\u5373\u5F00\u54E8", cx, cy + 168, {
+        size: 12.5,
         color: THEME.TX2,
         align: "center"
       });
@@ -35129,6 +35190,24 @@
         }
       }
     }
+    drawNodeLabel(ctx2, text, x, y, color, bold = false, mono = false, size = 9) {
+      const fontStr = `${bold ? "bold " : ""}${size}px ${THEME.FONT_FAMILY}`;
+      ctx2.save();
+      ctx2.font = fontStr;
+      const tw = Math.ceil(ctx2.measureText(text).width);
+      const pw = tw + 10;
+      const ph = size + 6;
+      drawRoundRect(ctx2, x - pw / 2, y - ph / 2, pw, ph, 4, "rgba(8, 13, 24, 0.86)", "rgba(148, 163, 184, 0.24)", 0.8);
+      ctx2.restore();
+      drawText(ctx2, text, x, y, {
+        size,
+        rawSize: true,
+        bold,
+        color,
+        align: "center",
+        mono
+      });
+    }
     drawEdgeLine(ctx2, ax, ay, bx, by, bothUnlocked, reachable, color, isBridge = false) {
       const mr = this.lastMapRect;
       if (Math.max(ax, bx) < mr.x - 20 || Math.min(ax, bx) > mr.x + mr.w + 20 || Math.max(ay, by) < mr.y - 20 || Math.min(ay, by) > mr.y + mr.h + 20) {
@@ -35352,12 +35431,16 @@
         const labelY = cy + Math.sin(centerAngle) * (baseR * 1.07);
         const isBeginnerMode2 = !ast.fogCleared && tier >= 6;
         if (visible || !isBeginnerMode2) {
-          drawText(ctx2, visible ? info.name : "\u8FF7\u96FE\u6D41\u6D3E", labelX, labelY, {
-            size: Math.max(10, Math.min(13, 11.5 * this.zoom)),
-            bold: true,
-            color: visible ? info.color : "#64748B",
-            align: "center"
-          });
+          this.drawNodeLabel(
+            ctx2,
+            visible ? info.name : "\u8FF7\u96FE\u6D41\u6D3E",
+            labelX,
+            labelY,
+            visible ? info.color : "#64748B",
+            true,
+            false,
+            Math.max(IS_MOBILE ? 11.5 : 10, Math.min(13.5, 11.5 * this.zoom))
+          );
         }
         if (!visible) continue;
         const stylePassives = V6_STYLE_PASSIVES.filter((p) => p.style === style);
@@ -35653,12 +35736,7 @@
           );
           ctx2.restore();
           if (isOrigin || isSel || !IS_MOBILE && this.zoom >= 1.5) {
-            drawText(ctx2, isOrigin ? `${info.short}\u539F\u70B9` : p.name.slice(0, 4), pos.x, pos.y + nr + 8, {
-              size: isOrigin ? 9 : 8.5,
-              bold: isOrigin || isSel,
-              color: pos.unlocked ? info.color : pos.reachable ? "#7DD3FC" : THEME.TX3,
-              align: "center"
-            });
+            this.drawNodeLabel(ctx2, isOrigin ? `${info.short}\u539F\u70B9` : p.name.slice(0, 4), pos.x, pos.y + nr + (IS_MOBILE ? 11 : 8), pos.unlocked ? info.color : pos.reachable ? "#7DD3FC" : THEME.TX3, isOrigin || isSel, false, IS_MOBILE ? 10.5 : isOrigin ? 9 : 8.5);
           }
           if (canHit(pos.x, pos.y)) {
             const hr = nodeHitR(nr);
@@ -35707,12 +35785,7 @@
           });
           ctx2.restore();
           if (isSel || isEq || !IS_MOBILE && this.zoom >= 1.28) {
-            drawText(ctx2, sk.name.slice(0, 4), pos.x, pos.y + dr + 8, {
-              size: 9,
-              bold: isEq || isSel,
-              color: isEq ? "#4ADE80" : pos.unlocked ? "#7DD3FC" : THEME.TX3,
-              align: "center"
-            });
+            this.drawNodeLabel(ctx2, sk.name.slice(0, 4), pos.x, pos.y + dr + (IS_MOBILE ? 11 : 8), isEq ? "#4ADE80" : pos.unlocked ? "#7DD3FC" : THEME.TX3, isEq || isSel, false, IS_MOBILE ? 10.5 : 9);
           }
           if (canHit(pos.x, pos.y)) {
             const hr = nodeHitR(dr);
@@ -35764,12 +35837,7 @@
           });
           ctx2.restore();
           if (isSel || !IS_MOBILE && this.zoom >= 1.55) {
-            drawText(ctx2, dir.name.slice(0, 4), pos.x, pos.y + nr + 8, {
-              size: 8.5,
-              bold: isSel || isEq,
-              color: isEq ? "#4ADE80" : pos.unlocked ? THEME.TX1 : THEME.TX3,
-              align: "center"
-            });
+            this.drawNodeLabel(ctx2, dir.name.slice(0, 4), pos.x, pos.y + nr + (IS_MOBILE ? 11 : 8), isEq ? "#4ADE80" : pos.unlocked ? THEME.TX1 : THEME.TX3, isSel || isEq, false, IS_MOBILE ? 10.5 : 8.5);
           }
           if (canHit(pos.x, pos.y)) {
             const hr = nodeHitR(nr);
@@ -35819,12 +35887,7 @@
         });
         ctx2.restore();
         if (!isBeginnerMode || !isMacro || al.style === club.style || pos.unlocked) {
-          drawText(ctx2, al.fusion.name.slice(0, 5), pos.x, pos.y + r + 10, {
-            size: 9.5,
-            bold: true,
-            color: pos.unlocked ? THEME.GOLD_LIGHT : pos.reachable ? "#FDE68A" : "#94A3B8",
-            align: "center"
-          });
+          this.drawNodeLabel(ctx2, al.fusion.name.slice(0, 5), pos.x, pos.y + r + (IS_MOBILE ? 12 : 10), pos.unlocked ? THEME.GOLD_LIGHT : pos.reachable ? "#FDE68A" : "#94A3B8", true, false, IS_MOBILE ? 11 : 9.5);
         }
         if (canHit(pos.x, pos.y)) {
           const hr = nodeHitR(r, 6);
@@ -35860,12 +35923,8 @@
         });
         ctx2.restore();
         if (isOrigin || isSel || !IS_MOBILE && this.zoom >= 1.45) {
-          drawText(ctx2, isOrigin ? SYSTEM_LABELS[sp.system].name.slice(0, 3) : sp.name.slice(0, 4), pos.x, pos.y + r + 8, {
-            size: 8.5,
-            bold: isOrigin || isSel,
-            color: pos.unlocked ? sysCol : THEME.TX3,
-            align: "center"
-          });
+          const lblText = isOrigin ? SYSTEM_LABELS[sp.system].name.slice(0, 3) : sp.name.slice(0, 4);
+          this.drawNodeLabel(ctx2, lblText, pos.x, pos.y + r + (IS_MOBILE ? 11 : 8), pos.unlocked ? sysCol : THEME.TX3, isOrigin || isSel, false, IS_MOBILE ? 10.5 : 8.5);
         }
         if (canHit(pos.x, pos.y)) {
           const hr = nodeHitR(r);
@@ -35899,13 +35958,7 @@
           ctx2.stroke();
           ctx2.restore();
           if (this.zoom >= 0.95 || isCurFm || isSel) {
-            drawText(ctx2, fm, pos.x, pos.y + r + 8, {
-              size: 8.5,
-              bold: isCurFm || isSel,
-              color: isCurFm ? THEME.GREEN : pos.unlocked ? "#E2E8F0" : "#94A3B8",
-              align: "center",
-              mono: true
-            });
+            this.drawNodeLabel(ctx2, fm, pos.x, pos.y + r + (IS_MOBILE ? 11 : 8), isCurFm ? THEME.GREEN : pos.unlocked ? "#E2E8F0" : "#94A3B8", isCurFm || isSel, true, IS_MOBILE ? 10.5 : 8.5);
           }
           if (canHit(pos.x, pos.y)) {
             const hr = nodeHitR(r, 5);
@@ -37834,6 +37887,8 @@
       this.recapTab = "analytics";
       this.selectedCandidateId = null;
       this.selectedDropId = null;
+      this.ratingPage = 0;
+      this.resultsPage = 0;
       this.statTargetPage = 0;
       this.statTargetFilter = "all";
       // 抽卡开包与逐张翻牌动画状态
@@ -37850,6 +37905,9 @@
     setLastMatch(match) {
       this.lastMatch = match;
       this.viewMode = "recap";
+      this.recapTab = "analytics";
+      this.ratingPage = 0;
+      this.resultsPage = 0;
       this.selectedCandidateId = null;
       this.selectedDropId = null;
       this.statTargetPage = 0;
@@ -37862,6 +37920,8 @@
     dispose() {
       this.lastMatch = null;
       this.packAnim = null;
+      this.ratingPage = 0;
+      this.resultsPage = 0;
       this.selectedCandidateId = null;
       this.selectedDropId = null;
       this.statTargetPage = 0;
@@ -37936,9 +37996,11 @@
       const rd = st.reDraft;
       const rw = st.pendingPostMatchReward;
       const m = this.lastMatch;
+      const summary = league.getLastMatchSummary();
+      const tierInfo = league.getCurrentTierInfo();
       const hasPendingCardUnlock = !!(rw?.tutorialCardUnlock && !rw.tutorialCardUnlock.claimed);
       const hasPendingReward = !!(rw && !rw.completed);
-      const nextActionLabel = hasPendingCardUnlock ? "\u9886\u53D6\u65B0\u89E3\u9501\u6218\u672F\u5361 \u25B6" : hasPendingReward ? "\u9886\u53D6\u8D5B\u540E\u8089\u9E3D\u5956\u52B1 (3\u90091) \u25B6" : rd ? "\u8FDB\u5165\u8D5B\u540E\u8865\u5F3A (2\u6B65) \u25B6" : "\u8FD4\u56DE\u95E8\u6237\u9996\u9875 \u25B6";
+      const nextActionLabel = hasPendingCardUnlock ? "\u9886\u53D6\u65B0\u89E3\u9501\u6218\u672F\u5361 \u25B6" : hasPendingReward ? "\u9886\u53D6\u8D5B\u540E\u6218\u5229\u54C1 (3\u90091) \u25B6" : rd ? "\u8FDB\u5165\u8D5B\u540E\u8865\u5F3A (2\u6B65) \u25B6" : "\u7EE7\u7EED\u4E0B\u4E00\u8F6E \xB7 \u8FD4\u56DE\u95E8\u6237 \u25B6";
       const goNext = () => {
         if (hasPendingCardUnlock) {
           this.viewMode = "card_unlock";
@@ -37954,220 +38016,42 @@
           onContinue();
         }
       };
-      drawRoundRect(ctx2, 16, 14, 1248, 56, 10, THEME.BG_PANEL, THEME.BORDER);
-      drawText(ctx2, "\u8D5B\u540E\u6218\u62A5\u4E0E\u5956\u52B1\u7ED3\u7B97", 34, 42, { size: 18, bold: true, color: THEME.GOLD_LIGHT });
-      drawButton(ctx2, hits, 1018, 24, 232, 36, nextActionLabel, goNext, { variant: "gold" });
-      const pHero = easeOutCubic(Math.min(1, Math.max(0.05, this.recapEnterTimer / 0.36)));
-      ctx2.save();
-      ctx2.globalAlpha = pHero;
-      ctx2.translate(0, (1 - pHero) * 14);
+      const t = this.recapEnterTimer;
+      const pHero = easeOutCubic(Math.min(1, Math.max(0.05, t / 0.34)));
+      const pScore = easeOutCubic(Math.min(1, Math.max(0.01, t / 0.35)));
+      const pBars = easeOutCubic(Math.min(1, Math.max(0, (t - 0.14) / 0.5)));
+      const pMvp = easeOutBack(Math.min(1, Math.max(0, (t - 0.18) / 0.42)));
+      const pRewards = easeOutBack(Math.min(1, Math.max(0, (t - 0.42) / 0.45)));
+      drawRoundRect(ctx2, 16, 12, 1248, 48, 10, THEME.BG_PANEL, THEME.BORDER);
+      const roundLabel = summary?.roundNumber ?? (rd ? rd.roundCompleted : Math.max(1, st.currentRound - 1));
+      drawBadge(ctx2, 28, 23, 140, 26, `${tierInfo.name} \xB7 \u7B2C${roundLabel}\u8F6E`, "#1E3A5F", "#7DD3FC");
+      drawText(ctx2, "\u8D5B\u540E\u6F14\u64AD\u5BA4 \xB7 \u6218\u62A5\u4E0E\u6218\u672F\u590D\u76D8", 182, 36, { size: 17, bold: true, color: THEME.GOLD_LIGHT });
       if (m) {
-        const userIsHome = m.homeName === club.name;
-        const myScore = userIsHome ? m.homeScore : m.awayScore;
-        const oppScore = userIsHome ? m.awayScore : m.homeScore;
-        const resultTag = myScore > oppScore ? "\u6BD4\u8D5B\u80DC\u5229" : myScore === oppScore ? "\u63E1\u624B\u8A00\u548C" : "\u9057\u61BE\u60DC\u8D25";
-        const resultColor = myScore > oppScore ? THEME.GREEN : myScore === oppScore ? THEME.GOLD_LIGHT : THEME.RED_LIGHT;
-        const homeClub = st.clubs.find((c) => c.name === m.homeName) || club;
-        const awayClub = st.clubs.find((c) => c.name === m.awayName) || club;
-        drawRoundRect(ctx2, 16, 84, 760, 260, 12, THEME.BG_PANEL, myScore > oppScore ? THEME.GREEN : THEME.BORDER_GOLD, 1.5);
-        drawBadge(ctx2, 36, 104, 130, 26, resultTag, "#1E293B", resultColor);
-        drawText(ctx2, m.minute + "' \u5168\u573A\u7ED3\u675F", 752, 117, { size: 13, color: THEME.TX2, align: "right" });
-        drawClubCrest(ctx2, 176, 186, 30, homeClub);
-        drawText(ctx2, m.homeName + (homeClub.isUser ? " (\u6211)" : ""), 176, 236, {
-          size: 18,
-          bold: true,
-          color: homeClub.isUser ? THEME.GOLD_LIGHT : THEME.TX1,
-          align: "center"
-        });
-        drawRoundRect(ctx2, 316, 152, 160, 68, 10, THEME.BG_CARD, THEME.GOLD);
-        drawText(ctx2, `${m.homeScore} : ${m.awayScore}`, 396, 186, {
-          size: 32,
-          bold: true,
-          color: THEME.TX1,
-          align: "center",
-          mono: true
-        });
-        drawClubCrest(ctx2, 616, 186, 30, awayClub);
-        drawText(ctx2, m.awayName + (awayClub.isUser ? " (\u6211)" : ""), 616, 236, {
-          size: 18,
-          bold: true,
-          color: awayClub.isUser ? THEME.GOLD_LIGHT : THEME.TX1,
-          align: "center"
-        });
-        const h = m.stats.home;
-        const a = m.stats.away;
-        const totPoss = h.possessionTicks + a.possessionTicks || 1;
-        const hPoss = Math.round(h.possessionTicks / totPoss * 100);
-        drawRoundRect(ctx2, 36, 268, 720, 56, 8, THEME.BG_CARD, THEME.BORDER);
-        const reviewTxt = st.lastMatchReview;
-        drawText(
-          ctx2,
-          `\u63A7\u7403 ${hPoss}% : ${100 - hPoss}%   |   \u5C04\u95E8 ${h.shots}(\u6B63${h.shotsOnTarget}) : ${a.shots}(\u6B63${a.shotsOnTarget})   |   xG ${h.xG.toFixed(2)} : ${a.xG.toFixed(2)}`,
-          396,
-          reviewTxt ? 284 : 296,
-          { size: reviewTxt ? 12 : 13, bold: true, color: THEME.TX1, align: "center" }
-        );
-        if (reviewTxt) {
-          drawText(ctx2, reviewTxt, 396, 307, {
-            size: 11,
-            color: "#7DD3FC",
-            align: "center"
-          });
-        }
-        drawChamferPanel(ctx2, 792, 84, 472, 260, 12, THEME.BG_PANEL, THEME.BORDER_GOLD, 1.2, THEME.GOLD_LIGHT);
-        drawText(ctx2, "\u672C\u573A\u6218\u5229\u54C1\u4E0E\u5173\u952E\u4E8B\u4EF6", 814, 110, { size: 15, bold: true, color: THEME.GOLD_LIGHT });
-        const rwImg = AssetLoader.get(myScore > oppScore ? "reward_win" : "reward_draw");
-        drawChamferPanel(ctx2, 814, 130, 168, 96, 6, THEME.BG_CARD, THEME.BORDER);
-        if (rwImg && typeof ctx2.drawImage === "function") {
-          ctx2.save();
-          ctx2.beginPath();
-          ctx2.rect(816, 132, 164, 92);
-          ctx2.clip();
-          ctx2.drawImage(rwImg, 816, 132, 164, 92);
-          ctx2.restore();
-        } else {
-          drawRewardIllustration(ctx2, myScore > oppScore, 816, 132, 164, 92);
-        }
-        drawRoundRect(ctx2, 994, 130, 248, 96, 8, THEME.BG_CARD, THEME.BORDER);
-        drawText(ctx2, "\u8D5B\u540E 3 \u9009 1 \u6218\u5229\u54C1\u5DF2\u5C31\u7EEA", 1010, 158, { size: 14.5, bold: true, color: THEME.GOLD_LIGHT });
-        drawWrappedText(ctx2, "\u53EF\u9886\u53D6\u8D5B\u5B63\u5723\u7269\u3001\u624B\u724C\u6697\u91D1\u9644\u9B54\u6216\u6C38\u4E45\u661F\u76D8\u70B9", 1010, 178, 224, 16, { size: 10.5, color: THEME.TX2, maxLines: 2 });
-        const goals = m.events.filter((e) => e.type === "goal").slice(0, 3);
-        if (goals.length === 0) {
-          drawText(ctx2, "\u672C\u573A\u53CC\u65B9\u63E1\u624B\u8A00\u548C\uFF0C\u672A\u4EA7\u751F\u8FDB\u7403\u3002", 814, 250, { size: 12, color: THEME.TX3 });
-        } else {
-          goals.forEach((g, gi) => {
-            drawText(ctx2, `[\u8FDB\u7403] ${g.minute}' ${g.playerName} (${g.team === "home" ? m.homeName : m.awayName})`, 814, 244 + gi * 22, {
-              size: 12,
-              color: THEME.TX1
-            });
-          });
-        }
-        if (m.unlockedHiddenTraits && m.unlockedHiddenTraits.length > 0) {
-          const u = m.unlockedHiddenTraits[0];
-          drawRoundRect(ctx2, 812, 310, 430, 24, 6, "rgba(12, 74, 110, 0.45)", "#38BDF8", 1);
-          drawText(ctx2, `\u9690\u85CF\u7279\u8D28\u89C9\u9192\uFF1A${u.playerName} \u89E3\u9501\u3010${u.trait}\u3011`, 822, 322, {
-            size: 11.5,
-            bold: true,
-            color: "#7DD3FC"
-          });
-        }
+        drawText(ctx2, `${m.minute}' \u5168\u573A\u7EC8\u573A\u54E8\u54CD`, 1246, 36, { size: 12, color: THEME.TX2, align: "right", mono: true });
       }
-      drawRoundRect(ctx2, 16, 360, 1248, 264, 10, THEME.BG_PANEL, THEME.BORDER);
-      drawButton(ctx2, hits, 36, 368, 198, 24, "\u653B\u9632\u52A8\u91CF\u4E0E\u7403\u5458\u8BC4\u5206", () => {
-        this.recapTab = "analytics";
-      }, { active: this.recapTab === "analytics", fontSize: 11 });
-      drawButton(ctx2, hits, 242, 368, 148, 24, "\u672C\u8F6E\u5168\u90E8\u8D5B\u679C", () => {
-        this.recapTab = "results";
-      }, { active: this.recapTab === "results", fontSize: 11 });
-      if (this.recapTab === "analytics" && m) {
-        const smX = 36, smY = 414, smW = 574, smH = 194;
-        drawRoundRect(ctx2, smX, smY, smW, smH, 8, THEME.BG_CARD, THEME.BORDER);
-        const momBuckets = new Array(18).fill(0);
-        const momGoalBuckets = [];
-        for (const ev of m.events) {
-          const b = Math.max(0, Math.min(17, Math.floor(Math.max(0, ev.minute - 0.01) / 5)));
-          const sign = ev.team === "home" ? 1 : -1;
-          let w = 0;
-          if (ev.type === "goal") {
-            w = 5.5;
-            momGoalBuckets.push({ bucket: b, team: ev.team, minute: ev.minute });
-          } else if (ev.type === "shot" || ev.type === "save" || ev.type === "miss") {
-            w = 2.2 + (ev.xG ? ev.xG * 4.5 : 0);
-          } else if (ev.type === "corner") {
-            w = 1.4;
-          } else if (ev.type === "pass") {
-            w = 0.25;
-          } else if (ev.type === "tackle" || ev.type === "interception") {
-            w = 0.65;
-          }
-          momBuckets[b] += sign * w;
-        }
-        const maxMom = Math.max(4.5, ...momBuckets.map((v) => Math.abs(v)));
-        const mPadL = 34, mPadR = 14, mPadT = 22, mPadB = 22;
-        const mPlotW = smW - mPadL - mPadR;
-        const mPlotH = smH - mPadT - mPadB;
-        const midY = smY + mPadT + mPlotH / 2;
-        const halfH = mPlotH / 2 - 4;
-        ctx2.strokeStyle = "rgba(148, 163, 184, 0.28)";
-        ctx2.lineWidth = 1;
-        ctx2.beginPath();
-        ctx2.moveTo(smX + mPadL, midY);
-        ctx2.lineTo(smX + mPadL + mPlotW, midY);
-        ctx2.stroke();
-        ctx2.strokeStyle = "rgba(148, 163, 184, 0.12)";
-        ctx2.setLineDash([3, 3]);
-        [midY - halfH * 0.6, midY + halfH * 0.6].forEach((gy) => {
-          ctx2.beginPath();
-          ctx2.moveTo(smX + mPadL, gy);
-          ctx2.lineTo(smX + mPadL + mPlotW, gy);
-          ctx2.stroke();
-        });
-        ctx2.setLineDash([]);
-        drawText(ctx2, m.homeName.slice(0, 4), smX + 6, smY + mPadT + 10, { size: 9, bold: true, color: "#F87171" });
-        drawText(ctx2, m.awayName.slice(0, 4), smX + 6, smY + smH - mPadB - 10, { size: 9, bold: true, color: "#60A5FA" });
-        const momBarProg = easeOutCubic(Math.min(1, Math.max(0.08, this.recapEnterTimer / 0.62)));
-        const slotW = mPlotW / 18;
-        const barW = Math.max(10, slotW - 6);
-        const userIsHomeSide = m.homeName === club.name;
-        for (let bi = 0; bi < 18; bi++) {
-          const val = momBuckets[bi];
-          const ratio = Math.min(1, Math.abs(val) / maxMom);
-          const bh = Math.max(3, ratio * halfH * momBarProg);
-          const bx = smX + mPadL + bi * slotW + (slotW - barW) / 2;
-          if (val >= 0) {
-            const col = userIsHomeSide ? "#FB923C" : "#F87171";
-            drawRoundRect(ctx2, bx, midY - bh, barW, bh, 3, col);
-          } else {
-            const col = !userIsHomeSide ? "#38BDF8" : "#60A5FA";
-            drawRoundRect(ctx2, bx, midY, barW, bh, 3, col);
-          }
-        }
-        for (const gb of momGoalBuckets) {
-          const gx = smX + mPadL + (gb.bucket + 0.5) * slotW;
-          const gy = gb.team === "home" ? smY + mPadT + 8 : smY + smH - mPadB - 8;
-          ctx2.fillStyle = "#FACC15";
-          ctx2.beginPath();
-          ctx2.arc(gx, gy, 4.5, 0, Math.PI * 2);
-          ctx2.fill();
-          drawText(ctx2, `${gb.minute}'`, gx, gy + (gb.team === "home" ? -9 : 9), {
-            size: 8.5,
-            bold: true,
-            color: "#FACC15",
-            align: "center",
-            mono: true
-          });
-        }
-        [0, 15, 30, 45, 60, 75, 90].forEach((min) => {
-          const gx = smX + mPadL + min / 90 * mPlotW;
-          drawText(ctx2, min === 45 ? "HT" : `${min}'`, gx, smY + smH - 10, {
-            size: 9,
-            color: min === 45 ? THEME.GOLD_LIGHT : THEME.TX3,
-            align: "center",
-            mono: true
-          });
-        });
-        drawText(ctx2, `\u5206\u65F6\u6BB5\u653B\u9632\u52A8\u91CF\u56FE (0'~90') \xB7 ${m.homeName} (\u4E0A) vs ${m.awayName} (\u4E0B) \xB7 \u91D1\u70B9=\u8FDB\u7403`, smX + smW / 2, smY - 11, {
-          size: 11,
-          color: THEME.TX2,
-          align: "center"
-        });
-        const xgX = 638, xgY = 408, xgW = 606, xgH = 202;
-        drawRoundRect(ctx2, xgX, xgY, xgW, xgH, 8, THEME.BG_CARD, THEME.BORDER);
-        const userSide = m.homeName === club.name ? "home" : "away";
+      const userSide = m ? m.homeName === club.name ? "home" : "away" : "home";
+      const growthMap = league.getLastMatchGrowth();
+      const userSquadMap = new Map(club.squad.map((sp) => [sp.id, sp]));
+      const ratedList = [];
+      if (m) {
         const myScoreVal = userSide === "home" ? m.homeScore : m.awayScore;
         const oppScoreVal = userSide === "home" ? m.awayScore : m.homeScore;
         const teamBonus = myScoreVal > oppScoreVal ? 0.4 : myScoreVal === oppScoreVal ? 0.1 : -0.1;
-        const growthMap = league.getLastMatchGrowth();
-        const userSquadMap = new Map(club.squad.map((sp) => [sp.id, sp]));
-        const starters = m.players.filter((p) => p.team === userSide && !p.subbedIn).slice(0, 11);
-        const rated = starters.map((p) => {
+        const seenIds = /* @__PURE__ */ new Set();
+        const allUserPlayed = [...m.players, ...m.subbedOutPlayers ?? []].filter((p) => {
+          if (p.team !== userSide || seenIds.has(p.id)) return false;
+          seenIds.add(p.id);
+          return true;
+        });
+        for (const p of allUserPlayed) {
           const ms = p.matchStats;
           const g = growthMap[p.id];
           const dp = userSquadMap.get(p.id);
           const passAcc = ms.passes >= 6 ? ms.passesSuccess / ms.passes : 0.7;
           const chemBonus = g ? Math.min(0.45, g.chemGain * 0.025) : 0;
           const traitBonus = g?.unlockedTrait ? 0.55 : dp?.traits?.length || p.traits?.length ? 0.15 : 0;
-          const raw = 5.7 + teamBonus + ms.goals * 1.35 + ms.assists * 0.85 + ms.shots * 0.14 + ms.passesSuccess * 0.035 + (passAcc >= 0.82 ? 0.25 : 0) + (ms.tackles + ms.interceptions) * 0.24 + ms.saves * 0.42 + (p.role === "GK" && oppScoreVal === 0 ? 0.75 : 0) + chemBonus + traitBonus;
+          const subBonus = p.subbedIn && (ms.goals > 0 || ms.assists > 0) ? 0.3 : 0;
+          const raw = 5.7 + teamBonus + subBonus + ms.goals * 1.35 + ms.assists * 0.85 + ms.shots * 0.14 + ms.passesSuccess * 0.035 + (passAcc >= 0.82 ? 0.25 : 0) + (ms.tackles + ms.interceptions) * 0.24 + ms.saves * 0.42 + (p.role === "GK" && oppScoreVal === 0 ? 0.75 : 0) + chemBonus + traitBonus;
           const rating = Math.max(5.2, Math.min(10, Math.round(raw * 10) / 10));
           const statIcons = [];
           if (ms.goals > 0) statIcons.push({ ic: "ball", val: ms.goals });
@@ -38188,140 +38072,589 @@
             if (g && g.chemGain > 0) gainParts.push(`\u9ED8+${g.chemGain.toFixed(1)}`);
           }
           const keyTrait = g?.unlockedTrait ? void 0 : p.goldTraits?.[0] || p.traits?.[0] || dp?.traits?.[0];
-          return {
+          ratedList.push({
             player: p,
+            dp,
             rating,
             statIcons: statIcons.slice(0, 3),
             gainText: gainParts.join(" "),
             keyTrait,
             isUnlocked: !!g?.unlockedTrait,
             bestPartner: g?.bestPartner
+          });
+        }
+        ratedList.sort((a, b) => b.rating - a.rating);
+      }
+      ctx2.save();
+      ctx2.globalAlpha = pHero;
+      ctx2.translate(0, (1 - pHero) * 12);
+      if (m) {
+        const userIsHome = m.homeName === club.name;
+        const myScore = userIsHome ? m.homeScore : m.awayScore;
+        const oppScore = userIsHome ? m.awayScore : m.homeScore;
+        const isWin = myScore > oppScore;
+        const isDraw = myScore === oppScore;
+        const resultTag = isWin ? "\u6BD4\u8D5B\u80DC\u5229" : isDraw ? "\u63E1\u624B\u8A00\u548C" : "\u9057\u61BE\u60DC\u8D25";
+        const resultColor = isWin ? THEME.GREEN : isDraw ? THEME.GOLD_LIGHT : THEME.RED_LIGHT;
+        const homeClub = st.clubs.find((c) => c.name === m.homeName) || club;
+        const awayClub = st.clubs.find((c) => c.name === m.awayName) || club;
+        const storyTags = [];
+        if (isWin) {
+          let hCur = 0;
+          let aCur = 0;
+          let trailed = false;
+          let lastUserGoalMin = 0;
+          for (const ev of m.events) {
+            if (ev.type === "goal") {
+              if (ev.team === "home") hCur++;
+              else aCur++;
+              const myCur = userIsHome ? hCur : aCur;
+              const oppCur = userIsHome ? aCur : hCur;
+              if (myCur < oppCur) trailed = true;
+              if (ev.team === userSide) lastUserGoalMin = ev.minute;
+            }
+          }
+          if (lastUserGoalMin >= 85 && myScore - oppScore === 1) {
+            storyTags.push({ label: "\u8BFB\u79D2\u7EDD\u6740", bg: "#78350F", col: "#FDE047" });
+          }
+          if (trailed) {
+            storyTags.push({ label: "\u9006\u8F6C\u7FFB\u76D8", bg: "#4C1D95", col: "#E9D5FF" });
+          }
+          if (oppScore === 0) {
+            storyTags.push({ label: "\u96F6\u5C01\u9501\u6B7B", bg: "#064E3B", col: "#6EE7B7" });
+          }
+          if (myScore >= 3) {
+            storyTags.push({ label: "\u706B\u529B\u5168\u5F00", bg: "#7F1D1D", col: "#FCA5A5" });
+          }
+        }
+        drawChamferPanel(
+          ctx2,
+          16,
+          70,
+          780,
+          216,
+          12,
+          THEME.BG_PANEL,
+          isWin ? THEME.GREEN : isDraw ? THEME.BORDER_GOLD : THEME.RED_LIGHT,
+          1.5,
+          resultColor
+        );
+        if (isWin) {
+          drawFoilShimmer(ctx2, 16, 70, 780, 216, this.animClock * 0.7, "rgba(34, 197, 94, 0.14)");
+        }
+        drawBadge(ctx2, 32, 82, 92, 22, resultTag, "#1E293B", resultColor);
+        storyTags.slice(0, 3).forEach((tg, ti) => {
+          drawBadge(ctx2, 132 + ti * 86, 82, 78, 22, tg.label, tg.bg, tg.col);
+        });
+        drawClubCrest(ctx2, 162, 130, 24, homeClub);
+        drawText(ctx2, m.homeName + (homeClub.isUser ? " (\u6211)" : ""), 196, 130, {
+          size: 16,
+          bold: true,
+          color: homeClub.isUser ? THEME.GOLD_LIGHT : THEME.TX1
+        });
+        const animHomeScore = Math.round(m.homeScore * pScore);
+        const animAwayScore = Math.round(m.awayScore * pScore);
+        drawRoundRect(ctx2, 342, 102, 128, 50, 10, THEME.BG_CARD, THEME.GOLD, 1.4);
+        drawText(ctx2, `${animHomeScore} : ${animAwayScore}`, 406, 127, {
+          size: 28,
+          bold: true,
+          color: THEME.TX1,
+          align: "center",
+          mono: true
+        });
+        drawClubCrest(ctx2, 648, 130, 24, awayClub);
+        drawText(ctx2, m.awayName + (awayClub.isUser ? " (\u6211)" : ""), 614, 130, {
+          size: 16,
+          bold: true,
+          color: awayClub.isUser ? THEME.GOLD_LIGHT : THEME.TX1,
+          align: "right"
+        });
+        const h = m.stats.home;
+        const a = m.stats.away;
+        const totPoss = h.possessionTicks + a.possessionTicks || 1;
+        const hPoss = Math.round(h.possessionTicks / totPoss * 100);
+        const aPoss = 100 - hPoss;
+        const hDef = h.tackles + h.interceptions;
+        const aDef = a.tackles + a.interceptions;
+        const compRows = [
+          {
+            label: "\u63A7\u7403\u7387",
+            leftVal: hPoss,
+            rightVal: aPoss,
+            leftTxt: `${Math.round(hPoss * pBars)}%`,
+            rightTxt: `${Math.round(aPoss * pBars)}%`
+          },
+          {
+            label: "\u5C04\u95E8(\u6B63)",
+            leftVal: h.shots,
+            rightVal: a.shots,
+            leftTxt: `${Math.round(h.shots * pBars)}(${Math.round(h.shotsOnTarget * pBars)})`,
+            rightTxt: `${Math.round(a.shots * pBars)}(${Math.round(a.shotsOnTarget * pBars)})`
+          },
+          {
+            label: "\u9884\u671F\u8FDB\u7403 xG",
+            leftVal: h.xG,
+            rightVal: a.xG,
+            leftTxt: (h.xG * pBars).toFixed(2),
+            rightTxt: (a.xG * pBars).toFixed(2)
+          },
+          {
+            label: "\u62A2\u65AD / \u62E6\u622A",
+            leftVal: hDef,
+            rightVal: aDef,
+            leftTxt: `${Math.round(hDef * pBars)}`,
+            rightTxt: `${Math.round(aDef * pBars)}`
+          }
+        ];
+        const barCenterX = 406;
+        const halfBarMax = 218;
+        const leftColColor = userIsHome ? THEME.GOLD_LIGHT : "#F87171";
+        const rightColColor = !userIsHome ? "#38BDF8" : "#60A5FA";
+        compRows.forEach((cr, ci) => {
+          const ry = 166 + ci * 27;
+          const sum = Math.max(0.01, cr.leftVal + cr.rightVal);
+          const lRatio = cr.leftVal / sum * pBars;
+          const rRatio = cr.rightVal / sum * pBars;
+          const lW = Math.max(4, Math.round(lRatio * halfBarMax));
+          const rW = Math.max(4, Math.round(rRatio * halfBarMax));
+          drawText(ctx2, cr.leftTxt, barCenterX - halfBarMax - 12, ry + 8, {
+            size: 11.5,
+            bold: cr.leftVal >= cr.rightVal,
+            color: cr.leftVal >= cr.rightVal ? leftColColor : THEME.TX2,
+            align: "right",
+            mono: true
+          });
+          drawRoundRect(ctx2, barCenterX - halfBarMax - 4, ry + 3, halfBarMax, 10, 4, "rgba(15, 23, 42, 0.88)");
+          drawRoundRect(ctx2, barCenterX - 4 - lW, ry + 3, lW, 10, 4, leftColColor);
+          drawText(ctx2, cr.label, barCenterX, ry + 20, {
+            size: 9.5,
+            color: THEME.TX3,
+            align: "center"
+          });
+          drawRoundRect(ctx2, barCenterX + 4, ry + 3, halfBarMax, 10, 4, "rgba(15, 23, 42, 0.88)");
+          drawRoundRect(ctx2, barCenterX + 4, ry + 3, rW, 10, 4, rightColColor);
+          drawText(ctx2, cr.rightTxt, barCenterX + halfBarMax + 12, ry + 8, {
+            size: 11.5,
+            bold: cr.rightVal >= cr.leftVal,
+            color: cr.rightVal >= cr.leftVal ? rightColColor : THEME.TX2,
+            align: "left",
+            mono: true
+          });
+        });
+        const mvp = ratedList[0];
+        ctx2.save();
+        ctx2.globalAlpha = Math.max(0.05, Math.min(1, pMvp));
+        ctx2.translate(0, (1 - Math.min(1, pMvp)) * 10);
+        drawChamferPanel(ctx2, 810, 70, 454, 216, 12, "rgba(20, 26, 46, 0.96)", THEME.GOLD_LIGHT, 1.8, THEME.GOLD_LIGHT);
+        drawFoilShimmer(ctx2, 810, 70, 454, 216, this.animClock * 1.1, "rgba(250, 204, 21, 0.22)");
+        drawBadge(ctx2, 826, 82, 148, 22, "MATCH MVP \xB7 \u5168\u573A\u6700\u4F73", "#78350F", THEME.GOLD_LIGHT);
+        if (mvp) {
+          const mp = mvp.player;
+          const dp = mvp.dp;
+          const shirtTxt = mp.shirtNumber ? `#${mp.shirtNumber} ` : "";
+          if (mp.subbedIn) {
+            drawBadge(ctx2, 980, 82, 74, 22, "\u66FF\u8865\u5947\u5175", "#064E3B", "#6EE7B7");
+          }
+          const animRating = (mvp.rating * Math.min(1, pMvp)).toFixed(1);
+          drawRoundRect(ctx2, 1188, 78, 60, 42, 8, "#0F172A", THEME.GOLD_LIGHT, 1.6);
+          drawText(ctx2, animRating, 1218, 99, {
+            size: 21,
+            bold: true,
+            color: THEME.GOLD_LIGHT,
+            align: "center",
+            mono: true
+          });
+          const fakeDp = dp ?? {
+            id: mp.id,
+            name: mp.name,
+            role: mp.role,
+            shirtNumber: mp.shirtNumber,
+            attributes: mp.attributes,
+            traits: mp.traits,
+            fitness: mp.fitness,
+            ca: 75,
+            cost: 100,
+            tier: "A",
+            age: 25,
+            trait: mp.traits?.[0] ?? "",
+            seasonStats: { appearances: 1, goals: mp.matchStats.goals, assists: mp.matchStats.assists, cleanSheets: 0, yellowCards: 0, redCards: 0 }
           };
-        }).sort((a, b) => b.rating - a.rating);
-        const avgRating = rated.length > 0 ? (rated.reduce((s, r) => s + r.rating, 0) / rated.length).toFixed(1) : "6.5";
-        const totalChemGain = rated.reduce((s, r) => s + (growthMap[r.player.id]?.chemGain ?? 0), 0);
-        rated.forEach((item, idx) => {
-          const col = idx < 6 ? 0 : 1;
-          const row = idx < 6 ? idx : idx - 6;
-          const rx = xgX + 6 + col * 300;
-          const ry = xgY + 3 + row * 35;
-          const rw2 = 294;
-          const rh = 33;
-          const isMvp = idx === 0;
+          drawPlayerAvatar(ctx2, 828, 116, 68, 86, fakeDp, club, { radius: 8 });
+          drawBadge(ctx2, 908, 118, 36, 18, mp.role, "#1E293B", THEME.TX1);
+          if (dp?.tier) drawBadge(ctx2, 948, 118, 24, 18, dp.tier, tierColor(dp.tier));
+          drawText(ctx2, fitText(ctx2, `${shirtTxt}${mp.name}`, 196, 18, true), 908, 152, {
+            size: 18,
+            bold: true,
+            color: THEME.TX1
+          });
+          const ms = mp.matchStats;
+          const distKm = ((ms.distanceM ?? 0) / 1e3).toFixed(1);
+          const mvpLine1 = mp.role === "GK" ? `\u6251\u6551 ${ms.saves} \xB7 \u6210\u529F\u4F20\u7403 ${ms.passesSuccess} \xB7 \u8DD1\u52A8 ${distKm}km` : `\u8FDB\u7403 ${ms.goals} \xB7 \u52A9\u653B ${ms.assists} \xB7 \u62A2\u65AD\u62E6\u622A ${ms.tackles + ms.interceptions} \xB7 \u8DD1\u52A8 ${distKm}km`;
+          drawText(ctx2, mvpLine1, 908, 178, { size: 11.5, color: "#7DD3FC", mono: true });
+          const mvpNote = mvp.isUnlocked ? `\u2605 ${mvp.gainText}` : mvp.bestPartner ? `\u9EC4\u91D1\u8FDE\u7EBF\uFF1A${mvp.bestPartner} \xB7 ${mvp.gainText || "\u5168\u573A\u6838\u5FC3\u9A71\u52A8"}` : mvp.keyTrait ? `\u6838\u5FC3\u7279\u8D28\uFF1A\u3010${mvp.keyTrait}\u3011 \xB7 ${mvp.gainText || "\u7EDF\u6CBB\u5168\u573A"}` : mvp.gainText || "\u5168\u573A\u6838\u5FC3\u9A71\u52A8 \xB7 \u8BC4\u5206\u51A0\u7EDD\u5168\u961F";
+          drawRoundRect(ctx2, 908, 196, 340, 32, 6, "rgba(120, 53, 15, 0.28)", "rgba(250, 204, 21, 0.45)");
+          drawText(ctx2, fitText(ctx2, mvpNote, 324, 11, true), 918, 212, {
+            size: 11,
+            bold: true,
+            color: mvp.isUnlocked ? "#38BDF8" : THEME.GOLD_LIGHT
+          });
+          drawText(ctx2, "\u70B9\u51FB\u5361\u9762\u67E5\u770B\u7403\u5458\u5B8C\u6574\u6863\u6848 \u25B6", 1246, 266, { size: 10, color: THEME.TX3, align: "right" });
+          if (dp) {
+            hits.add(810, 70, 454, 216, () => {
+              SoundEngine.playClick();
+              this.fx.onInspectPlayer?.(dp);
+            });
+          }
+        }
+        ctx2.restore();
+      }
+      drawChamferPanel(ctx2, 16, 298, 620, 322, 10, THEME.BG_PANEL, THEME.BORDER);
+      drawText(ctx2, "\u653B\u9632\u52A8\u91CF\u4E0E\u6218\u672F\u65F6\u95F4\u8F74 (0'\u201390')", 32, 318, { size: 13.5, bold: true, color: THEME.GOLD_LIGHT });
+      drawText(ctx2, "\u91D1\u70B9=\u8FDB\u7403 \xB7 \u9752/\u7D2B\u6807=\u6362\u4EBA\u4E0E\u6218\u672F\u62D0\u70B9", 620, 318, { size: 10.5, color: THEME.TX3, align: "right" });
+      if (m) {
+        const smX = 30, smY = 334, smW = 592, smH = 204;
+        drawRoundRect(ctx2, smX, smY, smW, smH, 8, THEME.BG_CARD, THEME.BORDER);
+        const momBuckets = new Array(18).fill(0);
+        const momGoalBuckets = [];
+        const momTacticMarkers = [];
+        for (const ev of m.events) {
+          const b = Math.max(0, Math.min(17, Math.floor(Math.max(0, ev.minute - 0.01) / 5)));
+          const sign = ev.team === "home" ? 1 : -1;
+          let w = 0;
+          if (ev.type === "goal") {
+            w = 5.5;
+            momGoalBuckets.push({ bucket: b, team: ev.team, minute: ev.minute });
+          } else if (ev.type === "shot" || ev.type === "save" || ev.type === "miss") {
+            w = 2.2 + (ev.xG ? ev.xG * 4.5 : 0);
+          } else if (ev.type === "corner") {
+            w = 1.4;
+          } else if (ev.type === "pass") {
+            w = 0.25;
+          } else if (ev.type === "tackle" || ev.type === "interception") {
+            w = 0.65;
+          }
+          momBuckets[b] += sign * w;
+          if (ev.team === userSide && ev.type === "substitution") {
+            momTacticMarkers.push({ minute: ev.minute, kind: "sub", label: "\u6362" });
+          } else if (ev.team === userSide && (ev.type === "tactic" || ev.type === "commentary" && (ev.text.includes("Zone") || ev.text.includes("\u6307\u4EE4") || ev.text.includes("\u6838\u5FC3")))) {
+            momTacticMarkers.push({ minute: ev.minute, kind: "tactic", label: "\u7B56" });
+          }
+        }
+        const maxMom = Math.max(4.5, ...momBuckets.map((v) => Math.abs(v)));
+        const mPadL = 36, mPadR = 14, mPadT = 22, mPadB = 26;
+        const mPlotW = smW - mPadL - mPadR;
+        const mPlotH = smH - mPadT - mPadB;
+        const midY = smY + mPadT + mPlotH / 2;
+        const halfH = mPlotH / 2 - 4;
+        ctx2.strokeStyle = "rgba(148, 163, 184, 0.28)";
+        ctx2.lineWidth = 1;
+        ctx2.beginPath();
+        ctx2.moveTo(smX + mPadL, midY);
+        ctx2.lineTo(smX + mPadL + mPlotW, midY);
+        ctx2.stroke();
+        ctx2.strokeStyle = "rgba(148, 163, 184, 0.12)";
+        ctx2.setLineDash([3, 3]);
+        [midY - halfH * 0.6, midY + halfH * 0.6].forEach((gy) => {
+          ctx2.beginPath();
+          ctx2.moveTo(smX + mPadL, gy);
+          ctx2.lineTo(smX + mPadL + mPlotW, gy);
+          ctx2.stroke();
+        });
+        ctx2.setLineDash([]);
+        drawText(ctx2, m.homeName.slice(0, 4), smX + 6, smY + mPadT + 10, { size: 9, bold: true, color: "#F87171" });
+        drawText(ctx2, m.awayName.slice(0, 4), smX + 6, smY + smH - mPadB - 18, { size: 9, bold: true, color: "#60A5FA" });
+        const slotW = mPlotW / 18;
+        const barW = Math.max(10, slotW - 6);
+        const userIsHomeSide = m.homeName === club.name;
+        for (let bi = 0; bi < 18; bi++) {
+          const barProg = easeOutCubic(Math.max(0.06, Math.min(1, (t - 0.18 - bi * 0.025) / 0.34)));
+          const val = momBuckets[bi];
+          const ratio = Math.min(1, Math.abs(val) / maxMom);
+          const bh = Math.max(3, ratio * halfH * barProg);
+          const bx = smX + mPadL + bi * slotW + (slotW - barW) / 2;
+          if (val >= 0) {
+            const col = userIsHomeSide ? "#FB923C" : "#F87171";
+            drawRoundRect(ctx2, bx, midY - bh, barW, bh, 3, col);
+          } else {
+            const col = !userIsHomeSide ? "#38BDF8" : "#60A5FA";
+            drawRoundRect(ctx2, bx, midY, barW, bh, 3, col);
+          }
+        }
+        for (const gb of momGoalBuckets) {
+          const revealT = 0.18 + gb.bucket * 0.025 + 0.16;
+          if (t < revealT) continue;
+          const pop = easeOutBack(Math.min(1, (t - revealT) / 0.25));
+          const gx = smX + mPadL + (gb.bucket + 0.5) * slotW;
+          const gy = gb.team === "home" ? smY + mPadT + 8 : smY + smH - mPadB - 8;
+          ctx2.save();
+          ctx2.fillStyle = "#FACC15";
+          ctx2.beginPath();
+          ctx2.arc(gx, gy, 4.5 * Math.min(1.2, pop), 0, Math.PI * 2);
+          ctx2.fill();
+          drawText(ctx2, `${gb.minute}'`, gx, gy + (gb.team === "home" ? -9 : 9), {
+            size: 8.5,
+            bold: true,
+            color: "#FACC15",
+            align: "center",
+            mono: true
+          });
+          ctx2.restore();
+        }
+        const shownMarkerBuckets = /* @__PURE__ */ new Set();
+        for (const tm of momTacticMarkers.slice(0, 6)) {
+          const b = Math.max(0, Math.min(17, Math.floor(Math.max(0, tm.minute - 0.01) / 5)));
+          if (shownMarkerBuckets.has(b)) continue;
+          shownMarkerBuckets.add(b);
+          const mx = Math.max(smX + mPadL + 10, smX + mPadL + tm.minute / 90 * mPlotW);
+          const my = smY + smH - mPadB + 2;
+          const col = tm.kind === "sub" ? "#38BDF8" : "#C084FC";
+          drawRoundRect(ctx2, mx - 7, my - 7, 14, 14, 4, "#0F172A", col, 1.1);
+          drawText(ctx2, tm.label, mx, my, { size: 8.5, bold: true, color: col, align: "center" });
+        }
+        [0, 15, 30, 45, 60, 75, 90].forEach((min) => {
+          const gx = smX + mPadL + min / 90 * mPlotW;
+          drawText(ctx2, min === 45 ? "HT" : `${min}'`, gx, smY + smH - 9, {
+            size: 9,
+            color: min === 45 ? THEME.GOLD_LIGHT : THEME.TX3,
+            align: "center",
+            mono: true
+          });
+        });
+        const goals = m.events.filter((e) => e.type === "goal").slice(0, 3);
+        const evBoxY = 546;
+        drawRoundRect(ctx2, 30, evBoxY, 592, 62, 8, THEME.BG_CARD, THEME.BORDER);
+        if (goals.length === 0) {
+          drawText(ctx2, "\u672C\u573A\u53CC\u65B9\u4E92\u4EA4\u767D\u5377 \xB7 \u653B\u9632\u62C9\u952F\u6FC0\u70C8", 44, evBoxY + 20, { size: 11.5, color: THEME.TX2 });
+        } else {
+          goals.forEach((g, gi) => {
+            const gx = 40 + gi * 194;
+            const isUserGoal = g.team === userSide;
+            drawRoundRect(ctx2, gx, evBoxY + 8, 186, 22, 5, isUserGoal ? "rgba(20, 83, 45, 0.36)" : "rgba(127, 29, 29, 0.30)", isUserGoal ? THEME.GREEN : "#F87171", 0.9);
+            drawText(ctx2, fitText(ctx2, `${g.minute}' ${g.playerName}`, 174, 10.5, true), gx + 93, evBoxY + 19, {
+              size: 10.5,
+              bold: true,
+              color: isUserGoal ? "#86EFAC" : "#FCA5A5",
+              align: "center"
+            });
+          });
+        }
+        drawText(ctx2, fitText(ctx2, st.lastMatchReview || "\u6218\u672F\u6267\u884C\u7A33\u5065\uFF0C\u51C6\u5907\u8FCE\u63A5\u4E0B\u4E00\u8F6E\u6311\u6218", 568, 11), 42, evBoxY + 46, {
+          size: 11,
+          color: "#7DD3FC"
+        });
+      }
+      drawChamferPanel(ctx2, 650, 298, 614, 322, 10, THEME.BG_PANEL, THEME.BORDER);
+      drawButton(ctx2, hits, 666, 306, 200, 26, `\u51FA\u573A\u7403\u5458\u8BC4\u5206 (${ratedList.length}\u4EBA)`, () => {
+        this.recapTab = "analytics";
+      }, { active: this.recapTab === "analytics", fontSize: 11 });
+      drawButton(ctx2, hits, 874, 306, 150, 26, "\u672C\u8F6E\u5168\u8054\u76DF\u8D5B\u679C", () => {
+        this.recapTab = "results";
+      }, { active: this.recapTab === "results", fontSize: 11 });
+      if (this.recapTab === "analytics" && m) {
+        const pageSize = 6;
+        const totalPages = Math.max(1, Math.ceil(ratedList.length / pageSize));
+        if (this.ratingPage >= totalPages) this.ratingPage = totalPages - 1;
+        const slice = ratedList.slice(this.ratingPage * pageSize, (this.ratingPage + 1) * pageSize);
+        const avgRating = ratedList.length > 0 ? (ratedList.reduce((s, r) => s + r.rating, 0) / ratedList.length).toFixed(1) : "6.5";
+        const totalChemGain = ratedList.reduce((s, r) => s + (growthMap[r.player.id]?.chemGain ?? 0), 0);
+        drawText(ctx2, `\u5168\u961F\u5747\u5206 ${avgRating} \xB7 \u9ED8\u5951 +${totalChemGain.toFixed(0)}`, 1248, 319, {
+          size: 11,
+          bold: true,
+          color: THEME.GOLD_LIGHT,
+          align: "right"
+        });
+        slice.forEach((item, localIdx) => {
+          const globalIdx = this.ratingPage * pageSize + localIdx;
+          const rowP = easeOutCubic(Math.max(0.05, Math.min(1, (t - 0.25 - localIdx * 0.05) / 0.28)));
+          const rx = 666 + (1 - rowP) * 16;
+          const ry = 340 + localIdx * 40;
+          const rw2 = 582;
+          const rh = 36;
+          const isMvp = globalIdx === 0;
           const rColor = item.rating >= 8 ? THEME.GREEN : item.rating >= 7 ? THEME.GOLD_LIGHT : THEME.TX1;
+          ctx2.save();
+          ctx2.globalAlpha = rowP;
           drawRoundRect(
             ctx2,
             rx,
             ry,
             rw2,
             rh,
-            5,
-            isMvp ? "rgba(120, 53, 15, 0.34)" : "rgba(11, 17, 30, 0.78)",
-            isMvp ? THEME.GOLD_LIGHT : item.isUnlocked ? "#38BDF8" : "rgba(148, 163, 184, 0.16)",
-            isMvp || item.isUnlocked ? 1.2 : 0.8
+            6,
+            isMvp ? "rgba(120, 53, 15, 0.34)" : THEME.BG_CARD,
+            isMvp ? THEME.GOLD_LIGHT : item.isUnlocked ? "#38BDF8" : THEME.BORDER,
+            isMvp || item.isUnlocked ? 1.3 : 1
           );
           if (isMvp) {
-            drawBadge(ctx2, rx + 4, ry + 7, 30, 18, "MVP", "#78350F", THEME.GOLD_LIGHT);
+            drawBadge(ctx2, rx + 8, ry + 8, 36, 20, "MVP", "#78350F", THEME.GOLD_LIGHT);
           } else {
-            drawText(ctx2, `${idx + 1}`, rx + 13, ry + 16.5, { token: "MICRO", bold: true, color: THEME.TX3, align: "center", mono: true });
+            drawText(ctx2, `#${globalIdx + 1}`, rx + 24, ry + 18, { size: 11.5, bold: true, color: THEME.TX3, align: "center", mono: true });
           }
-          const nameX = isMvp ? rx + 38 : rx + 24;
-          drawBadge(ctx2, nameX, ry + 8, 28, 16, item.player.role, "#1E293B", THEME.TX2);
-          drawText(ctx2, fitText(ctx2, item.player.name, 84, FONT.MICRO, true, true), nameX + 32, ry + 10, {
-            token: "MICRO",
+          drawBadge(
+            ctx2,
+            rx + 50,
+            ry + 9,
+            34,
+            18,
+            item.player.subbedIn ? "\u66FF\u8865" : "\u9996\u53D1",
+            item.player.subbedIn ? "#0C4A6E" : "#1E293B",
+            item.player.subbedIn ? "#7DD3FC" : THEME.TX2
+          );
+          drawBadge(ctx2, rx + 88, ry + 9, 34, 18, item.player.role, "#1E293B", THEME.TX1);
+          drawText(ctx2, fitText(ctx2, item.player.name, 110, 12.5, true), rx + 128, ry + 18, {
+            size: 12.5,
             bold: true,
             color: isMvp ? THEME.GOLD_LIGHT : THEME.TX1
           });
-          let sx = nameX + 32;
+          let sx = rx + 246;
           item.statIcons.forEach((si) => {
-            sx += drawStatMicro(ctx2, si.ic, `${si.val}`, sx, ry + 24, {
-              iconSize: 10,
-              fontSize: 10,
+            sx += drawStatMicro(ctx2, si.ic, `${si.val}`, sx, ry + 18, {
+              iconSize: 11,
+              fontSize: 11,
               iconColor: THEME.TX3,
-              valueColor: THEME.TX2,
-              gap: 2
+              valueColor: THEME.TX1,
+              gap: 3
             });
-            sx += 6;
+            sx += 10;
           });
           if (item.gainText) {
-            drawText(ctx2, item.gainText, rx + rw2 - 42, ry + 24, {
-              token: "MICRO",
+            drawText(ctx2, item.gainText, rx + rw2 - 58, ry + 18, {
+              size: 10.5,
               bold: item.isUnlocked,
               color: item.isUnlocked ? "#38BDF8" : THEME.GREEN,
-              align: "right",
-              mono: !item.isUnlocked
+              align: "right"
             });
-          }
-          if (item.keyTrait) {
-            drawText(ctx2, `[${item.keyTrait.slice(0, 4)}]`, rx + rw2 - 42, ry + 10, {
-              token: "MICRO",
+          } else if (item.keyTrait) {
+            drawText(ctx2, `[${item.keyTrait.slice(0, 4)}]`, rx + rw2 - 58, ry + 18, {
+              size: 10,
               color: "#C4B5FD",
               align: "right"
             });
-          } else if (item.bestPartner && isMvp) {
-            drawText(ctx2, `\u8FDE\u7EBF:${item.bestPartner.slice(0, 3)}`, rx + rw2 - 42, ry + 10, {
-              token: "MICRO",
-              color: THEME.GOLD_LIGHT,
-              align: "right"
-            });
           }
-          drawRoundRect(ctx2, rx + rw2 - 36, ry + 5, 32, 23, 4, "#0F172A", rColor, 1);
-          drawText(ctx2, item.rating.toFixed(1), rx + rw2 - 20, ry + 16.5, {
-            token: "LABEL",
+          drawRoundRect(ctx2, rx + rw2 - 48, ry + 5, 40, 26, 5, "#0F172A", rColor, 1.1);
+          drawText(ctx2, item.rating.toFixed(1), rx + rw2 - 28, ry + 18, {
+            size: 13,
             bold: true,
             color: rColor,
             align: "center",
             mono: true
           });
+          ctx2.restore();
+          if (item.dp) {
+            hits.add(rx, ry, rw2, rh, () => {
+              SoundEngine.playClick();
+              this.fx.onInspectPlayer?.(item.dp);
+            });
+          }
         });
-        const sumX = xgX + 306;
-        const sumY = xgY + 3 + 5 * 35;
-        drawRoundRect(ctx2, sumX, sumY, 294, 33, 5, "rgba(30, 58, 95, 0.35)", THEME.BORDER_GOLD, 0.9);
-        drawText(ctx2, `\u9996\u53D1\u5747\u5206 ${avgRating} \xB7 \u9ED8\u5951\u603B\u5347\u6E29 +${totalChemGain.toFixed(0)}`, sumX + 147, sumY + 16.5, {
-          token: "MICRO",
-          bold: true,
-          color: THEME.GOLD_LIGHT,
+        drawButton(ctx2, hits, 666, 584, 86, 26, "\u25C0 \u4E0A\u9875", () => {
+          this.ratingPage = Math.max(0, this.ratingPage - 1);
+        }, { disabled: this.ratingPage === 0, fontSize: 10.5 });
+        drawText(ctx2, `\u7B2C ${this.ratingPage + 1} / ${totalPages} \u9875 (\u5171 ${ratedList.length} \u4EBA\u51FA\u573A \xB7 \u70B9\u51FB\u67E5\u770B\u8BE6\u60C5)`, 957, 597, {
+          size: 10.5,
+          color: THEME.TX2,
           align: "center"
         });
-        drawText(
-          ctx2,
-          "\u9996\u53D1 11 \u4EBA\u8D5B\u540E\u8BC4\u5206\u4E0E MVP \u8D21\u732E\u699C \xB7 \u8054\u52A8\u9ED8\u5951/\u9690\u85CF\u7279\u8D28\u4E0E\u672C\u573A\u63D0\u5347",
-          xgX + xgW / 2,
-          xgY - 11,
-          { size: 11, color: THEME.GOLD_LIGHT, align: "center" }
-        );
+        drawButton(ctx2, hits, 1162, 584, 86, 26, "\u4E0B\u9875 \u25B6", () => {
+          this.ratingPage = Math.min(totalPages - 1, this.ratingPage + 1);
+        }, { disabled: this.ratingPage >= totalPages - 1, fontSize: 10.5 });
       } else {
         const targetRound = rd ? rd.roundCompleted : st.currentRound - 1;
         const fixtures = st.fixtures.filter((f) => f.round === targetRound && f.played);
-        fixtures.slice(0, 4).forEach((fx, i) => {
+        const fPageSize = 8;
+        const fPages = Math.max(1, Math.ceil(fixtures.length / fPageSize));
+        if (this.resultsPage >= fPages) this.resultsPage = fPages - 1;
+        const fSlice = fixtures.slice(this.resultsPage * fPageSize, (this.resultsPage + 1) * fPageSize);
+        fSlice.forEach((fx, i) => {
           const col = i % 2;
           const row = Math.floor(i / 2);
-          const bx = 36 + col * 612;
-          const by = 414 + row * 94;
+          const bx = 666 + col * 296;
+          const by = 342 + row * 58;
           const h = st.clubs.find((c) => c.id === fx.homeClubId);
           const a = st.clubs.find((c) => c.id === fx.awayClubId);
           const hasUser = h.isUser || a.isUser;
-          drawRoundRect(ctx2, bx, by, 592, 78, 8, THEME.BG_CARD, hasUser ? THEME.GOLD : THEME.BORDER, hasUser ? 1.5 : 1);
-          drawText(ctx2, h.name, bx + 220, by + 39, { size: 15, bold: h.isUser, align: "right", color: h.isUser ? THEME.GOLD_LIGHT : THEME.TX1 });
-          drawText(ctx2, `${fx.homeGoals} : ${fx.awayGoals}`, bx + 296, by + 39, { size: 20, bold: true, align: "center", mono: true, color: THEME.GOLD_LIGHT });
-          drawText(ctx2, a.name, bx + 372, by + 39, { size: 15, bold: a.isUser, align: "left", color: a.isUser ? THEME.GOLD_LIGHT : THEME.TX1 });
+          drawRoundRect(ctx2, bx, by, 286, 50, 7, THEME.BG_CARD, hasUser ? THEME.GOLD : THEME.BORDER, hasUser ? 1.5 : 1);
+          drawText(ctx2, fitText(ctx2, h.name, 96, 11.5, h.isUser), bx + 114, by + 25, {
+            size: 11.5,
+            bold: h.isUser,
+            align: "right",
+            color: h.isUser ? THEME.GOLD_LIGHT : THEME.TX1
+          });
+          drawText(ctx2, `${fx.homeGoals}:${fx.awayGoals}`, bx + 143, by + 25, {
+            size: 14,
+            bold: true,
+            align: "center",
+            mono: true,
+            color: THEME.GOLD_LIGHT
+          });
+          drawText(ctx2, fitText(ctx2, a.name, 96, 11.5, a.isUser), bx + 172, by + 25, {
+            size: 11.5,
+            bold: a.isUser,
+            align: "left",
+            color: a.isUser ? THEME.GOLD_LIGHT : THEME.TX1
+          });
         });
+        if (fPages > 1) {
+          drawButton(ctx2, hits, 666, 584, 86, 26, "\u25C0 \u4E0A\u9875", () => {
+            this.resultsPage = Math.max(0, this.resultsPage - 1);
+          }, { disabled: this.resultsPage === 0, fontSize: 10.5 });
+          drawText(ctx2, `\u7B2C ${this.resultsPage + 1} / ${fPages} \u9875 (\u5171 ${fixtures.length} \u573A)`, 957, 597, {
+            size: 10.5,
+            color: THEME.TX2,
+            align: "center"
+          });
+          drawButton(ctx2, hits, 1162, 584, 86, 26, "\u4E0B\u9875 \u25B6", () => {
+            this.resultsPage = Math.min(fPages - 1, this.resultsPage + 1);
+          }, { disabled: this.resultsPage >= fPages - 1, fontSize: 10.5 });
+        }
       }
       ctx2.restore();
-      drawButton(
-        ctx2,
-        hits,
-        440,
-        642,
-        400,
-        54,
-        hasPendingReward ? "\u4E0B\u4E00\u6B65\uFF1A\u9886\u53D6\u8D5B\u540E\u8089\u9E3D\u5956\u52B1 (3\u90091) \u25B6" : rd ? "\u4E0B\u4E00\u6B65\uFF1A\u8D5B\u540E\u8865\u5F3A (\u9886\u8BCD\u6761 & \u6362\u65B0\u63F4) \u25B6" : "\u7EE7\u7EED\u4E0B\u4E00\u8F6E \xB7 \u8FD4\u56DE\u95E8\u6237\u9996\u9875 \u25B6",
-        goNext,
-        { variant: "gold", fontSize: 16 }
-      );
-      if (hasPendingReward || rd) {
-        drawFoilShimmer(ctx2, 440, 642, 400, 54, this.animClock * 1.15, "rgba(254, 240, 138, 0.30)");
+      drawChamferPanel(ctx2, 16, 632, 824, 74, 10, "rgba(13, 21, 38, 0.96)", THEME.BORDER_GOLD, 1.2);
+      const userWonNow = m ? (m.homeName === club.name ? m.homeScore : m.awayScore) > (m.homeName === club.name ? m.awayScore : m.homeScore) : true;
+      const rwThumb = AssetLoader.get(userWonNow ? "reward_win" : "reward_draw");
+      if (rwThumb && typeof ctx2.drawImage === "function") {
+        ctx2.save();
+        ctx2.beginPath();
+        ctx2.roundRect(26, 640, 92, 58, 6);
+        ctx2.clip();
+        ctx2.drawImage(rwThumb, 26, 640, 92, 58);
+        ctx2.restore();
+      } else {
+        drawRewardIllustration(ctx2, userWonNow, 26, 640, 92, 58);
       }
+      const rewardTitle = hasPendingCardUnlock ? "\u65B0\u6D41\u6D3E\u6218\u672F\u5361\u89E3\u9501\u5F85\u9886\u53D6" : hasPendingReward ? "\u8D5B\u540E 3 \u9009 1 \u6218\u5229\u54C1\u5DF2\u5C31\u7EEA" : rd ? "\u4E2D\u671F Re-Draft \u8865\u5F3A\u5DF2\u5F00\u542F" : "\u672C\u8F6E\u6536\u76CA\u5DF2\u7ED3\u7B97\u5165\u8D26";
+      drawText(ctx2, rewardTitle, 130, 653, { size: 13.5, bold: true, color: THEME.GOLD_LIGHT });
+      drawText(
+        ctx2,
+        hasPendingReward ? "\u8D5B\u5B63\u5723\u7269 \xB7 \u624B\u724C\u9644\u9B54 \xB7 \u661F\u76D8\u70B9\u6570\u7B49\u4F60\u6311\u9009" : "\u4FF1\u4E50\u90E8\u8D44\u91D1\u4E0E\u79EF\u5206\u699C\u6392\u540D\u5DF2\u5B9E\u65F6\u66F4\u65B0",
+        130,
+        673,
+        { size: 10.5, color: THEME.TX2 }
+      );
+      const popAlpha = Math.max(0.1, Math.min(1, pRewards));
+      ctx2.save();
+      ctx2.globalAlpha = popAlpha;
+      const fundsEarned = summary?.fundsEarned ?? 0;
+      const metaGain = summary?.metaGain ?? 0;
+      const standingsNow = league.getStandings();
+      const curRank = summary?.rankAfter ?? standingsNow.findIndex((r) => r.isUser) + 1;
+      const prevRank = summary?.rankBefore ?? curRank;
+      const rankDelta = prevRank - curRank;
+      const countFunds = Math.round(fundsEarned * Math.min(1, pRewards));
+      drawRoundRect(ctx2, 412, 644, 136, 50, 8, "rgba(20, 83, 45, 0.32)", THEME.GREEN, 1.1);
+      drawText(ctx2, "\u672C\u573A\u8D44\u91D1\u5165\u8D26", 480, 658, { size: 9.5, color: "#86EFAC", align: "center" });
+      drawText(ctx2, `+\xA5${countFunds}\u4E07`, 480, 678, { size: 14.5, bold: true, color: THEME.GREEN, align: "center", mono: true });
+      drawRoundRect(ctx2, 556, 644, 114, 50, 8, "rgba(30, 58, 95, 0.40)", "#38BDF8", 1.1);
+      drawText(ctx2, "\u661F\u76D8\u70B9\u6570", 613, 658, { size: 9.5, color: "#7DD3FC", align: "center" });
+      drawText(ctx2, `+${metaGain} pt`, 613, 678, { size: 14.5, bold: true, color: "#38BDF8", align: "center", mono: true });
+      const rankCol = rankDelta > 0 ? THEME.GREEN : rankDelta < 0 ? THEME.RED_LIGHT : THEME.GOLD_LIGHT;
+      const rankSub = rankDelta > 0 ? `\u25B2 \u5347 ${rankDelta} \u4F4D` : rankDelta < 0 ? `\u25BC \u964D ${Math.abs(rankDelta)} \u4F4D` : "\u540D\u6B21\u7A33\u56FA";
+      drawRoundRect(ctx2, 678, 644, 150, 50, 8, "rgba(120, 53, 15, 0.28)", rankCol, 1.1);
+      drawText(ctx2, `\u7B2C ${curRank} \u540D`, 753, 658, { size: 13, bold: true, color: THEME.GOLD_LIGHT, align: "center" });
+      drawText(ctx2, rankSub, 753, 678, { size: 10.5, bold: true, color: rankCol, align: "center" });
+      ctx2.restore();
+      drawButton(ctx2, hits, 856, 632, 408, 74, nextActionLabel, goNext, { variant: "gold", fontSize: 16.5 });
+      drawFoilShimmer(ctx2, 856, 632, 408, 74, this.animClock * 1.15, "rgba(254, 240, 138, 0.30)");
     }
     renderCardUnlockView(ctx2, hits, league, onContinue, onSave) {
       const st = league.getState();
@@ -40100,7 +40433,7 @@
           ctx2,
           `${summary.tierName ?? "\u8054\u8D5B"} \u7B2C ${summary.finalRank} \u540D \xB7 ${summary.points}\u5206 (${summary.gf}/${summary.ga}) \xB7 ${promoText} \xB7 +${summary.metaPointsEarned}pt`,
           154,
-          92,
+          88,
           { size: 12, color: summary.promotionStatus === "promoted" ? THEME.GREEN : summary.promotionStatus === "relegated" ? THEME.RED_LIGHT : THEME.TX2 }
         );
       }
@@ -40149,15 +40482,17 @@
       const summary = st.lastSummary;
       const isChamp = summary?.isChampion ?? false;
       const isPromo = summary?.promotionStatus === "promoted";
-      drawChamferPanel(ctx2, 64, 118, 460, 486, 12, "rgba(14, 22, 40, 0.88)", THEME.BORDER_GOLD, 1.2);
+      const panelTop = summary?.retiredLegend ? 150 : 122;
+      const panelH = summary?.retiredLegend ? 454 : 482;
+      drawChamferPanel(ctx2, 64, panelTop, 460, panelH, 12, "rgba(14, 22, 40, 0.88)", THEME.BORDER_GOLD, 1.2);
       const celebrateArt = AssetLoader.get("bg_season_ceremony") ?? AssetLoader.get("bg_champion");
       if (celebrateArt && typeof ctx2.drawImage === "function") {
         ctx2.save();
         ctx2.beginPath();
-        ctx2.rect(66, 120, 456, 108);
+        ctx2.rect(66, panelTop + 2, 456, 92);
         ctx2.clip();
         ctx2.globalAlpha = 0.55;
-        ctx2.drawImage(celebrateArt, 66, 110, 456, 148);
+        ctx2.drawImage(celebrateArt, 66, panelTop - 6, 456, 132);
         ctx2.restore();
       }
       const grandCup = AssetLoader.get("trophy_grand_cup");
@@ -40166,15 +40501,15 @@
         const cyOff = (1 - cupEnter) * 18;
         ctx2.save();
         ctx2.globalAlpha = 0.92;
-        ctx2.drawImage(grandCup, 426, 124 + cyOff, 86, 86);
+        ctx2.drawImage(grandCup, 434, panelTop + 6 + cyOff, 76, 76);
         ctx2.restore();
       }
-      drawText(ctx2, "\u8D5B\u5B63\u4E2A\u4EBA\u8363\u8A89\u6BBF\u5802 \xB7 SEASON AWARDS", 84, 144, { size: 14, bold: true, color: THEME.GOLD_LIGHT });
+      drawText(ctx2, "\u8D5B\u5B63\u4E2A\u4EBA\u8363\u8A89\u6BBF\u5802 \xB7 SEASON AWARDS", 84, panelTop + 26, { size: 14, bold: true, color: THEME.GOLD_LIGHT });
       drawText(
         ctx2,
         isChamp ? "\u51A0\u519B\u8363\u8000\u52A0\u5195\uFF01\u5168\u961F\u8F7D\u5165\u4FF1\u4E50\u90E8\u53F2\u518C" : isPromo ? "\u6210\u529F\u51B2\u7EA7\uFF01\u4E0B\u8D5B\u5B63\u8FCE\u6218\u66F4\u5F3A\u5BF9\u624B" : "\u8D5B\u5B63\u5F81\u7A0B\u5706\u6EE1\u6536\u5B98\uFF0C\u603B\u7ED3\u5F97\u5931\u518D\u51FA\u53D1",
         84,
-        168,
+        panelTop + 50,
         { size: 11.5, color: isChamp ? THEME.GOLD_LIGHT : isPromo ? THEME.GREEN : "#93C5FD" }
       );
       const awards = [
@@ -40209,19 +40544,20 @@
       ];
       awards.forEach((aw, i) => {
         const enterP = easeOutBack(Math.max(0, Math.min(1, (this.enterTimer - i * 0.08) / 0.35)));
-        const ay = 224 + i * 92 + (1 - enterP) * 18;
+        const ay = panelTop + 96 + i * 86 + (1 - enterP) * 18;
         ctx2.save();
         ctx2.globalAlpha = Math.max(0.1, enterP);
-        drawRoundRect(ctx2, 82, ay, 424, 78, 8, "rgba(14, 22, 40, 0.9)", aw.color + "88", 1.2);
+        drawRoundRect(ctx2, 82, ay, 424, 74, 8, "rgba(14, 22, 40, 0.9)", aw.color + "88", 1.2);
         drawBadge(ctx2, 96, ay + 12, 84, 22, aw.badge, "#1E293B", aw.color);
         drawText(ctx2, aw.title, 192, ay + 23, { size: 15, bold: true, color: THEME.TX1 });
         drawText(ctx2, aw.sub, 96, ay + 54, { size: 11.5, color: THEME.TX2 });
         drawText(ctx2, aw.value, 490, ay + 39, { size: 18, bold: true, color: aw.color, align: "right", mono: true });
         ctx2.restore();
       });
-      drawChamferPanel(ctx2, 544, 118, 672, 128, 12, THEME.BG_CARD, THEME.BORDER_GOLD, 1.2);
-      drawText(ctx2, "Meta \u6559\u7EC3\u70B9\u6570\u7ED3\u7B97\u660E\u7EC6", 564, 138, { size: 13.5, bold: true, color: THEME.GOLD_LIGHT });
-      drawText(ctx2, `\u5F53\u524D\u603B\u8BA1\uFF1A${st.metaPointsTotal} pt`, 1196, 138, { size: 14, bold: true, color: THEME.GREEN, align: "right", mono: true });
+      const metaTop = summary?.retiredLegend ? 150 : 122;
+      drawChamferPanel(ctx2, 544, metaTop, 672, 102, 12, THEME.BG_CARD, THEME.BORDER_GOLD, 1.2);
+      drawText(ctx2, "Meta \u6559\u7EC3\u70B9\u6570\u7ED3\u7B97\u660E\u7EC6", 564, metaTop + 18, { size: 13.5, bold: true, color: THEME.GOLD_LIGHT });
+      drawText(ctx2, `\u5F53\u524D\u603B\u8BA1\uFF1A${st.metaPointsTotal} pt`, 1196, metaTop + 18, { size: 14, bold: true, color: THEME.GREEN, align: "right", mono: true });
       const bd = summary?.metaBreakdown;
       const items = [
         ["\u6392\u540D\u57FA\u7840\u5956\u52B1", `+${bd?.rankBase ?? summary?.metaPointsEarned ?? 0} pt`, THEME.TX1],
@@ -40231,9 +40567,9 @@
       ];
       items.forEach(([lbl, val, col], idx) => {
         const ix = 564 + idx * 160;
-        drawRoundRect(ctx2, ix, 158, 148, 74, 8, "rgba(14, 22, 40, 0.85)", idx === 3 ? THEME.GOLD_LIGHT : THEME.BORDER);
-        drawText(ctx2, lbl, ix + 74, 180, { size: 10.5, color: THEME.TX2, align: "center" });
-        drawText(ctx2, val, ix + 74, 210, { size: 17, bold: true, color: col, align: "center", mono: true });
+        drawRoundRect(ctx2, ix, metaTop + 34, 148, 60, 8, "rgba(14, 22, 40, 0.85)", idx === 3 ? THEME.GOLD_LIGHT : THEME.BORDER);
+        drawText(ctx2, lbl, ix + 74, metaTop + 51, { size: 10.5, color: THEME.TX2, align: "center" });
+        drawText(ctx2, val, ix + 74, metaTop + 76, { size: 16.5, bold: true, color: col, align: "center", mono: true });
       });
       const memories = summary?.memories ?? [];
       if (memories.length > 0) {
@@ -40868,14 +41204,15 @@
         const botY2 = y + h - 8;
         drawStatMicro(ctx2, "stat_fam", `${opts.fam}%`, x + 5, botY2, {
           iconSize: 9.5,
-          fontSize: 9.5,
+          fontSize: IS_MOBILE ? 10 : 9.5,
           iconColor: THEME.TX3,
           valueColor: famCol,
           gap: 2
         });
-        drawMiniBar(ctx2, x + w - 46, botY2 - 2, 20, 3.5, fit / 100, fit < 60 ? "#FBBF24" : THEME.GREEN);
+        drawMiniBar(ctx2, x + w - (IS_MOBILE ? 60 : 46), botY2 - 2, IS_MOBILE ? 22 : 20, 3.5, fit / 100, fit < 60 ? "#FBBF24" : THEME.GREEN);
         drawText(ctx2, `${fit}%`, x + w - 5, botY2, {
-          size: 9,
+          size: IS_MOBILE ? 10 : 9,
+          rawSize: IS_MOBILE,
           color: fit < 60 ? "#FBBF24" : THEME.TX2,
           align: "right",
           mono: true
@@ -40885,11 +41222,11 @@
       const roleW = Math.min(50, Math.max(34, opts.roleLabel.length * 8.5 + 10));
       drawBadge(ctx2, x + 8, y + 6, roleW, 16, opts.roleLabel, opts.roleBg, opts.roleFg);
       if (opts.statusBadge) {
-        drawBadge(ctx2, x + w - 36, y + 6, 28, 16, opts.statusBadge.text, opts.statusBadge.bg, opts.statusBadge.fg);
+        drawBadge(ctx2, x + w - (IS_MOBILE ? 42 : 36), y + 6, IS_MOBILE ? 34 : 28, IS_MOBILE ? 17 : 16, opts.statusBadge.text, opts.statusBadge.bg, opts.statusBadge.fg);
       } else if (opts.isCaptain) {
         drawBadge(ctx2, x + w - 24, y + 6, 16, 16, "C", "#FACC15", "#080C14");
       }
-      const caRight = opts.statusBadge ? x + w - 40 : opts.isCaptain ? x + w - 27 : x + w - 8;
+      const caRight = opts.statusBadge ? x + w - (IS_MOBILE ? 46 : 40) : opts.isCaptain ? x + w - 27 : x + w - 8;
       drawText(ctx2, `${player.ca}/${paVal}`, caRight, y + 14, {
         size: 12,
         bold: true,
@@ -41454,12 +41791,12 @@
           this.benchPage = 0;
         }, { active: this.benchFilter === fk, fontSize: 10.5 });
       });
-      drawButton(ctx2, hits, 1148, 180, 98, 24, "\u26A1 \u6700\u4F73\u9996\u53D1", () => {
+      drawButton(ctx2, hits, 1142, 179, 104, 26, "\u26A1 \u6700\u4F73\u9996\u53D1", () => {
         league.updateUserTactics(club.formation, club.style);
         this.selectedStarterIdx = null;
         this.selectedBenchPlayerId = null;
         actions.onSave();
-      }, { variant: "ghost", fontSize: 10.5 });
+      }, { variant: "ghost", fontSize: IS_MOBILE ? 11 : 10.5 });
       const pageSize = 12;
       const totalPages = Math.max(1, Math.ceil(benchSquad.length / pageSize));
       if (this.benchPage >= totalPages) this.benchPage = totalPages - 1;
@@ -42192,6 +42529,320 @@
     }
   };
 
+  // packages/game-ui/src/AstrolabeVisuals.ts
+  var ASTROLABE_STYLE_GLYPH = {
+    tiki_taka: "tiki",
+    gegenpress: "press",
+    wing_play: "wing",
+    counter: "counter",
+    park_bus: "bus",
+    balanced: "balanced"
+  };
+  var ASTROLABE_SYSTEM_GLYPH = {
+    "4-back": "sys_4back",
+    "3-back": "sys_3back",
+    "5-back": "sys_5back"
+  };
+  var ASTROLABE_ZONE_COLOR = {
+    ATT: "#F43F5E",
+    MID: "#38BDF8",
+    DEF: "#22C55E"
+  };
+  var ASTROLABE_ZONE_LABEL = {
+    ATT: "\u524D\u573A",
+    MID: "\u4E2D\u573A",
+    DEF: "\u540E\u573A"
+  };
+  function getAstrolabePassiveGlyph(p) {
+    if (p.tier === "origin") {
+      if (p.style) return ASTROLABE_STYLE_GLYPH[p.style];
+      if (p.system) return ASTROLABE_SYSTEM_GLYPH[p.system];
+    }
+    const sd = p.statDelta;
+    const tm = p.tacticalMod;
+    if (sd?.shooting || tm?.longShotBias || tm?.boxCrashBonus) return "stat_shoot";
+    if (sd?.passing || sd?.composure || tm?.shortPassBias || tm?.throughPassBias) return "stat_pass";
+    if (sd?.defending || sd?.goalkeeping || p.blockBonus || p.oppShotXgPenalty || p.startingShields || (tm?.lineShift ?? 0) < 0) {
+      return "stat_def";
+    }
+    if (sd?.pace || tm?.crossBias || tm?.overlapDepthBonus || tm?.dualOverlap || tm?.pressDistBonus) return "stat_pace";
+    return "stat_fit";
+  }
+  function drawAstrolabeBackdropAndRings(ctx2, cx, cy, baseR, rect, animTime, rotFlashTimer, rotFlashRing, opts) {
+    const constImg = AssetLoader.get("bg_skill_constellation");
+    if (constImg && typeof ctx2.drawImage === "function") {
+      const iw = constImg.naturalWidth || constImg.width || 1024;
+      const ih = constImg.naturalHeight || constImg.height || 572;
+      const cover = Math.max(rect.w / iw, rect.h / ih);
+      ctx2.save();
+      ctx2.globalAlpha = opts?.backdropAlpha ?? 0.46;
+      ctx2.drawImage(
+        constImg,
+        rect.x + rect.w / 2 - iw * cover / 2,
+        rect.y + rect.h / 2 - ih * cover / 2,
+        iw * cover,
+        ih * cover
+      );
+      ctx2.restore();
+    }
+    const ringRadii = [0.2, 0.3, 0.4, 0.5, 0.6, 0.78, 0.9, 0.99];
+    ringRadii.forEach((ratio, idx) => {
+      const isFusionRing = idx === 3;
+      ctx2.strokeStyle = isFusionRing ? "rgba(250, 204, 21, 0.42)" : "rgba(148, 163, 184, 0.16)";
+      ctx2.lineWidth = isFusionRing ? 1.9 : 1;
+      if (idx === 1 || idx === 4 || idx === 5) ctx2.setLineDash([3, 6]);
+      else ctx2.setLineDash([]);
+      ctx2.beginPath();
+      ctx2.arc(cx, cy, baseR * ratio, 0, Math.PI * 2);
+      ctx2.stroke();
+    });
+    ctx2.setLineDash([]);
+    if (rotFlashTimer > 0) {
+      const p = 1 - Math.min(1, rotFlashTimer / 0.65);
+      const alpha = Math.max(0, (1 - p) * 0.9);
+      const pulseCol = rotFlashRing === "outer" ? "#38BDF8" : "#F59E0B";
+      ctx2.save();
+      ctx2.strokeStyle = `rgba(250, 204, 21, ${alpha.toFixed(3)})`;
+      ctx2.lineWidth = 3.8 * (1 - p * 0.55);
+      if (!IS_MOBILE) {
+        ctx2.shadowColor = THEME.GOLD_LIGHT;
+        ctx2.shadowBlur = 18;
+      }
+      ctx2.beginPath();
+      ctx2.arc(cx, cy, baseR * (0.48 + p * 0.15), 0, Math.PI * 2);
+      ctx2.stroke();
+      ctx2.strokeStyle = pulseCol;
+      ctx2.globalAlpha = alpha * 0.75;
+      ctx2.lineWidth = 2.6;
+      const ringR = rotFlashRing === "outer" ? 0.78 : 0.35;
+      ctx2.beginPath();
+      ctx2.arc(cx, cy, baseR * ringR, 0, Math.PI * 2);
+      ctx2.stroke();
+      const count = opts?.topArchOnly ? 1 : 6;
+      for (let idx = 0; idx < count; idx++) {
+        const ang = -Math.PI / 2 + idx * Math.PI / 3;
+        const fx = cx + Math.cos(ang) * (baseR * 0.5);
+        const fy = cy + Math.sin(ang) * (baseR * 0.5);
+        const flareR = (18 + p * 28) * Math.max(0.85, baseR / 280);
+        const grad = ctx2.createRadialGradient(fx, fy, 2, fx, fy, flareR);
+        grad.addColorStop(0, `rgba(254, 240, 138, ${alpha.toFixed(3)})`);
+        grad.addColorStop(0.45, `rgba(250, 204, 21, ${(alpha * 0.45).toFixed(3)})`);
+        grad.addColorStop(1, "rgba(250, 204, 21, 0)");
+        ctx2.fillStyle = grad;
+        ctx2.beginPath();
+        ctx2.arc(fx, fy, flareR, 0, Math.PI * 2);
+        ctx2.fill();
+      }
+      ctx2.restore();
+    }
+  }
+  function drawAstrolabeEdgeLine(ctx2, ax, ay, bx, by, bothUnlocked, reachable, color, animTime, isBridge = false, bounds) {
+    if (bounds) {
+      if (Math.max(ax, bx) < bounds.x - 20 || Math.min(ax, bx) > bounds.x + bounds.w + 20 || Math.max(ay, by) < bounds.y - 20 || Math.min(ay, by) > bounds.y + bounds.h + 20) {
+        return;
+      }
+    }
+    ctx2.save();
+    if (bothUnlocked) {
+      ctx2.strokeStyle = color;
+      ctx2.lineWidth = isBridge ? 2.6 : 1.9;
+      if (!IS_MOBILE) {
+        ctx2.shadowColor = color;
+        ctx2.shadowBlur = isBridge ? 10 : 6;
+      }
+      ctx2.beginPath();
+      ctx2.moveTo(ax, ay);
+      ctx2.lineTo(bx, by);
+      ctx2.stroke();
+      const t = (animTime * 0.48 + (ax + ay) % 100 * 0.01) % 1;
+      const sx = ax + (bx - ax) * t;
+      const sy = ay + (by - ay) * t;
+      ctx2.fillStyle = "#FEF08A";
+      if (!IS_MOBILE) ctx2.shadowBlur = 4;
+      ctx2.beginPath();
+      ctx2.arc(sx, sy, isBridge ? 2.4 : 1.7, 0, Math.PI * 2);
+      ctx2.fill();
+    } else if (reachable) {
+      ctx2.strokeStyle = isBridge ? "rgba(250, 204, 21, 0.78)" : "rgba(56, 189, 248, 0.72)";
+      ctx2.lineWidth = isBridge ? 2 : 1.45;
+      ctx2.setLineDash([4, 4]);
+      ctx2.lineDashOffset = -animTime * 16;
+      ctx2.beginPath();
+      ctx2.moveTo(ax, ay);
+      ctx2.lineTo(bx, by);
+      ctx2.stroke();
+      ctx2.setLineDash([]);
+    } else {
+      ctx2.strokeStyle = isBridge ? "rgba(250, 204, 21, 0.24)" : "rgba(100, 116, 139, 0.28)";
+      ctx2.lineWidth = isBridge ? 1.3 : 1;
+      ctx2.beginPath();
+      ctx2.moveTo(ax, ay);
+      ctx2.lineTo(bx, by);
+      ctx2.stroke();
+    }
+    ctx2.restore();
+  }
+  function drawAstrolabeCircleNode(ctx2, x, y, r, glyph, color, unlocked, reachable, selected, animTime, isOrigin = false) {
+    const rotSlow = animTime * 0.55;
+    ctx2.save();
+    if (!IS_MOBILE && (unlocked || reachable || selected)) {
+      ctx2.shadowColor = selected ? "#FFFFFF" : unlocked ? color : "#38BDF8";
+      ctx2.shadowBlur = selected ? 14 : unlocked ? 10 : 6;
+    }
+    ctx2.fillStyle = unlocked ? "#16213A" : reachable ? "#0F1D33" : "#090F1D";
+    ctx2.beginPath();
+    ctx2.arc(x, y, r, 0, Math.PI * 2);
+    ctx2.fill();
+    ctx2.lineWidth = selected ? 2.4 : isOrigin ? 2.2 : unlocked ? 1.8 : 1.2;
+    ctx2.strokeStyle = selected ? "#FFFFFF" : unlocked ? color : reachable ? "#38BDF8" : "#334155";
+    ctx2.stroke();
+    if (isOrigin && (unlocked || reachable)) {
+      ctx2.strokeStyle = unlocked ? THEME.GOLD_LIGHT : "rgba(56,189,248,0.65)";
+      ctx2.lineWidth = 1.15;
+      ctx2.setLineDash([4, 4]);
+      ctx2.beginPath();
+      ctx2.arc(x, y, r + 3.5, rotSlow, rotSlow + Math.PI * 1.5);
+      ctx2.stroke();
+      ctx2.setLineDash([]);
+    }
+    drawSkillGlyph(
+      ctx2,
+      glyph,
+      x,
+      y,
+      r * (isOrigin ? 1.42 : 1.26),
+      unlocked ? color : reachable ? "#7DD3FC" : "#64748B",
+      THEME.GOLD_LIGHT,
+      { dim: !unlocked && !reachable }
+    );
+    ctx2.restore();
+  }
+  function drawAstrolabeHexFusionNode(ctx2, x, y, r, unlocked, reachable, selected, animTime, label) {
+    const rotSlow = animTime * 0.55;
+    ctx2.save();
+    if (!IS_MOBILE && (unlocked || reachable || selected)) {
+      ctx2.shadowColor = selected ? "#FFFFFF" : THEME.GOLD_LIGHT;
+      ctx2.shadowBlur = unlocked ? 18 : 12;
+    }
+    ctx2.fillStyle = unlocked ? "#422006" : reachable ? "#1C1917" : "#0F172A";
+    ctx2.beginPath();
+    for (let h = 0; h < 6; h++) {
+      const ha = h * Math.PI / 3 - Math.PI / 6;
+      const hx = x + Math.cos(ha) * r;
+      const hy = y + Math.sin(ha) * r;
+      if (h === 0) ctx2.moveTo(hx, hy);
+      else ctx2.lineTo(hx, hy);
+    }
+    ctx2.closePath();
+    ctx2.fill();
+    ctx2.lineWidth = selected ? 2.6 : unlocked ? 2.4 : 1.6;
+    ctx2.strokeStyle = selected ? "#FFFFFF" : unlocked ? "#FEF08A" : reachable ? "#F59E0B" : "#64748B";
+    ctx2.stroke();
+    if (unlocked || reachable) {
+      ctx2.strokeStyle = unlocked ? "rgba(254,240,138,0.72)" : "rgba(245,158,11,0.55)";
+      ctx2.lineWidth = 1.15;
+      ctx2.setLineDash([4, 4]);
+      ctx2.beginPath();
+      ctx2.arc(x, y, r + 4, -rotSlow, -rotSlow + Math.PI * 1.45);
+      ctx2.stroke();
+      ctx2.setLineDash([]);
+    }
+    drawSkillGlyph(ctx2, "fusion", x, y, r * 1.38, unlocked ? "#FEF08A" : "#F59E0B", THEME.GOLD_LIGHT, {
+      dim: !unlocked && !reachable
+    });
+    ctx2.restore();
+    if (label) {
+      drawText(ctx2, label, x, y + r + 11, {
+        size: 10.5,
+        bold: true,
+        color: unlocked ? THEME.GOLD_LIGHT : "#FDE68A",
+        align: "center"
+      });
+    }
+  }
+  function drawAstrolabeDiamondSkillNode(ctx2, x, y, dr, glyph, unlocked, reachable, equipped, selected, label) {
+    ctx2.save();
+    if (!IS_MOBILE && (selected || equipped || unlocked)) {
+      ctx2.shadowColor = selected ? "#FFFFFF" : equipped ? "#4ADE80" : "#38BDF8";
+      ctx2.shadowBlur = selected ? 14 : 10;
+    }
+    ctx2.fillStyle = equipped ? "#0C4A6E" : unlocked ? "#172554" : reachable ? "#0E223A" : "#0B111F";
+    ctx2.beginPath();
+    ctx2.moveTo(x, y - dr);
+    ctx2.lineTo(x + dr, y);
+    ctx2.lineTo(x, y + dr);
+    ctx2.lineTo(x - dr, y);
+    ctx2.closePath();
+    ctx2.fill();
+    ctx2.lineWidth = selected ? 2.4 : equipped ? 2.1 : unlocked ? 1.8 : 1.2;
+    ctx2.strokeStyle = selected ? "#FFFFFF" : equipped ? "#4ADE80" : unlocked ? "#38BDF8" : reachable ? "#7DD3FC" : "#334155";
+    ctx2.stroke();
+    const idr = dr * 0.72;
+    ctx2.strokeStyle = equipped ? "rgba(74,222,128,0.55)" : unlocked ? "rgba(250,204,21,0.45)" : "rgba(100,116,139,0.22)";
+    ctx2.lineWidth = 0.9;
+    ctx2.beginPath();
+    ctx2.moveTo(x, y - idr);
+    ctx2.lineTo(x + idr, y);
+    ctx2.lineTo(x, y + idr);
+    ctx2.lineTo(x - idr, y);
+    ctx2.closePath();
+    ctx2.stroke();
+    drawSkillGlyph(ctx2, glyph, x, y, dr * 1.12, unlocked ? "#7DD3FC" : "#64748B", THEME.GOLD_LIGHT, {
+      dim: !unlocked && !reachable
+    });
+    ctx2.restore();
+    if (label) {
+      drawText(ctx2, label, x, y + dr + 9, {
+        size: 9,
+        bold: equipped || selected,
+        color: equipped ? "#4ADE80" : unlocked ? "#7DD3FC" : THEME.TX3,
+        align: "center"
+      });
+    }
+  }
+  function drawAstrolabeDirectiveNode(ctx2, cx, cy, x, y, nr, tendency, zone, unlocked, reachable, equipped, selected, sats, label) {
+    const subAngle = Math.atan2(y - cy, x - cx);
+    ctx2.save();
+    if (!IS_MOBILE && (selected || equipped || unlocked)) {
+      ctx2.shadowColor = selected ? "#FFFFFF" : equipped ? "#4ADE80" : ASTROLABE_ZONE_COLOR[zone];
+      ctx2.shadowBlur = selected ? 12 : equipped ? 9 : 5;
+    }
+    ctx2.fillStyle = unlocked ? equipped ? "#14532D" : "#1E293B" : reachable ? "#101C32" : "#0B111F";
+    ctx2.beginPath();
+    ctx2.arc(x, y, nr, 0, Math.PI * 2);
+    ctx2.fill();
+    ctx2.lineWidth = selected ? 2.4 : equipped ? 2.1 : unlocked ? 1.6 : 1.1;
+    ctx2.strokeStyle = selected ? "#FFFFFF" : equipped ? "#4ADE80" : unlocked ? ASTROLABE_ZONE_COLOR[zone] : reachable ? "#38BDF8" : "#334155";
+    ctx2.stroke();
+    drawIcon(
+      ctx2,
+      tendency === "ATK" ? "sword" : "shield",
+      x,
+      y,
+      nr * 1.15,
+      unlocked ? equipped ? "#86EFAC" : ASTROLABE_ZONE_COLOR[zone] : reachable ? "#7DD3FC" : "#475569"
+    );
+    ["A", "B", "C"].forEach((sk, si) => {
+      const sa = subAngle - 0.55 + si * 0.55;
+      const sx = x + Math.cos(sa) * (nr + 3.4);
+      const sy = y + Math.sin(sa) * (nr + 3.4);
+      const lit = sats.includes(sk);
+      ctx2.fillStyle = lit ? sk === "C" ? THEME.GOLD_LIGHT : sk === "B" ? "#38BDF8" : "#4ADE80" : "rgba(100,116,139,0.35)";
+      ctx2.beginPath();
+      ctx2.arc(sx, sy, lit ? 2.1 : 1.2, 0, Math.PI * 2);
+      ctx2.fill();
+    });
+    ctx2.restore();
+    if (label) {
+      drawText(ctx2, label, x, y + nr + 8, {
+        size: 8.5,
+        bold: selected || equipped,
+        color: equipped ? "#4ADE80" : unlocked ? THEME.TX1 : THEME.TX3,
+        align: "center"
+      });
+    }
+  }
+
   // packages/game-ui/src/screens/TitleScreen.ts
   var HOME_PRIMARY_PALETTE = ["#DC2626", "#2563EB", "#059669", "#EA580C", "#7C3AED", "#0284C7"];
   var HOME_SECONDARY_PALETTE = ["#FACC15", "#F8FAFC", "#1E293B", "#38BDF8", "#F59E0B"];
@@ -42199,13 +42850,32 @@
   var AWAY_SECONDARY_PALETTE = ["#0F172A", "#DC2626", "#2563EB", "#FACC15", "#F8FAFC"];
   var SYS_TABS = ["4-back", "3-back", "5-back"];
   var STYLE_LIST2 = ["tiki_taka", "gegenpress", "balanced", "wing_play", "counter", "park_bus"];
-  var STYLE_HINTS = {
-    balanced: "\u653B\u5B88\u5E73\u8861 \xB7 \u4E2D\u4F4D\u9632\u7EBF\uFF0C\u9002\u5408\u901A\u7528\u9635\u5BB9\u7A33\u624E\u7A33\u6253",
-    tiki_taka: "\u4F20\u63A7\u6E17\u900F \xB7 \u77ED\u4F20\u914D\u5408\u4E0E\u9AD8\u4F4D\u63A7\u7403\uFF0C\u538B\u5236\u5BF9\u624B\u6301\u7403\u65F6\u95F4",
-    gegenpress: "\u9AD8\u4F4D\u903C\u62A2 \xB7 \u6781\u9AD8\u9632\u7EBF\u4E0E\u75AF\u72C2\u53CD\u62A2\uFF0C\u8282\u594F\u6700\u5FEB\u4F46\u4F53\u80FD\u6D88\u8017\u5927",
-    counter: "\u5FEB\u901F\u53CD\u51FB \xB7 \u6DF1\u5EA6\u56DE\u6536\u8BF1\u654C\u6DF1\u5165\uFF0C\u65AD\u7403\u540E\u76F4\u585E\u6253\u8EAB\u540E",
-    wing_play: "\u4E24\u7FFC\u9F50\u98DE \xB7 \u62C9\u5F00\u7403\u573A\u5BBD\u5EA6\uFF0C\u8FB9\u8DEF\u7A81\u7834\u4E0E\u4F20\u4E2D\u5236\u9020\u6740\u673A",
-    park_bus: "\u94C1\u6876\u9632\u53CD \xB7 \u6781\u9650\u4F4E\u4F4D\u9632\u5B88\u5BC6\u5EA6\uFF0C\u4E13\u514B\u5F3A\u961F\u5E76\u4F3A\u673A\u5077\u88AD"
+  var STYLE_BASE_RADAR = {
+    // [控球组织, 前场逼抢, 防线稳固, 边路推进, 反击纵深]
+    tiki_taka: [94, 72, 62, 64, 52],
+    gegenpress: [70, 96, 56, 74, 78],
+    wing_play: [66, 68, 60, 96, 72],
+    counter: [46, 54, 78, 72, 96],
+    park_bus: [38, 42, 96, 50, 76],
+    balanced: [76, 72, 76, 72, 72]
+  };
+  var SYSTEM_RADAR_DELTA = {
+    "4-back": [6, 4, 2, 4, 2],
+    "3-back": [4, 10, -8, 12, 6],
+    "5-back": [-8, -6, 14, -4, 10]
+  };
+  var STYLE_PROS_CONS = {
+    tiki_taka: { pros: "\u9635\u5730\u4F20\u5BFC\u6781\u5F3A \xB7 \u808B\u90E8\u6E17\u900F\u7834\u94C1\u6876", cons: "\u9632\u7EBF\u504F\u9AD8 \xB7 \u6015\u9AD8\u4F4D\u75AF\u72C2\u53CD\u62A2" },
+    gegenpress: { pros: "\u62A2\u65AD\u8F6C\u6362\u6781\u5FEB \xB7 \u538B\u8FEB\u4F20\u63A7\u51FA\u7403", cons: "\u4F53\u80FD\u6D88\u8017\u6781\u5927 \xB7 \u8EAB\u540E\u6613\u7559\u7A7A\u5F53" },
+    wing_play: { pros: "\u53CC\u7FFC\u5BBD\u5EA6\u62C9\u6EE1 \xB7 \u4F20\u4E2D\u9020\u89D2\u80FD\u529B\u5F3A", cons: "\u4E2D\u8DEF\u5BC6\u5EA6\u7565\u964D \xB7 \u5FCC\u4E94\u540E\u536B\u94C1\u6876" },
+    counter: { pros: "\u7EB5\u6DF1\u76F4\u585E\u81F4\u547D \xB7 \u4E13\u514B\u9AD8\u4F4D\u903C\u62A2", cons: "\u63A7\u7403\u7387\u504F\u4F4E \xB7 \u9762\u5BF9\u94C1\u6876\u96BE\u7834\u95E8" },
+    park_bus: { pros: "\u7981\u533A\u5C01\u5835\u62C9\u6EE1 \xB7 \u5F3A\u961F\u514B\u661F\u62A4\u76FE\u591A", cons: "\u8FDB\u653B\u5175\u529B\u6709\u9650 \xB7 \u9635\u5730\u63A8\u8FDB\u8F83\u6162" },
+    balanced: { pros: "\u65E0\u660E\u663E\u77ED\u677F \xB7 \u8DE8\u6D41\u6D3E\u624B\u724C\u60E9\u7F5A\u51CF\u534A", cons: "\u5355\u70B9\u6781\u9650\u7206\u53D1\u7565\u900A\u4E13\u7CBE\u6D41\u6D3E" }
+  };
+  var SYSTEM_NOTE = {
+    "4-back": "\u56DB\u540E\u536B\u653B\u5B88\u5747\u8861",
+    "3-back": "\u4E09\u540E\u536B\u8FB9\u7FFC\u524D\u538B",
+    "5-back": "\u4E94\u540E\u536B\u7981\u533A\u94C1\u95F8"
   };
   var TitleScreen = class {
     constructor() {
@@ -42223,6 +42893,14 @@
       this.style = "tiki_taka";
       this.enterTime = 0;
       this.ambientTime = 0;
+      // Step 2 星盘震撼降临动画与弹簧旋转状态
+      this.step2AnimTime = 1.2;
+      this.outerRotOffset = 0;
+      this.outerRotVel = 0;
+      this.innerRotOffset = 0;
+      this.innerRotVel = 0;
+      this.rotFlashTimer = 0;
+      this.rotFlashRing = "outer";
     }
     resetEnterAnim() {
       this.enterTime = 0;
@@ -42231,10 +42909,99 @@
       this.wizardStep = 1;
       this.previewKitMode = "home";
       this.wizardOpen = true;
+      this.step2AnimTime = 1.2;
+      this.outerRotOffset = 0;
+      this.outerRotVel = 0;
+      this.innerRotOffset = 0;
+      this.innerRotVel = 0;
+      this.rotFlashTimer = 0;
+    }
+    isAnimating() {
+      if (!this.wizardOpen) return false;
+      return this.step2AnimTime < 1.05 || Math.abs(this.outerRotOffset) > 2e-3 || Math.abs(this.outerRotVel) > 2e-3 || Math.abs(this.innerRotOffset) > 2e-3 || Math.abs(this.innerRotVel) > 2e-3 || this.rotFlashTimer > 0;
+    }
+    enterStep2() {
+      if (this.wizardStep === 2) return;
+      this.wizardStep = 2;
+      this.step2AnimTime = 0;
+      this.outerRotOffset = Math.PI / 2.2;
+      this.outerRotVel = -1.9;
+      this.innerRotOffset = -Math.PI / 1.7;
+      this.innerRotVel = 2.6;
+      this.rotFlashTimer = 0.72;
+      this.rotFlashRing = "outer";
+      SoundEngine.playAstrolabeLock();
+    }
+    selectStyle(nextStyle) {
+      if (this.style === nextStyle) return;
+      const prevIdx = Math.max(0, OUTER_RING_STYLES.indexOf(this.style));
+      const nextIdx = Math.max(0, OUTER_RING_STYLES.indexOf(nextStyle));
+      let delta = nextIdx - prevIdx;
+      if (delta > 3) delta -= 6;
+      if (delta < -3) delta += 6;
+      if (delta === 0) delta = 1;
+      this.style = nextStyle;
+      this.outerRotOffset -= delta * (Math.PI / 3);
+      this.outerRotVel = delta * 1.75;
+      this.rotFlashTimer = 0.65;
+      this.rotFlashRing = "outer";
+      SoundEngine.playAstrolabeRotate("outer");
+    }
+    selectFormation(nextFm) {
+      const prevSys = getDefenseSystem(this.formation);
+      const nextSys = getDefenseSystem(nextFm);
+      this.formation = nextFm;
+      this.sysTab = nextSys;
+      if (prevSys !== nextSys) {
+        const prevIdx = Math.max(0, INNER_RING_SYSTEMS.indexOf(prevSys));
+        const nextIdx = Math.max(0, INNER_RING_SYSTEMS.indexOf(nextSys));
+        let delta = nextIdx - prevIdx;
+        if (delta > 1) delta -= 3;
+        if (delta < -1) delta += 3;
+        if (delta === 0) delta = 1;
+        this.innerRotOffset -= delta * (2 * Math.PI / 3);
+        this.innerRotVel = delta * 2.2;
+        this.rotFlashTimer = 0.65;
+        this.rotFlashRing = "inner";
+        SoundEngine.playAstrolabeRotate("inner");
+      } else {
+        this.rotFlashTimer = Math.max(this.rotFlashTimer, 0.36);
+        this.rotFlashRing = "inner";
+        SoundEngine.playClick();
+      }
     }
     update(dtSec) {
-      this.enterTime += dtSec;
-      this.ambientTime += dtSec;
+      const dt = Math.min(0.05, Math.max(1e-3, dtSec));
+      this.enterTime += dt;
+      this.ambientTime += dt;
+      if (this.wizardOpen && this.wizardStep === 2) {
+        if (this.step2AnimTime < 1.5) {
+          this.step2AnimTime += dt;
+        }
+        const stiffness = 175;
+        const damping = 18.5;
+        if (Math.abs(this.outerRotOffset) > 5e-4 || Math.abs(this.outerRotVel) > 5e-4) {
+          const acc = -stiffness * this.outerRotOffset - damping * this.outerRotVel;
+          this.outerRotVel += acc * dt;
+          this.outerRotOffset += this.outerRotVel * dt;
+          if (Math.abs(this.outerRotOffset) < 15e-4 && Math.abs(this.outerRotVel) < 0.015) {
+            this.outerRotOffset = 0;
+            this.outerRotVel = 0;
+          }
+        }
+        if (Math.abs(this.innerRotOffset) > 5e-4 || Math.abs(this.innerRotVel) > 5e-4) {
+          const acc = -stiffness * this.innerRotOffset - damping * this.innerRotVel;
+          this.innerRotVel += acc * dt;
+          this.innerRotOffset += this.innerRotVel * dt;
+          if (Math.abs(this.innerRotOffset) < 15e-4 && Math.abs(this.innerRotVel) < 0.015) {
+            this.innerRotOffset = 0;
+            this.innerRotVel = 0;
+          }
+        }
+        if (this.rotFlashTimer > 0) {
+          this.rotFlashTimer = Math.max(0, this.rotFlashTimer - dt);
+        }
+      }
     }
     selectTemplate(clubId) {
       const tpl = FICTIONAL_CLUBS.find((c) => c.id === clubId) || FICTIONAL_CLUBS[0];
@@ -42439,31 +43206,66 @@
       }
     }
     renderWizardModal(ctx2, hits, metaLv, actions) {
-      ctx2.fillStyle = "rgba(4, 7, 14, 0.84)";
+      ctx2.fillStyle = "rgba(4, 7, 14, 0.86)";
       ctx2.fillRect(0, 0, THEME.W, THEME.H);
       hits.clear();
-      const mx = 152;
-      const my = 66;
-      const mw = 976;
-      const mh = 588;
+      const mx = 136;
+      const my = 58;
+      const mw = 1008;
+      const mh = 604;
       drawChamferPanel(ctx2, mx, my, mw, mh, 14, "rgba(12, 19, 36, 0.98)", THEME.BORDER_GOLD, 1.6, THEME.GOLD_LIGHT);
-      drawText(ctx2, "\u65B0\u8D5B\u5B63\u5EFA\u961F\u5411\u5BFC", mx + 28, my + 34, { size: 20, bold: true, color: THEME.GOLD_LIGHT });
+      drawText(ctx2, "\u65B0\u8D5B\u5B63\u5EFA\u961F\u5411\u5BFC", mx + 26, my + 34, { size: 20, bold: true, color: THEME.GOLD_LIGHT });
       const steps = [
         [1, "1. \u4FF1\u4E50\u90E8\u5F62\u8C61\u5BA4"],
-        [2, "2. \u9635\u578B\u4E0E\u6218\u672F\u54F2\u5B66"]
+        [2, "2. \u9635\u578B\u4E0E\u6218\u672F\u661F\u76D8"]
       ];
       steps.forEach(([s, lbl], i) => {
         drawButton(ctx2, hits, mx + 236 + i * 204, my + 18, 190, 32, lbl, () => {
-          this.wizardStep = s;
+          if (s === 2) this.enterStep2();
+          else this.wizardStep = 1;
         }, { active: this.wizardStep === s, fontSize: 12.5 });
       });
       drawButton(ctx2, hits, mx + mw - 100, my + 18, 76, 32, "\u5173\u95ED", () => {
         this.wizardOpen = false;
       }, { variant: "ghost", fontSize: 12, icon: "close" });
-      const sx = mx + 26;
-      const sy = my + 70;
-      const sw = 286;
-      const sh = 492;
+      const sx = mx + 24;
+      const sy = my + 68;
+      const sw = this.wizardStep === 2 ? 324 : 286;
+      const sh = 508;
+      if (this.wizardStep === 1) {
+        this.renderStep1LeftShowcase(ctx2, hits, sx, sy, sw, sh, metaLv);
+      } else {
+        this.renderStep2AstrolabeViewport(ctx2, sx, sy, sw, sh);
+      }
+      const rx = sx + sw + 20;
+      const ry = my + 68;
+      const rw = mx + mw - rx - 24;
+      if (this.wizardStep === 1) {
+        this.renderStep1RightPanel(ctx2, hits, rx, ry, rw, actions);
+        drawButton(ctx2, hits, mx + mw - 246, my + mh - 58, 222, 42, "\u4E0B\u4E00\u6B65\uFF1A\u661F\u76D8\u4E0E\u54F2\u5B66 \u25B6", () => {
+          this.enterStep2();
+        }, { variant: "gold", fontSize: 13.5, icon: "sparkle" });
+      } else {
+        this.renderStep2RightPanel(ctx2, hits, rx, ry, rw);
+        drawButton(ctx2, hits, rx, my + mh - 58, 146, 42, "\u25C0 \u4E0A\u4E00\u6B65", () => {
+          this.wizardStep = 1;
+        }, { variant: "ghost", fontSize: 13 });
+        drawButton(ctx2, hits, mx + mw - 304, my + mh - 58, 280, 42, "\u786E\u8BA4\u5EFA\u961F \xB7 \u5F00\u542F\u6838\u5FC3\u5F00\u5305 \u25B6", () => {
+          this.wizardOpen = false;
+          actions.onStartNewSeason({
+            clubId: this.selectedClubId,
+            customName: this.customName,
+            primaryColor: this.primaryColor,
+            secondaryColor: this.secondaryColor,
+            awayPrimaryColor: this.awayPrimaryColor,
+            awaySecondaryColor: this.awaySecondaryColor,
+            formation: this.formation,
+            style: this.style
+          });
+        }, { variant: "gold", fontSize: 14, icon: "sparkle" });
+      }
+    }
+    renderStep1LeftShowcase(ctx2, hits, sx, sy, sw, sh, metaLv) {
       const isHome = this.previewKitMode === "home";
       const activeKit = {
         id: this.selectedClubId,
@@ -42491,196 +43293,608 @@
         this.previewKitMode = "away";
       }, { active: !isHome, variant: !isHome ? "primary" : "ghost", fontSize: 11.5 });
       const jerseyFloat = Math.sin(this.ambientTime * 2.1) * 3;
-      drawJerseyIcon(ctx2, sx + sw / 2, sy + 172 + jerseyFloat, 118, activeKit, 10);
+      drawJerseyIcon(ctx2, sx + sw / 2, sy + 176 + jerseyFloat, 118, activeKit, 10);
       drawRoundRect(ctx2, sx + sw - 74, sy + 64, 56, 56, 28, "rgba(8, 13, 24, 0.92)", THEME.BORDER_GOLD, 1.4);
       drawClubCrest(ctx2, sx + sw - 46, sy + 92, 22, crestClub);
       drawBadge(
         ctx2,
         sx + sw / 2 - 64,
-        sy + 260,
+        sy + 266,
         128,
         22,
         isHome ? "HOME KIT \xB7 \u4E3B\u573A" : "AWAY KIT \xB7 \u5BA2\u573A",
         isHome ? "rgba(212,168,67,0.18)" : "rgba(56,189,248,0.18)",
         isHome ? THEME.GOLD_LIGHT : "#7DD3FC"
       );
-      drawText(ctx2, this.customName.slice(0, 12), sx + sw / 2, sy + 312, {
+      drawText(ctx2, this.customName.slice(0, 12), sx + sw / 2, sy + 318, {
         size: 21,
         bold: true,
         color: THEME.TX1,
         align: "center"
       });
-      drawText(ctx2, fitText(ctx2, `EST. 2026 \xB7 ${this.formation} \xB7 ${TACTICAL_PRESETS[this.style].name}`, sw - 28, FONT.LABEL, false, true), sx + sw / 2, sy + 340, {
+      drawText(ctx2, fitText(ctx2, `EST. 2026 \xB7 ${this.formation} \xB7 ${TACTICAL_PRESETS[this.style].name}`, sw - 28, FONT.LABEL, false, true), sx + sw / 2, sy + 346, {
         token: "LABEL",
         color: THEME.GOLD_LIGHT,
         align: "center"
       });
-      drawRoundRect(ctx2, sx + 18, sy + 368, sw - 36, 106, 8, "rgba(15, 23, 42, 0.86)", THEME.BORDER);
+      drawRoundRect(ctx2, sx + 18, sy + 378, sw - 36, 110, 8, "rgba(15, 23, 42, 0.86)", THEME.BORDER);
       const startFunds = 900 + (metaLv.finance || 0) * 150;
-      drawText(ctx2, "\u521D\u59CB\u8D44\u91D1", sx + 30, sy + 392, { token: "MICRO", color: THEME.TX2 });
-      drawText(ctx2, formatFunds(startFunds), sx + sw - 30, sy + 392, { token: "BODY", bold: true, color: THEME.GREEN, align: "right", mono: true });
-      drawText(ctx2, "\u5EFA\u961F\u6D41\u7A0B", sx + 30, sy + 422, { token: "MICRO", color: THEME.TX2 });
-      drawText(ctx2, "3\u6838\u5FC3\u5305 \u2192 \u590F\u7A9726\u4EBA", sx + sw - 30, sy + 422, { token: "LABEL", bold: true, color: THEME.GOLD_LIGHT, align: "right" });
-      drawText(ctx2, "\u9632\u649E\u8272", sx + 30, sy + 452, { token: "MICRO", color: THEME.TX2 });
-      drawText(ctx2, "\u5DF2\u542F\u7528 \xB7 \u5BA2\u573A\u81EA\u52A8\u5207\u6362", sx + sw - 30, sy + 452, { token: "MICRO", color: "#38BDF8", align: "right" });
-      const rx = sx + sw + 22;
-      const ry = my + 70;
-      const rw = mx + mw - rx - 26;
-      if (this.wizardStep === 1) {
-        drawText(ctx2, "\u4FF1\u4E50\u90E8\u540D\u79F0", rx, ry + 14, { size: 14, bold: true, color: THEME.GOLD_LIGHT });
-        drawText(ctx2, "\u70B9\u51FB\u8F93\u5165\u6846\u81EA\u5B9A\u4E49\uFF08\u6700\u591A 12 \u5B57\uFF09\u6216\u968F\u673A\u751F\u6210", rx + 96, ry + 14, { size: 11.5, color: THEME.TX2 });
-        const nameBoxW = rw - 156;
-        drawRoundRect(ctx2, rx, ry + 32, nameBoxW, 46, 8, THEME.BG_CARD, hits.isHovered(rx, ry + 32, nameBoxW, 46) ? THEME.GOLD : THEME.BORDER_GOLD);
-        drawText(ctx2, this.customName, rx + 18, ry + 55, { size: 19, bold: true, color: THEME.TX1 });
-        drawIcon(ctx2, "edit", rx + nameBoxW - 72, ry + 55, 13, THEME.GOLD_LIGHT);
-        drawText(ctx2, "\u7F16\u8F91", rx + nameBoxW - 16, ry + 55, { size: 11.5, color: THEME.GOLD_LIGHT, align: "right" });
-        if (actions.onEditName) {
-          hits.add(rx, ry + 32, nameBoxW, 46, () => {
-            SoundEngine.playClick();
-            actions.onEditName(this.customName, (next) => {
-              this.customName = next;
-            });
+      drawText(ctx2, "\u521D\u59CB\u8D44\u91D1", sx + 30, sy + 402, { token: "MICRO", color: THEME.TX2 });
+      drawText(ctx2, formatFunds(startFunds), sx + sw - 30, sy + 402, { token: "BODY", bold: true, color: THEME.GREEN, align: "right", mono: true });
+      drawText(ctx2, "\u5EFA\u961F\u6D41\u7A0B", sx + 30, sy + 434, { token: "MICRO", color: THEME.TX2 });
+      drawText(ctx2, "3\u6838\u5FC3\u5305 \u2192 \u590F\u7A9726\u4EBA", sx + sw - 30, sy + 434, { token: "LABEL", bold: true, color: THEME.GOLD_LIGHT, align: "right" });
+      drawText(ctx2, "\u9632\u649E\u8272", sx + 30, sy + 466, { token: "MICRO", color: THEME.TX2 });
+      drawText(ctx2, "\u5DF2\u542F\u7528 \xB7 \u5BA2\u573A\u81EA\u52A8\u5207\u6362", sx + sw - 30, sy + 466, { token: "MICRO", color: "#38BDF8", align: "right" });
+    }
+    renderStep1RightPanel(ctx2, hits, rx, ry, rw, actions) {
+      drawText(ctx2, "\u4FF1\u4E50\u90E8\u540D\u79F0", rx, ry + 14, { size: 14, bold: true, color: THEME.GOLD_LIGHT });
+      drawText(ctx2, "\u70B9\u51FB\u8F93\u5165\u6846\u81EA\u5B9A\u4E49\uFF08\u6700\u591A 12 \u5B57\uFF09\u6216\u968F\u673A\u751F\u6210", rx + 96, ry + 14, { size: 11.5, color: THEME.TX2 });
+      const nameBoxW = rw - 156;
+      drawRoundRect(ctx2, rx, ry + 32, nameBoxW, 46, 8, THEME.BG_CARD, hits.isHovered(rx, ry + 32, nameBoxW, 46) ? THEME.GOLD : THEME.BORDER_GOLD);
+      drawText(ctx2, this.customName, rx + 18, ry + 55, { size: 19, bold: true, color: THEME.TX1 });
+      drawIcon(ctx2, "edit", rx + nameBoxW - 72, ry + 55, 13, THEME.GOLD_LIGHT);
+      drawText(ctx2, "\u7F16\u8F91", rx + nameBoxW - 16, ry + 55, { size: 11.5, color: THEME.GOLD_LIGHT, align: "right" });
+      if (actions.onEditName) {
+        hits.add(rx, ry + 32, nameBoxW, 46, () => {
+          SoundEngine.playClick();
+          actions.onEditName(this.customName, (next) => {
+            this.customName = next;
           });
+        });
+      }
+      drawButton(ctx2, hits, rx + nameBoxW + 10, ry + 32, 146, 46, "\u968F\u673A\u961F\u540D", () => {
+        this.customName = generateFictionalClubName();
+      }, { variant: "primary", fontSize: 12.5, icon: "dice" });
+      drawText(ctx2, "\u9009\u62E9\u961F\u5FBD\u4E0E\u5E95\u8272\u6A21\u677F", rx, ry + 102, { size: 14, bold: true, color: THEME.GOLD_LIGHT });
+      FICTIONAL_CLUBS.forEach((c, idx) => {
+        const col = idx % 2;
+        const row = Math.floor(idx / 2);
+        const bw = Math.floor((rw - 12) / 2);
+        const bx = rx + col * (bw + 12);
+        const by = ry + 122 + row * 44;
+        const active = this.selectedClubId === c.id;
+        drawRoundRect(ctx2, bx, by, bw, 38, 7, active ? "#1E293B" : THEME.BG_CARD, active ? THEME.GOLD : THEME.BORDER, active ? 1.8 : 1);
+        drawClubCrest(ctx2, bx + 22, by + 19, 13, c);
+        drawText(ctx2, c.name, bx + 44, by + 19, { size: 12.5, bold: active, color: active ? THEME.GOLD_LIGHT : THEME.TX1 });
+        drawRoundRect(ctx2, bx + bw - 42, by + 13, 12, 12, 6, c.primaryColor, "#FFFFFF", 0.8);
+        drawRoundRect(ctx2, bx + bw - 24, by + 13, 12, 12, 6, c.secondaryColor, "#FFFFFF", 0.8);
+        hits.add(bx, by, bw, 38, () => {
+          SoundEngine.playClick();
+          this.selectTemplate(c.id);
+        });
+      });
+      const isHome = this.previewKitMode === "home";
+      const palY = ry + 314;
+      drawChamferPanel(ctx2, rx, palY, rw, 126, 10, "rgba(15, 23, 42, 0.78)", isHome ? THEME.BORDER_GOLD : "rgba(56,189,248,0.45)");
+      drawText(
+        ctx2,
+        isHome ? "\u81EA\u5B9A\u4E49\u4E3B\u573A\u6218\u888D\u914D\u8272" : "\u81EA\u5B9A\u4E49\u5BA2\u573A\u6218\u888D\u914D\u8272",
+        rx + 16,
+        palY + 22,
+        { size: 13.5, bold: true, color: isHome ? THEME.GOLD_LIGHT : "#7DD3FC" }
+      );
+      drawButton(ctx2, hits, rx + rw - 150, palY + 8, 136, 26, isHome ? "\u5207\u6362\u7F16\u8F91\u5BA2\u573A \u21C4" : "\u5207\u6362\u7F16\u8F91\u4E3B\u573A \u21C4", () => {
+        this.previewKitMode = isHome ? "away" : "home";
+      }, { variant: "ghost", fontSize: 11 });
+      const curPrimPalette = isHome ? HOME_PRIMARY_PALETTE : AWAY_PRIMARY_PALETTE;
+      const curSecPalette = isHome ? HOME_SECONDARY_PALETTE : AWAY_SECONDARY_PALETTE;
+      const curPrimVal = isHome ? this.primaryColor : this.awayPrimaryColor;
+      const curSecVal = isHome ? this.secondaryColor : this.awaySecondaryColor;
+      drawText(ctx2, "\u4E3B\u8272:", rx + 16, palY + 62, { size: 12, color: THEME.TX2 });
+      curPrimPalette.forEach((col, i) => {
+        const px = rx + 66 + i * 42;
+        const sel = curPrimVal === col;
+        drawRoundRect(ctx2, px, palY + 46, 32, 30, 6, col, sel ? "#FFFFFF" : THEME.BORDER, sel ? 2.5 : 1);
+        if (sel) {
+          const chk = col === "#F8FAFC" || col === "#FACC15" ? "#090D16" : "#FFFFFF";
+          drawIcon(ctx2, "check", px + 16, palY + 61, 12, chk);
         }
-        drawButton(ctx2, hits, rx + nameBoxW + 10, ry + 32, 146, 46, "\u968F\u673A\u961F\u540D", () => {
-          this.customName = generateFictionalClubName();
-        }, { variant: "primary", fontSize: 12.5, icon: "dice" });
-        drawText(ctx2, "\u9009\u62E9\u961F\u5FBD\u4E0E\u5E95\u8272\u6A21\u677F", rx, ry + 102, { size: 14, bold: true, color: THEME.GOLD_LIGHT });
-        FICTIONAL_CLUBS.forEach((c, idx) => {
-          const col = idx % 2;
-          const row = Math.floor(idx / 2);
-          const bw = Math.floor((rw - 12) / 2);
-          const bx = rx + col * (bw + 12);
-          const by = ry + 122 + row * 44;
-          const active = this.selectedClubId === c.id;
-          drawRoundRect(ctx2, bx, by, bw, 38, 7, active ? "#1E293B" : THEME.BG_CARD, active ? THEME.GOLD : THEME.BORDER, active ? 1.8 : 1);
-          drawClubCrest(ctx2, bx + 22, by + 19, 13, c);
-          drawText(ctx2, c.name, bx + 44, by + 19, { size: 12.5, bold: active, color: active ? THEME.GOLD_LIGHT : THEME.TX1 });
-          drawRoundRect(ctx2, bx + bw - 42, by + 13, 12, 12, 6, c.primaryColor, "#FFFFFF", 0.8);
-          drawRoundRect(ctx2, bx + bw - 24, by + 13, 12, 12, 6, c.secondaryColor, "#FFFFFF", 0.8);
-          hits.add(bx, by, bw, 38, () => {
-            SoundEngine.playClick();
-            this.selectTemplate(c.id);
-          });
+        hits.addTouchTarget(px, palY + 46, 32, 30, () => {
+          SoundEngine.playClick();
+          if (isHome) this.primaryColor = col;
+          else this.awayPrimaryColor = col;
         });
-        const palY = ry + 314;
-        drawChamferPanel(ctx2, rx, palY, rw, 122, 10, "rgba(15, 23, 42, 0.78)", isHome ? THEME.BORDER_GOLD : "rgba(56,189,248,0.45)");
-        drawText(
+      });
+      drawText(ctx2, "\u526F\u8272:", rx + 344, palY + 62, { size: 12, color: THEME.TX2 });
+      curSecPalette.forEach((col, i) => {
+        const px = rx + 392 + i * 42;
+        const sel = curSecVal === col;
+        drawRoundRect(ctx2, px, palY + 46, 32, 30, 6, col, sel ? THEME.GOLD_LIGHT : THEME.BORDER, sel ? 2.5 : 1);
+        if (sel) {
+          const chk = col === "#F8FAFC" || col === "#FACC15" ? "#090D16" : "#FFFFFF";
+          drawIcon(ctx2, "check", px + 16, palY + 61, 12, chk);
+        }
+        hits.addTouchTarget(px, palY + 46, 32, 30, () => {
+          SoundEngine.playClick();
+          if (isHome) this.secondaryColor = col;
+          else this.awaySecondaryColor = col;
+        });
+      });
+      drawText(
+        ctx2,
+        "\u63D0\u793A\uFF1A\u5DE6\u4FA7\u5C55\u793A\u53F0\u4F1A\u5B9E\u65F6\u540C\u6B65\u6240\u9009\u6218\u888D\uFF1B\u6BD4\u8D5B\u65E5\u4E0E\u5BF9\u624B\u649E\u8272\u65F6\u81EA\u52A8\u542F\u7528\u5BA2\u573A\u6218\u888D",
+        rx + 16,
+        palY + 102,
+        { size: 11, color: THEME.TX3 }
+      );
+    }
+    /**
+     * Step 2 左侧：放大后的八卦星盘正上方局部视口
+     * - 100% 复用星盘视觉与弹簧旋转，只展示当前选中的阵型(内环)、打法(外环)及二者碰撞的融合奇点
+     */
+    renderStep2AstrolabeViewport(ctx2, sx, sy, sw, sh) {
+      const sys = getDefenseSystem(this.formation);
+      const styleInfo = STYLE_LABELS[this.style];
+      const sysInfo = SYSTEM_LABELS[sys];
+      const fusion = V6_FUSION_KEYSTONES.find((f) => f.system === sys && f.style === this.style);
+      const pEnter = Math.min(1, this.step2AnimTime / 0.55);
+      const pScale = easeOutCubic(pEnter);
+      const pFade = Math.min(1, this.step2AnimTime / 0.28);
+      const scaleFactor = 0.62 + 0.38 * pScale;
+      drawChamferPanel(ctx2, sx, sy, sw, sh, 12, "rgba(7, 12, 24, 0.98)", THEME.BORDER_GOLD, 1.4, styleInfo.color);
+      ctx2.save();
+      ctx2.beginPath();
+      ctx2.rect(sx + 2, sy + 2, sw - 4, sh - 4);
+      ctx2.clip();
+      ctx2.globalAlpha = pFade;
+      const cx = sx + sw / 2;
+      const baseR = 408 * scaleFactor;
+      const cy = sy + sh + 40;
+      drawAstrolabeBackdropAndRings(
+        ctx2,
+        cx,
+        cy,
+        baseR,
+        { x: sx, y: sy, w: sw, h: sh },
+        this.ambientTime,
+        this.rotFlashTimer,
+        this.rotFlashRing,
+        { backdropAlpha: 0.52, topArchOnly: true }
+      );
+      if (this.step2AnimTime < 0.85) {
+        const bp = this.step2AnimTime / 0.85;
+        const bAlpha = Math.max(0, (1 - bp) * 0.72);
+        const fx = cx;
+        const fy = cy - baseR * 0.5;
+        ctx2.save();
+        const burstGrad = ctx2.createRadialGradient(fx, fy, 4, fx, fy, 220 * (0.4 + bp * 0.9));
+        burstGrad.addColorStop(0, `rgba(254, 240, 138, ${bAlpha.toFixed(3)})`);
+        burstGrad.addColorStop(0.35, `${styleInfo.color}${Math.round(bAlpha * 140).toString(16).padStart(2, "0")}`);
+        burstGrad.addColorStop(1, "rgba(8, 13, 24, 0)");
+        ctx2.fillStyle = burstGrad;
+        ctx2.fillRect(sx, sy, sw, sh);
+        ctx2.strokeStyle = `rgba(254, 240, 138, ${(bAlpha * 0.55).toFixed(3)})`;
+        ctx2.lineWidth = 1.6;
+        for (let ri = 0; ri < 8; ri++) {
+          const ra = -Math.PI / 2 + (ri - 3.5) * 0.22;
+          const rLen = 70 + bp * 190;
+          ctx2.beginPath();
+          ctx2.moveTo(fx + Math.cos(ra) * 18, fy + Math.sin(ra) * 18);
+          ctx2.lineTo(fx + Math.cos(ra) * rLen, fy + Math.sin(ra) * rLen);
+          ctx2.stroke();
+        }
+        ctx2.restore();
+      }
+      const outerAngle = -Math.PI / 2 + this.outerRotOffset;
+      const innerAngle = -Math.PI / 2 + this.innerRotOffset;
+      ctx2.save();
+      ctx2.beginPath();
+      ctx2.moveTo(cx, cy);
+      ctx2.arc(cx, cy, baseR * 1.04, outerAngle - Math.PI / 6, outerAngle + Math.PI / 6);
+      ctx2.closePath();
+      const wedgeGrad = ctx2.createRadialGradient(cx, cy, baseR * 0.45, cx, cy, baseR * 1.02);
+      wedgeGrad.addColorStop(0, `${styleInfo.color}08`);
+      wedgeGrad.addColorStop(0.55, `${styleInfo.color}24`);
+      wedgeGrad.addColorStop(1, `${styleInfo.color}0A`);
+      ctx2.fillStyle = wedgeGrad;
+      ctx2.fill();
+      ctx2.strokeStyle = `${styleInfo.color}66`;
+      ctx2.lineWidth = 1.4;
+      ctx2.stroke();
+      ctx2.restore();
+      ctx2.save();
+      ctx2.beginPath();
+      ctx2.moveTo(cx, cy);
+      ctx2.arc(cx, cy, baseR * 0.48, innerAngle - Math.PI / 5, innerAngle + Math.PI / 5);
+      ctx2.closePath();
+      ctx2.fillStyle = `${sysInfo.color}1C`;
+      ctx2.fill();
+      ctx2.strokeStyle = `${sysInfo.color}55`;
+      ctx2.lineWidth = 1.2;
+      ctx2.stroke();
+      ctx2.restore();
+      const polar = (ang, ratio) => ({
+        x: cx + Math.cos(ang) * (baseR * ratio),
+        y: cy + Math.sin(ang) * (baseR * ratio)
+      });
+      const sysOriginId = SYSTEM_ORIGIN_PASSIVE[sys];
+      const sysOriginDef = V6_PASSIVE_MAP[sysOriginId];
+      const sysOriginPos = polar(innerAngle, 0.295);
+      const formPos = polar(innerAngle, 0.4);
+      const fusionPos = polar(-Math.PI / 2, 0.5);
+      const styleOriginId = STYLE_ORIGIN_PASSIVE[this.style];
+      const styleOriginDef = V6_PASSIVE_MAP[styleOriginId];
+      const styleOriginPos = polar(outerAngle, 0.595);
+      const stylePassives = V6_STYLE_PASSIVES.filter((p) => p.style === this.style && p.id !== styleOriginId);
+      const atkPassive = stylePassives.find((p) => p.tendency === "ATK");
+      const defPassive = stylePassives.find((p) => p.tendency === "DEF");
+      const atkPassivePos = polar(outerAngle - 0.145, 0.685);
+      const defPassivePos = polar(outerAngle + 0.145, 0.685);
+      const styleSkills = V6_ACTIVE_SKILLS.filter((s) => s.source === "style" && s.style === this.style);
+      const atkSkill = styleSkills.find((s) => s.tendency !== "DEF") ?? styleSkills[0];
+      const defSkill = styleSkills.find((s) => s.tendency === "DEF") ?? styleSkills[1];
+      const atkSkillPos = polar(outerAngle - 0.162, 0.79);
+      const defSkillPos = polar(outerAngle + 0.162, 0.79);
+      const styleDirs = V6_DIRECTIVES.filter((d) => d.source === "style" && d.style === this.style && d.route === "steady");
+      const atkDir = styleDirs.find((d) => d.tendency === "ATK") ?? styleDirs[0];
+      const defDir = styleDirs.find((d) => d.tendency === "DEF") ?? styleDirs[1];
+      const atkDirPos = polar(outerAngle - 0.115, 0.895);
+      const defDirPos = polar(outerAngle + 0.115, 0.895);
+      const emblemPos = polar(outerAngle, 0.725);
+      drawAstrolabeEdgeLine(ctx2, sysOriginPos.x, sysOriginPos.y, formPos.x, formPos.y, true, false, sysInfo.color, this.ambientTime, false);
+      drawAstrolabeEdgeLine(ctx2, sysOriginPos.x, sysOriginPos.y, fusionPos.x, fusionPos.y, true, false, THEME.GOLD_LIGHT, this.ambientTime, true);
+      drawAstrolabeEdgeLine(ctx2, fusionPos.x, fusionPos.y, styleOriginPos.x, styleOriginPos.y, true, false, THEME.GOLD_LIGHT, this.ambientTime, true);
+      if (atkPassive) {
+        drawAstrolabeEdgeLine(ctx2, styleOriginPos.x, styleOriginPos.y, atkPassivePos.x, atkPassivePos.y, true, false, styleInfo.color, this.ambientTime);
+      }
+      if (defPassive) {
+        drawAstrolabeEdgeLine(ctx2, styleOriginPos.x, styleOriginPos.y, defPassivePos.x, defPassivePos.y, true, false, styleInfo.color, this.ambientTime);
+      }
+      if (atkSkill && atkPassive) {
+        drawAstrolabeEdgeLine(ctx2, atkPassivePos.x, atkPassivePos.y, atkSkillPos.x, atkSkillPos.y, true, false, "#38BDF8", this.ambientTime);
+      }
+      if (defSkill && defPassive) {
+        drawAstrolabeEdgeLine(ctx2, defPassivePos.x, defPassivePos.y, defSkillPos.x, defSkillPos.y, true, false, "#38BDF8", this.ambientTime);
+      }
+      if (atkDir && atkPassive) {
+        drawAstrolabeEdgeLine(ctx2, atkPassivePos.x, atkPassivePos.y, atkDirPos.x, atkDirPos.y, true, false, ASTROLABE_ZONE_COLOR[atkDir.zone], this.ambientTime);
+      }
+      if (defDir && defPassive) {
+        drawAstrolabeEdgeLine(ctx2, defPassivePos.x, defPassivePos.y, defDirPos.x, defDirPos.y, true, false, ASTROLABE_ZONE_COLOR[defDir.zone], this.ambientTime);
+      }
+      if (sysOriginDef) {
+        drawAstrolabeCircleNode(
           ctx2,
-          isHome ? "\u81EA\u5B9A\u4E49\u4E3B\u573A\u6218\u888D\u914D\u8272" : "\u81EA\u5B9A\u4E49\u5BA2\u573A\u6218\u888D\u914D\u8272",
-          rx + 16,
-          palY + 22,
-          { size: 13.5, bold: true, color: isHome ? THEME.GOLD_LIGHT : "#7DD3FC" }
+          sysOriginPos.x,
+          sysOriginPos.y,
+          12,
+          getAstrolabePassiveGlyph(sysOriginDef),
+          sysInfo.color,
+          true,
+          false,
+          false,
+          this.ambientTime,
+          true
         );
-        drawButton(ctx2, hits, rx + rw - 150, palY + 8, 136, 26, isHome ? "\u5207\u6362\u7F16\u8F91\u5BA2\u573A \u21C4" : "\u5207\u6362\u7F16\u8F91\u4E3B\u573A \u21C4", () => {
-          this.previewKitMode = isHome ? "away" : "home";
-        }, { variant: "ghost", fontSize: 11 });
-        const curPrimPalette = isHome ? HOME_PRIMARY_PALETTE : AWAY_PRIMARY_PALETTE;
-        const curSecPalette = isHome ? HOME_SECONDARY_PALETTE : AWAY_SECONDARY_PALETTE;
-        const curPrimVal = isHome ? this.primaryColor : this.awayPrimaryColor;
-        const curSecVal = isHome ? this.secondaryColor : this.awaySecondaryColor;
-        drawText(ctx2, "\u4E3B\u8272:", rx + 16, palY + 62, { size: 12, color: THEME.TX2 });
-        curPrimPalette.forEach((col, i) => {
-          const px = rx + 66 + i * 42;
-          const sel = curPrimVal === col;
-          drawRoundRect(ctx2, px, palY + 46, 32, 30, 6, col, sel ? "#FFFFFF" : THEME.BORDER, sel ? 2.5 : 1);
-          if (sel) {
-            const chk = col === "#F8FAFC" || col === "#FACC15" ? "#090D16" : "#FFFFFF";
-            drawIcon(ctx2, "check", px + 16, palY + 61, 12, chk);
-          }
-          hits.addTouchTarget(px, palY + 46, 32, 30, () => {
-            SoundEngine.playClick();
-            if (isHome) this.primaryColor = col;
-            else this.awayPrimaryColor = col;
-          });
-        });
-        drawText(ctx2, "\u526F\u8272:", rx + 344, palY + 62, { size: 12, color: THEME.TX2 });
-        curSecPalette.forEach((col, i) => {
-          const px = rx + 392 + i * 42;
-          const sel = curSecVal === col;
-          drawRoundRect(ctx2, px, palY + 46, 32, 30, 6, col, sel ? THEME.GOLD_LIGHT : THEME.BORDER, sel ? 2.5 : 1);
-          if (sel) {
-            const chk = col === "#F8FAFC" || col === "#FACC15" ? "#090D16" : "#FFFFFF";
-            drawIcon(ctx2, "check", px + 16, palY + 61, 12, chk);
-          }
-          hits.addTouchTarget(px, palY + 46, 32, 30, () => {
-            SoundEngine.playClick();
-            if (isHome) this.secondaryColor = col;
-            else this.awaySecondaryColor = col;
-          });
-        });
-        drawText(
-          ctx2,
-          "\u63D0\u793A\uFF1A\u5DE6\u4FA7\u5C55\u793A\u53F0\u4F1A\u5B9E\u65F6\u540C\u6B65\u6240\u9009\u6218\u888D\uFF1B\u6BD4\u8D5B\u65E5\u4E0E\u5BF9\u624B\u649E\u8272\u65F6\u81EA\u52A8\u542F\u7528\u5BA2\u573A\u6218\u888D",
-          rx + 16,
-          palY + 100,
-          { size: 11, color: THEME.TX3 }
-        );
-      } else {
-        drawText(ctx2, "\u9009\u62E9\u521D\u59CB\u9635\u578B (4/3/5\u540E\u536B)", rx, ry + 14, { size: 14.5, bold: true, color: THEME.GOLD_LIGHT });
-        SYS_TABS.forEach((sys, si) => {
-          const lbl = sys === "4-back" ? "\u56DB\u540E\u536B (8)" : sys === "3-back" ? "\u4E09\u540E\u536B (4)" : "\u4E94\u540E\u536B (4)";
-          drawButton(ctx2, hits, rx + 236 + si * 126, ry + 2, 118, 26, lbl, () => {
-            this.sysTab = sys;
-          }, { active: this.sysTab === sys, fontSize: 11.5 });
-        });
-        const forms = FORMATION_SYSTEMS[this.sysTab].formations;
-        const fw = Math.floor((rw - 30) / 4);
-        forms.forEach((f, i) => {
-          const col = i % 4;
-          const row = Math.floor(i / 4);
-          drawButton(ctx2, hits, rx + col * (fw + 10), ry + 40 + row * 38, fw, 32, f, () => {
-            this.formation = f;
-            this.sysTab = getDefenseSystem(f);
-          }, { active: this.formation === f, fontSize: 12.5 });
-        });
-        drawText(ctx2, "\u9009\u62E9\u6218\u672F\u54F2\u5B66", rx, ry + 138, { size: 14.5, bold: true, color: THEME.GOLD_LIGHT });
-        const swBtn = Math.floor((rw - 24) / 3);
-        STYLE_LIST2.forEach((s, i) => {
-          const col = i % 3;
-          const row = Math.floor(i / 3);
-          drawButton(ctx2, hits, rx + col * (swBtn + 12), ry + 164 + row * 54, swBtn, 44, TACTICAL_PRESETS[s].name, () => {
-            this.style = s;
-          }, { active: this.style === s, fontSize: 13 });
-        });
-        const preset = TACTICAL_PRESETS[this.style];
-        drawChamferPanel(ctx2, rx, ry + 292, rw, 116, 10, THEME.BG_CARD, THEME.BORDER_GOLD);
-        drawText(ctx2, `\u5F53\u524D\u54F2\u5B66\uFF1A${preset.name}`, rx + 18, ry + 320, { size: 15, bold: true, color: THEME.GOLD_LIGHT });
-        drawText(
-          ctx2,
-          `\u9632\u7EBF ${preset.lineHeight >= 0 ? "+" : ""}${preset.lineHeight}m \xB7 \u8282\u594F ${preset.tempo.toFixed(2)}x \xB7 \u538B\u8FEB ${preset.pressIntensity.toFixed(2)}x`,
-          rx + rw - 18,
-          ry + 320,
-          { size: 11.5, color: "#38BDF8", align: "right", mono: true }
-        );
-        drawText(ctx2, STYLE_HINTS[this.style], rx + 18, ry + 358, { size: 13, color: THEME.TX1 });
-        drawText(ctx2, "\u5EFA\u961F\u540E\u5C06\u8FDB\u5165 3 \u8F6E\u6838\u5FC3\u5F00\u5305\uFF08\u9632\u7EBF / \u4E2D\u573A / \u950B\u7EBF\u5404 3 \u9009 1\uFF09\uFF0C\u968F\u540E\u8FDB\u5165\u590F\u5B63\u8F6C\u4F1A\u7A97\u8865\u9F50 26 \u4EBA\u5927\u540D\u5355", rx + 18, ry + 388, {
-          size: 11.5,
-          color: THEME.TX2
+        drawText(ctx2, sysInfo.name.slice(0, 3), sysOriginPos.x + 18, sysOriginPos.y + 4, {
+          size: 9.5,
+          bold: true,
+          color: sysInfo.color
         });
       }
-      if (this.wizardStep === 1) {
-        drawButton(ctx2, hits, mx + mw - 236, my + mh - 62, 210, 44, "\u4E0B\u4E00\u6B65\uFF1A\u9635\u578B\u4E0E\u54F2\u5B66 \u25B6", () => {
-          this.wizardStep = 2;
-        }, { variant: "primary", fontSize: 13.5, icon: "play" });
-      } else {
-        drawButton(ctx2, hits, rx, my + mh - 62, 150, 44, "\u25C0 \u4E0A\u4E00\u6B65", () => {
-          this.wizardStep = 1;
-        }, { variant: "ghost", fontSize: 13 });
-        drawButton(ctx2, hits, mx + mw - 306, my + mh - 62, 280, 44, "\u786E\u8BA4\u5EFA\u961F \xB7 \u5F00\u542F\u6838\u5FC3\u5F00\u5305 \u25B6", () => {
-          this.wizardOpen = false;
-          actions.onStartNewSeason({
-            clubId: this.selectedClubId,
-            customName: this.customName,
-            primaryColor: this.primaryColor,
-            secondaryColor: this.secondaryColor,
-            awayPrimaryColor: this.awayPrimaryColor,
-            awaySecondaryColor: this.awaySecondaryColor,
-            formation: this.formation,
-            style: this.style
-          });
-        }, { variant: "gold", fontSize: 14, icon: "sparkle" });
+      ctx2.save();
+      if (!IS_MOBILE) {
+        ctx2.shadowColor = THEME.GREEN;
+        ctx2.shadowBlur = 12;
       }
+      ctx2.fillStyle = "#064E3B";
+      ctx2.beginPath();
+      ctx2.arc(formPos.x, formPos.y, 11.5, 0, Math.PI * 2);
+      ctx2.fill();
+      ctx2.lineWidth = 2.4;
+      ctx2.strokeStyle = THEME.GREEN;
+      ctx2.stroke();
+      ctx2.restore();
+      drawText(ctx2, this.formation, formPos.x, formPos.y + 1, {
+        size: 9,
+        bold: true,
+        color: "#ECFDF5",
+        align: "center",
+        mono: true
+      });
+      drawAstrolabeHexFusionNode(
+        ctx2,
+        fusionPos.x,
+        fusionPos.y,
+        15.5,
+        true,
+        false,
+        true,
+        this.ambientTime
+      );
+      if (styleOriginDef) {
+        drawAstrolabeCircleNode(
+          ctx2,
+          styleOriginPos.x,
+          styleOriginPos.y,
+          13,
+          getAstrolabePassiveGlyph(styleOriginDef),
+          styleInfo.color,
+          true,
+          false,
+          false,
+          this.ambientTime,
+          true
+        );
+      }
+      ctx2.save();
+      if (!IS_MOBILE) {
+        ctx2.shadowColor = styleInfo.color;
+        ctx2.shadowBlur = 16;
+      }
+      ctx2.fillStyle = "#13233E";
+      ctx2.beginPath();
+      ctx2.arc(emblemPos.x, emblemPos.y, 20, 0, Math.PI * 2);
+      ctx2.fill();
+      ctx2.lineWidth = 2.2;
+      ctx2.strokeStyle = THEME.GOLD_LIGHT;
+      ctx2.stroke();
+      ctx2.strokeStyle = `${styleInfo.color}88`;
+      ctx2.lineWidth = 1.2;
+      ctx2.setLineDash([4, 4]);
+      ctx2.beginPath();
+      ctx2.arc(emblemPos.x, emblemPos.y, 24.5, this.ambientTime * 0.55, this.ambientTime * 0.55 + Math.PI * 1.5);
+      ctx2.stroke();
+      ctx2.setLineDash([]);
+      drawSkillGlyph(ctx2, ASTROLABE_STYLE_GLYPH[this.style], emblemPos.x, emblemPos.y, 24, styleInfo.color, THEME.GOLD_LIGHT);
+      ctx2.restore();
+      if (atkPassive) {
+        drawAstrolabeCircleNode(ctx2, atkPassivePos.x, atkPassivePos.y, 8.5, getAstrolabePassiveGlyph(atkPassive), styleInfo.color, true, false, false, this.ambientTime);
+      }
+      if (defPassive) {
+        drawAstrolabeCircleNode(ctx2, defPassivePos.x, defPassivePos.y, 8.5, getAstrolabePassiveGlyph(defPassive), styleInfo.color, true, false, false, this.ambientTime);
+      }
+      if (atkSkill) {
+        drawAstrolabeDiamondSkillNode(ctx2, atkSkillPos.x, atkSkillPos.y, 10.5, ASTROLABE_STYLE_GLYPH[this.style], true, false, true, false, atkSkill.name.slice(0, 4));
+      }
+      if (defSkill) {
+        drawAstrolabeDiamondSkillNode(ctx2, defSkillPos.x, defSkillPos.y, 10.5, ASTROLABE_STYLE_GLYPH[this.style], true, false, true, false, defSkill.name.slice(0, 4));
+      }
+      if (atkDir) {
+        drawAstrolabeDirectiveNode(ctx2, cx, cy, atkDirPos.x, atkDirPos.y, 9, atkDir.tendency, atkDir.zone, true, false, true, false, [], atkDir.name.slice(0, 4));
+      }
+      if (defDir) {
+        drawAstrolabeDirectiveNode(ctx2, cx, cy, defDirPos.x, defDirPos.y, 9, defDir.tendency, defDir.zone, true, false, true, false, [], defDir.name.slice(0, 4));
+      }
+      drawRoundRect(ctx2, sx + 12, sy + 12, sw - 24, 46, 8, "rgba(8, 13, 25, 0.88)", styleInfo.color, 1.1);
+      drawSkillGlyph(ctx2, ASTROLABE_SYSTEM_GLYPH[sys], sx + 32, sy + 35, 19, sysInfo.color, THEME.GOLD_LIGHT);
+      drawText(ctx2, `${styleInfo.name} \xD7 ${this.formation}`, sx + sw / 2, sy + 28, {
+        size: 13.5,
+        bold: true,
+        color: THEME.TX1,
+        align: "center"
+      });
+      drawText(ctx2, `\u661F\u76D8\u6B63\u4E0A\u65B9 \xB7 \u5DF2\u9009\u5171\u9E23\u9884\u89C8`, sx + sw / 2, sy + 46, {
+        size: 10,
+        color: styleInfo.color,
+        align: "center"
+      });
+      drawSkillGlyph(ctx2, ASTROLABE_STYLE_GLYPH[this.style], sx + sw - 32, sy + 35, 19, styleInfo.color, THEME.GOLD_LIGHT);
+      drawRoundRect(ctx2, sx + 12, sy + sh - 62, sw - 24, 50, 8, "rgba(24, 15, 6, 0.90)", THEME.BORDER_GOLD, 1.3);
+      drawText(ctx2, `\u2726 \u78B0\u649E\u5947\u70B9\uFF1A${fusion.name}`, sx + sw / 2, sy + sh - 44, {
+        size: 12.5,
+        bold: true,
+        color: THEME.GOLD_LIGHT,
+        align: "center"
+      });
+      drawText(ctx2, `${fusion.branchA.label} / ${fusion.branchB.label}`, sx + sw / 2, sy + sh - 24, {
+        size: 10.5,
+        color: "#FDE68A",
+        align: "center"
+      });
+      ctx2.restore();
+    }
+    renderStep2RightPanel(ctx2, hits, rx, ry, rw) {
+      const pRight = easeOutCubic(Math.min(1, Math.max(0, (this.step2AnimTime - 0.08) / 0.42)));
+      const yOff = Math.round((1 - pRight) * 14);
+      ctx2.save();
+      ctx2.globalAlpha = Math.max(0.05, pRight);
+      const baseY = ry + yOff;
+      drawText(ctx2, "\u9009\u62E9\u521D\u59CB\u9635\u578B (\u5185\u73AF\u9632\u7EBF)", rx, baseY + 12, { size: 13.5, bold: true, color: THEME.GOLD_LIGHT });
+      SYS_TABS.forEach((sys2, si) => {
+        const lbl = sys2 === "4-back" ? "\u56DB\u540E\u536B (8)" : sys2 === "3-back" ? "\u4E09\u540E\u536B (4)" : "\u4E94\u540E\u536B (4)";
+        drawButton(ctx2, hits, rx + rw - 372 + si * 126, baseY + 1, 118, 24, lbl, () => {
+          this.sysTab = sys2;
+        }, { active: this.sysTab === sys2, fontSize: 11 });
+      });
+      const forms = FORMATION_SYSTEMS[this.sysTab].formations;
+      const fw = Math.floor((rw - 30) / 4);
+      forms.forEach((f, i) => {
+        const col = i % 4;
+        const row = Math.floor(i / 4);
+        drawButton(ctx2, hits, rx + col * (fw + 10), baseY + 32 + row * 34, fw, 29, f, () => {
+          this.selectFormation(f);
+        }, { active: this.formation === f, fontSize: 12 });
+      });
+      const styleY = baseY + 108;
+      drawText(ctx2, "\u9009\u62E9\u6218\u672F\u54F2\u5B66 (\u5916\u73AF\u6253\u6CD5)", rx, styleY + 10, { size: 13.5, bold: true, color: THEME.GOLD_LIGHT });
+      const swBtn = Math.floor((rw - 20) / 3);
+      STYLE_LIST2.forEach((s, i) => {
+        const col = i % 3;
+        const row = Math.floor(i / 3);
+        const bx = rx + col * (swBtn + 10);
+        const by = styleY + 26 + row * 40;
+        const active = this.style === s;
+        const sCol = STYLE_LABELS[s].color;
+        drawRoundRect(
+          ctx2,
+          bx,
+          by,
+          swBtn,
+          34,
+          7,
+          active ? "rgba(24, 38, 66, 0.96)" : THEME.BG_CARD,
+          active ? sCol : hits.isHovered(bx, by, swBtn, 34) ? THEME.GOLD : THEME.BORDER,
+          active ? 1.8 : 1
+        );
+        ctx2.fillStyle = sCol;
+        ctx2.beginPath();
+        ctx2.arc(bx + 16, by + 17, 4.5, 0, Math.PI * 2);
+        ctx2.fill();
+        drawText(ctx2, TACTICAL_PRESETS[s].name, bx + 28, by + 17, {
+          size: 12.5,
+          bold: active,
+          color: active ? "#FFFFFF" : THEME.TX1
+        });
+        if (active) {
+          drawText(ctx2, "\u2605", bx + swBtn - 16, by + 17, { size: 11, color: sCol, align: "center" });
+        }
+        hits.add(bx, by, swBtn, 34, () => {
+          this.selectStyle(s);
+        });
+      });
+      const dashY = styleY + 114;
+      const dashH = 226;
+      const sys = getDefenseSystem(this.formation);
+      const styleInfo = STYLE_LABELS[this.style];
+      drawChamferPanel(ctx2, rx, dashY, rw, dashH, 10, "rgba(9, 15, 29, 0.94)", THEME.BORDER_GOLD, 1.2, styleInfo.color);
+      const leftW = 266;
+      drawText(ctx2, `\u6218\u672F\u753B\u50CF \xB7 ${SYSTEM_NOTE[sys]}`, rx + 14, dashY + 18, {
+        size: 11.5,
+        bold: true,
+        color: styleInfo.color
+      });
+      const baseAxes = STYLE_BASE_RADAR[this.style];
+      const sysDelta = SYSTEM_RADAR_DELTA[sys];
+      const axes = baseAxes.map((v, idx) => Math.max(20, Math.min(98, v + sysDelta[idx])));
+      this.drawTacticalRadar(
+        ctx2,
+        rx + leftW / 2,
+        dashY + 102,
+        50,
+        axes,
+        ["\u63A7\u7403", "\u903C\u62A2", "\u9632\u5B88", "\u8FB9\u8DEF", "\u53CD\u51FB"],
+        styleInfo.color
+      );
+      const pc = STYLE_PROS_CONS[this.style];
+      drawRoundRect(ctx2, rx + 12, dashY + 168, leftW - 20, 22, 5, "rgba(20, 83, 45, 0.30)", "rgba(34, 197, 94, 0.45)");
+      drawText(ctx2, `\u4F18\u52BF\uFF1A${fitText(ctx2, pc.pros, leftW - 36, 10)}`, rx + 20, dashY + 179, {
+        size: 10,
+        color: "#86EFAC"
+      });
+      drawRoundRect(ctx2, rx + 12, dashY + 195, leftW - 20, 22, 5, "rgba(127, 29, 29, 0.28)", "rgba(248, 113, 113, 0.42)");
+      drawText(ctx2, `\u77ED\u677F\uFF1A${fitText(ctx2, pc.cons, leftW - 36, 10)}`, rx + 20, dashY + 206, {
+        size: 10,
+        color: "#FCA5A5"
+      });
+      ctx2.strokeStyle = "rgba(148, 163, 184, 0.18)";
+      ctx2.lineWidth = 1;
+      ctx2.beginPath();
+      ctx2.moveTo(rx + leftW + 4, dashY + 12);
+      ctx2.lineTo(rx + leftW + 4, dashY + dashH - 12);
+      ctx2.stroke();
+      const rColX = rx + leftW + 16;
+      const rColW = rw - leftW - 28;
+      const styleSkill = V6_ACTIVE_SKILLS.find((s) => s.source === "style" && s.style === this.style);
+      const formSkill = V6_ACTIVE_SKILLS.find((s) => s.source === "formation" && s.formation === this.formation);
+      const repSkills = [styleSkill, formSkill].filter((x) => !!x).slice(0, 2);
+      drawText(ctx2, "\u4EE3\u8868\u4E3B\u52A8\u6280 (\u661F\u76D8\u89E3\u9501\u540E F \u952E\u77AC\u53D1)", rColX, dashY + 18, {
+        size: 11,
+        bold: true,
+        color: "#7DD3FC"
+      });
+      repSkills.forEach((sk, idx) => {
+        const cardY = dashY + 30 + idx * 42;
+        drawRoundRect(ctx2, rColX, cardY, rColW, 36, 6, "rgba(12, 54, 86, 0.42)", "#38BDF8", 1);
+        drawBadge(ctx2, rColX + 6, cardY + 8, 42, 20, sk.source === "formation" ? "\u9635\u578B\u6280" : "\u6D41\u6D3E\u6280", "#0F172A", "#38BDF8");
+        drawText(ctx2, sk.name, rColX + 54, cardY + 13, { size: 11.5, bold: true, color: "#FFFFFF" });
+        drawText(ctx2, fitText(ctx2, `${sk.situationLabel} \xB7 ${sk.instantLabel}`, rColW - 62, 9.5), rColX + 54, cardY + 27, {
+          size: 9.5,
+          color: "#BAE6FD"
+        });
+      });
+      const styleDir = V6_DIRECTIVES.find((d) => d.source === "style" && d.style === this.style && d.route === "steady");
+      const formDir = V6_DIRECTIVES.find((d) => d.source === "formation" && d.formation === this.formation) ?? V6_DIRECTIVES.find((d) => d.source === "style" && d.style === this.style && d.id !== styleDir?.id);
+      const repDirs = [styleDir, formDir].filter((x) => !!x).slice(0, 2);
+      const dirTitleY = dashY + 124;
+      drawText(ctx2, "\u4EE3\u8868\u4E34\u573A\u624B\u724C (\u6BD4\u8D5B\u56DB\u8D5B\u6BB5\u62CD\u677F)", rColX, dirTitleY, {
+        size: 11,
+        bold: true,
+        color: THEME.GOLD_LIGHT
+      });
+      repDirs.forEach((d, idx) => {
+        const cardY = dirTitleY + 12 + idx * 44;
+        const zCol = ASTROLABE_ZONE_COLOR[d.zone];
+        drawRoundRect(ctx2, rColX, cardY, rColW, 38, 6, "rgba(18, 29, 51, 0.90)", zCol, 1);
+        ctx2.fillStyle = zCol;
+        ctx2.fillRect(rColX + 2, cardY + 4, 3, 30);
+        drawBadge(ctx2, rColX + 10, cardY + 9, 36, 20, `${d.tpCost}TP`, "#78350F", THEME.GOLD_LIGHT);
+        drawText(ctx2, `${d.name} (${ASTROLABE_ZONE_LABEL[d.zone]}\xB7${d.tendency === "ATK" ? "\u653B" : "\u5B88"})`, rColX + 52, cardY + 13, {
+          size: 11,
+          bold: true,
+          color: THEME.TX1
+        });
+        drawText(ctx2, fitText(ctx2, d.benefitSummary, rColW - 60, 9.5), rColX + 52, cardY + 28, {
+          size: 9.5,
+          color: "#86EFAC"
+        });
+      });
+      ctx2.restore();
+    }
+    drawTacticalRadar(ctx2, cx, cy, maxR, values, labels, accentColor) {
+      const n = 5;
+      ctx2.save();
+      for (const scale of [0.35, 0.68, 1]) {
+        ctx2.beginPath();
+        for (let i = 0; i < n; i++) {
+          const ang = -Math.PI / 2 + i * 2 * Math.PI / n;
+          const px = cx + Math.cos(ang) * maxR * scale;
+          const py = cy + Math.sin(ang) * maxR * scale;
+          if (i === 0) ctx2.moveTo(px, py);
+          else ctx2.lineTo(px, py);
+        }
+        ctx2.closePath();
+        ctx2.strokeStyle = scale === 1 ? "rgba(148, 163, 184, 0.35)" : "rgba(148, 163, 184, 0.16)";
+        ctx2.lineWidth = 1;
+        ctx2.stroke();
+      }
+      for (let i = 0; i < n; i++) {
+        const ang = -Math.PI / 2 + i * 2 * Math.PI / n;
+        const ex = cx + Math.cos(ang) * maxR;
+        const ey = cy + Math.sin(ang) * maxR;
+        ctx2.strokeStyle = "rgba(148, 163, 184, 0.20)";
+        ctx2.beginPath();
+        ctx2.moveTo(cx, cy);
+        ctx2.lineTo(ex, ey);
+        ctx2.stroke();
+        const lx = cx + Math.cos(ang) * (maxR + 15);
+        const ly = cy + Math.sin(ang) * (maxR + 13);
+        drawText(ctx2, `${labels[i]}`, lx, ly, {
+          size: 9.5,
+          bold: true,
+          color: "#CBD5E1",
+          align: "center"
+        });
+      }
+      ctx2.beginPath();
+      const pts = [];
+      for (let i = 0; i < n; i++) {
+        const ang = -Math.PI / 2 + i * 2 * Math.PI / n;
+        const r = maxR * (values[i] / 100);
+        const px = cx + Math.cos(ang) * r;
+        const py = cy + Math.sin(ang) * r;
+        pts.push({ x: px, y: py });
+        if (i === 0) ctx2.moveTo(px, py);
+        else ctx2.lineTo(px, py);
+      }
+      ctx2.closePath();
+      ctx2.fillStyle = `${accentColor}44`;
+      ctx2.fill();
+      ctx2.lineWidth = 2;
+      ctx2.strokeStyle = accentColor;
+      if (!IS_MOBILE) {
+        ctx2.shadowColor = accentColor;
+        ctx2.shadowBlur = 10;
+      }
+      ctx2.stroke();
+      ctx2.shadowBlur = 0;
+      for (const pt of pts) {
+        ctx2.fillStyle = "#FFFFFF";
+        ctx2.beginPath();
+        ctx2.arc(pt.x, pt.y, 2.6, 0, Math.PI * 2);
+        ctx2.fill();
+      }
+      ctx2.restore();
     }
   };
 
@@ -43017,6 +44231,9 @@
     }
     needsHighFps() {
       if (!this.bootIntro.isDone() || this.transition.isActive() || this.toast !== null || this.textInputModal.isOpen()) {
+        return true;
+      }
+      if (this.route === "title" && this.titleScreen.isAnimating()) {
         return true;
       }
       if (this.route === "meta" && this.metaScreen.isAnimating()) {
@@ -43518,7 +44735,7 @@
         ctx2.font = `bold 12px ${THEME.FONT_FAMILY}`;
         const tw = Math.min(580, Math.max(240, ctx2.measureText(this.toast.text).width + 48));
         const tx = 640 - tw / 2;
-        const ty = 668 + slide;
+        const ty = 72 - slide;
         if (!IS_MOBILE) {
           ctx2.shadowColor = "rgba(0,0,0,0.65)";
           ctx2.shadowBlur = 18;
@@ -43785,6 +45002,23 @@
         },
         getRoute: () => app.route,
         getState: () => app.league.getState(),
+        // 当前帧所有可点热区。Canvas 没有 DOM 定位器，自动化只能靠它枚举
+        // 「这一页到底有哪些可点区域」，否则只能靠源码里手抄坐标，极易漂移。
+        getHits: () => {
+          const hits = app.hits;
+          return (hits?.regions ?? []).map((r) => ({ x: r.x, y: r.y, w: r.w, h: r.h }));
+        },
+        // 当前打开了哪些弹窗，用于断言「弹窗确实开了 / 确实关了」
+        getModals: () => {
+          const a = app;
+          const names = ["playerModal", "confirmModal", "settingsModal", "saveSlotModal", "textInputModal"];
+          const open = names.filter((n) => a[n]?.isOpen?.());
+          const storyPending = !!app.league.getState().pendingStoryEvent;
+          if (storyPending) open.push("storyModal");
+          return open;
+        },
+        // 新手引导进度：TutorialOverlay 按 step 判定是否遮挡，进度全在 LeagueManager
+        getTutorial: () => app.league.getTutorialProgress(),
         // 比赛内部调试状态：Canvas 游戏没有 DOM 定位器，序章强制教程（“打出某张卡/换人”）
         // 只能靠这个接口让自动化脚本知道该点哪张牌，否则只能盲等 180s 超时。
         getMatchDebug: () => {

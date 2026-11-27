@@ -208,9 +208,19 @@ export interface PlayerMatchGrowth {
   isCaptain?: boolean;
 }
 
+export interface LastMatchSummary {
+  roundNumber: number;
+  fundsEarned: number;
+  metaGain: number;
+  rankBefore: number;
+  rankAfter: number;
+  totalTeams: number;
+}
+
 export class LeagueManager {
   private state: LeagueSaveState;
   private lastMatchGrowth: Record<string, PlayerMatchGrowth> = {};
+  private lastMatchSummary: LastMatchSummary | null = null;
 
   constructor(initialState?: LeagueSaveState) {
     if (initialState) {
@@ -421,6 +431,10 @@ export class LeagueManager {
 
   public getLastMatchGrowth(): Record<string, PlayerMatchGrowth> {
     return this.lastMatchGrowth;
+  }
+
+  public getLastMatchSummary(): LastMatchSummary | null {
+    return this.lastMatchSummary;
   }
 
   public getStandings(): StandingRow[] {
@@ -962,10 +976,6 @@ export class LeagueManager {
     const p = V6_PASSIVE_MAP[passiveId];
     if (!p) return { ok: false, reason: '未找到该被动节点' };
     if (ast.unlockedPassives.includes(passiveId)) return { ok: false, reason: '已点亮' };
-    const caps = getV6TierCaps(this.getBestTierReached());
-    if (ast.unlockedPassives.length >= caps.maxPassives) {
-      return { ok: false, reason: `当前级别被动槽位已满 (${caps.maxPassives})，升入更高级别联赛后解锁更多` };
-    }
     const prereq = canUnlockV6Node(ast, 'passive', passiveId);
     if (!prereq.ok) return { ok: false, reason: prereq.reason };
     if (this.state.metaPointsTotal < p.unlockCost) return { ok: false, reason: `Meta 点数不足 (需 ${p.unlockCost} pt)` };
@@ -980,10 +990,6 @@ export class LeagueManager {
     const d = V6_DIRECTIVE_MAP[directiveId];
     if (!d) return { ok: false, reason: '未找到该三区手牌' };
     if (ast.unlockedDirectives.includes(directiveId)) return { ok: false, reason: '已解锁' };
-    const caps = getV6TierCaps(this.getBestTierReached());
-    if (ast.unlockedDirectives.length >= caps.maxDirectives) {
-      return { ok: false, reason: `当前级别手牌库上限为 ${caps.maxDirectives} 张，升入更高级别联赛后扩容` };
-    }
     const prereq = canUnlockV6Node(ast, 'directive', directiveId);
     if (!prereq.ok) return { ok: false, reason: prereq.reason };
     if (this.state.metaPointsTotal < d.unlockCost) return { ok: false, reason: `Meta 点数不足 (需 ${d.unlockCost} pt)` };
@@ -998,13 +1004,6 @@ export class LeagueManager {
     const d = V6_DIRECTIVE_MAP[directiveId];
     if (!d) return { ok: false, reason: '未找到该手牌' };
     if (!ast.unlockedDirectives.includes(directiveId)) return { ok: false, reason: '请先解锁该手牌本体' };
-    const caps = getV6TierCaps(this.getBestTierReached());
-    if (caps.maxSatelliteLevel === 0) {
-      return { ok: false, reason: '需曾晋级第 5 级或更高联赛后开放手牌卫星改造' };
-    }
-    if (sat === 'C' && caps.maxSatelliteLevel < 3) {
-      return { ok: false, reason: '需曾晋级第 3 级或更高联赛后开放 C 卫星宗师改造' };
-    }
     const cur = ast.directiveSatellites[directiveId] ?? [];
     if (cur.includes(sat)) return { ok: false, reason: '该卫星改造已点亮' };
     const cost = d.satellites[sat].cost;
@@ -1022,10 +1021,6 @@ export class LeagueManager {
     if (ast.unlockedSkills.includes(skillId)) return { ok: false, reason: '已解锁' };
     if (sk.source === 'mastery' || sk.source === 'core') {
       return { ok: false, reason: '宗师终极技需通过点亮对应宗师印或圆心解锁' };
-    }
-    const caps = getV6TierCaps(this.getBestTierReached());
-    if (ast.unlockedSkills.length >= caps.maxSkills) {
-      return { ok: false, reason: `当前级别主动技上限为 ${caps.maxSkills} 个，升入更高级别联赛后解锁更多` };
     }
     const prereq = canUnlockV6Node(ast, 'skill', skillId);
     if (!prereq.ok) return { ok: false, reason: prereq.reason };
@@ -1050,10 +1045,6 @@ export class LeagueManager {
     const f = V6_FUSION_MAP[fusionId];
     if (!f) return { ok: false, reason: '未找到该融合奇点' };
     if (ast.unlockedFusions.includes(fusionId)) return { ok: false, reason: '已点亮' };
-    const caps = getV6TierCaps(this.getBestTierReached());
-    if (!caps.allowFusion) {
-      return { ok: false, reason: '需曾晋级第 5 级或更高联赛后解锁融合奇点' };
-    }
     const prereq = canUnlockV6Node(ast, 'fusion', fusionId);
     if (!prereq.ok) return { ok: false, reason: prereq.reason };
     if (this.state.metaPointsTotal < f.unlockCost) return { ok: false, reason: `Meta 点数不足 (需 ${f.unlockCost} pt)` };
@@ -1079,10 +1070,6 @@ export class LeagueManager {
     const seal = V6_MASTERY_SEAL_MAP[sealId];
     if (!seal) return { ok: false, reason: '未找到该宗师印' };
     if (ast.unlockedMasterySeals.includes(sealId)) return { ok: false, reason: '已点亮' };
-    const caps = getV6TierCaps(this.getBestTierReached());
-    if (!caps.allowMastery) {
-      return { ok: false, reason: '需曾晋级第 3 级或更高联赛后解锁宗师印' };
-    }
     const check = canUnlockMasterySeal(ast, seal.style);
     if (!check.ok) return check;
     if (this.state.metaPointsTotal < seal.unlockCost) return { ok: false, reason: `Meta 点数不足 (需 ${seal.unlockCost} pt)` };
@@ -3669,6 +3656,7 @@ export class LeagueManager {
     const userFixture = this.getUserCurrentFixture();
     if (!userFixture) return;
 
+    const rankBefore = this.getStandings().findIndex(r => r.isUser) + 1;
     this.applyMatchOutcome(userFixture, userMatchResult);
 
     // 模拟本轮其余场次（包括 AI 对阵）
@@ -3681,7 +3669,7 @@ export class LeagueManager {
       const a = this.state.clubs.find(c => c.id === fx.awayClubId)!;
       const engine = new MatchEngine(this.buildTeamSetup(h, a.id), this.buildTeamSetup(a, h.id));
       const res = engine.simulateMatch();
-      for (const mp of res.players) aiMatchFitness.set(mp.id, mp.fitness);
+      for (const mp of [...res.players, ...(res.subbedOutPlayers ?? [])]) aiMatchFitness.set(mp.id, mp.fitness);
       this.applyMatchOutcome(fx, res);
     }
 
@@ -3689,7 +3677,7 @@ export class LeagueManager {
     // 赛后体能恢复、体能疲惫/轻伤判定与士气浮动（玩家与 AI 采用对称体能规则）
     const userSquadIds = new Set(this.getUserClub().squad.map(p => p.id));
     const userEndFitness = new Map<string, number>();
-    for (const mp of userMatchResult.players) {
+    for (const mp of [...userMatchResult.players, ...(userMatchResult.subbedOutPlayers ?? [])]) {
       if (userSquadIds.has(mp.id)) {
         userEndFitness.set(mp.id, mp.fitness);
       } else {
@@ -3844,10 +3832,20 @@ export class LeagueManager {
     const finBonusRates = [0, 0.15, 0.25, 0.35, 0.35, 0.35, 0.35, 0.5, 0.6];
     const homeMul = userIsHome ? 1 + (stadBonusRates[metaNow.stadium ?? 0] ?? 0) : 1;
     const finMul = 1 + (finBonusRates[metaNow.finance ?? 0] ?? 0);
-    this.addClubFunds(Math.round(baseMatchFunds * tierFundScale * homeMul * finMul));
+    const fundsEarned = Math.round(baseMatchFunds * tierFundScale * homeMul * finMul);
+    this.addClubFunds(fundsEarned);
     // V6 Meta 永久星盘点稳定产出（胜 +2pt / 平 +1pt / 负 0pt，拉长星盘成型曲线）
     const v6MetaGain = userWon ? 2 : myGoals === oppGoals ? 1 : 0;
     this.state.metaPointsTotal += v6MetaGain;
+    const rankAfter = this.getStandings().findIndex(r => r.isUser) + 1;
+    this.lastMatchSummary = {
+      roundNumber: userFixture.round,
+      fundsEarned,
+      metaGain: v6MetaGain,
+      rankBefore: rankBefore > 0 ? rankBefore : rankAfter,
+      rankAfter,
+      totalTeams: this.state.clubs.length,
+    };
 
     // 慢热成长：个人阵型熟练度 + 随比赛进度逐场积累属性成长（受赛季总上限约束，防止低级联赛超模）
     this.lastMatchGrowth = {};
@@ -3856,7 +3854,9 @@ export class LeagueManager {
       if (u.team === userSide) unlockedTraitMap.set(u.playerId, u.trait);
     }
     const matchStatsByPlayer = new Map(
-      userMatchResult.players.filter(mp => mp.team === userSide).map(mp => [mp.id, mp.matchStats])
+      [...userMatchResult.players, ...(userMatchResult.subbedOutPlayers ?? [])]
+        .filter(mp => mp.team === userSide)
+        .map(mp => [mp.id, mp.matchStats])
     );
     const webUnlocked = this.getSkillWebUnlocked();
     const hasFormNode = webUnlocked.includes(`fm_${userClubNow.formation}`);
@@ -5265,7 +5265,10 @@ export class LeagueManager {
         if (!dp.traits.includes(u.trait)) dp.traits.push(u.trait);
       }
     }
-    for (const mp of res.players) {
+    const seenPlayedIds = new Set<string>();
+    for (const mp of [...res.players, ...(res.subbedOutPlayers ?? [])]) {
+      if (seenPlayedIds.has(mp.id)) continue;
+      seenPlayedIds.add(mp.id);
       const dp = playerMap.get(mp.id);
       if (!dp) continue;
       dp.seasonStats.appearances++;

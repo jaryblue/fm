@@ -199,7 +199,7 @@ record(
 
 // 2. 跳过新手引导并完成 3 轮核心开包（撕包 -> 一键推荐选满 -> 签入）
 await page.keyboard.press('Escape');
-await clickCanvas(812, 684, 250); // 跳过全部引导
+await clickCanvas(790, 569, 250); // 跳过全部引导
 for (let pack = 0; pack < 3; pack++) {
   const sv = await getSave();
   if (sv && sv.phase !== 'INIT_DRAFT') break;

@@ -30,7 +30,7 @@ import {
   tierColor,
 } from '../CanvasKit';
 import { SoundEngine } from '../SoundEngine';
-import { THEME } from '../Theme';
+import { IS_MOBILE, THEME } from '../Theme';
 import { drawIcon, IconName } from '../VectorIcons';
 
 type PosFilter = 'ALL' | 'GK' | 'DEF' | 'MID' | 'ATT';
@@ -317,21 +317,22 @@ export class ClubRosterScreen {
   ): void {
     const club = league.getUserClub();
     const selectedSet = new Set(club.squad.map(p => p.id));
-    const lbW = 316;
+    const lbW = IS_MOBILE ? 344 : 316;
     const wallX = baseX + lbW + 12;
     const wallW = totalW - lbW - 12;
 
     // 左栏：队内榜单
     drawChamferPanel(ctx, baseX, panelY, lbW, panelH, 12, 'rgba(14, 22, 40, 0.94)', THEME.BORDER_GOLD);
-    drawText(ctx, '队内数据榜单 · LEADERBOARD', baseX + 16, panelY + 20, { size: 13.5, bold: true, color: THEME.GOLD_LIGHT });
-    drawText(ctx, '一线队实绩排行（点击查看详情）', baseX + 16, panelY + 38, { size: 10, color: THEME.TX2 });
+    drawText(ctx, '队内数据榜单 · LEADERBOARD', baseX + 16, panelY + 20, { size: IS_MOBILE ? 14.5 : 13.5, bold: true, color: THEME.GOLD_LIGHT });
+    drawText(ctx, '一线队实绩排行（点击查看详情）', baseX + 16, panelY + 38, { size: IS_MOBILE ? 11 : 10, color: THEME.TX2 });
 
+    const lbTabW = Math.floor((lbW - 32) / 3);
     LB_TABS.forEach((tab, ti) => {
       const col = ti % 3;
       const row = Math.floor(ti / 3);
-      drawButton(ctx, hits, baseX + 12 + col * 98, panelY + 50 + row * 28, 92, 23, tab.label, () => {
+      drawButton(ctx, hits, baseX + 12 + col * (lbTabW + 4), panelY + 50 + row * 29, lbTabW, IS_MOBILE ? 25 : 23, tab.label, () => {
         this.lbTab = tab.key;
-      }, { active: this.lbTab === tab.key, fontSize: 10 });
+      }, { active: this.lbTab === tab.key, fontSize: IS_MOBILE ? 11 : 10 });
     });
 
     const lbPool = (this.lbTab === 'gk' ? displayRoster.filter(p => p.role === 'GK') : displayRoster)
@@ -339,10 +340,13 @@ export class ClubRosterScreen {
       .sort((a, b) => (b.val.score !== a.val.score ? b.val.score - a.val.score : b.p.ca - a.p.ca));
 
     const listStartY = panelY + 114;
-    lbPool.slice(0, 10).forEach((entry, idx) => {
+    const maxLbRows = IS_MOBILE ? 8 : 10;
+    const lbRowStep = IS_MOBILE ? 52 : 43;
+    const lbRowH = IS_MOBILE ? 48 : 40;
+    lbPool.slice(0, maxLbRows).forEach((entry, idx) => {
       const { p, val } = entry;
-      const ry = listStartY + idx * 43;
-      if (ry + 38 > panelY + panelH - 6) return;
+      const ry = listStartY + idx * lbRowStep;
+      if (ry + lbRowH - 2 > panelY + panelH - 6) return;
       const rankCol = idx === 0 ? THEME.GOLD_LIGHT : idx === 1 ? '#CBD5E1' : idx === 2 ? '#D97706' : THEME.TX3;
 
       drawRoundRect(
@@ -350,23 +354,23 @@ export class ClubRosterScreen {
         baseX + 12,
         ry,
         lbW - 24,
-        40,
+        lbRowH,
         6,
         idx === 0 ? 'rgba(212, 168, 67, 0.12)' : THEME.BG_CARD,
         idx === 0 ? THEME.BORDER_GOLD : THEME.BORDER
       );
-      drawText(ctx, `${idx + 1}`, baseX + 24, ry + 20, { token: 'LABEL', bold: true, color: rankCol, align: 'center', mono: true });
-      drawBadge(ctx, baseX + 38, ry + 11, 32, 18, p.role, tierColor(p.tier));
-      drawText(ctx, fitText(ctx, p.name, lbW - 154, FONT.LABEL, true, true), baseX + 76, ry + 13, { token: 'LABEL', bold: true, color: THEME.TX1 });
-      drawText(ctx, `${p.age}岁 · ${p.ca}/${p.pa ?? p.ca}`, baseX + 76, ry + 29, { token: 'MICRO', color: THEME.TX2, mono: true });
-      drawText(ctx, val.text, baseX + lbW - 18, ry + 20, {
-        token: 'LABEL',
+      drawText(ctx, `${idx + 1}`, baseX + 24, ry + lbRowH / 2, { token: IS_MOBILE ? 'BODY' : 'LABEL', bold: true, color: rankCol, align: 'center', mono: true });
+      drawBadge(ctx, baseX + 38, ry + (lbRowH - 18) / 2, 34, 18, p.role, tierColor(p.tier));
+      drawText(ctx, fitText(ctx, p.name, lbW - 166, IS_MOBILE ? FONT.BODY : FONT.LABEL, true, true), baseX + 78, ry + (IS_MOBILE ? 15 : 13), { token: IS_MOBILE ? 'BODY' : 'LABEL', bold: true, color: THEME.TX1 });
+      drawText(ctx, `${p.age}岁 · ${p.ca}/${p.pa ?? p.ca}`, baseX + 78, ry + (IS_MOBILE ? 34 : 29), { token: IS_MOBILE ? 'LABEL' : 'MICRO', color: THEME.TX2, mono: true });
+      drawText(ctx, val.text, baseX + lbW - 18, ry + lbRowH / 2, {
+        token: IS_MOBILE ? 'BODY' : 'LABEL',
         bold: true,
         color: idx < 3 ? rankCol : '#7DD3FC',
         align: 'right',
         mono: true,
       });
-      hits.addTouchTarget(baseX + 12, ry, lbW - 24, 40, () => {
+      hits.addTouchTarget(baseX + 12, ry, lbW - 24, lbRowH, () => {
         SoundEngine.playClick();
         actions.onInspectPlayer(p);
       });
@@ -473,19 +477,21 @@ export class ClubRosterScreen {
         return b.ca - a.ca;
       });
 
-    const pageSize = 9;
+    const cols = IS_MOBILE ? 2 : 3;
+    const pageSize = IS_MOBILE ? 6 : 9;
     const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize));
     if (this.page >= totalPages) this.page = totalPages - 1;
     const visible = filtered.slice(this.page * pageSize, (this.page + 1) * pageSize);
-    const cw = Math.floor((wallW - 44) / 3);
-    const gap = Math.floor((wallW - 24 - cw * 3) / 2);
-    const ch = 132;
+    const gap = IS_MOBILE ? 14 : 10;
+    const cw = Math.floor((wallW - 24 - gap * (cols - 1)) / cols);
+    const ch = IS_MOBILE ? 136 : 132;
+    const rowStep = IS_MOBILE ? 141 : 138;
 
     visible.forEach((p, idx) => {
-      const col = idx % 3;
-      const row = Math.floor(idx / 3);
+      const col = idx % cols;
+      const row = Math.floor(idx / cols);
       const px = wallX + 12 + col * (cw + gap);
-      const py = panelY + 104 + row * 138;
+      const py = panelY + (IS_MOBILE ? 102 : 104) + row * rowStep;
       const isSel = selectedSet.has(p.id);
       const isSuspended = (p.suspendedRounds ?? 0) > 0;
       const paVal = p.pa ?? p.ca;
@@ -523,69 +529,124 @@ export class ClubRosterScreen {
 
       drawText(ctx, fitText(ctx, p.name, cw - 122, FONT.BODY, true, true), px + 52, py + 32, { token: 'BODY', bold: true, color: THEME.TX1 });
       const secText = p.secondaryRoles && p.secondaryRoles.length > 0 ? `兼:${p.secondaryRoles.join('/')}` : '专职';
-      drawText(ctx, fitText(ctx, `${secText} · ${formatFunds(p.marketValue ?? p.cost)}`, cw - 122, FONT.MICRO, false, true), px + 52, py + 47, {
-        token: 'MICRO',
+      drawText(ctx, fitText(ctx, `${secText} · ${formatFunds(p.marketValue ?? p.cost)}`, cw - 122, IS_MOBILE ? FONT.LABEL : FONT.MICRO, false, true), px + 52, py + 47, {
+        token: IS_MOBILE ? 'LABEL' : 'MICRO',
         color: '#7DD3FC',
       });
 
       drawText(ctx, `${p.ca}`, px + cw - 10, py + 15, { token: 'TITLE', bold: true, color: THEME.GOLD_LIGHT, align: 'right', mono: true });
       drawStatBar(ctx, p.ca, 99, px + cw - 52, py + 25, 42, 3, THEME.GOLD_LIGHT);
-      drawText(ctx, `PA ${paVal}`, px + cw - 10, py + 36, { token: 'MICRO', bold: true, color: paVal >= 85 ? THEME.GOLD_LIGHT : '#38BDF8', align: 'right', mono: true });
+      drawText(ctx, `PA ${paVal}`, px + cw - 10, py + 36, { token: IS_MOBILE ? 'LABEL' : 'MICRO', bold: true, color: paVal >= 85 ? THEME.GOLD_LIGHT : '#38BDF8', align: 'right', mono: true });
 
-      const attrPairs: Array<[IconName, number]> = p.role === 'GK'
-        ? [
-            ['stat_gk', p.attributes.goalkeeping],
-            ['stat_pos', p.attributes.positioning],
-            ['stat_calm', p.attributes.composure],
-            ['stat_pass', p.attributes.passing],
-            ['shield', p.attributes.strength],
-            ['stat_fit', p.attributes.stamina],
-          ]
-        : [
-            ['stat_pace', p.attributes.pace],
-            ['stat_shoot', p.attributes.shooting],
-            ['stat_pass', p.attributes.passing],
-            ['ball', p.attributes.dribbling],
-            ['stat_def', p.attributes.defending],
-            ['stat_fit', p.attributes.stamina],
-          ];
+      if (IS_MOBILE) {
+        const keyAttrs: Array<[IconName, string, number]> = p.role === 'GK'
+          ? [
+              ['stat_gk', '扑救', p.attributes.goalkeeping],
+              ['stat_pos', '站位', p.attributes.positioning],
+              ['stat_calm', '冷静', p.attributes.composure],
+              ['stat_pass', '传球', p.attributes.passing],
+            ]
+          : [
+              ['stat_pace', '速度', p.attributes.pace],
+              ['stat_shoot', '射门', p.attributes.shooting],
+              ['stat_pass', '传球', p.attributes.passing],
+              ['stat_def', '防守', p.attributes.defending],
+            ];
+        const barColW = Math.floor((cw - 28) / 2);
+        keyAttrs.forEach(([ic, lbl, val], ai) => {
+          const acol = ai % 2;
+          const arow = Math.floor(ai / 2);
+          const ax = px + 10 + acol * (barColW + 8);
+          const ay = py + 58 + arow * 20;
+          const col = this.statColor(val);
+          drawIcon(ctx, ic, ax + 6, ay + 8, 11, THEME.TX3);
+          drawText(ctx, lbl, ax + 16, ay + 8, { size: 11, rawSize: true, color: THEME.TX2 });
+          drawStatBar(ctx, val, 99, ax + 46, ay + 6, barColW - 76, 5, col);
+          drawText(ctx, `${val}`, ax + barColW - 2, ay + 8, { size: 11.5, rawSize: true, bold: true, color: col, align: 'right', mono: true });
+        });
+      } else {
+        const attrPairs: Array<[IconName, number]> = p.role === 'GK'
+          ? [
+              ['stat_gk', p.attributes.goalkeeping],
+              ['stat_pos', p.attributes.positioning],
+              ['stat_calm', p.attributes.composure],
+              ['stat_pass', p.attributes.passing],
+              ['shield', p.attributes.strength],
+              ['stat_fit', p.attributes.stamina],
+            ]
+          : [
+              ['stat_pace', p.attributes.pace],
+              ['stat_shoot', p.attributes.shooting],
+              ['stat_pass', p.attributes.passing],
+              ['ball', p.attributes.dribbling],
+              ['stat_def', p.attributes.defending],
+              ['stat_fit', p.attributes.stamina],
+            ];
 
-      const boxW = Math.floor((cw - 28) / 3);
-      attrPairs.forEach(([ic, val], ai) => {
-        const acol = ai % 3;
-        const arow = Math.floor(ai / 3);
-        const ax = px + 10 + acol * (boxW + 4);
-        const ay = py + 56 + arow * 20;
-        drawRoundRect(ctx, ax, ay, boxW, 17, 4, 'rgba(11, 17, 30, 0.85)', 'rgba(148, 163, 184, 0.20)');
-        drawIcon(ctx, ic, ax + 11, ay + 8.5, 10, THEME.TX3);
-        drawText(ctx, `${val}`, ax + boxW - 6, ay + 8.5, { size: 10.5, bold: true, color: this.statColor(val), align: 'right', mono: true });
-      });
+        const boxW = Math.floor((cw - 28) / 3);
+        attrPairs.forEach(([ic, val], ai) => {
+          const acol = ai % 3;
+          const arow = Math.floor(ai / 3);
+          const ax = px + 10 + acol * (boxW + 4);
+          const ay = py + 56 + arow * 20;
+          drawRoundRect(ctx, ax, ay, boxW, 17, 4, 'rgba(11, 17, 30, 0.85)', 'rgba(148, 163, 184, 0.20)');
+          drawIcon(ctx, ic, ax + 11, ay + 8.5, 10, THEME.TX3);
+          drawText(ctx, `${val}`, ax + boxW - 6, ay + 8.5, { size: 10.5, bold: true, color: this.statColor(val), align: 'right', mono: true });
+        });
+      }
 
       const traitText = p.traits && p.traits.length > 0 ? p.traits.slice(0, 2).join(' · ') : '均衡型球员';
-      drawText(ctx, fitText(ctx, traitText, cw - 60, FONT.MICRO, false, true), px + 12, py + 103, { token: 'MICRO', color: '#A5B4FC' });
-      drawButton(ctx, hits, px + cw - 42, py + 93, 34, 18, p.isStarred ? '★' : '☆', () => {
+      drawText(ctx, fitText(ctx, traitText, cw - 60, IS_MOBILE ? FONT.LABEL : FONT.MICRO, false, true), px + 12, py + (IS_MOBILE ? 105 : 103), {
+        token: IS_MOBILE ? 'LABEL' : 'MICRO',
+        color: '#A5B4FC',
+      });
+      drawButton(ctx, hits, px + cw - 42, py + (IS_MOBILE ? 95 : 93), 34, 18, p.isStarred ? '★' : '☆', () => {
         const next = league.toggleStarPlayer(p.id);
         actions.onSave();
         actions.onToast?.(next ? `已收藏【${p.name}】，换人时将优先置顶` : `已取消收藏【${p.name}】`, next ? THEME.GOLD_LIGHT : THEME.TX2);
-      }, { variant: p.isStarred ? 'gold' : 'ghost', fontSize: 10 });
+      }, { variant: p.isStarred ? 'gold' : 'ghost', fontSize: IS_MOBILE ? 11 : 10 });
 
       const apps = p.seasonStats.appearances ?? 0;
-      const botY = py + 120;
+      const botY = py + (IS_MOBILE ? 123 : 120);
       let lx = px + 12;
-      drawText(ctx, `${apps}场`, lx, botY, { token: 'MICRO', color: THEME.TX2, mono: true });
-      lx += 32;
+      drawText(ctx, `${apps}场`, lx, botY, { token: IS_MOBILE ? 'LABEL' : 'MICRO', color: THEME.TX2, mono: true });
+      lx += IS_MOBILE ? 38 : 32;
       if (p.role === 'GK') {
-        lx += drawStatMicro(ctx, 'stat_gk', `${p.seasonStats.saves ?? 0}`, lx, botY, { iconSize: 10, fontSize: 10, iconColor: THEME.TX3, valueColor: THEME.TX1, gap: 2 });
-        lx += 7;
-        drawStatMicro(ctx, 'shield', `${p.seasonStats.cleanSheets ?? 0}`, lx, botY, { iconSize: 10, fontSize: 10, iconColor: THEME.TX3, valueColor: THEME.GREEN, gap: 2 });
+        lx += drawStatMicro(ctx, 'stat_gk', `${p.seasonStats.saves ?? 0}`, lx, botY, {
+          iconSize: IS_MOBILE ? 12 : 10,
+          fontSize: IS_MOBILE ? 11.5 : 10,
+          iconColor: THEME.TX3,
+          valueColor: THEME.TX1,
+          gap: 2,
+        });
+        lx += 8;
+        drawStatMicro(ctx, 'shield', `${p.seasonStats.cleanSheets ?? 0}`, lx, botY, {
+          iconSize: IS_MOBILE ? 12 : 10,
+          fontSize: IS_MOBILE ? 11.5 : 10,
+          iconColor: THEME.TX3,
+          valueColor: THEME.GREEN,
+          gap: 2,
+        });
       } else {
-        lx += drawStatMicro(ctx, 'ball', `${p.seasonStats.goals ?? 0}`, lx, botY, { iconSize: 10, fontSize: 10, iconColor: THEME.TX3, valueColor: THEME.TX1, gap: 2 });
-        lx += 7;
-        drawStatMicro(ctx, 'stat_assist', `${p.seasonStats.assists ?? 0}`, lx, botY, { iconSize: 10, fontSize: 10, iconColor: THEME.TX3, valueColor: THEME.TX1, gap: 2 });
+        lx += drawStatMicro(ctx, 'ball', `${p.seasonStats.goals ?? 0}`, lx, botY, {
+          iconSize: IS_MOBILE ? 12 : 10,
+          fontSize: IS_MOBILE ? 11.5 : 10,
+          iconColor: THEME.TX3,
+          valueColor: THEME.TX1,
+          gap: 2,
+        });
+        lx += 8;
+        drawStatMicro(ctx, 'stat_assist', `${p.seasonStats.assists ?? 0}`, lx, botY, {
+          iconSize: IS_MOBILE ? 12 : 10,
+          fontSize: IS_MOBILE ? 11.5 : 10,
+          iconColor: THEME.TX3,
+          valueColor: THEME.TX1,
+          gap: 2,
+        });
       }
       const fitPct = Math.round(p.fitness ?? 100);
-      drawMiniBar(ctx, px + cw - 68, botY - 2, 26, 4, fitPct / 100, fitPct < 60 ? '#FBBF24' : THEME.GREEN);
-      drawText(ctx, `${fitPct}%`, px + cw - 10, botY, { token: 'MICRO', color: fitPct < 60 ? '#FBBF24' : THEME.TX2, align: 'right', mono: true });
+      drawMiniBar(ctx, px + cw - (IS_MOBILE ? 76 : 68), botY - 2, 26, 4, fitPct / 100, fitPct < 60 ? '#FBBF24' : THEME.GREEN);
+      drawText(ctx, `${fitPct}%`, px + cw - 10, botY, { token: IS_MOBILE ? 'LABEL' : 'MICRO', color: fitPct < 60 ? '#FBBF24' : THEME.TX2, align: 'right', mono: true });
 
       hits.add(px, py, cw, ch, () => {
         SoundEngine.playClick();

@@ -223,14 +223,15 @@ export class TacticsScreen {
       const botY = y + h - 8;
       drawStatMicro(ctx, 'stat_fam', `${opts.fam}%`, x + 5, botY, {
         iconSize: 9.5,
-        fontSize: 9.5,
+        fontSize: IS_MOBILE ? 10 : 9.5,
         iconColor: THEME.TX3,
         valueColor: famCol,
         gap: 2,
       });
-      drawMiniBar(ctx, x + w - 46, botY - 2, 20, 3.5, fit / 100, fit < 60 ? '#FBBF24' : THEME.GREEN);
+      drawMiniBar(ctx, x + w - (IS_MOBILE ? 60 : 46), botY - 2, IS_MOBILE ? 22 : 20, 3.5, fit / 100, fit < 60 ? '#FBBF24' : THEME.GREEN);
       drawText(ctx, `${fit}%`, x + w - 5, botY, {
-        size: 9,
+        size: IS_MOBILE ? 10 : 9,
+        rawSize: IS_MOBILE,
         color: fit < 60 ? '#FBBF24' : THEME.TX2,
         align: 'right',
         mono: true,
@@ -243,12 +244,12 @@ export class TacticsScreen {
     drawBadge(ctx, x + 8, y + 6, roleW, 16, opts.roleLabel, opts.roleBg, opts.roleFg);
 
     if (opts.statusBadge) {
-      drawBadge(ctx, x + w - 36, y + 6, 28, 16, opts.statusBadge.text, opts.statusBadge.bg, opts.statusBadge.fg);
+      drawBadge(ctx, x + w - (IS_MOBILE ? 42 : 36), y + 6, IS_MOBILE ? 34 : 28, IS_MOBILE ? 17 : 16, opts.statusBadge.text, opts.statusBadge.bg, opts.statusBadge.fg);
     } else if (opts.isCaptain) {
       drawBadge(ctx, x + w - 24, y + 6, 16, 16, 'C', '#FACC15', '#080C14');
     }
 
-    const caRight = opts.statusBadge ? x + w - 40 : opts.isCaptain ? x + w - 27 : x + w - 8;
+    const caRight = opts.statusBadge ? x + w - (IS_MOBILE ? 46 : 40) : opts.isCaptain ? x + w - 27 : x + w - 8;
     drawText(ctx, `${player.ca}/${paVal}`, caRight, y + 14, {
       size: 12,
       bold: true,
@@ -921,12 +922,12 @@ export class TacticsScreen {
     });
 
     // 最佳首发收为替补席筛选行右侧的紧凑「⚡ 最佳首发」图标按钮
-    drawButton(ctx, hits, 1148, 180, 98, 24, '⚡ 最佳首发', () => {
+    drawButton(ctx, hits, 1142, 179, 104, 26, '⚡ 最佳首发', () => {
       league.updateUserTactics(club.formation, club.style);
       this.selectedStarterIdx = null;
       this.selectedBenchPlayerId = null;
       actions.onSave();
-    }, { variant: 'ghost', fontSize: 10.5 });
+    }, { variant: 'ghost', fontSize: IS_MOBILE ? 11 : 10.5 });
 
     const pageSize = 12; // 3列 × 4行 = 12张高呼吸感卡片
     const totalPages = Math.max(1, Math.ceil(benchSquad.length / pageSize));

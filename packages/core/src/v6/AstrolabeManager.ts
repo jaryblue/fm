@@ -350,36 +350,15 @@ export interface V6TierCaps {
   allowMastery: boolean;
 }
 
-/** 按玩家历史最高到达级别 (T7 -> T1) 阶梯解锁星盘深度，防止首赛季即毕业 */
+/** 仅对单赛季肉鸽圣物槽位做级别阶梯；星盘节点解锁由前置连线与 Meta 点数自然约束，不再在第一赛季卡死 */
 export function getV6TierCaps(bestTier: number): V6TierCaps {
-  if (bestTier >= 6) {
-    return {
-      maxPassives: 5,
-      maxSkills: 2,
-      maxDirectives: 4,
-      maxSatelliteLevel: 0,
-      maxRelics: 2,
-      allowFusion: false,
-      allowMastery: false,
-    };
-  }
-  if (bestTier >= 4) {
-    return {
-      maxPassives: 9,
-      maxSkills: 3,
-      maxDirectives: 6,
-      maxSatelliteLevel: 2,
-      maxRelics: 3,
-      allowFusion: true,
-      allowMastery: false,
-    };
-  }
+  const maxRelics = bestTier >= 6 ? 2 : bestTier >= 4 ? 3 : 5;
   return {
-    maxPassives: 99,
-    maxSkills: 4,
-    maxDirectives: 99,
+    maxPassives: 999,
+    maxSkills: 99,
+    maxDirectives: 999,
     maxSatelliteLevel: 3,
-    maxRelics: 5,
+    maxRelics,
     allowFusion: true,
     allowMastery: true,
   };

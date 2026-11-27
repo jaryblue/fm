@@ -109,7 +109,7 @@ export class SeasonEndScreen {
         ctx,
         `${summary.tierName ?? '联赛'} 第 ${summary.finalRank} 名 · ${summary.points}分 (${summary.gf}/${summary.ga}) · ${promoText} · +${summary.metaPointsEarned}pt`,
         154,
-        92,
+        88,
         { size: 12, color: summary.promotionStatus === 'promoted' ? THEME.GREEN : summary.promotionStatus === 'relegated' ? THEME.RED_LIGHT : THEME.TX2 }
       );
     }
@@ -180,16 +180,18 @@ export class SeasonEndScreen {
     const isChamp = summary?.isChampion ?? false;
     const isPromo = summary?.promotionStatus === 'promoted';
 
+    const panelTop = summary?.retiredLegend ? 150 : 122;
+    const panelH = summary?.retiredLegend ? 454 : 482;
     // 左栏：赛季个人荣誉颁奖台
-    drawChamferPanel(ctx, 64, 118, 460, 486, 12, 'rgba(14, 22, 40, 0.88)', THEME.BORDER_GOLD, 1.2);
+    drawChamferPanel(ctx, 64, panelTop, 460, panelH, 12, 'rgba(14, 22, 40, 0.88)', THEME.BORDER_GOLD, 1.2);
     const celebrateArt = AssetLoader.get('bg_season_ceremony') ?? AssetLoader.get('bg_champion');
     if (celebrateArt && typeof ctx.drawImage === 'function') {
       ctx.save();
       ctx.beginPath();
-      ctx.rect(66, 120, 456, 108);
+      ctx.rect(66, panelTop + 2, 456, 92);
       ctx.clip();
       ctx.globalAlpha = 0.55;
-      ctx.drawImage(celebrateArt, 66, 110, 456, 148);
+      ctx.drawImage(celebrateArt, 66, panelTop - 6, 456, 132);
       ctx.restore();
     }
     const grandCup = AssetLoader.get('trophy_grand_cup');
@@ -198,15 +200,15 @@ export class SeasonEndScreen {
       const cyOff = (1 - cupEnter) * 18;
       ctx.save();
       ctx.globalAlpha = 0.92;
-      ctx.drawImage(grandCup, 426, 124 + cyOff, 86, 86);
+      ctx.drawImage(grandCup, 434, panelTop + 6 + cyOff, 76, 76);
       ctx.restore();
     }
-    drawText(ctx, '赛季个人荣誉殿堂 · SEASON AWARDS', 84, 144, { size: 14, bold: true, color: THEME.GOLD_LIGHT });
+    drawText(ctx, '赛季个人荣誉殿堂 · SEASON AWARDS', 84, panelTop + 26, { size: 14, bold: true, color: THEME.GOLD_LIGHT });
     drawText(
       ctx,
       isChamp ? '冠军荣耀加冕！全队载入俱乐部史册' : isPromo ? '成功冲级！下赛季迎战更强对手' : '赛季征程圆满收官，总结得失再出发',
       84,
-      168,
+      panelTop + 50,
       { size: 11.5, color: isChamp ? THEME.GOLD_LIGHT : isPromo ? THEME.GREEN : '#93C5FD' }
     );
 
@@ -243,10 +245,10 @@ export class SeasonEndScreen {
 
     awards.forEach((aw, i) => {
       const enterP = easeOutBack(Math.max(0, Math.min(1, (this.enterTimer - i * 0.08) / 0.35)));
-      const ay = 224 + i * 92 + (1 - enterP) * 18;
+      const ay = panelTop + 96 + i * 86 + (1 - enterP) * 18;
       ctx.save();
       ctx.globalAlpha = Math.max(0.1, enterP);
-      drawRoundRect(ctx, 82, ay, 424, 78, 8, 'rgba(14, 22, 40, 0.9)', aw.color + '88', 1.2);
+      drawRoundRect(ctx, 82, ay, 424, 74, 8, 'rgba(14, 22, 40, 0.9)', aw.color + '88', 1.2);
       drawBadge(ctx, 96, ay + 12, 84, 22, aw.badge, '#1E293B', aw.color);
       drawText(ctx, aw.title, 192, ay + 23, { size: 15, bold: true, color: THEME.TX1 });
       drawText(ctx, aw.sub, 96, ay + 54, { size: 11.5, color: THEME.TX2 });
@@ -255,9 +257,10 @@ export class SeasonEndScreen {
     });
 
     // 右栏上半：Meta 点数结算明细
-    drawChamferPanel(ctx, 544, 118, 672, 128, 12, THEME.BG_CARD, THEME.BORDER_GOLD, 1.2);
-    drawText(ctx, 'Meta 教练点数结算明细', 564, 138, { size: 13.5, bold: true, color: THEME.GOLD_LIGHT });
-    drawText(ctx, `当前总计：${st.metaPointsTotal} pt`, 1196, 138, { size: 14, bold: true, color: THEME.GREEN, align: 'right', mono: true });
+    const metaTop = summary?.retiredLegend ? 150 : 122;
+    drawChamferPanel(ctx, 544, metaTop, 672, 102, 12, THEME.BG_CARD, THEME.BORDER_GOLD, 1.2);
+    drawText(ctx, 'Meta 教练点数结算明细', 564, metaTop + 18, { size: 13.5, bold: true, color: THEME.GOLD_LIGHT });
+    drawText(ctx, `当前总计：${st.metaPointsTotal} pt`, 1196, metaTop + 18, { size: 14, bold: true, color: THEME.GREEN, align: 'right', mono: true });
 
     const bd = summary?.metaBreakdown;
     const items: Array<[string, string, string]> = [
@@ -268,9 +271,9 @@ export class SeasonEndScreen {
     ];
     items.forEach(([lbl, val, col], idx) => {
       const ix = 564 + idx * 160;
-      drawRoundRect(ctx, ix, 158, 148, 74, 8, 'rgba(14, 22, 40, 0.85)', idx === 3 ? THEME.GOLD_LIGHT : THEME.BORDER);
-      drawText(ctx, lbl, ix + 74, 180, { size: 10.5, color: THEME.TX2, align: 'center' });
-      drawText(ctx, val, ix + 74, 210, { size: 17, bold: true, color: col, align: 'center', mono: true });
+      drawRoundRect(ctx, ix, metaTop + 34, 148, 60, 8, 'rgba(14, 22, 40, 0.85)', idx === 3 ? THEME.GOLD_LIGHT : THEME.BORDER);
+      drawText(ctx, lbl, ix + 74, metaTop + 51, { size: 10.5, color: THEME.TX2, align: 'center' });
+      drawText(ctx, val, ix + 74, metaTop + 76, { size: 16.5, bold: true, color: col, align: 'center', mono: true });
     });
 
     // 右栏中部：赛季记忆明信片（支持多条轮播 + 敌方球员/阵型/xG/控球详情）

@@ -602,6 +602,34 @@ export class MetaScreen {
     }
   }
 
+  private drawNodeLabel(
+    ctx: CanvasRenderingContext2D,
+    text: string,
+    x: number,
+    y: number,
+    color: string,
+    bold = false,
+    mono = false,
+    size = 9
+  ): void {
+    const fontStr = `${bold ? 'bold ' : ''}${size}px ${THEME.FONT_FAMILY}`;
+    ctx.save();
+    ctx.font = fontStr;
+    const tw = Math.ceil(ctx.measureText(text).width);
+    const pw = tw + 10;
+    const ph = size + 6;
+    drawRoundRect(ctx, x - pw / 2, y - ph / 2, pw, ph, 4, 'rgba(8, 13, 24, 0.86)', 'rgba(148, 163, 184, 0.24)', 0.8);
+    ctx.restore();
+    drawText(ctx, text, x, y, {
+      size,
+      rawSize: true,
+      bold,
+      color,
+      align: 'center',
+      mono,
+    });
+  }
+
   private drawEdgeLine(
     ctx: CanvasRenderingContext2D,
     ax: number,
@@ -913,12 +941,16 @@ export class MetaScreen {
       const labelY = cy + Math.sin(centerAngle) * (baseR * 1.07);
       const isBeginnerMode = !ast.fogCleared && tier >= 6;
       if (visible || !isBeginnerMode) {
-        drawText(ctx, visible ? info.name : '迷雾流派', labelX, labelY, {
-          size: Math.max(10, Math.min(13, 11.5 * this.zoom)),
-          bold: true,
-          color: visible ? info.color : '#64748B',
-          align: 'center',
-        });
+        this.drawNodeLabel(
+          ctx,
+          visible ? info.name : '迷雾流派',
+          labelX,
+          labelY,
+          visible ? info.color : '#64748B',
+          true,
+          false,
+          Math.max(IS_MOBILE ? 11.5 : 10, Math.min(13.5, 11.5 * this.zoom))
+        );
       }
 
       if (!visible) continue;
@@ -1263,12 +1295,7 @@ export class MetaScreen {
         ctx.restore();
 
         if (isOrigin || isSel || (!IS_MOBILE && this.zoom >= 1.5)) {
-          drawText(ctx, isOrigin ? `${info.short}原点` : p.name.slice(0, 4), pos.x, pos.y + nr + 8, {
-            size: isOrigin ? 9 : 8.5,
-            bold: isOrigin || isSel,
-            color: pos.unlocked ? info.color : pos.reachable ? '#7DD3FC' : THEME.TX3,
-            align: 'center',
-          });
+          this.drawNodeLabel(ctx, isOrigin ? `${info.short}原点` : p.name.slice(0, 4), pos.x, pos.y + nr + (IS_MOBILE ? 11 : 8), pos.unlocked ? info.color : pos.reachable ? '#7DD3FC' : THEME.TX3, isOrigin || isSel, false, IS_MOBILE ? 10.5 : isOrigin ? 9 : 8.5);
         }
         if (canHit(pos.x, pos.y)) {
           const hr = nodeHitR(nr);
@@ -1324,12 +1351,7 @@ export class MetaScreen {
         ctx.restore();
 
         if (isSel || isEq || (!IS_MOBILE && this.zoom >= 1.28)) {
-          drawText(ctx, sk.name.slice(0, 4), pos.x, pos.y + dr + 8, {
-            size: 9,
-            bold: isEq || isSel,
-            color: isEq ? '#4ADE80' : pos.unlocked ? '#7DD3FC' : THEME.TX3,
-            align: 'center',
-          });
+          this.drawNodeLabel(ctx, sk.name.slice(0, 4), pos.x, pos.y + dr + (IS_MOBILE ? 11 : 8), isEq ? '#4ADE80' : pos.unlocked ? '#7DD3FC' : THEME.TX3, isEq || isSel, false, IS_MOBILE ? 10.5 : 9);
         }
         if (canHit(pos.x, pos.y)) {
           const hr = nodeHitR(dr);
@@ -1387,12 +1409,7 @@ export class MetaScreen {
         ctx.restore();
 
         if (isSel || (!IS_MOBILE && this.zoom >= 1.55)) {
-          drawText(ctx, dir.name.slice(0, 4), pos.x, pos.y + nr + 8, {
-            size: 8.5,
-            bold: isSel || isEq,
-            color: isEq ? '#4ADE80' : pos.unlocked ? THEME.TX1 : THEME.TX3,
-            align: 'center',
-          });
+          this.drawNodeLabel(ctx, dir.name.slice(0, 4), pos.x, pos.y + nr + (IS_MOBILE ? 11 : 8), isEq ? '#4ADE80' : pos.unlocked ? THEME.TX1 : THEME.TX3, isSel || isEq, false, IS_MOBILE ? 10.5 : 8.5);
         }
         if (canHit(pos.x, pos.y)) {
           const hr = nodeHitR(nr);
@@ -1448,12 +1465,7 @@ export class MetaScreen {
       ctx.restore();
 
       if (!isBeginnerMode || !isMacro || al.style === club.style || pos.unlocked) {
-        drawText(ctx, al.fusion.name.slice(0, 5), pos.x, pos.y + r + 10, {
-          size: 9.5,
-          bold: true,
-          color: pos.unlocked ? THEME.GOLD_LIGHT : pos.reachable ? '#FDE68A' : '#94A3B8',
-          align: 'center',
-        });
+        this.drawNodeLabel(ctx, al.fusion.name.slice(0, 5), pos.x, pos.y + r + (IS_MOBILE ? 12 : 10), pos.unlocked ? THEME.GOLD_LIGHT : pos.reachable ? '#FDE68A' : '#94A3B8', true, false, IS_MOBILE ? 11 : 9.5);
       }
       if (canHit(pos.x, pos.y)) {
         const hr = nodeHitR(r, 6);
@@ -1494,12 +1506,8 @@ export class MetaScreen {
       ctx.restore();
 
       if (isOrigin || isSel || (!IS_MOBILE && this.zoom >= 1.45)) {
-        drawText(ctx, isOrigin ? SYSTEM_LABELS[sp.system].name.slice(0, 3) : sp.name.slice(0, 4), pos.x, pos.y + r + 8, {
-          size: 8.5,
-          bold: isOrigin || isSel,
-          color: pos.unlocked ? sysCol : THEME.TX3,
-          align: 'center',
-        });
+        const lblText = isOrigin ? SYSTEM_LABELS[sp.system].name.slice(0, 3) : sp.name.slice(0, 4);
+        this.drawNodeLabel(ctx, lblText, pos.x, pos.y + r + (IS_MOBILE ? 11 : 8), pos.unlocked ? sysCol : THEME.TX3, isOrigin || isSel, false, IS_MOBILE ? 10.5 : 8.5);
       }
       if (canHit(pos.x, pos.y)) {
         const hr = nodeHitR(r);
@@ -1536,13 +1544,7 @@ export class MetaScreen {
         ctx.restore();
 
         if (this.zoom >= 0.95 || isCurFm || isSel) {
-          drawText(ctx, fm, pos.x, pos.y + r + 8, {
-            size: 8.5,
-            bold: isCurFm || isSel,
-            color: isCurFm ? THEME.GREEN : pos.unlocked ? '#E2E8F0' : '#94A3B8',
-            align: 'center',
-            mono: true,
-          });
+          this.drawNodeLabel(ctx, fm, pos.x, pos.y + r + (IS_MOBILE ? 11 : 8), isCurFm ? THEME.GREEN : pos.unlocked ? '#E2E8F0' : '#94A3B8', isCurFm || isSel, true, IS_MOBILE ? 10.5 : 8.5);
         }
         if (canHit(pos.x, pos.y)) {
           const hr = nodeHitR(r, 5);

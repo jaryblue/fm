@@ -22,7 +22,7 @@ export const SIM_CONFIG = {
 export const TACTICAL_PRESETS = {
     balanced: {
         name: '均衡阵地',
-        lineHeight: 0,
+        lineHeight: 2,
         widthScale: 1.0,
         directness: 0.50,
         tempo: 1.01,

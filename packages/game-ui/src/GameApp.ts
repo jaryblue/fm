@@ -408,6 +408,9 @@ export class GameApp {
     if (!this.bootIntro.isDone() || this.transition.isActive() || this.toast !== null || this.textInputModal.isOpen()) {
       return true;
     }
+    if (this.route === 'title' && this.titleScreen.isAnimating()) {
+      return true;
+    }
     if (this.route === 'meta' && this.metaScreen.isAnimating()) {
       return true;
     }
@@ -938,7 +941,7 @@ export class GameApp {
     this.particles.render(ctx);
 
     if (this.toast) {
-      // 底部居中悬浮胶囊 Toast（不遮挡顶栏徽章与任何主面板标题）
+      // 顶部居中悬浮胶囊 Toast（避开所有页面的底部主行动按钮与状态栏）
       const alpha = Math.min(1, this.toast.timer * 4);
       const slide = (1 - alpha) * 10;
       ctx.save();
@@ -946,7 +949,7 @@ export class GameApp {
       ctx.font = `bold 12px ${THEME.FONT_FAMILY}`;
       const tw = Math.min(580, Math.max(240, ctx.measureText(this.toast.text).width + 48));
       const tx = 640 - tw / 2;
-      const ty = 668 + slide;
+      const ty = 72 - slide;
       if (!IS_MOBILE) {
         ctx.shadowColor = 'rgba(0,0,0,0.65)';
         ctx.shadowBlur = 18;

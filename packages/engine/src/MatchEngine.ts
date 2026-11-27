@@ -637,6 +637,7 @@ export class MatchEngine {
       homeScore: 0,
       awayScore: 0,
       players,
+      subbedOutPlayers: [],
       homeSubs: home.subs ? [...home.subs] : [],
       awaySubs: away.subs ? [...away.subs] : [],
       homeSubsUsed: 0,
@@ -1087,6 +1088,7 @@ export class MatchEngine {
       newPlayer.fitness = Math.min(100, newPlayer.fitness + 15);
     }
 
+    (s.subbedOutPlayers ??= []).push(outPlayer);
     s.players[pIdx] = newPlayer;
     if (wasHolding) s.ball.holderId = newPlayer.id;
     if (team === 'home') s.homeSubsUsed++;

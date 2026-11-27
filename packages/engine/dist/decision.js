@@ -388,9 +388,14 @@ export function updateOffBallTargets(players, ball, homeDir, homeStyle, awayStyl
         }
         if (pressers.has(p.id)) {
             const dir = p.team === 'home' ? homeDir : (homeDir === 1 ? -1 : 1);
+            // 仅最近的第一上抢者直扑持球人，第二/三协防者偏移 3.2m 封堵传球线路，避免多人扎堆
+            const presserArr = Array.from(pressers);
+            const pIdx = presserArr.indexOf(p.id);
+            const laneOffsetY = pIdx === 0 ? 0 : (p.pos.y >= ball.pos.y ? 3.2 : -3.2);
+            const laneOffsetX = pIdx === 0 ? -dir * 0.6 : -dir * 2.4;
             p.targetPos = {
-                x: clamp(ball.pos.x - dir * 0.6, 2, PITCH.LENGTH - 2),
-                y: clamp(ball.pos.y, 2, PITCH.WIDTH - 2),
+                x: clamp(ball.pos.x + laneOffsetX, 2, PITCH.LENGTH - 2),
+                y: clamp(ball.pos.y + laneOffsetY, 2, PITCH.WIDTH - 2),
             };
             continue;
         }
@@ -457,9 +462,16 @@ export function updateOffBallTargets(players, ball, homeDir, homeStyle, awayStyl
                 }
             }
         }
-        p.targetPos = {
-            x: clamp(clampOnside(tx), 3, PITCH.LENGTH - 3),
-            y: clamp(ty, 4, PITCH.WIDTH - 4),
-        };
+        const rawTx = clamp(clampOnside(tx), 3, PITCH.LENGTH - 3);
+        const rawTy = clamp(ty, 4, PITCH.WIDTH - 4);
+        const moveDist = dist2D(p.targetPos, { x: rawTx, y: rawTy });
+        // 防抖死区 (<0.8m 保持不动) + 指数平滑阻尼 (0.28)，消除球权切换时中后卫线拉风箱晃动
+        if (moveDist >= 0.8) {
+            const damp = moveDist > 18 ? 0.45 : 0.28;
+            p.targetPos = {
+                x: p.targetPos.x + (rawTx - p.targetPos.x) * damp,
+                y: p.targetPos.y + (rawTy - p.targetPos.y) * damp,
+            };
+        }
     }
 }

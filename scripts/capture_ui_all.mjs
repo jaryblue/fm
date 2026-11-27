@@ -254,7 +254,7 @@ async function main() {
       if (overlayShown) await shot('13_modal_tutorial', '新手引导遮罩 · 聚光灯挖空');
       await closeAllModals();
       await pressEscape();
-      await tap(812, 684, 400); // 跳过全部引导
+      await tap(790, 569, 400); // 跳过全部引导
       await shot('05b_draft_pool', '核心开包 · 5 选 3 选牌界面');
 
       const pickedCount = () =>

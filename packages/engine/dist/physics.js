@@ -142,9 +142,9 @@ export function stepPlayersPhysics(players, ball) {
         const dx = p.targetPos.x - p.pos.x;
         const dy = p.targetPos.y - p.pos.y;
         const dist = Math.sqrt(dx * dx + dy * dy);
-        if (dist < 0.35) {
-            p.vel.x *= 0.6;
-            p.vel.y *= 0.6;
+        if (dist < 0.6) {
+            p.vel.x *= 0.55;
+            p.vel.y *= 0.55;
         }
         else {
             // 接近目标时平滑减速

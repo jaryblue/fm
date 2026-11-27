@@ -150,6 +150,7 @@ export class MatchDayScreen {
   private storyTags = new Map<string, string>();
   private playerCaMap = new Map<string, number>();
   private elapsedSec = 0;
+  private prologueWaitTimer = 0;
   private goalScorePopTimer = 0;
   private memoryHighlightTimer = 0;
   private kickoffIntroTimer = 0;
@@ -1020,6 +1021,8 @@ export class MatchDayScreen {
       }
     } else if (!this.isPaused && st.phase !== 'full_time' && this.hitStopTimer <= 0) {
       const tutState = this.isPrologueMode ? this.engine.getPrologueTutorialState() : null;
+      const isWaitingPrologue = !!(this.isPrologueMode && (tutState?.waitingForSub || tutState?.waitingForCard || st.activeSkillPrompt));
+      this.prologueWaitTimer = isWaitingPrologue ? this.prologueWaitTimer + dtSec : 0;
       const effSpeed = st.activeSkillPrompt ? 0.25 : (tutState?.waitingForSub || tutState?.waitingForCard) ? 0.55 : this.v6HoveringCard ? 0.25 : this.speed;
       this.tickAcc += dtSec * 10 * effSpeed;
       let steps = 0;
@@ -2082,8 +2085,8 @@ export class MatchDayScreen {
     const minLY = PITCH_RECT.y + 2;
     const maxLY = PITCH_RECT.y + PITCH_RECT.h - 2;
     for (const { p, sp } of labelOrder) {
-      const lw = Math.max(IS_MOBILE ? 26 : 20, p.role.length * (IS_MOBILE ? 7.5 : 6) + 8);
-      const lh = IS_MOBILE ? 14 : 11;
+      const lw = Math.max(IS_MOBILE ? 28 : 20, p.role.length * (IS_MOBILE ? 8 : 6) + 8);
+      const lh = IS_MOBILE ? 15 : 11;
       const candidates = [
         { cx: sp.x, cy: sp.y + (IS_MOBILE ? 21 : 18) },
         { cx: sp.x, cy: sp.y - (IS_MOBILE ? 26 : 23) },
@@ -2110,9 +2113,9 @@ export class MatchDayScreen {
       }
       if (chosen && chosenCenter) {
         occupiedRects.push(chosen);
-        drawRoundRect(ctx, chosen.x, chosen.y, chosen.w, chosen.h, 3, 'rgba(8, 12, 20, 0.72)');
+        drawRoundRect(ctx, chosen.x, chosen.y, chosen.w, chosen.h, 3, 'rgba(8, 12, 20, 0.78)');
         drawText(ctx, p.role, chosenCenter.cx, chosenCenter.cy, {
-          size: IS_MOBILE ? 10.5 : 8.5,
+          size: IS_MOBILE ? 11 : 8.5,
           rawSize: true,
           bold: isPriority,
           color: p.customOffset ? '#38BDF8' : p.hasBall ? '#FEF08A' : 'rgba(241,245,249,0.92)',
@@ -2686,7 +2689,10 @@ export class MatchDayScreen {
       drawText(ctx, tipMsg, 438, 470, { size: 12.5, bold: true, color: '#FEF08A' });
       ctx.save();
       ctx.globalAlpha = pulse;
-      drawText(ctx, '▼ 直接点击下方高亮进攻手牌即可打出', 715, 550, { size: 11.5, bold: true, color: THEME.GOLD_LIGHT, align: 'center' });
+      const waitHint = this.prologueWaitTimer >= 25
+        ? '⏱ 比赛正等待你出牌：请点击下方闪烁的金色手牌继续'
+        : '▼ 直接点击下方高亮进攻手牌即可打出';
+      drawText(ctx, waitHint, 715, 550, { size: 12, bold: true, color: THEME.GOLD_LIGHT, align: 'center' });
       ctx.restore();
     }
 
@@ -2798,8 +2804,9 @@ export class MatchDayScreen {
         );
 
         // 卡片主标题（紧凑双行，与下方标签留出呼吸感）
-        drawWrappedText(ctx, def.name, cx + 7, cyL + 26, cw - 14, 15, {
-          token: 'MICRO',
+        drawWrappedText(ctx, def.name, cx + 7, cyL + 26, cw - 14, IS_MOBILE ? 16 : 15, {
+          size: IS_MOBILE ? 11.5 : FONT.MICRO,
+          rawSize: IS_MOBILE,
           bold: true,
           color: used ? THEME.TX3 : THEME.TX1,
           maxLines: 2,
@@ -2814,7 +2821,12 @@ export class MatchDayScreen {
           drawBadge(ctx, cx + 10, cyL + 65, cw - 20, 16, `${'★'.repeat(satCount)}${entry.isOverclocked ? '超频' : '改造'}`, '#1E293B', THEME.GOLD_LIGHT);
         } else {
           const routeTag = def.source === 'fusion' ? '融合王牌' : def.source === 'formation' ? '阵型专属' : def.route === 'gamble' ? '高赔豪赌' : '稳健拼图';
-          drawText(ctx, routeTag, cx + cw / 2, cyL + 73, { token: 'MICRO', color: used ? THEME.TX3 : '#94A3B8', align: 'center' });
+          drawText(ctx, routeTag, cx + cw / 2, cyL + 73, {
+            size: IS_MOBILE ? 11 : FONT.MICRO,
+            rawSize: IS_MOBILE,
+            color: used ? THEME.TX3 : '#94A3B8',
+            align: 'center',
+          });
         }
 
         // 底部清晰操作态提示
@@ -2826,7 +2838,8 @@ export class MatchDayScreen {
           ? '⚡ 点击拍板'
           : `需 ${effCost} TP`;
         drawText(ctx, statusTxt, cx + cw / 2, cyL + 93, {
-          token: 'MICRO',
+          size: IS_MOBILE ? 11 : FONT.MICRO,
+          rawSize: IS_MOBILE,
           bold: true,
           color: used ? '#64748B' : canPlay ? THEME.GOLD_LIGHT : THEME.TX3,
           align: 'center',
@@ -3217,11 +3230,11 @@ export class MatchDayScreen {
         for (const [label, hv, av, ratio] of rows) {
           drawText(ctx, hv, 1046, ry, { token: 'TITLE', bold: true, mono: true });
           drawText(ctx, av, 1248, ry, { token: 'TITLE', bold: true, align: 'right', mono: true });
-          drawText(ctx, label, 1147, ry, { token: 'LABEL', color: THEME.TX2, align: 'center' });
-          drawRoundRect(ctx, 1046, ry + 13, 202, 5, 2, '#1E293B');
+          drawText(ctx, label, 1147, ry, { size: IS_MOBILE ? 12.5 : 11, rawSize: IS_MOBILE, color: THEME.TX2, align: 'center' });
+          drawRoundRect(ctx, 1046, ry + (IS_MOBILE ? 15 : 13), 202, 5, 2, '#1E293B');
           const r = Math.max(0.05, Math.min(0.95, isNaN(ratio) ? 0.5 : ratio));
-          drawRoundRect(ctx, 1046, ry + 13, 202 * r, 5, 2, homeKit.primary);
-          drawRoundRect(ctx, 1046 + 202 * r, ry + 13, 202 * (1 - r), 5, 2, awayKit.primary);
+          drawRoundRect(ctx, 1046, ry + (IS_MOBILE ? 15 : 13), 202 * r, 5, 2, homeKit.primary);
+          drawRoundRect(ctx, 1046 + 202 * r, ry + (IS_MOBILE ? 15 : 13), 202 * (1 - r), 5, 2, awayKit.primary);
           ry += 62;
         }
       } else {
@@ -3908,8 +3921,8 @@ export class MatchDayScreen {
     drawText(ctx, 'KICK OFF', 0, 20, { size: 9.5, bold: true, color: THEME.FLAME_LIGHT, align: 'center', mono: true });
     ctx.restore();
 
-    drawText(ctx, '点击任意位置或按 空格/回车 立即开哨', cx, cy + 144, {
-      size: 12,
+    drawText(ctx, '点击任意位置或按 空格/回车 立即开哨', cx, cy + 168, {
+      size: 12.5,
       color: THEME.TX2,
       align: 'center',
     });

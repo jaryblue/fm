@@ -174,7 +174,7 @@ export default async function run(client, ctx) {
     // 跳过新手引导遮挡（键盘 + 屏幕「跳过全部」按钮）
     await pressEscape();
     await sleep(200);
-    await tap(812, 684, { label: '跳过全部引导', jitter: 0, waitMs: 300 });
+    await tap(790, 569, { label: '跳过全部引导', jitter: 0, waitMs: 300 });
 
     let packs = 0;
     for (let i = 0; i < 3; i++) {

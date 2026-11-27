@@ -659,6 +659,7 @@ export interface MatchState {
   homeScore: number;
   awayScore: number;
   players: PlayerState[];
+  subbedOutPlayers?: PlayerState[];
   homeSubs: PlayerInput[];
   awaySubs: PlayerInput[];
   homeSubsUsed: number;
@@ -719,7 +720,7 @@ export interface TacticalStyleConfig {
 export const TACTICAL_PRESETS: Record<TacticalStyle, TacticalStyleConfig> = {
   balanced: {
     name: '均衡阵地',
-    lineHeight: 0,
+    lineHeight: 2,
     widthScale: 1.0,
     directness: 0.50,
     tempo: 1.01,

@@ -142,29 +142,37 @@ export class TextInputModal {
       ctx.restore();
     }
 
-    drawText(ctx, `${this.value.length}/${this.maxLen}`, ix + iw - 14, iy + ih / 2, {
-      size: 11,
-      color: THEME.TX3,
-      align: 'right',
-      mono: true,
-    });
+    if (this.value.length > 0) {
+      drawText(ctx, `${this.value.length}/${this.maxLen}`, ix + iw - 44, iy + ih / 2, {
+        size: 11,
+        color: THEME.TX3,
+        align: 'right',
+        mono: true,
+      });
+      drawButton(ctx, hits, ix + iw - 36, iy + 9, 28, 30, '×', () => {
+        this.value = '';
+        SoundEngine.playClick();
+      }, { variant: 'ghost', fontSize: 14 });
+    } else {
+      drawText(ctx, `${this.value.length}/${this.maxLen}`, ix + iw - 14, iy + ih / 2, {
+        size: 11,
+        color: THEME.TX3,
+        align: 'right',
+        mono: true,
+      });
+    }
 
-    // 快捷按钮：随机队名 / 清空 / 取消 / 确认
-    drawButton(ctx, hits, mx + 24, my + mh - 58, 108, 38, '随机队名', () => {
+    // 底部 3 颗大按钮：随机队名 / 取消 / 确认
+    drawButton(ctx, hits, mx + 24, my + mh - 58, 124, 38, '随机队名', () => {
       this.value = generateFictionalClubName().slice(0, this.maxLen);
       SoundEngine.playClick();
-    }, { variant: 'primary', fontSize: 12, icon: 'dice' });
+    }, { variant: 'primary', fontSize: 12.5, icon: 'dice' });
 
-    drawButton(ctx, hits, mx + 140, my + mh - 58, 72, 38, '清空', () => {
-      this.value = '';
-      SoundEngine.playClick();
-    }, { variant: 'ghost', fontSize: 12 });
-
-    drawButton(ctx, hits, mx + mw - 210, my + mh - 58, 86, 38, '取消', () => {
+    drawButton(ctx, hits, mx + mw - 224, my + mh - 58, 92, 38, '取消', () => {
       this.close();
     }, { variant: 'ghost', fontSize: 12.5 });
 
-    drawButton(ctx, hits, mx + mw - 114, my + mh - 58, 90, 38, '确认', () => {
+    drawButton(ctx, hits, mx + mw - 120, my + mh - 58, 96, 38, '确认', () => {
       this.confirm();
     }, { variant: 'gold', fontSize: 13, disabled: this.value.trim().length === 0 });
   }
