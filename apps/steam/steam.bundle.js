@@ -42562,6 +42562,7 @@
       if (this.route !== "title") return;
       const status = await getOtaStatus();
       if (!status?.pendingVersion || this.otaPromptShown) return;
+      if (status.pendingVersion === getRunningVersion()) return;
       this.otaPromptShown = true;
       for (const t of this.otaCheckTimers) window.clearTimeout(t);
       this.otaCheckTimers = [];

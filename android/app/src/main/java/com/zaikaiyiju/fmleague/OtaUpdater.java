@@ -32,28 +32,57 @@ public final class OtaUpdater {
     // 供 JS 桥接读取：已下载完成、等待下次启动生效的版本号
     private static final String PREFS_OTA = "fm_ota_state";
     private static final String KEY_PENDING_VERSION = "pending_version";
+    private static final String KEY_PENDING_HASH = "pending_hash";
 
     private OtaUpdater() {}
 
-    /** 返回已下载待生效的版本号；无更新时返回 null */
+    /** 返回已下载待生效的版本号；若已与当前运行版本一致则自动清理并返回 null */
     public static String getPendingVersion(Context context) {
         if (context == null) return null;
         SharedPreferences prefs = context.getSharedPreferences(PREFS_OTA, Activity.MODE_PRIVATE);
-        String v = prefs.getString(KEY_PENDING_VERSION, null);
-        return (v == null || v.isEmpty()) ? null : v;
+        String pendingVersion = prefs.getString(KEY_PENDING_VERSION, null);
+        String pendingHash = prefs.getString(KEY_PENDING_HASH, null);
+        if (pendingVersion == null || pendingVersion.isEmpty()) return null;
+
+        String activeHash = readActiveHash(context);
+        String activeVersion = getActiveVersion(context);
+        boolean alreadyActive =
+            (pendingHash != null && !pendingHash.isEmpty() && pendingHash.equals(activeHash))
+            || (activeVersion != null && !activeVersion.isEmpty() && pendingVersion.equals(activeVersion));
+        if (alreadyActive) {
+            prefs.edit().remove(KEY_PENDING_VERSION).remove(KEY_PENDING_HASH).commit();
+            return null;
+        }
+        return pendingVersion;
+    }
+
+    /** 返回当前激活包的版本号（优先读取 OTA 释放目录中的 ota-manifest.json） */
+    public static String getActiveVersion(Context context) {
+        if (context == null) return "";
+        JSONObject manifest = readActiveManifest(context);
+        if (manifest == null) return "";
+        String v = manifest.optString("version", "").trim();
+        return !v.isEmpty() ? v : manifest.optString("hash", "").trim();
     }
 
     /** 重启应用以加载已下载的 OTA 包 */
     public static void restartApp(Context context) {
         if (context == null) return;
-        android.content.Intent intent = context.getPackageManager()
+        android.content.Intent launch = context.getPackageManager()
             .getLaunchIntentForPackage(context.getPackageName());
-        if (intent != null) {
-            intent.addFlags(android.content.Intent.FLAG_ACTIVITY_CLEAR_TOP
-                | android.content.Intent.FLAG_ACTIVITY_NEW_TASK);
-            context.startActivity(intent);
+        if (launch != null) {
+            android.content.Intent restartIntent;
+            if (launch.getComponent() != null) {
+                restartIntent = android.content.Intent.makeRestartActivityTask(launch.getComponent());
+            } else {
+                restartIntent = launch;
+                restartIntent.addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK
+                    | android.content.Intent.FLAG_ACTIVITY_CLEAR_TASK);
+            }
+            context.startActivity(restartIntent);
         }
-        java.lang.System.exit(0);
+        android.os.Process.killProcess(android.os.Process.myPid());
+        Runtime.getRuntime().exit(0);
     }
 
     public static void checkForUpdateInBackground(final Activity activity) {
@@ -79,14 +108,22 @@ public final class OtaUpdater {
                 String expectedSha256 = manifest.optString("zipSha256", "").trim();
 
                 if (remoteHash.isEmpty() || remoteHash.equals(currentHash)) {
+                    appContext.getSharedPreferences(PREFS_OTA, Activity.MODE_PRIVATE)
+                        .edit().remove(KEY_PENDING_VERSION).remove(KEY_PENDING_HASH).commit();
                     return;
                 }
 
                 File otaRoot = new File(appContext.getFilesDir(), "ota");
                 File releasesDir = new File(otaRoot, "releases");
                 File targetDir = new File(releasesDir, remoteHash);
-                if (new File(targetDir, "index.html").exists()) {
+                if (new File(targetDir, "index.html").exists()
+                        && new File(targetDir, "ota-manifest.json").exists()) {
                     activateRelease(appContext, targetDir);
+                    appContext.getSharedPreferences(PREFS_OTA, Activity.MODE_PRIVATE)
+                        .edit()
+                        .putString(KEY_PENDING_VERSION, remoteVersion)
+                        .putString(KEY_PENDING_HASH, remoteHash)
+                        .commit();
                     return;
                 }
 
@@ -129,9 +166,12 @@ public final class OtaUpdater {
                 activateRelease(appContext, targetDir);
                 cleanupOldReleases(releasesDir, remoteHash);
 
-                // 记录待生效版本，供 JS 弹窗读取；Toast 保留作为 UI 未就绪时的兜底
+                // 同步写入待生效版本与 hash，确保立即重启时不会丢失
                 appContext.getSharedPreferences(PREFS_OTA, Activity.MODE_PRIVATE)
-                    .edit().putString(KEY_PENDING_VERSION, remoteVersion).apply();
+                    .edit()
+                    .putString(KEY_PENDING_VERSION, remoteVersion)
+                    .putString(KEY_PENDING_HASH, remoteHash)
+                    .commit();
 
                 new Handler(Looper.getMainLooper()).post(() ->
                     Toast.makeText(appContext, "发现新版本 (" + remoteVersion + ")，已下载完成，下次启动生效", Toast.LENGTH_SHORT).show()
@@ -149,10 +189,10 @@ public final class OtaUpdater {
         );
         prefs.edit()
             .putString(com.getcapacitor.plugin.WebView.CAP_SERVER_PATH, releaseDir.getAbsolutePath())
-            .apply();
+            .commit();
     }
 
-    private static String readActiveHash(Context context) {
+    private static JSONObject readActiveManifest(Context context) {
         try {
             SharedPreferences prefs = context.getSharedPreferences(
                 com.getcapacitor.plugin.WebView.WEBVIEW_PREFS_NAME,
@@ -163,19 +203,21 @@ public final class OtaUpdater {
                 File activeManifest = new File(serverPath, "ota-manifest.json");
                 if (activeManifest.exists()) {
                     try (FileInputStream fis = new FileInputStream(activeManifest)) {
-                        JSONObject obj = new JSONObject(readStreamText(fis));
-                        String h = obj.optString("hash", "").trim();
-                        if (!h.isEmpty()) return h;
+                        return new JSONObject(readStreamText(fis));
                     }
                 }
             }
             try (InputStream is = context.getAssets().open("public/ota-manifest.json")) {
-                JSONObject obj = new JSONObject(readStreamText(is));
-                return obj.optString("hash", "").trim();
+                return new JSONObject(readStreamText(is));
             }
         } catch (Exception ignored) {
-            return "";
+            return null;
         }
+    }
+
+    private static String readActiveHash(Context context) {
+        JSONObject obj = readActiveManifest(context);
+        return obj != null ? obj.optString("hash", "").trim() : "";
     }
 
     private static String fetchText(String urlStr) throws Exception {

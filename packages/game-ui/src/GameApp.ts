@@ -11,7 +11,7 @@ import { ConfirmModal } from './ConfirmModal';
 import { BootIntro, RouteTransition, ScreenShake } from './Motion';
 import { PlatformAdapter } from './Platform';
 import { PlayerModal } from './PlayerModal';
-import { getOtaStatus, restartAppForUpdate } from './RuntimeInfo';
+import { getOtaStatus, getRunningVersion, restartAppForUpdate } from './RuntimeInfo';
 import { SaveSlotModal } from './SaveSlotModal';
 import { SettingsModal } from './SettingsModal';
 import { AudioMode, SoundEngine } from './SoundEngine';
@@ -130,6 +130,7 @@ export class GameApp {
     if (this.route !== 'title') return;
     const status = await getOtaStatus();
     if (!status?.pendingVersion || this.otaPromptShown) return;
+    if (status.pendingVersion === getRunningVersion()) return;
     this.otaPromptShown = true;
     for (const t of this.otaCheckTimers) window.clearTimeout(t);
     this.otaCheckTimers = [];

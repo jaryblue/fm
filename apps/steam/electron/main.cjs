@@ -5,6 +5,8 @@ const fs = require('fs');
 const path = require('path');
 
 let mainWindow = null;
+let bootHash = '';
+let bootVersion = '';
 
 function readJsonSafe(filePath) {
   try {
@@ -81,7 +83,11 @@ function createWindow() {
     app.dock.setIcon(iconPath);
   }
   mainWindow.setMenuBarVisibility(false);
-  mainWindow.loadFile(resolveStartHtml());
+  const startHtml = resolveStartHtml();
+  const bootManifest = readJsonSafe(path.join(path.dirname(startHtml), 'ota-manifest.json'));
+  bootHash = (bootManifest && bootManifest.hash ? String(bootManifest.hash) : getBundledOtaHash()).trim();
+  bootVersion = (bootManifest && bootManifest.version ? String(bootManifest.version) : bootHash).trim();
+  mainWindow.loadFile(startHtml);
 }
 
 ipcMain.on('fm:load-save-sync', (event, slotId) => {
@@ -186,15 +192,18 @@ ipcMain.handle('fm:ota-clear', () => {
 ipcMain.handle('fm:ota-status', () => {
   try {
     const bundledHash = getBundledOtaHash();
+    const currentBootHash = bootHash || bundledHash;
     const meta = readJsonSafe(path.join(getOtaDir(), 'meta.json'));
-    const activeHash = meta && meta.bundledHash === bundledHash && meta.hash ? String(meta.hash) : bundledHash;
-    const currentHtml = resolveStartHtml();
-    const otaHtml = meta && meta.currentDir ? path.join(meta.currentDir, 'index.html') : '';
-    const runningOta = !!otaHtml && currentHtml === otaHtml;
+    const stagedValid =
+      meta &&
+      meta.hash &&
+      (!bundledHash || !meta.bundledHash || meta.bundledHash === bundledHash) &&
+      meta.currentDir &&
+      fs.existsSync(path.join(meta.currentDir, 'index.html'));
+    const hasPending = !!stagedValid && String(meta.hash) !== currentBootHash;
     return {
-      // 只有当前还没在跑 OTA 版本、且远端有更新的版本时，才提示重启
-      pendingVersion: !runningOta && meta && meta.hash && meta.hash !== activeHash ? String(meta.version || meta.hash) : null,
-      activeVersion: runningOta ? String(meta.version || meta.hash || bundledHash) : bundledHash,
+      pendingVersion: hasPending ? String(meta.version || meta.hash) : null,
+      activeVersion: bootVersion || currentBootHash,
     };
   } catch {
     return { pendingVersion: null, activeVersion: null };
@@ -218,13 +227,20 @@ async function checkDesktopOta() {
     if (!remoteHash) return;
 
     const bundledHash = getBundledOtaHash();
+    const currentBootHash = bootHash || bundledHash;
+    if (remoteHash === currentBootHash) return;
+
     const metaPath = path.join(getOtaDir(), 'meta.json');
     const currentMeta = readJsonSafe(metaPath);
-    const activeHash =
-      currentMeta && currentMeta.bundledHash === bundledHash && currentMeta.hash
-        ? String(currentMeta.hash)
-        : bundledHash;
-    if (remoteHash === activeHash) return;
+    if (
+      currentMeta &&
+      currentMeta.bundledHash === bundledHash &&
+      currentMeta.hash === remoteHash &&
+      currentMeta.currentDir &&
+      fs.existsSync(path.join(currentMeta.currentDir, 'index.html'))
+    ) {
+      return;
+    }
 
     const bundleZip = String(manifest.bundleZip || 'ota-bundle.zip').trim().replace(/^\/+/, '');
     const zipUrl = bundleZip.startsWith('http://') || bundleZip.startsWith('https://')

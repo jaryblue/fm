@@ -33,11 +33,12 @@ public class MainActivity extends BridgeActivity {
         @JavascriptInterface
         public String getOtaStatus() {
             String pending = OtaUpdater.getPendingVersion(ctx);
-            android.util.Log.d("OtaJsBridge", "getOtaStatus pending=" + pending);
+            String active = OtaUpdater.getActiveVersion(ctx);
+            android.util.Log.d("OtaJsBridge", "getOtaStatus pending=" + pending + " active=" + active);
             org.json.JSONObject obj = new org.json.JSONObject();
             try {
                 obj.put("pendingVersion", pending);
-                obj.put("activeVersion", "");
+                obj.put("activeVersion", active);
             } catch (org.json.JSONException ignored) {
             }
             return obj.toString();
