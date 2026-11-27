@@ -6708,6 +6708,8 @@
       this.subTrackers = [];
       // V6 原子事件总线状态
       this.v6PassiveHooks = { home: [], away: [] };
+      this.aiSegmentCards = { home: [], away: [] };
+      this.teamAttrCap = { home: 99, away: 99 };
       this.v6ImmunityFlags = { home: {}, away: {} };
       this.v6PreventPenRedUsed = { home: false, away: false };
       this.v6TotalFootballMaster = { home: false, away: false };
@@ -6725,6 +6727,14 @@
       this.v6PassiveHooks = {
         home: home.v6PassiveHooks ? [...home.v6PassiveHooks] : [],
         away: away.v6PassiveHooks ? [...away.v6PassiveHooks] : []
+      };
+      this.aiSegmentCards = {
+        home: home.aiSegmentCards ? [...home.aiSegmentCards] : [],
+        away: away.aiSegmentCards ? [...away.aiSegmentCards] : []
+      };
+      this.teamAttrCap = {
+        home: home.hiddenAttrCap ?? 99,
+        away: away.hiddenAttrCap ?? 99
       };
       this.v6ImmunityFlags = {
         home: home.v6ImmunityFlags ? { ...home.v6ImmunityFlags } : {},
@@ -7268,7 +7278,7 @@
           return { ok: false };
         }
       }
-      const clampAttr2 = (v) => Math.max(25, Math.min(99, v));
+      const clampAttr2 = (v) => Math.max(25, Math.min(this.teamAttrCap[team], v));
       const targetLine = card.targetLine ?? "ALL";
       const hadActiveBuff = s.activeBuffs.some((b) => b.team === team);
       let energyRefund = 0;
@@ -7746,6 +7756,12 @@
       if (!freezePrologueClock) {
         s.tick++;
         s.minute = Math.min(95, Math.floor(s.tick / SIM_CONFIG.TICKS_PER_MINUTE));
+        for (const side of ["home", "away"]) {
+          while (this.aiSegmentCards[side].length > 0 && this.aiSegmentCards[side][0].minute <= s.minute) {
+            const next = this.aiSegmentCards[side].shift();
+            this.applyCommandCard(side, next.effect);
+          }
+        }
       }
       if (this.setPieceBoostTicks > 0) this.setPieceBoostTicks--;
       if (this.gkCounterBoostTicks.home > 0) this.gkCounterBoostTicks.home--;
@@ -8931,7 +8947,7 @@
       const fatiguePenalty = shooter.fitness < 72 ? (72 - shooter.fitness) / 52 * 0.07 : 0;
       const strainPenalty = shooter.strainWarning ? 0.035 : 0;
       const antiAttackShotPenalty = (oppIs5Back && (myStyleShot === "wing_play" || getDefenseSystem(myFormShot) === "3-back") ? 0.08 : 0) + (oppStyleShot === "park_bus" && (myStyleShot === "wing_play" || myStyleShot === "gegenpress") ? 0.07 : 0);
-      const rawShoot = Math.min(99, shooter.attributes.shooting + (hasBloodFrenzy ? 8 : 0));
+      const rawShoot = Math.min(this.teamAttrCap[shooter.team], shooter.attributes.shooting + (hasBloodFrenzy ? 8 : 0));
       const effectiveShoot = rawShoot > 80 ? 80 + (rawShoot - 80) * 1.35 : rawShoot;
       const longDistPenalty = dist >= 22 && !hasLongShotCannon ? (dist - 20) * 0.015 : 0;
       const onTargetProb = clamp(
@@ -9150,7 +9166,7 @@
       const rawGk = gk ? gk.attributes.goalkeeping : 65;
       const gkAttr = rawGk > 80 ? 80 + (rawGk - 80) * 1.15 : rawGk;
       const frenzyShootBonus = shooter && this.hasActiveMechanic(shooter.team, "blood_frenzy") && this.isTrailing(shooter.team) ? 8 : 0;
-      const rawShooterShoot = shooter ? Math.min(99, shooter.attributes.shooting + frenzyShootBonus) : 70;
+      const rawShooterShoot = shooter ? Math.min(this.teamAttrCap[shooter.team], shooter.attributes.shooting + frenzyShootBonus) : 70;
       const rawShooterComp = shooter ? shooter.attributes.composure : 70;
       const baseShooterAttr = rawShooterShoot * 0.65 + rawShooterComp * 0.35;
       const shooterAttr = baseShooterAttr > 80 ? 80 + (baseShooterAttr - 80) * 1.15 : baseShooterAttr;
@@ -9418,9 +9434,9 @@
     }
     expireCommandBuffs() {
       const s = this.state;
-      const clampAttr2 = (v) => Math.max(25, Math.min(99, v));
       for (let i = s.activeBuffs.length - 1; i >= 0; i--) {
         const b = s.activeBuffs[i];
+        const clampAttr2 = (v) => Math.max(25, Math.min(this.teamAttrCap[b.team], v));
         if (s.minute >= b.endMinute) {
           const c = b.effect;
           const targetLine = c.targetLine ?? "ALL";
@@ -21805,8 +21821,8 @@
             }
           }
         } else {
-          const curTier = this.state.currentTier ?? 7;
-          const aiTierBonus = curTier <= 5 ? (6 - curTier) * 2 : 0;
+          const curTier2 = this.state.currentTier ?? 7;
+          const aiTierBonus = curTier2 <= 5 ? (6 - curTier2) * 2 : 0;
           if (aiTierBonus > 0) {
             attrs.passing = clampAttr2(attrs.passing + aiTierBonus);
             attrs.shooting = clampAttr2(attrs.shooting + aiTierBonus);
@@ -21911,9 +21927,56 @@
         }
       }
       const tacticalMods = club.isUser ? { ...computeSkillWebMods(this.getSkillWebUnlocked(), club.formation, club.style), ...v6Payload?.tacticalMods ?? {} } : void 0;
-      const spineBonus = club.isUser ? computeCentralSpineInfo(club, this.getChemistryLinks()).bonus : 0;
-      let teamFamAvg = 50;
-      let teamChemAvg = 30;
+      const curTier = this.state.currentTier ?? 7;
+      const aiTierLv = !club.isUser && curTier <= 4 ? 5 - curTier : 0;
+      const aiSquadAvgCA = club.squad.length > 0 ? club.squad.reduce((s, p) => s + p.ca, 0) / club.squad.length : 60;
+      const aiIsContender = aiTierLv > 0 && aiSquadAvgCA >= getLeagueTierInfo(curTier).baseCA + 7;
+      if (aiTierLv > 0) {
+        const hiddenCap = 118;
+        const clampHidden = (v) => Math.max(25, Math.min(hiddenCap, v));
+        const hiddenBonus = aiTierLv * 2 + (aiIsContender ? aiTierLv >= 4 ? 3 : aiTierLv >= 3 ? 2 : 1 : 0);
+        for (const pl of players) {
+          if (pl.role === "GK") {
+            pl.attributes.goalkeeping = clampHidden(pl.attributes.goalkeeping + hiddenBonus);
+            pl.attributes.composure = clampHidden(pl.attributes.composure + Math.ceil(hiddenBonus * 0.8));
+            pl.attributes.positioning = clampHidden(pl.attributes.positioning + Math.ceil(hiddenBonus * 0.8));
+          } else {
+            pl.attributes.passing = clampHidden(pl.attributes.passing + hiddenBonus);
+            pl.attributes.shooting = clampHidden(pl.attributes.shooting + hiddenBonus);
+            pl.attributes.dribbling = clampHidden(pl.attributes.dribbling + hiddenBonus);
+            pl.attributes.pace = clampHidden(pl.attributes.pace + hiddenBonus);
+            pl.attributes.defending = clampHidden(pl.attributes.defending + hiddenBonus);
+            pl.attributes.positioning = clampHidden(pl.attributes.positioning + hiddenBonus);
+            pl.attributes.composure = clampHidden(pl.attributes.composure + hiddenBonus);
+            pl.attributes.strength = clampHidden(pl.attributes.strength + Math.ceil(hiddenBonus * 0.7));
+          }
+        }
+      }
+      const aiSegmentCards = [];
+      if (aiTierLv > 0) {
+        const styleDirs = Object.values(V6_DIRECTIVE_MAP).filter(
+          (d) => d.source === "style" && d.style === club.style && d.route === "steady"
+        );
+        if (styleDirs.length > 0) {
+          const cardCount = aiTierLv + (aiIsContender ? 2 : 0);
+          const mins = [2, 24, 48, 72, 12, 60].slice(0, cardCount).sort((a, b) => a - b);
+          for (let i = 0; i < mins.length; i++) {
+            const dirDef = styleDirs[i % styleDirs.length];
+            aiSegmentCards.push({
+              minute: mins[i],
+              effect: {
+                id: `ai_${dirDef.id}_${i}`,
+                name: dirDef.name,
+                durationMinutes: dirDef.durationMinutes,
+                ...dirDef.baseEffect
+              }
+            });
+          }
+        }
+      }
+      const spineBonus = club.isUser ? computeCentralSpineInfo(club, this.getChemistryLinks()).bonus : aiTierLv >= 4 ? 3 : aiTierLv >= 2 ? 2 : aiTierLv >= 1 ? 1 : 0;
+      let teamFamAvg = aiTierLv > 0 ? Math.min(95, 62 + aiTierLv * 6 + (aiIsContender ? 4 : 0)) : 50;
+      let teamChemAvg = aiTierLv > 0 ? Math.min(90, 44 + aiTierLv * 8 + (aiIsContender ? 6 : 0)) : 30;
       if (club.isUser) {
         teamFamAvg = players.length > 0 ? Math.round(players.reduce((s, pl) => s + (pl.formationFamiliarity ?? 40), 0) / players.length) : 40;
         const chemSummary = this.getTacticsChemistrySummary();
@@ -21955,8 +22018,8 @@
         equippedSkills: userEquippedSkills,
         activeAspects: club.isUser ? this.getActiveLegendaryAspects() : void 0,
         perkSynergies: club.isUser ? this.getUserPerkSynergyFlags() : void 0,
-        teamFamiliarityAvg: club.isUser ? teamFamAvg : void 0,
-        teamChemistryAvg: club.isUser ? teamChemAvg : void 0,
+        teamFamiliarityAvg: club.isUser || aiTierLv > 0 ? teamFamAvg : void 0,
+        teamChemistryAvg: club.isUser || aiTierLv > 0 ? teamChemAvg : void 0,
         scoutCounterLabel: club.isUser && this.state.interMatchPrep?.matchupIntel?.spotCorrect ? "\u7834\u7EFD\u538B\u5236" : void 0,
         gridSlots: club.gridSlots,
         slotDuties: club.slotDuties,
@@ -21967,8 +22030,10 @@
         v6TotalFootballMaster: v6Payload?.v6TotalFootballMaster,
         v6SkillTempRankBonus: v6Payload?.v6SkillTempRankBonus,
         v6SkillDualBranch: v6Payload?.v6SkillDualBranch,
-        v6StartingShields: v6Payload?.v6StartingShields,
-        v6MaxCounterStacks: v6Payload?.v6MaxCounterStacks
+        v6StartingShields: v6Payload?.v6StartingShields ?? (aiTierLv >= 3 ? 1 : void 0),
+        v6MaxCounterStacks: v6Payload?.v6MaxCounterStacks,
+        aiSegmentCards: aiSegmentCards.length > 0 ? aiSegmentCards : void 0,
+        hiddenAttrCap: aiTierLv > 0 ? 118 : void 0
       };
     }
     /**
@@ -41649,7 +41714,7 @@
     render(ctx2, hits, league, actions) {
       const st = league.getState();
       const userClub = league.getUserClub();
-      const hasActiveRun = st.phase === "REGULAR_SEASON" || st.phase === "SUMMER_WINDOW" || st.phase === "WINTER_WINDOW" || st.phase === "RE_DRAFT" || st.phase === "SEASON_END" || st.phase === "INIT_DRAFT" && (userClub.squad.length > 0 || st.seasonNumber > 1);
+      const hasActiveRun = (actions.hasSavedGame ?? true) && (st.phase === "REGULAR_SEASON" || st.phase === "SUMMER_WINDOW" || st.phase === "WINTER_WINDOW" || st.phase === "RE_DRAFT" || st.phase === "SEASON_END" || st.phase === "INIT_DRAFT" && (userClub.squad.length > 0 || st.seasonNumber > 1));
       const metaLv = league.getMetaLevels();
       const hof = st.hallOfFame;
       ctx2.save();
@@ -42496,7 +42561,8 @@
             const id = this.platform.getActiveSlotId?.() ?? "slot_1";
             const n = id.replace("slot_", "");
             return `\u5B58\u6863\u4F4D ${n}`;
-          })()
+          })(),
+          hasSavedGame: Boolean(this.platform.loadSave(SAVE_KEY))
         });
       } else if (this.route === "prologue") {
         this.prologueScreen.render(ctx2, this.hits, {

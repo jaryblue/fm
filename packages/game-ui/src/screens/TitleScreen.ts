@@ -99,17 +99,19 @@ export class TitleScreen {
       onOpenSaveSlots?: () => void;
       onQuitApp?: () => void;
       activeSlotLabel?: string;
+      hasSavedGame?: boolean;
     }
   ): void {
     const st = league.getState();
     const userClub = league.getUserClub();
     const hasActiveRun =
-      st.phase === 'REGULAR_SEASON' ||
-      st.phase === 'SUMMER_WINDOW' ||
-      st.phase === 'WINTER_WINDOW' ||
-      st.phase === 'RE_DRAFT' ||
-      st.phase === 'SEASON_END' ||
-      (st.phase === 'INIT_DRAFT' && (userClub.squad.length > 0 || st.seasonNumber > 1));
+      (actions.hasSavedGame ?? true) &&
+      (st.phase === 'REGULAR_SEASON' ||
+        st.phase === 'SUMMER_WINDOW' ||
+        st.phase === 'WINTER_WINDOW' ||
+        st.phase === 'RE_DRAFT' ||
+        st.phase === 'SEASON_END' ||
+        (st.phase === 'INIT_DRAFT' && (userClub.squad.length > 0 || st.seasonNumber > 1)));
     const metaLv = league.getMetaLevels();
     const hof = st.hallOfFame;
 

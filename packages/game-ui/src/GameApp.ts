@@ -523,6 +523,7 @@ export class GameApp {
           const n = id.replace('slot_', '');
           return `存档位 ${n}`;
         })(),
+        hasSavedGame: Boolean(this.platform.loadSave(SAVE_KEY)),
       });
     } else if (this.route === 'prologue') {
       this.prologueScreen.render(ctx, this.hits, {

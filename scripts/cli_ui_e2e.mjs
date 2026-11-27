@@ -185,10 +185,10 @@ await clickCanvas(815, 368, 600);
 await snap('00_after_continue.png');
 let afterStart = await getSave();
 if (!afterStart) {
-  await clickCanvas(640, 407, 450);
-  await clickCanvas(1177, 50, 350);
-  await clickCanvas(997, 614, 250);
-  await clickCanvas(962, 614, 450);
+  await clickCanvas(640, 407, 800);
+  await clickCanvas(1177, 50, 800);
+  await clickCanvas(997, 614, 350);
+  await clickCanvas(962, 614, 800);
   afterStart = await getSave();
 }
 record(
