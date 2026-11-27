@@ -4814,8 +4814,19 @@
     ctx2.restore();
     ctx2.restore();
   }
+  function mobileFontSize(size) {
+    if (!IS_MOBILE) return size;
+    if (size <= 9) return 11.5;
+    if (size <= 10.5) return 12.5;
+    if (size <= 12) return 14;
+    if (size <= 14) return 15.5;
+    if (size <= 17) return size + 1.5;
+    if (size <= 19) return size + 1;
+    return size;
+  }
   function drawText(ctx2, text, x, y, opts = {}) {
-    const size = opts.size ?? 13;
+    const raw = opts.size ?? 13;
+    const size = opts.rawSize ? raw : mobileFontSize(raw);
     const italic = opts.italic ? "italic " : "";
     const weight = opts.bold ? "bold " : "";
     const family = opts.mono ? THEME.NUM_FONT_FAMILY : THEME.FONT_FAMILY;
@@ -4826,8 +4837,9 @@
     ctx2.fillText(text, x, y);
   }
   function wrapTextLines(ctx2, text, maxWidth, size = 11, bold = false, maxLines = 3) {
+    const effSize = mobileFontSize(size);
     const weight = bold ? "bold " : "";
-    ctx2.font = `${weight}${size}px ${THEME.FONT_FAMILY}`;
+    ctx2.font = `${weight}${effSize}px ${THEME.FONT_FAMILY}`;
     const tokens = text.match(/[A-Za-z0-9._%+-]+|\s+|[^\sA-Za-z0-9._%+-]/g) ?? [];
     const lines = [];
     let current = "";
@@ -4855,29 +4867,32 @@
   }
   function drawWrappedText(ctx2, text, x, y, maxWidth, lineHeight, opts = {}) {
     const size = opts.size ?? 11;
+    const effSize = mobileFontSize(size);
+    const effLineHeight = IS_MOBILE ? Math.max(lineHeight, Math.round(effSize * 1.28)) : lineHeight;
     const lines = wrapTextLines(ctx2, text, maxWidth, size, !!opts.bold, opts.maxLines ?? 3);
     ctx2.fillStyle = opts.color ?? THEME.TX1;
     ctx2.textAlign = "left";
     ctx2.textBaseline = "top";
     for (let i = 0; i < lines.length; i++) {
-      ctx2.fillText(lines[i], x, y + i * lineHeight);
+      ctx2.fillText(lines[i], x, y + i * effLineHeight);
     }
     return lines.length;
   }
   function drawStatMicro(ctx2, icon, value, x, y, opts = {}) {
-    const iconSize = opts.iconSize ?? 11;
-    const fontSize = opts.fontSize ?? 11;
+    const baseFont = opts.fontSize ?? 11;
+    const effFont = mobileFontSize(baseFont);
+    const iconSize = IS_MOBILE ? Math.max(opts.iconSize ?? 11, Math.round(effFont * 0.92)) : opts.iconSize ?? 11;
     const gap = opts.gap ?? 3;
     const iconColor = opts.iconColor ?? THEME.TX3;
     const valueColor = opts.valueColor ?? THEME.TX1;
     drawIcon(ctx2, icon, x + iconSize / 2, y, iconSize, iconColor);
     drawText(ctx2, value, x + iconSize + gap, y, {
-      size: fontSize,
+      size: baseFont,
       bold: opts.bold,
       color: valueColor,
       mono: true
     });
-    ctx2.font = `${opts.bold ? "bold " : ""}${fontSize}px ${THEME.NUM_FONT_FAMILY}`;
+    ctx2.font = `${opts.bold ? "bold " : ""}${effFont}px ${THEME.NUM_FONT_FAMILY}`;
     return iconSize + gap + ctx2.measureText(value).width;
   }
   function drawMiniBar(ctx2, x, y, w, h, ratio, fillColor, bgColor = "rgba(255,255,255,0.08)") {
@@ -4945,9 +4960,10 @@
     drawChamferPanel(ctx2, x, y + dy, w, h, 6, grad, border, opts.active ? 1.3 : 1, accent);
     ctx2.restore();
     const fSize = opts.fontSize ?? 13;
+    const effFSize = mobileFontSize(fSize);
     if (opts.icon && label) {
-      const iconSize = Math.max(12, Math.round(fSize * 1.05));
-      ctx2.font = `bold ${fSize}px ${THEME.FONT_FAMILY}`;
+      const iconSize = Math.max(12, Math.round(effFSize * 1.02));
+      ctx2.font = `bold ${effFSize}px ${THEME.FONT_FAMILY}`;
       const tw = ctx2.measureText(label).width;
       const totalW = iconSize + 6 + tw;
       const startX = x + (w - totalW) / 2;
@@ -5139,23 +5155,23 @@
   function drawBadge(ctx2, x, y, w, h, text, bg, color = "#FFFFFF") {
     const pad = w <= 36 ? 4 : 8;
     const innerMax = Math.max(10, w - pad);
-    let fontSize = 10;
-    ctx2.font = `bold ${fontSize}px ${THEME.FONT_FAMILY}`;
-    if (ctx2.measureText(text).width > innerMax) {
-      fontSize = 9;
-      ctx2.font = `bold ${fontSize}px ${THEME.FONT_FAMILY}`;
-      if (ctx2.measureText(text).width > innerMax) {
-        fontSize = 8;
-        ctx2.font = `bold ${fontSize}px ${THEME.FONT_FAMILY}`;
+    const candidates = IS_MOBILE ? [12, 11, 10, 9, 8] : [10, 9, 8];
+    let fontSize = candidates[candidates.length - 1];
+    for (const s of candidates) {
+      ctx2.font = `bold ${s}px ${THEME.FONT_FAMILY}`;
+      if (ctx2.measureText(text).width <= innerMax) {
+        fontSize = s;
+        break;
       }
     }
-    const label = fitText(ctx2, text, innerMax, fontSize, true);
+    const label = fitText(ctx2, text, innerMax, fontSize, true, true);
     drawRoundRect(ctx2, x, y, w, h, Math.min(6, h / 2), bg, "rgba(255,255,255,0.08)", 0.8);
     drawText(ctx2, label, x + w / 2, y + h / 2, {
       size: fontSize,
       bold: true,
       color,
-      align: "center"
+      align: "center",
+      rawSize: true
     });
   }
   function getCommandCardArtId(card) {
@@ -5185,8 +5201,9 @@
     if (card.targetLine === "ATT") return "blitz";
     return "pass";
   }
-  function fitText(ctx2, text, maxWidth, size, bold = false) {
-    ctx2.font = `${bold ? "bold " : ""}${size}px ${THEME.FONT_FAMILY}`;
+  function fitText(ctx2, text, maxWidth, size, bold = false, rawSize = false) {
+    const effSize = rawSize ? size : mobileFontSize(size);
+    ctx2.font = `${bold ? "bold " : ""}${effSize}px ${THEME.FONT_FAMILY}`;
     if (ctx2.measureText(text).width <= maxWidth) return text;
     let s = text;
     while (s.length > 1 && ctx2.measureText(s + "\u2026").width > maxWidth) {

@@ -8,6 +8,8 @@
     "apps/steam/index.html",
     "apps/steam/steam.bundle.js",
     "apps/steam/engine.iife.js",
+    "apps/steam/ota-config.json",
+    "apps/steam/ota-manifest.json",
     "apps/steam/assets/**/*",
     "apps/steam/electron/**/*"
   ],

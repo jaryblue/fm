@@ -6,5 +6,6 @@ node_modules/
 
 shots/
 dist-ota/
+dist-desktop/
 .tmp_cli_playtest.mjs
 server/__pycache__/

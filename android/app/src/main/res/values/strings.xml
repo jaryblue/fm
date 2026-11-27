@@ -4,5 +4,5 @@
     <string name="title_activity_main">再开一局</string>
     <string name="package_name">com.zaikaiyiju.fmleague</string>
     <string name="custom_url_scheme">com.zaikaiyiju.fmleague</string>
-    <string name="ota_base_url"></string>
+    <string name="ota_base_url">https://iisliu.cloud/fm-ota</string>
 </resources>
