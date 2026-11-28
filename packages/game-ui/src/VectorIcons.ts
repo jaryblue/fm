@@ -579,9 +579,9 @@ export function drawSkillGlyph(
   size: number,
   primaryColor: string,
   accentColor = '#FACC15',
-  opts?: { dim?: boolean }
+  opts?: { dim?: boolean; vectorOnly?: boolean }
 ): void {
-  const artId = GLYPH_ART_MAP[kind];
+  const artId = opts?.vectorOnly ? undefined : GLYPH_ART_MAP[kind];
   const img = artId ? AssetLoader.get(artId) : null;
   if (img && typeof ctx.drawImage === 'function') {
     const drawS = size * 1.24;
@@ -594,6 +594,7 @@ export function drawSkillGlyph(
 
   const r = size * 0.48;
   ctx.save();
+  if (opts?.dim) ctx.globalAlpha *= 0.45;
   ctx.strokeStyle = primaryColor;
   ctx.fillStyle = primaryColor;
   ctx.lineWidth = Math.max(1.2, size * 0.105);

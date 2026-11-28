@@ -47,12 +47,14 @@ import {
 } from '../../../core/src/v6';
 import { DefenseSystem, FormationName, TacticalStyle } from '../../../engine/src/types';
 import { AssetLoader } from '../AssetLoader';
+import { drawAstrolabeBackdropAndRings } from '../AstrolabeVisuals';
 import {
   drawBadge,
   drawBroadcastHeader,
   drawButton,
   drawChamferPanel,
   drawNavRail,
+  drawPrintCard,
   drawRoundRect,
   drawText,
   drawWrappedText,
@@ -62,7 +64,7 @@ import {
   NavRailTab,
 } from '../CanvasKit';
 import { SoundEngine } from '../SoundEngine';
-import { IS_MOBILE, THEME } from '../Theme';
+import { THEME } from '../Theme';
 import { drawIcon, drawSkillGlyph, IconName, SkillGlyphKind } from '../VectorIcons';
 
 const BRANCH_ICON: Record<MetaBranch, IconName> = {
@@ -150,6 +152,7 @@ export class MetaScreen {
   private activeCheckpoint: V6CheckpointKey = 's1';
   private catalogFilterStyle: 'ALL' | TacticalStyle | 'formation' | 'fusion' = 'ALL';
   private catalogPage = 0;
+  private infraPage = 0;
 
   private zoom = 0.96;
   private panX = 0;
@@ -327,7 +330,7 @@ export class MetaScreen {
 
     if (this.tab === 'talents') {
       drawText(ctx, `俱乐部历史最高第 ${league.getBestTierReached()} 级 · 资金扩建永久保留`, baseX + 366, 89, {
-        size: 11.5,
+        size: 12,
         color: '#7DD3FC',
       });
       this.renderClubInfrastructure(ctx, hits, league, baseX, totalW, actions);
@@ -342,7 +345,7 @@ export class MetaScreen {
       this.selected = { kind: this.selected.kind === 'catalog_directives' ? 'catalog_skills' : 'catalog_directives' };
       this.catalogPage = 0;
       this.drawerOpen = true;
-    }, { active: isCatalogOpen, fontSize: 11 });
+    }, { active: isCatalogOpen, fontSize: 12 });
 
     if (isBeginnerMode) {
       rx -= 94;
@@ -350,7 +353,7 @@ export class MetaScreen {
         league.clearV6AstrolabeFog();
         this.notice = '已驱散新手迷雾，六大流派全盘展示！';
         actions.onSave();
-      }, { variant: 'ghost', fontSize: 10.5, icon: 'sparkle' });
+      }, { variant: 'ghost', fontSize: 12, icon: 'sparkle' });
     }
 
     if (!ast.locked) {
@@ -364,7 +367,7 @@ export class MetaScreen {
           this.notice = '双环星盘已锁定！当前 6 个正对融合奇点已激活可点亮路径';
           actions.onSave();
         }
-      }, { variant: 'gold', fontSize: 11, icon: 'lock' });
+      }, { variant: 'gold', fontSize: 12, icon: 'lock' });
     } else {
       const respecLabel = ast.freeRespecAvailable ? '免费洗点解锁' : '洗点解锁(¥80万)';
       rx -= 124;
@@ -378,7 +381,7 @@ export class MetaScreen {
           SoundEngine.playWarning();
           this.notice = r.reason || '无法洗点';
         }
-      }, { variant: 'ghost', fontSize: 10.5, icon: 'refresh' });
+      }, { variant: 'ghost', fontSize: 12, icon: 'refresh' });
     }
 
     // ==================== 全景主舞台：两级语义缩放八卦战术星盘 (y: 112, h: 592) ====================
@@ -388,7 +391,7 @@ export class MetaScreen {
     const mapH = 592;
     this.lastMapRect = { x: mapX, y: mapY, w: mapW, h: mapH };
 
-    drawChamferPanel(ctx, mapX, mapY, mapW, mapH, 12, 'rgba(8, 13, 24, 0.96)', ast.locked ? THEME.BORDER_GOLD : '#38BDF8', 1.4);
+    drawChamferPanel(ctx, mapX, mapY, mapW, mapH, 6, THEME.BG_DEEP, THEME.INK_LINE, 2.5, THEME.BRASS);
 
     this.renderAstrolabeCanvas(ctx, hits, league, mapX, mapY, mapW, mapH);
     this.renderSideRotateDials(ctx, hits, league, mapX, mapY, mapW, mapH, actions.onSave);
@@ -399,47 +402,30 @@ export class MetaScreen {
       ? `新手引导：点击【${STYLE_LABELS[club.style].name}】纹章展开星宿，或点右上「展开全盘」解锁全图`
       : this.notice;
     const noticeW = Math.min(490, mapW - 360);
-    const noticeH = IS_MOBILE ? 36 : 24;
-    drawRoundRect(ctx, mapX + 12, mapY + 12, noticeW, noticeH, 6, 'rgba(11, 17, 32, 0.90)', THEME.BORDER);
-    if (IS_MOBILE) {
-      drawWrappedText(ctx, displayNotice, mapX + 20, mapY + 16, noticeW - 16, 15, {
-        token: 'MICRO',
-        color: ast.locked ? THEME.GOLD_LIGHT : '#7DD3FC',
-        maxLines: 2,
-      });
-    } else {
-      drawText(ctx, fitText(ctx, displayNotice, noticeW - 16, 11, false), mapX + 20, mapY + 24, {
-        size: 11,
-        color: ast.locked ? THEME.GOLD_LIGHT : '#7DD3FC',
-      });
-    }
+    const noticeH = 38;
+    drawRoundRect(ctx, mapX + 12, mapY + 12, noticeW, noticeH, 3, THEME.BG_CARD_DARK, THEME.INK_LINE, 2);
+    drawWrappedText(ctx, displayNotice, mapX + 20, mapY + 17, noticeW - 16, 15, {
+      token: 'LABEL',
+      color: ast.locked ? THEME.BRASS : THEME.LIME,
+      maxLines: 2,
+    });
 
     const tpBase = league.getV6MatchRuntimeConfig().checkpointTpBase;
-    drawRoundRect(ctx, mapX + mapW - 352, mapY + 12, 340, IS_MOBILE ? 36 : 24, 6, 'rgba(11, 17, 32, 0.92)', THEME.BORDER);
-    if (IS_MOBILE) {
-      drawText(
-        ctx,
-        `被动${ast.unlockedPassives.length}/92 · 牌${ast.unlockedDirectives.length}/122 · 技${ast.unlockedSkills.length}/59`,
-        mapX + mapW - 182,
-        mapY + 22,
-        { token: 'MICRO', color: '#CBD5E1', align: 'center', mono: true }
-      );
-      drawText(
-        ctx,
-        `印${ast.unlockedMasterySeals.length}/6 · 每段${tpBase}TP`,
-        mapX + mapW - 182,
-        mapY + 37,
-        { token: 'MICRO', color: THEME.GOLD_LIGHT, align: 'center', mono: true }
-      );
-    } else {
-      drawText(
-        ctx,
-        `被动${ast.unlockedPassives.length}/92 · 牌${ast.unlockedDirectives.length}/122 · 技${ast.unlockedSkills.length}/59 · 印${ast.unlockedMasterySeals.length}/6 · 每段${tpBase}TP`,
-        mapX + mapW - 182,
-        mapY + 24,
-        { size: 10.5, color: '#CBD5E1', align: 'center', mono: true }
-      );
-    }
+    drawRoundRect(ctx, mapX + mapW - 352, mapY + 12, 340, 38, 3, THEME.BG_CARD_DARK, THEME.INK_LINE, 2);
+    drawText(
+      ctx,
+      `被动${ast.unlockedPassives.length}/92 · 牌${ast.unlockedDirectives.length}/122 · 技${ast.unlockedSkills.length}/59`,
+      mapX + mapW - 182,
+      mapY + 23,
+      { token: 'LABEL', color: THEME.TX1, align: 'center', mono: true }
+    );
+    drawText(
+      ctx,
+      `印${ast.unlockedMasterySeals.length}/6 · 每段${tpBase}TP`,
+      mapX + mapW - 182,
+      mapY + 39,
+      { token: 'LABEL', color: THEME.BRASS, align: 'center', mono: true }
+    );
 
     // 底部极简双态罗盘胶囊（滚轮自由缩放，点击一键切换宏观/特写）
     const isMacroNow = this.zoom < 1.32;
@@ -447,31 +433,31 @@ export class MetaScreen {
     const pillY = mapY + mapH - 38;
     const pillW = 204;
     const pillH = 28;
-    drawRoundRect(ctx, pillX, pillY, pillW, pillH, 14, 'rgba(9, 15, 29, 0.92)', THEME.BORDER_GOLD, 1.1);
+    drawRoundRect(ctx, pillX, pillY, pillW, pillH, 3, THEME.BG_CARD_DARK, THEME.INK_LINE, 2);
     drawRoundRect(
       ctx,
       isMacroNow ? pillX + 2 : pillX + pillW / 2,
       pillY + 2,
       pillW / 2 - 2,
       pillH - 4,
-      12,
-      'rgba(245, 158, 11, 0.24)',
-      THEME.GOLD_LIGHT,
-      1.1
+      2,
+      THEME.BRASS,
+      THEME.INK_LINE,
+      1.5
     );
-    drawText(ctx, '🧭 宏观罗盘', pillX + pillW * 0.25, pillY + 14, {
-      size: 10.5,
-      bold: isMacroNow,
-      color: isMacroNow ? THEME.GOLD_LIGHT : '#94A3B8',
+    drawText(ctx, '宏观罗盘', pillX + pillW * 0.25, pillY + 14, {
+      size: 12,
+      bold: true,
+      color: isMacroNow ? THEME.PAPER_INK : THEME.TX2,
       align: 'center',
     });
-    drawText(ctx, '✨ 星宿特写', pillX + pillW * 0.75, pillY + 14, {
-      size: 10.5,
-      bold: !isMacroNow,
-      color: !isMacroNow ? THEME.GOLD_LIGHT : '#94A3B8',
+    drawText(ctx, '星宿特写', pillX + pillW * 0.75, pillY + 14, {
+      size: 12,
+      bold: true,
+      color: !isMacroNow ? THEME.PAPER_INK : THEME.TX2,
       align: 'center',
     });
-    const pillPadY = IS_MOBILE ? 8 : 0;
+    const pillPadY = 8 
     hits.add(pillX, pillY - pillPadY, pillW / 2, pillH + pillPadY * 2, () => {
       this.zoom = 0.96;
       this.panX = 0;
@@ -487,9 +473,9 @@ export class MetaScreen {
       this.panY = Math.round(-Math.sin(focusAng) * unitR * 0.62);
       this.notice = `星宿特写视图：已聚焦【${STYLE_LABELS[club.style].name}】扇区，双指捏合/滚轮缩放`;
     });
-    const zoomBtnW = IS_MOBILE ? 36 : 28;
-    const zoomBtnH = IS_MOBILE ? 32 : pillH;
-    const zoomBtnY = IS_MOBILE ? pillY - 2 : pillY;
+    const zoomBtnW = 36 
+    const zoomBtnH = 32 
+    const zoomBtnY = pillY - 2 
     drawButton(ctx, hits, pillX + pillW + 8, zoomBtnY, zoomBtnW, zoomBtnH, '－', () => {
       this.applyZoomAt(0.82, mapX + mapW / 2, mapY + mapH / 2);
     }, { variant: 'ghost', fontSize: 12 });
@@ -515,19 +501,19 @@ export class MetaScreen {
     const ast = league.getV6Astrolabe();
     drawChamferPanel(ctx, x, y, w, h, 8, 'rgba(13, 21, 38, 0.94)', THEME.BORDER, 1.1);
 
-    drawText(ctx, '临场指令池', x + 12, y + 15, { size: 10.5, bold: true, color: THEME.GOLD_LIGHT });
+    drawText(ctx, '临场指令池', x + 12, y + 15, { size: 12, bold: true, color: THEME.GOLD_LIGHT });
     drawButton(ctx, hits, x + 12, y + 23, 66, 20, ast.useUniversalPool ? '通用✓' : '分拐点', () => {
       league.setV6UniversalPool(!ast.useUniversalPool);
       this.notice = !ast.useUniversalPool ? '已开启【一键复用 4 张通用指令池】' : '已切换为 20\'/45\'/70\' 独立配牌模式';
       actions.onSave();
-    }, { active: ast.useUniversalPool, fontSize: 9.5 });
+    }, { active: ast.useUniversalPool, fontSize: 12 });
 
     let cx = x + 84;
     CHECKPOINT_TABS.forEach((cp, idx) => {
       const act = this.activeCheckpoint === cp.key;
       drawButton(ctx, hits, cx + idx * 38, y + 10, 34, 28, cp.label, () => {
         this.activeCheckpoint = cp.key;
-      }, { active: act, fontSize: 10.5 });
+      }, { active: act, fontSize: 12 });
     });
     cx += 120;
 
@@ -543,14 +529,14 @@ export class MetaScreen {
         drawRoundRect(ctx, sx, y + 6, slotW, 36, 6, 'rgba(18, 29, 51, 0.96)', zCol, 1.2);
         ctx.fillStyle = zCol;
         ctx.fillRect(sx + 2, y + 8, 3, 32);
-        drawText(ctx, `${def.tpCost}TP`, sx + 10, y + 16, { size: 9, bold: true, color: THEME.GOLD_LIGHT, mono: true });
+        drawText(ctx, `${def.tpCost}TP`, sx + 10, y + 16, { size: 12, bold: true, color: THEME.GOLD_LIGHT, mono: true });
         drawText(ctx, `${ZONE_LABEL[def.zone]}·${def.tendency === 'ATK' ? '攻' : '守'}`, sx + slotW - 6, y + 16, {
-          size: 8.5,
+          size: 12,
           color: zCol,
           align: 'right',
         });
         drawText(ctx, fitText(ctx, `${def.name}${sats > 0 ? ` ★${sats}` : ''}`, slotW - 14, 10.5, true), sx + 10, y + 32, {
-          size: 10.5,
+          size: 12,
           bold: true,
           color: THEME.TX1,
         });
@@ -562,7 +548,7 @@ export class MetaScreen {
       } else {
         drawRoundRect(ctx, sx, y + 6, slotW, 36, 6, 'rgba(10, 16, 28, 0.72)', 'rgba(100,116,139,0.35)', 1);
         drawText(ctx, `+ 槽位 ${i + 1} (点手牌装配)`, sx + slotW / 2, y + 24, {
-          size: 9.5,
+          size: 12,
           color: THEME.TX3,
           align: 'center',
         });
@@ -575,7 +561,7 @@ export class MetaScreen {
     }
 
     const skStartX = x + w - 348;
-    drawText(ctx, 'F键主动技', skStartX - 2, y + 24, { size: 10, bold: true, color: '#38BDF8', align: 'right' });
+    drawText(ctx, 'F键主动技', skStartX - 2, y + 24, { size: 12, bold: true, color: '#38BDF8', align: 'right' });
     for (let i = 0; i < 4; i++) {
       const sx = skStartX + 6 + i * 84;
       const sid = ast.equippedSkills[i];
@@ -583,8 +569,8 @@ export class MetaScreen {
       if (sk) {
         const br = ast.skillBranchChoice[sid] ?? 'A';
         drawRoundRect(ctx, sx, y + 6, 80, 36, 6, 'rgba(12, 54, 86, 0.85)', '#38BDF8', 1.2);
-        drawText(ctx, `F${i + 1} · ${br}支`, sx + 6, y + 16, { size: 8.5, bold: true, color: '#7DD3FC', mono: true });
-        drawText(ctx, fitText(ctx, sk.name, 70, 10, true), sx + 6, y + 32, { size: 10, bold: true, color: '#FFFFFF' });
+        drawText(ctx, `F${i + 1} · ${br}支`, sx + 6, y + 16, { size: 12, bold: true, color: '#7DD3FC', mono: true });
+        drawText(ctx, fitText(ctx, sk.name, 70, 10, true), sx + 6, y + 32, { size: 12, bold: true, color: '#FFFFFF' });
         hits.add(sx, y + 6, 80, 36, () => {
           SoundEngine.playClick();
           this.selected = { kind: 'skill', id: sk.id };
@@ -592,7 +578,7 @@ export class MetaScreen {
         });
       } else {
         drawRoundRect(ctx, sx, y + 6, 80, 36, 6, 'rgba(10, 16, 28, 0.72)', 'rgba(56,189,248,0.28)', 1);
-        drawText(ctx, `F${i + 1} 空槽`, sx + 40, y + 24, { size: 9.5, color: THEME.TX3, align: 'center' });
+        drawText(ctx, `F${i + 1} 空槽`, sx + 40, y + 24, { size: 12, color: THEME.TX3, align: 'center' });
         hits.add(sx, y + 6, 80, 36, () => {
           this.selected = { kind: 'catalog_skills' };
           this.catalogPage = 0;
@@ -654,10 +640,6 @@ export class MetaScreen {
     if (bothUnlocked) {
       ctx.strokeStyle = color;
       ctx.lineWidth = isBridge ? 2.6 : 1.9;
-      if (!IS_MOBILE) {
-        ctx.shadowColor = color;
-        ctx.shadowBlur = isBridge ? 10 : 6;
-      }
       ctx.beginPath();
       ctx.moveTo(ax, ay);
       ctx.lineTo(bx, by);
@@ -668,7 +650,6 @@ export class MetaScreen {
       const sx = ax + (bx - ax) * t;
       const sy = ay + (by - ay) * t;
       ctx.fillStyle = '#FEF08A';
-      if (!IS_MOBILE) ctx.shadowBlur = 4;
       ctx.beginPath();
       ctx.arc(sx, sy, isBridge ? 2.4 : 1.7, 0, Math.PI * 2);
       ctx.fill();
@@ -743,23 +724,19 @@ export class MetaScreen {
       const hovered = hits.isHovered(px, py, pw, ph);
       ctx.save();
       // 弧形贴合星环的黄铜/钢蓝机械拨片（仅留 ↺/↻ 与度数刻度，大幅收窄占宽）
-      const radius = 12;
+      const radius = 3;
       ctx.beginPath();
-      if (side === 'left') {
-        ctx.roundRect(px, py, pw, ph, [8, radius, radius, 8]);
-      } else {
-        ctx.roundRect(px, py, pw, ph, [radius, 8, 8, radius]);
-      }
-      ctx.fillStyle = hovered ? 'rgba(20, 34, 62, 0.96)' : 'rgba(9, 15, 29, 0.84)';
+      ctx.roundRect(px, py, pw, ph, radius);
+      ctx.fillStyle = hovered ? THEME.BG_PITCH_ALT : THEME.BG_CARD_DARK;
       ctx.fill();
-      ctx.lineWidth = hovered ? 1.8 : 1.1;
-      ctx.strokeStyle = hovered ? THEME.GOLD_LIGHT : `${accent}88`;
+      ctx.lineWidth = 2.2;
+      ctx.strokeStyle = hovered ? THEME.LIME : THEME.INK_LINE;
       ctx.stroke();
 
-      // 朝向星盘一侧的弧形齿轮刻线
-      const edgeX = side === 'left' ? px + pw - 4 : px + 4;
-      ctx.strokeStyle = hovered ? THEME.GOLD_LIGHT : `${accent}66`;
-      ctx.lineWidth = hovered ? 2 : 1.2;
+      // 朝向星盘一侧的黄铜齿轮刻线
+      const edgeX = side === 'left' ? px + pw - 5 : px + 5;
+      ctx.strokeStyle = hovered ? THEME.LIME : THEME.BRASS;
+      ctx.lineWidth = 1.8;
       for (let ti = 0; ti < 4; ti++) {
         const ty = py + 14 + ti * ((ph - 28) / 3);
         ctx.beginPath();
@@ -772,13 +749,13 @@ export class MetaScreen {
       drawText(ctx, glyph, textCx, py + 21, {
         size: hovered ? 20 : 18,
         bold: true,
-        color: hovered ? THEME.GOLD_LIGHT : accent,
+        color: hovered ? THEME.LIME : accent,
         align: 'center',
       });
       drawText(ctx, sub.split(' ')[0], textCx, py + 45, {
-        size: 10,
-        bold: hovered,
-        color: hovered ? '#FDE68A' : '#94A3B8',
+        size: 12,
+        bold: true,
+        color: hovered ? THEME.PAPER_CREAM : THEME.TX2,
         align: 'center',
         mono: true,
       });
@@ -786,20 +763,20 @@ export class MetaScreen {
       hits.add(px, py, pw, ph, onClick);
     };
 
-    const pw = IS_MOBILE ? 64 : 54;
-    const ph = IS_MOBILE ? 72 : 62;
+    const pw = 64 
+    const ph = 72 
     const midY = mapY + mapH / 2;
     const leftX = mapX + 14;
     const rightLimit = this.drawerOpen ? mapX + mapW - 422 : mapX + mapW - 14;
     const rightX = rightLimit - pw;
 
     // 左侧：逆时针旋转（外环 -60° / 内环 -120°）
-    drawPaddle(leftX, midY - ph - 10, pw, ph, 'left', 'outer', '外环', '-60° 流派', '↺', '#38BDF8', () => triggerRotate('outer', -1));
-    drawPaddle(leftX, midY + 10, pw, ph, 'left', 'inner', '内环', '-120° 防线', '↺', '#F59E0B', () => triggerRotate('inner', -1));
+    drawPaddle(leftX, midY - ph - 10, pw, ph, 'left', 'outer', '外环', '-60° 流派', '↺', THEME.LIME, () => triggerRotate('outer', -1));
+    drawPaddle(leftX, midY + 10, pw, ph, 'left', 'inner', '内环', '-120° 防线', '↺', THEME.BRASS, () => triggerRotate('inner', -1));
 
     // 右侧：顺时针旋转（外环 +60° / 内环 +120°）
-    drawPaddle(rightX, midY - ph - 10, pw, ph, 'right', 'outer', '外环', '+60° 流派', '↻', '#38BDF8', () => triggerRotate('outer', 1));
-    drawPaddle(rightX, midY + 10, pw, ph, 'right', 'inner', '内环', '+120° 防线', '↻', '#F59E0B', () => triggerRotate('inner', 1));
+    drawPaddle(rightX, midY - ph - 10, pw, ph, 'right', 'outer', '外环', '+60° 流派', '↻', THEME.LIME, () => triggerRotate('outer', 1));
+    drawPaddle(rightX, midY + 10, pw, ph, 'right', 'inner', '内环', '+120° 防线', '↻', THEME.BRASS, () => triggerRotate('inner', 1));
   }
 
   private renderAstrolabeCanvas(
@@ -831,74 +808,17 @@ export class MetaScreen {
     ctx.rect(mapX + 4, mapY + 4, mapW - 8, mapH - 8);
     ctx.clip();
 
-    // 星空底图
-    const constImg = AssetLoader.get('bg_skill_constellation');
-    if (constImg && typeof ctx.drawImage === 'function') {
-      const iw = constImg.naturalWidth || constImg.width || 1024;
-      const ih = constImg.naturalHeight || constImg.height || 572;
-      const cover = Math.max(mapW / iw, mapH / ih);
-      ctx.save();
-      ctx.globalAlpha = 0.46;
-      ctx.drawImage(constImg, mapX + mapW / 2 - (iw * cover) / 2, mapY + mapH / 2 - (ih * cover) / 2, iw * cover, ih * cover);
-      ctx.restore();
-    }
-
-    // 5 层同心轨道圆环
-    const ringRadii = [0.20, 0.30, 0.40, 0.50, 0.60, 0.78, 0.90, 0.99];
-    ringRadii.forEach((ratio, idx) => {
-      const isFusionRing = idx === 3;
-      ctx.strokeStyle = isFusionRing ? 'rgba(250, 204, 21, 0.36)' : 'rgba(148, 163, 184, 0.14)';
-      ctx.lineWidth = isFusionRing ? 1.8 : 1;
-      if (idx === 1 || idx === 4 || idx === 5) ctx.setLineDash([3, 6]);
-      else ctx.setLineDash([]);
-      ctx.beginPath();
-      ctx.arc(cx, cy, baseR * ratio, 0, Math.PI * 2);
-      ctx.stroke();
-    });
-    ctx.setLineDash([]);
-
-    // 旋转奇点对齐光波与星辉脉冲
-    if (this.rotFlashTimer > 0) {
-      const p = 1 - this.rotFlashTimer / 0.58; // 0 -> 1
-      const alpha = Math.max(0, (1 - p) * 0.85);
-      const pulseCol = this.rotFlashRing === 'outer' ? '#38BDF8' : '#F59E0B';
-      ctx.save();
-      // 1. 融合轨道金色扩张冲击波
-      ctx.strokeStyle = `rgba(250, 204, 21, ${alpha.toFixed(3)})`;
-      ctx.lineWidth = 3.5 * (1 - p * 0.6);
-      if (!IS_MOBILE) {
-        ctx.shadowColor = THEME.GOLD_LIGHT;
-        ctx.shadowBlur = 16;
-      }
-      ctx.beginPath();
-      ctx.arc(cx, cy, baseR * (0.48 + p * 0.14), 0, Math.PI * 2);
-      ctx.stroke();
-
-      // 2. 旋转环高亮轨道流光
-      ctx.strokeStyle = pulseCol;
-      ctx.globalAlpha = alpha * 0.7;
-      ctx.lineWidth = 2.4;
-      const ringR = this.rotFlashRing === 'outer' ? 0.78 : 0.35;
-      ctx.beginPath();
-      ctx.arc(cx, cy, baseR * ringR, 0, Math.PI * 2);
-      ctx.stroke();
-
-      // 3. 6 颗正对融合奇点星芒绽放
-      for (let idx = 0; idx < 6; idx++) {
-        const ang = -Math.PI / 2 + (idx * Math.PI) / 3;
-        const fx = cx + Math.cos(ang) * (baseR * 0.50);
-        const fy = cy + Math.sin(ang) * (baseR * 0.50);
-        const flareR = (14 + p * 20) * Math.max(0.75, this.zoom);
-        const grad = ctx.createRadialGradient(fx, fy, 2, fx, fy, flareR);
-        grad.addColorStop(0, `rgba(254, 240, 138, ${alpha.toFixed(3)})`);
-        grad.addColorStop(1, 'rgba(250, 204, 21, 0)');
-        ctx.fillStyle = grad;
-        ctx.beginPath();
-        ctx.arc(fx, fy, flareR, 0, Math.PI * 2);
-        ctx.fill();
-      }
-      ctx.restore();
-    }
+    // PITCH PRINT 深松石绒面 + 72 刻度精密黄铜兵法罗盘底盘（彻底告别暗蓝星云图）
+    drawAstrolabeBackdropAndRings(
+      ctx,
+      cx,
+      cy,
+      baseR,
+      { x: mapX + 4, y: mapY + 4, w: mapW - 8, h: mapH - 8 },
+      this.animTime,
+      this.rotFlashTimer,
+      this.rotFlashRing
+    );
 
     const canHit = (px: number, py: number) =>
       !this.inDrawer(px, py) && px >= mapX + 6 && px <= mapX + mapW - 6 && py >= mapY + 6 && py <= mapY + mapH - 6;
@@ -930,9 +850,9 @@ export class MetaScreen {
       ctx.moveTo(cx, cy);
       ctx.arc(cx, cy, baseR * 1.04, startA, endA);
       ctx.closePath();
-      ctx.fillStyle = visible ? `${info.color}10` : 'rgba(15, 23, 42, 0.48)';
+      ctx.fillStyle = visible ? `${info.color}12` : 'rgba(10, 26, 20, 0.52)';
       ctx.fill();
-      ctx.strokeStyle = visible ? `${info.color}38` : 'rgba(71, 85, 105, 0.24)';
+      ctx.strokeStyle = visible ? 'rgba(216, 168, 66, 0.34)' : 'rgba(110, 133, 120, 0.22)';
       ctx.lineWidth = 1;
       ctx.stroke();
       ctx.restore();
@@ -949,7 +869,7 @@ export class MetaScreen {
           visible ? info.color : '#64748B',
           true,
           false,
-          Math.max(IS_MOBILE ? 11.5 : 10, Math.min(13.5, 11.5 * this.zoom))
+          Math.max(11.5 , Math.min(13.5, 11.5 * this.zoom))
         );
       }
 
@@ -1164,7 +1084,7 @@ export class MetaScreen {
     const rotSlow = this.animTime * 0.55;
 
     const isBeginnerMode = !ast.fogCleared && tier >= 6;
-    const nodeHitR = (r: number, pad = 4) => (IS_MOBILE ? Math.max(r + 10, 22) : r + pad);
+    const nodeHitR = (r: number, pad = 4) => (Math.max(r + 10, 22) );
 
     // 3a. 外环 6 扇区：宏观罗盘绘制 44px 流派大纹章（点击推入特写），特写绘制完整 26 星宿节点
     if (isMacro) {
@@ -1177,14 +1097,14 @@ export class MetaScreen {
         if (!sec.visible) {
           if (!isBeginnerMode) {
             ctx.save();
-            ctx.fillStyle = 'rgba(15, 23, 42, 0.82)';
+            ctx.fillStyle = THEME.BG_DEEP;
             ctx.beginPath();
             ctx.arc(mx, my, mr, 0, Math.PI * 2);
             ctx.fill();
-            ctx.strokeStyle = '#334155';
-            ctx.lineWidth = 1.5;
+            ctx.strokeStyle = 'rgba(216, 168, 66, 0.35)';
+            ctx.lineWidth = 1.6;
             ctx.stroke();
-            drawIcon(ctx, 'lock', mx, my, 16, '#64748B');
+            drawIcon(ctx, 'lock', mx, my, 16, THEME.TX3);
             ctx.restore();
           }
           continue;
@@ -1196,34 +1116,44 @@ export class MetaScreen {
         const isClubStyle = club.style === style;
 
         ctx.save();
-        if (!IS_MOBILE) {
-          ctx.shadowColor = info.color;
-          ctx.shadowBlur = isClubStyle ? 18 : 10;
-        }
-        ctx.fillStyle = isClubStyle ? '#162A48' : '#0F1B33';
+        ctx.fillStyle = THEME.HARD_SHADOW;
+        ctx.beginPath();
+        ctx.arc(mx + 2, my + 2, mr, 0, Math.PI * 2);
+        ctx.fill();
+
+        ctx.fillStyle = isClubStyle ? THEME.LIME : THEME.BG_PANEL;
         ctx.beginPath();
         ctx.arc(mx, my, mr, 0, Math.PI * 2);
         ctx.fill();
-        ctx.lineWidth = isClubStyle ? 2.6 : 1.8;
-        ctx.strokeStyle = isClubStyle ? THEME.GOLD_LIGHT : info.color;
+        ctx.lineWidth = 2.5;
+        ctx.strokeStyle = isClubStyle ? THEME.INK_LINE : THEME.BRASS;
         ctx.stroke();
 
-        ctx.strokeStyle = `${info.color}88`;
-        ctx.lineWidth = 1.2;
+        ctx.strokeStyle = isClubStyle ? THEME.LIME : 'rgba(216, 168, 66, 0.65)';
+        ctx.lineWidth = 1.4;
         ctx.setLineDash([5, 4]);
         ctx.beginPath();
         ctx.arc(mx, my, mr + 4.5, rotSlow, rotSlow + Math.PI * 1.5);
         ctx.stroke();
         ctx.setLineDash([]);
 
-        drawSkillGlyph(ctx, STYLE_GLYPH[style], mx, my, mr * 1.15, info.color, THEME.GOLD_LIGHT);
+        drawSkillGlyph(
+          ctx,
+          STYLE_GLYPH[style],
+          mx,
+          my,
+          mr * 1.15,
+          isClubStyle ? THEME.PAPER_INK : THEME.BRASS,
+          isClubStyle ? THEME.VERMILION : THEME.LIME,
+          { vectorOnly: true }
+        );
         ctx.restore();
 
-        drawRoundRect(ctx, mx - 46, my + mr + 5, 92, 20, 5, 'rgba(8, 13, 25, 0.92)', info.color, 1);
-        drawText(ctx, `${info.short} ${unlCount}/26 ▶`, mx, my + mr + 15, {
-          size: 10.5,
+        drawRoundRect(ctx, mx - 46, my + mr + 5, 92, 22, 2, isClubStyle ? THEME.PAPER_CREAM : THEME.BG_CARD_DARK, THEME.INK_LINE, 2);
+        drawText(ctx, `${info.short} ${unlCount}/26 ▶`, mx, my + mr + 16, {
+          size: 12,
           bold: true,
-          color: isClubStyle ? THEME.GOLD_LIGHT : '#E2E8F0',
+          color: isClubStyle ? THEME.PAPER_INK : THEME.TX1,
           align: 'center',
         });
 
@@ -1260,10 +1190,6 @@ export class MetaScreen {
           : Math.max(4.8, 6.0 * Math.min(1.3, this.zoom));
 
         ctx.save();
-        if (!IS_MOBILE && (pos.unlocked || pos.reachable || isSel)) {
-          ctx.shadowColor = isSel ? '#FFFFFF' : pos.unlocked ? info.color : '#38BDF8';
-          ctx.shadowBlur = isSel ? 12 : pos.unlocked ? 8 : 5;
-        }
         ctx.fillStyle = pos.unlocked ? '#16213A' : pos.reachable ? '#0F1D33' : '#090F1D';
         ctx.beginPath();
         ctx.arc(pos.x, pos.y, nr, 0, Math.PI * 2);
@@ -1294,8 +1220,8 @@ export class MetaScreen {
         );
         ctx.restore();
 
-        if (isOrigin || isSel || (!IS_MOBILE && this.zoom >= 1.5)) {
-          this.drawNodeLabel(ctx, isOrigin ? `${info.short}原点` : p.name.slice(0, 4), pos.x, pos.y + nr + (IS_MOBILE ? 11 : 8), pos.unlocked ? info.color : pos.reachable ? '#7DD3FC' : THEME.TX3, isOrigin || isSel, false, IS_MOBILE ? 10.5 : isOrigin ? 9 : 8.5);
+        if (isOrigin || isSel || (false && this.zoom >= 1.5)) {
+          this.drawNodeLabel(ctx, isOrigin ? `${info.short}原点` : p.name.slice(0, 4), pos.x, pos.y + nr + (11 ), pos.unlocked ? info.color : pos.reachable ? '#7DD3FC' : THEME.TX3, isOrigin || isSel, false, 10.5 );
         }
         if (canHit(pos.x, pos.y)) {
           const hr = nodeHitR(nr);
@@ -1317,10 +1243,6 @@ export class MetaScreen {
         const dr = Math.max(7.2, 9.2 * Math.min(1.35, this.zoom));
 
         ctx.save();
-        if (!IS_MOBILE && (isSel || isEq || pos.unlocked)) {
-          ctx.shadowColor = isSel ? '#FFFFFF' : isEq ? '#4ADE80' : '#38BDF8';
-          ctx.shadowBlur = isSel ? 14 : 10;
-        }
         ctx.fillStyle = isEq ? '#0C4A6E' : pos.unlocked ? '#172554' : pos.reachable ? '#0E223A' : '#0B111F';
         ctx.beginPath();
         ctx.moveTo(pos.x, pos.y - dr);
@@ -1350,8 +1272,8 @@ export class MetaScreen {
         });
         ctx.restore();
 
-        if (isSel || isEq || (!IS_MOBILE && this.zoom >= 1.28)) {
-          this.drawNodeLabel(ctx, sk.name.slice(0, 4), pos.x, pos.y + dr + (IS_MOBILE ? 11 : 8), isEq ? '#4ADE80' : pos.unlocked ? '#7DD3FC' : THEME.TX3, isEq || isSel, false, IS_MOBILE ? 10.5 : 9);
+        if (isSel || isEq || (false && this.zoom >= 1.28)) {
+          this.drawNodeLabel(ctx, sk.name.slice(0, 4), pos.x, pos.y + dr + (11 ), isEq ? '#4ADE80' : pos.unlocked ? '#7DD3FC' : THEME.TX3, isEq || isSel, false, 10.5 );
         }
         if (canHit(pos.x, pos.y)) {
           const hr = nodeHitR(dr);
@@ -1375,10 +1297,6 @@ export class MetaScreen {
         const subAngle = Math.atan2(pos.y - cy, pos.x - cx);
 
         ctx.save();
-        if (!IS_MOBILE && (isSel || isEq || pos.unlocked)) {
-          ctx.shadowColor = isSel ? '#FFFFFF' : isEq ? '#4ADE80' : ZONE_COLOR[dir.zone];
-          ctx.shadowBlur = isSel ? 12 : isEq ? 9 : 5;
-        }
         ctx.fillStyle = pos.unlocked ? (isEq ? '#14532D' : '#1E293B') : pos.reachable ? '#101C32' : '#0B111F';
         ctx.beginPath();
         ctx.arc(pos.x, pos.y, nr, 0, Math.PI * 2);
@@ -1408,8 +1326,8 @@ export class MetaScreen {
         });
         ctx.restore();
 
-        if (isSel || (!IS_MOBILE && this.zoom >= 1.55)) {
-          this.drawNodeLabel(ctx, dir.name.slice(0, 4), pos.x, pos.y + nr + (IS_MOBILE ? 11 : 8), isEq ? '#4ADE80' : pos.unlocked ? THEME.TX1 : THEME.TX3, isSel || isEq, false, IS_MOBILE ? 10.5 : 8.5);
+        if (isSel || (false && this.zoom >= 1.55)) {
+          this.drawNodeLabel(ctx, dir.name.slice(0, 4), pos.x, pos.y + nr + (11 ), isEq ? '#4ADE80' : pos.unlocked ? THEME.TX1 : THEME.TX3, isSel || isEq, false, 10.5 );
         }
         if (canHit(pos.x, pos.y)) {
           const hr = nodeHitR(nr);
@@ -1430,10 +1348,6 @@ export class MetaScreen {
       const r = Math.max(9.5, 12.2 * Math.min(1.3, this.zoom));
 
       ctx.save();
-      if (!IS_MOBILE && (pos.unlocked || pos.reachable || isSel)) {
-        ctx.shadowColor = isSel ? '#FFFFFF' : THEME.GOLD_LIGHT;
-        ctx.shadowBlur = pos.unlocked ? 16 : 10;
-      }
       ctx.fillStyle = pos.unlocked ? '#422006' : pos.reachable ? '#1C1917' : '#0F172A';
       ctx.beginPath();
       for (let h = 0; h < 6; h++) {
@@ -1459,13 +1373,14 @@ export class MetaScreen {
         ctx.setLineDash([]);
       }
 
-      drawSkillGlyph(ctx, 'fusion', pos.x, pos.y, r * 1.38, pos.unlocked ? '#FEF08A' : '#F59E0B', THEME.GOLD_LIGHT, {
+      drawSkillGlyph(ctx, 'fusion', pos.x, pos.y, r * 1.38, pos.unlocked ? THEME.BRASS : THEME.LIME, THEME.PAPER_CREAM, {
         dim: !pos.unlocked && !pos.reachable,
+        vectorOnly: true,
       });
       ctx.restore();
 
       if (!isBeginnerMode || !isMacro || al.style === club.style || pos.unlocked) {
-        this.drawNodeLabel(ctx, al.fusion.name.slice(0, 5), pos.x, pos.y + r + (IS_MOBILE ? 12 : 10), pos.unlocked ? THEME.GOLD_LIGHT : pos.reachable ? '#FDE68A' : '#94A3B8', true, false, IS_MOBILE ? 11 : 9.5);
+        this.drawNodeLabel(ctx, al.fusion.name.slice(0, 5), pos.x, pos.y + r + (12 ), pos.unlocked ? THEME.GOLD_LIGHT : pos.reachable ? '#FDE68A' : '#94A3B8', true, false, 11 );
       }
       if (canHit(pos.x, pos.y)) {
         const hr = nodeHitR(r, 6);
@@ -1488,26 +1403,23 @@ export class MetaScreen {
       const r = isOrigin ? (isMacro ? 14 : Math.max(8, 10.2 * Math.min(1.28, this.zoom))) : Math.max(5.2, 6.4 * Math.min(1.28, this.zoom));
 
       ctx.save();
-      if (!IS_MOBILE && (pos.unlocked || pos.reachable || isSel)) {
-        ctx.shadowColor = isSel ? '#FFFFFF' : pos.unlocked ? sysCol : '#38BDF8';
-        ctx.shadowBlur = isSel ? 12 : 7;
-      }
-      ctx.fillStyle = pos.unlocked ? '#12223C' : '#0B111F';
+      ctx.fillStyle = pos.unlocked ? THEME.BG_PITCH_ALT : THEME.BG_DEEP;
       ctx.beginPath();
       ctx.arc(pos.x, pos.y, r, 0, Math.PI * 2);
       ctx.fill();
-      ctx.lineWidth = isSel ? 2.4 : isOrigin ? 2.0 : 1.4;
-      ctx.strokeStyle = isSel ? '#FFFFFF' : pos.unlocked ? sysCol : pos.reachable ? '#38BDF8' : '#334155';
+      ctx.lineWidth = isSel ? 2.6 : isOrigin ? 2.2 : 1.6;
+      ctx.strokeStyle = isSel ? THEME.PAPER_CREAM : pos.unlocked ? THEME.BRASS : pos.reachable ? THEME.LIME : THEME.INK_LINE;
       ctx.stroke();
 
-      drawSkillGlyph(ctx, getPassiveStatGlyph(sp), pos.x, pos.y, r * (isOrigin ? 1.42 : 1.24), pos.unlocked ? sysCol : '#64748B', THEME.GOLD_LIGHT, {
+      drawSkillGlyph(ctx, getPassiveStatGlyph(sp), pos.x, pos.y, r * (isOrigin ? 1.42 : 1.24), pos.unlocked ? THEME.BRASS : THEME.TX3, THEME.LIME, {
         dim: !pos.unlocked && !pos.reachable,
+        vectorOnly: true,
       });
       ctx.restore();
 
-      if (isOrigin || isSel || (!IS_MOBILE && this.zoom >= 1.45)) {
+      if (isOrigin || isSel || (false && this.zoom >= 1.45)) {
         const lblText = isOrigin ? SYSTEM_LABELS[sp.system].name.slice(0, 3) : sp.name.slice(0, 4);
-        this.drawNodeLabel(ctx, lblText, pos.x, pos.y + r + (IS_MOBILE ? 11 : 8), pos.unlocked ? sysCol : THEME.TX3, isOrigin || isSel, false, IS_MOBILE ? 10.5 : 8.5);
+        this.drawNodeLabel(ctx, lblText, pos.x, pos.y + r + (11 ), pos.unlocked ? sysCol : THEME.TX3, isOrigin || isSel, false, 10.5 );
       }
       if (canHit(pos.x, pos.y)) {
         const hr = nodeHitR(r);
@@ -1530,10 +1442,6 @@ export class MetaScreen {
         const r = Math.max(6.2, 7.8 * Math.min(1.28, this.zoom));
 
         ctx.save();
-        if (!IS_MOBILE && (isCurFm || isSel)) {
-          ctx.shadowColor = isSel ? '#FFFFFF' : THEME.GREEN;
-          ctx.shadowBlur = 10;
-        }
         ctx.fillStyle = isCurFm ? '#064E3B' : pos.unlocked ? '#16243E' : '#0F172A';
         ctx.beginPath();
         ctx.arc(pos.x, pos.y, r, 0, Math.PI * 2);
@@ -1544,7 +1452,7 @@ export class MetaScreen {
         ctx.restore();
 
         if (this.zoom >= 0.95 || isCurFm || isSel) {
-          this.drawNodeLabel(ctx, fm, pos.x, pos.y + r + (IS_MOBILE ? 11 : 8), isCurFm ? THEME.GREEN : pos.unlocked ? '#E2E8F0' : '#94A3B8', isCurFm || isSel, true, IS_MOBILE ? 10.5 : 8.5);
+          this.drawNodeLabel(ctx, fm, pos.x, pos.y + r + (11 ), isCurFm ? THEME.GREEN : pos.unlocked ? '#E2E8F0' : '#94A3B8', isCurFm || isSel, true, 10.5 );
         }
         if (canHit(pos.x, pos.y)) {
           const hr = nodeHitR(r, 5);
@@ -1566,20 +1474,17 @@ export class MetaScreen {
       const r = Math.max(9.5, 11.8 * Math.min(1.25, this.zoom));
 
       ctx.save();
-      if (!IS_MOBILE && (pos.unlocked || pos.reachable || isSel)) {
-        ctx.shadowColor = isSel ? '#FFFFFF' : pos.unlocked ? THEME.GOLD_LIGHT : sCol;
-        ctx.shadowBlur = 14;
-      }
-      ctx.fillStyle = pos.unlocked ? '#422006' : pos.reachable ? '#1E293B' : '#0A101E';
+      ctx.fillStyle = pos.unlocked ? '#3F2D0E' : pos.reachable ? THEME.BG_CARD_DARK : THEME.BG_DEEP;
       ctx.beginPath();
       ctx.arc(pos.x, pos.y, r, 0, Math.PI * 2);
       ctx.fill();
-      ctx.lineWidth = isSel ? 2.6 : pos.unlocked ? 2.3 : 1.5;
-      ctx.strokeStyle = isSel ? '#FFFFFF' : pos.unlocked ? THEME.GOLD_LIGHT : pos.reachable ? sCol : '#475569';
+      ctx.lineWidth = isSel ? 2.6 : pos.unlocked ? 2.3 : 1.6;
+      ctx.strokeStyle = isSel ? THEME.PAPER_CREAM : pos.unlocked ? THEME.BRASS : pos.reachable ? THEME.LIME : THEME.INK_LINE;
       ctx.stroke();
 
-      drawSkillGlyph(ctx, STYLE_GLYPH[seal.style], pos.x, pos.y, r * 1.38, pos.unlocked ? THEME.GOLD_LIGHT : sCol, THEME.GOLD_LIGHT, {
+      drawSkillGlyph(ctx, STYLE_GLYPH[seal.style], pos.x, pos.y, r * 1.38, pos.unlocked ? THEME.BRASS : THEME.TX3, THEME.LIME, {
         dim: !pos.unlocked && !pos.reachable,
+        vectorOnly: true,
       });
       ctx.restore();
 
@@ -1599,28 +1504,25 @@ export class MetaScreen {
     const coreSel = this.selected.kind === 'core';
     const pulse = 0.5 + 0.5 * Math.sin(this.animTime * 2.8);
     ctx.save();
-    if (!IS_MOBILE) {
-      ctx.shadowColor = ast.coreUnlocked ? '#FACC15' : coreCheck.ok ? '#38BDF8' : '#475569';
-      ctx.shadowBlur = ast.coreUnlocked ? 22 + pulse * 8 : coreCheck.ok ? 14 : 6;
-    }
-    ctx.fillStyle = ast.coreUnlocked ? '#78350F' : '#0F172A';
+    ctx.fillStyle = ast.coreUnlocked ? '#3F2D0E' : THEME.PAPER_CREAM;
     ctx.beginPath();
     ctx.arc(cx, cy, coreR, 0, Math.PI * 2);
     ctx.fill();
-    ctx.lineWidth = coreSel ? 3 : 2.3;
-    ctx.strokeStyle = coreSel ? '#FFFFFF' : ast.coreUnlocked ? '#FEF08A' : coreCheck.ok ? '#38BDF8' : THEME.BORDER_GOLD;
+    ctx.lineWidth = 3;
+    ctx.strokeStyle = coreSel ? THEME.LIME : THEME.INK_LINE;
     ctx.stroke();
 
-    ctx.strokeStyle = ast.coreUnlocked ? 'rgba(254,240,138,0.75)' : 'rgba(250,204,21,0.38)';
-    ctx.lineWidth = 1.2;
+    ctx.strokeStyle = ast.coreUnlocked ? THEME.BRASS : 'rgba(216, 168, 66, 0.55)';
+    ctx.lineWidth = 1.4;
     ctx.setLineDash([5, 5]);
     ctx.beginPath();
     ctx.arc(cx, cy, coreR + 4.5, rotSlow, rotSlow + Math.PI * 1.65);
     ctx.stroke();
     ctx.setLineDash([]);
 
-    drawSkillGlyph(ctx, 'master', cx, cy, coreR * 1.44, ast.coreUnlocked ? '#FEF08A' : THEME.GOLD_LIGHT, '#FEF08A', {
-      dim: !ast.coreUnlocked && !coreCheck.ok,
+    drawSkillGlyph(ctx, 'master', cx, cy, coreR * 1.35, ast.coreUnlocked ? THEME.BRASS : THEME.BG_PANEL, THEME.VERMILION, {
+      dim: false,
+      vectorOnly: true,
     });
     ctx.restore();
 
@@ -1651,12 +1553,12 @@ export class MetaScreen {
     const dy = mapY + 10;
     this.lastDrawerRect = { x: dx, y: dy, w: dw, h: dh };
 
-    drawChamferPanel(ctx, dx, dy, dw, dh, 12, 'rgba(10, 16, 30, 0.97)', THEME.BORDER_GOLD, 1.6, THEME.GOLD_LIGHT);
+    drawPrintCard(ctx, dx, dy, dw, dh, { paper: false, radius: 12, shadowOffset: 6, strokeColor: THEME.BORDER_GOLD, lineWidth: 1.8 });
     hits.add(dx, dy, dw, dh, () => {});
 
     drawButton(ctx, hits, dx + dw - 62, dy + 12, 48, 26, '关闭', () => {
       this.drawerOpen = false;
-    }, { variant: 'ghost', fontSize: 11 });
+    }, { variant: 'ghost', fontSize: 12 });
 
     const sel = this.selected;
     if (sel.kind === 'passive') {
@@ -1713,11 +1615,11 @@ export class MetaScreen {
         : `${p.formation} 阵型专精被动`,
       dx + 16,
       dy + 76,
-      { size: 11, color: THEME.TX2 }
+      { size: 12, color: THEME.TX2 }
     );
 
     drawRoundRect(ctx, dx + 16, dy + 94, dw - 32, 74, 8, 'rgba(20, 83, 45, 0.25)', accent, 1.3);
-    drawText(ctx, '永久数值 / 机制增益', dx + 26, dy + 112, { size: 11, bold: true, color: THEME.GOLD_LIGHT });
+    drawText(ctx, '永久数值 / 机制增益', dx + 26, dy + 112, { size: 12, bold: true, color: THEME.GOLD_LIGHT });
     drawWrappedText(ctx, p.desc, dx + 26, dy + 132, dw - 52, 18, { size: 12.5, color: THEME.TX1, maxLines: 2 });
 
     // 前置连线状态卡
@@ -1733,7 +1635,7 @@ export class MetaScreen {
       dy + 194,
       dw - 52,
       16,
-      { size: 11, color: unlocked || prereq.ok ? THEME.GREEN : '#FBBF24', maxLines: 2 }
+      { size: 12, color: unlocked || prereq.ok ? THEME.GREEN : '#FBBF24', maxLines: 2 }
     );
 
     if (!unlocked) {
@@ -1765,7 +1667,7 @@ export class MetaScreen {
         drawButton(ctx, hits, dx + 16, dy + 302, dw - 32, 32, `定位前置节点：【${firstMissing.label}】 ▶`, () => {
           SoundEngine.playClick();
           this.selected = { kind: firstMissing.kind, id: firstMissing.id };
-        }, { variant: 'primary', fontSize: 11 });
+        }, { variant: 'primary', fontSize: 12 });
       }
     } else {
       drawBadge(ctx, dx + 16, dy + 252, dw - 32, 36, '数值被动已永久激活 ✓', '#14532D', THEME.GREEN);
@@ -1808,20 +1710,20 @@ export class MetaScreen {
         : '融合奇点王牌手牌',
       dx + 16,
       dy + 72,
-      { size: 11, color: THEME.TX2 }
+      { size: 12, color: THEME.TX2 }
     );
 
     drawRoundRect(ctx, dx + 16, dy + 86, dw - 32, 44, 7, 'rgba(20, 83, 45, 0.28)', 'rgba(34, 197, 94, 0.5)');
-    drawText(ctx, '收益', dx + 26, dy + 108, { size: 10.5, bold: true, color: THEME.GREEN });
-    drawWrappedText(ctx, def.benefitSummary, dx + 62, dy + 94, dw - 88, 15, { size: 11, color: THEME.TX1, maxLines: 2 });
+    drawText(ctx, '收益', dx + 26, dy + 108, { size: 12, bold: true, color: THEME.GREEN });
+    drawWrappedText(ctx, def.benefitSummary, dx + 62, dy + 94, dw - 88, 15, { size: 12, color: THEME.TX1, maxLines: 2 });
 
     drawRoundRect(ctx, dx + 16, dy + 135, dw - 32, 44, 7, 'rgba(127, 29, 29, 0.28)', 'rgba(248, 113, 113, 0.5)');
-    drawText(ctx, '代价', dx + 26, dy + 157, { size: 10.5, bold: true, color: '#FCA5A5' });
-    drawWrappedText(ctx, def.riskSummary, dx + 62, dy + 143, dw - 88, 15, { size: 11, color: '#FECACA', maxLines: 2 });
+    drawText(ctx, '代价', dx + 26, dy + 157, { size: 12, bold: true, color: '#FCA5A5' });
+    drawWrappedText(ctx, def.riskSummary, dx + 62, dy + 143, dw - 88, 15, { size: 12, color: '#FECACA', maxLines: 2 });
 
     if (!unlocked) {
       if (!prereq.ok) {
-        drawText(ctx, fitText(ctx, `🔒 ${prereq.reason}`, dw - 32, 10.5), dx + 16, dy + 191, { size: 10.5, color: '#FBBF24' });
+        drawText(ctx, fitText(ctx, `🔒 ${prereq.reason}`, dw - 32, 10.5), dx + 16, dy + 191, { size: 12, color: '#FBBF24' });
       }
       const canBuy = prereq.ok && pt >= def.unlockCost;
       drawButton(
@@ -1871,7 +1773,7 @@ export class MetaScreen {
     }
 
     drawText(ctx, `卫星质变节点 (${sats.length}/3 · 满 3 颗计入宗师印前置)`, dx + 16, dy + 252, {
-      size: 11.5,
+      size: 12,
       bold: true,
       color: THEME.GOLD_LIGHT,
     });
@@ -1885,7 +1787,7 @@ export class MetaScreen {
       drawRoundRect(ctx, dx + 16, sy, dw - 32, 70, 7, isLit ? 'rgba(20, 83, 45, 0.28)' : THEME.BG_CARD, isLit ? sCol : THEME.BORDER);
       drawBadge(ctx, dx + 24, sy + 10, 42, 18, `卫星${sk}`, '#0F172A', sCol);
       drawText(ctx, sDef.label, dx + 72, sy + 19, { size: 12, bold: true, color: isLit ? sCol : THEME.TX1 });
-      drawWrappedText(ctx, sDef.desc, dx + 24, sy + 34, dw - 134, 15, { size: 10.5, color: THEME.TX2, maxLines: 2 });
+      drawWrappedText(ctx, sDef.desc, dx + 24, sy + 34, dw - 134, 15, { size: 12, color: THEME.TX2, maxLines: 2 });
 
       if (isLit) {
         drawBadge(ctx, dx + dw - 86, sy + 22, 62, 24, '已点亮 ✓', '#14532D', THEME.GREEN);
@@ -1899,7 +1801,7 @@ export class MetaScreen {
           } else {
             this.notice = r.reason || '无法点亮';
           }
-        }, { variant: canBuy ? 'gold' : 'ghost', disabled: !canBuy, fontSize: 10.5 });
+        }, { variant: canBuy ? 'gold' : 'ghost', disabled: !canBuy, fontSize: 12 });
       }
     });
   }
@@ -1928,12 +1830,12 @@ export class MetaScreen {
     drawBadge(ctx, dx + 148, dy + 14, 72, 22, `CD ${sk.cooldownMinutes}分`, '#1E293B', THEME.GOLD_LIGHT);
 
     drawText(ctx, sk.name, dx + 16, dy + 54, { size: 19, bold: true, color: '#7DD3FC' });
-    drawText(ctx, `触发时机：${sk.situationLabel} · 每场限 ${sk.maxPerMatch} 次`, dx + 16, dy + 76, { size: 11, color: THEME.TX2 });
+    drawText(ctx, `触发时机：${sk.situationLabel} · 每场限 ${sk.maxPerMatch} 次`, dx + 16, dy + 76, { size: 12, color: THEME.TX2 });
 
     drawRoundRect(ctx, dx + 16, dy + 94, dw - 32, 66, 8, 'rgba(12, 74, 110, 0.30)', 'rgba(56, 189, 248, 0.45)');
     drawText(ctx, `⚡ 物理瞬发：${sk.instantLabel}`, dx + 26, dy + 112, { size: 12, bold: true, color: THEME.GOLD_LIGHT });
     drawWrappedText(ctx, `${sk.powerLabel}（持续 ${sk.durationMinutes} 分钟）`, dx + 26, dy + 132, dw - 52, 16, {
-      size: 11,
+      size: 12,
       color: THEME.TX1,
       maxLines: 2,
     });
@@ -1941,7 +1843,7 @@ export class MetaScreen {
     if (!unlocked) {
       const isSpecial = sk.source === 'mastery' || sk.source === 'core';
       if (!isSpecial && !prereq.ok) {
-        drawText(ctx, fitText(ctx, `🔒 ${prereq.reason}`, dw - 32, 10.5), dx + 16, dy + 170, { size: 10.5, color: '#FBBF24' });
+        drawText(ctx, fitText(ctx, `🔒 ${prereq.reason}`, dw - 32, 10.5), dx + 16, dy + 170, { size: 12, color: '#FBBF24' });
       }
       const canBuy = !isSpecial && prereq.ok && pt >= sk.unlockCost;
       drawButton(
@@ -1996,7 +1898,7 @@ export class MetaScreen {
     }
 
     drawText(ctx, 'A / B 互斥质变分支（解锁后可随时免费切换）', dx + 16, dy + 234, {
-      size: 11.5,
+      size: 12,
       bold: true,
       color: THEME.GOLD_LIGHT,
     });
@@ -2007,11 +1909,11 @@ export class MetaScreen {
       drawRoundRect(ctx, dx + 16, by, dw - 32, 74, 8, chosen ? 'rgba(6, 78, 59, 0.45)' : THEME.BG_CARD, chosen ? THEME.GREEN : THEME.BORDER, chosen ? 1.6 : 1);
       drawText(ctx, `分支 ${ch} · ${br.label}`, dx + 26, by + 18, { size: 12.5, bold: true, color: chosen ? THEME.GREEN : THEME.TX1 });
       drawText(ctx, chosen ? '生效中 ✓' : unlocked ? '点击切换' : '解锁可用', dx + dw - 26, by + 18, {
-        size: 10.5,
+        size: 12,
         color: chosen ? THEME.GREEN : THEME.TX3,
         align: 'right',
       });
-      drawWrappedText(ctx, br.desc, dx + 26, by + 38, dw - 52, 16, { size: 11, color: THEME.TX2, maxLines: 2 });
+      drawWrappedText(ctx, br.desc, dx + 26, by + 38, dw - 52, 16, { size: 12, color: THEME.TX2, maxLines: 2 });
       if (unlocked && !chosen) {
         hits.add(dx + 16, by, dw - 32, 74, () => {
           league.setV6SkillBranch(skillId, ch);
@@ -2054,7 +1956,7 @@ export class MetaScreen {
         : fitText(ctx, `🔒 ${prereq.reason}`, dw - 32, 11),
       dx + 16,
       dy + 76,
-      { size: 11, color: unlocked || prereq.ok ? THEME.GREEN : '#FBBF24' }
+      { size: 12, color: unlocked || prereq.ok ? THEME.GREEN : '#FBBF24' }
     );
 
     if (!unlocked) {
@@ -2090,11 +1992,11 @@ export class MetaScreen {
       drawRoundRect(ctx, dx + 16, by, dw - 32, 86, 8, chosen ? 'rgba(120, 53, 15, 0.36)' : THEME.BG_CARD, chosen ? THEME.GOLD_LIGHT : THEME.BORDER, chosen ? 1.6 : 1);
       drawText(ctx, `奇点分支 ${ch} · ${br.label}`, dx + 26, by + 18, { size: 12.5, bold: true, color: chosen ? THEME.GOLD_LIGHT : THEME.TX1 });
       drawText(ctx, chosen ? '生效中 ✓' : unlocked ? '点击切换' : '', dx + dw - 26, by + 18, {
-        size: 10.5,
+        size: 12,
         color: THEME.GREEN,
         align: 'right',
       });
-      drawWrappedText(ctx, br.desc, dx + 26, by + 36, dw - 52, 16, { size: 11, color: THEME.TX2, maxLines: 3 });
+      drawWrappedText(ctx, br.desc, dx + 26, by + 36, dw - 52, 16, { size: 12, color: THEME.TX2, maxLines: 3 });
       if (unlocked && !chosen) {
         hits.add(dx + 16, by, dw - 32, 86, () => {
           league.setV6FusionBranch(fusionId, ch);
@@ -2109,10 +2011,10 @@ export class MetaScreen {
       const ry = dy + 350;
       drawRoundRect(ctx, dx + 16, ry, dw - 32, 92, 8, 'rgba(30, 27, 75, 0.45)', '#A855F7');
       drawText(ctx, `👑 伴生王牌手牌（3 TP）：${royalDir.name}`, dx + 26, ry + 20, { size: 12.5, bold: true, color: '#E9D5FF' });
-      drawWrappedText(ctx, `收益：${royalDir.benefitSummary}`, dx + 26, ry + 38, dw - 52, 15, { size: 10.5, color: THEME.GREEN, maxLines: 1 });
+      drawWrappedText(ctx, `收益：${royalDir.benefitSummary}`, dx + 26, ry + 38, dw - 52, 15, { size: 12, color: THEME.GREEN, maxLines: 1 });
       drawButton(ctx, hits, dx + 26, ry + 56, dw - 52, 28, '查看并解锁/装配此王牌手牌 ▶', () => {
         this.selected = { kind: 'directive', id: royalDir.id };
-      }, { variant: 'primary', fontSize: 11 });
+      }, { variant: 'primary', fontSize: 12 });
     }
   }
 
@@ -2137,15 +2039,15 @@ export class MetaScreen {
     drawText(ctx, `${fm} 专属星盘节点`, dx + 16, dy + 52, { size: 18, bold: true, color: THEME.TX1 });
 
     let cy = dy + 74;
-    drawText(ctx, '阵型被动 (2 个 · 需先点亮对应防线体系原点)', dx + 16, cy, { size: 11, bold: true, color: '#7DD3FC' });
+    drawText(ctx, '阵型被动 (2 个 · 需先点亮对应防线体系原点)', dx + 16, cy, { size: 12, bold: true, color: '#7DD3FC' });
     cy += 12;
     passives.forEach(p => {
       const unl = ast.unlockedPassives.includes(p.id);
       const pre = canUnlockV6Node(ast, 'passive', p.id);
       const canBuy = !unl && pre.ok && pt >= p.unlockCost;
       drawRoundRect(ctx, dx + 16, cy, dw - 32, 52, 7, unl ? 'rgba(20,83,45,0.28)' : THEME.BG_CARD, unl ? THEME.GREEN : THEME.BORDER);
-      drawText(ctx, p.name, dx + 26, cy + 16, { size: 11.5, bold: true, color: unl ? THEME.GREEN : THEME.TX1 });
-      drawWrappedText(ctx, p.desc, dx + 26, cy + 30, dw - 122, 14, { size: 10, color: THEME.TX2, maxLines: 1 });
+      drawText(ctx, p.name, dx + 26, cy + 16, { size: 12, bold: true, color: unl ? THEME.GREEN : THEME.TX1 });
+      drawWrappedText(ctx, p.desc, dx + 26, cy + 30, dw - 122, 14, { size: 12, color: THEME.TX2, maxLines: 1 });
       if (!unl) {
         drawButton(ctx, hits, dx + dw - 92, cy + 12, 68, 28, pre.ok ? `${p.unlockCost}pt` : '未连通', () => {
           const r = league.unlockV6Passive(p.id);
@@ -2157,35 +2059,35 @@ export class MetaScreen {
             SoundEngine.playWarning();
             this.notice = r.reason || '无法解锁';
           }
-        }, { variant: canBuy ? 'gold' : 'ghost', disabled: !canBuy, fontSize: 10.5 });
+        }, { variant: canBuy ? 'gold' : 'ghost', disabled: !canBuy, fontSize: 12 });
       }
       cy += 58;
     });
 
     cy += 6;
-    drawText(ctx, '阵型专属手牌 (1攻 + 1守 · 需先点亮对应攻/守被动)', dx + 16, cy, { size: 11, bold: true, color: THEME.GOLD_LIGHT });
+    drawText(ctx, '阵型专属手牌 (1攻 + 1守 · 需先点亮对应攻/守被动)', dx + 16, cy, { size: 12, bold: true, color: THEME.GOLD_LIGHT });
     cy += 12;
     dirs.forEach(d => {
       const unl = ast.unlockedDirectives.includes(d.id);
       drawRoundRect(ctx, dx + 16, cy, dw - 32, 54, 7, THEME.BG_CARD, ZONE_COLOR[d.zone]);
-      drawText(ctx, `${d.name} (${d.tpCost}TP·${d.tendency === 'ATK' ? '攻' : '守'})`, dx + 26, cy + 16, { size: 11.5, bold: true, color: THEME.TX1 });
-      drawText(ctx, fitText(ctx, d.benefitSummary, dw - 126, 10), dx + 26, cy + 36, { size: 10, color: THEME.GREEN });
+      drawText(ctx, `${d.name} (${d.tpCost}TP·${d.tendency === 'ATK' ? '攻' : '守'})`, dx + 26, cy + 16, { size: 12, bold: true, color: THEME.TX1 });
+      drawText(ctx, fitText(ctx, d.benefitSummary, dw - 126, 10), dx + 26, cy + 36, { size: 12, color: THEME.GREEN });
       drawButton(ctx, hits, dx + dw - 92, cy + 13, 68, 28, unl ? '配装/卫星' : '详情 ▶', () => {
         this.selected = { kind: 'directive', id: d.id };
-      }, { variant: 'primary', fontSize: 10 });
+      }, { variant: 'primary', fontSize: 12 });
       cy += 60;
     });
 
     if (sk) {
       cy += 6;
-      drawText(ctx, '阵型专属主动技 (点亮任一阵型被动后可解锁)', dx + 16, cy, { size: 11, bold: true, color: '#38BDF8' });
+      drawText(ctx, '阵型专属主动技 (点亮任一阵型被动后可解锁)', dx + 16, cy, { size: 12, bold: true, color: '#38BDF8' });
       cy += 12;
       drawRoundRect(ctx, dx + 16, cy, dw - 32, 60, 7, 'rgba(12, 74, 110, 0.30)', '#38BDF8');
       drawText(ctx, sk.name, dx + 26, cy + 18, { size: 12, bold: true, color: '#7DD3FC' });
-      drawText(ctx, fitText(ctx, sk.instantLabel, dw - 126, 10), dx + 26, cy + 40, { size: 10, color: THEME.GOLD_LIGHT });
+      drawText(ctx, fitText(ctx, sk.instantLabel, dw - 126, 10), dx + 26, cy + 40, { size: 12, color: THEME.GOLD_LIGHT });
       drawButton(ctx, hits, dx + dw - 92, cy + 16, 68, 28, '详情 ▶', () => {
         this.selected = { kind: 'skill', id: sk.id };
-      }, { variant: 'primary', fontSize: 10.5 });
+      }, { variant: 'primary', fontSize: 12 });
     }
   }
 
@@ -2220,7 +2122,7 @@ export class MetaScreen {
       dy + 160,
       dw - 52,
       16,
-      { size: 11, color: prereq.ok ? THEME.GREEN : '#FBBF24', maxLines: 2 }
+      { size: 12, color: prereq.ok ? THEME.GREEN : '#FBBF24', maxLines: 2 }
     );
 
     if (!unlocked) {
@@ -2242,10 +2144,10 @@ export class MetaScreen {
     if (ult) {
       drawRoundRect(ctx, dx + 16, dy + 270, dw - 32, 102, 8, 'rgba(12, 74, 110, 0.35)', '#38BDF8');
       drawText(ctx, `⚡ 伴生终极主动技：${ult.name}`, dx + 26, dy + 290, { size: 13, bold: true, color: '#7DD3FC' });
-      drawWrappedText(ctx, `${ult.instantLabel} · ${ult.powerLabel}`, dx + 26, dy + 310, dw - 52, 16, { size: 11, color: THEME.TX1, maxLines: 2 });
+      drawWrappedText(ctx, `${ult.instantLabel} · ${ult.powerLabel}`, dx + 26, dy + 310, dw - 52, 16, { size: 12, color: THEME.TX1, maxLines: 2 });
       drawButton(ctx, hits, dx + 26, dy + 336, dw - 52, 28, '查看并装配此终极主动技 ▶', () => {
         this.selected = { kind: 'skill', id: ult.id };
-      }, { variant: 'primary', fontSize: 11 });
+      }, { variant: 'primary', fontSize: 12 });
     }
   }
 
@@ -2275,13 +2177,13 @@ export class MetaScreen {
       dy + 80,
       dw - 32,
       18,
-      { size: 11.5, color: THEME.TX1, maxLines: 3 }
+      { size: 12, color: THEME.TX1, maxLines: 3 }
     );
 
     drawRoundRect(ctx, dx + 16, dy + 146, dw - 32, 74, 8, THEME.BG_CARD, chk.ok ? THEME.GREEN : THEME.BORDER_GOLD);
-    drawText(ctx, '双轨解锁条件（二选一，不强迫全修 6 流派）', dx + 26, dy + 164, { size: 11, bold: true, color: THEME.GOLD_LIGHT });
+    drawText(ctx, '双轨解锁条件（二选一，不强迫全修 6 流派）', dx + 26, dy + 164, { size: 12, bold: true, color: THEME.GOLD_LIGHT });
     drawWrappedText(ctx, chk.reason, dx + 26, dy + 182, dw - 52, 16, {
-      size: 11,
+      size: 12,
       color: chk.ok ? THEME.GREEN : '#CBD5E1',
       maxLines: 2,
     });
@@ -2305,14 +2207,14 @@ export class MetaScreen {
     if (ult) {
       drawRoundRect(ctx, dx + 16, dy + 286, dw - 32, 92, 8, 'rgba(12, 74, 110, 0.35)', '#38BDF8');
       drawText(ctx, `⚡ 圆心终极技：${ult.name}`, dx + 26, dy + 306, { size: 12.5, bold: true, color: '#FEF08A' });
-      drawWrappedText(ctx, ult.powerLabel, dx + 26, dy + 324, dw - 52, 15, { size: 10.5, color: THEME.TX1, maxLines: 2 });
+      drawWrappedText(ctx, ult.powerLabel, dx + 26, dy + 324, dw - 52, 15, { size: 12, color: THEME.TX1, maxLines: 2 });
       drawButton(ctx, hits, dx + 26, dy + 344, dw - 52, 26, '查看并装配圆心终极技 ▶', () => {
         this.selected = { kind: 'skill', id: ult.id };
-      }, { variant: 'primary', fontSize: 10.5 });
+      }, { variant: 'primary', fontSize: 12 });
     }
 
     drawText(ctx, `已投入可退还点数：${refund}pt · 六印全齐额外 +1 TP/拐点`, dx + 16, dy + 402, {
-      size: 11,
+      size: 12,
       color: THEME.TX3,
     });
   }
@@ -2352,7 +2254,7 @@ export class MetaScreen {
       drawButton(ctx, hits, dx + 16 + col * 76, dy + 46 + row * 28, 70, 24, fl, () => {
         this.catalogFilterStyle = fk;
         this.catalogPage = 0;
-      }, { active: this.catalogFilterStyle === fk, fontSize: 10 });
+      }, { active: this.catalogFilterStyle === fk, fontSize: 12 });
     });
 
     const list: V6DirectiveDef[] = V6_DIRECTIVES.filter(d => {
@@ -2376,12 +2278,12 @@ export class MetaScreen {
       drawBadge(ctx, dx + 72, ry + 8, 34, 16, `${d.tpCost}TP`, '#78350F', THEME.GOLD_LIGHT);
       drawText(ctx, fitText(ctx, d.name, 168, 12, true), dx + 112, ry + 16, { size: 12, bold: true, color: isUnl ? THEME.TX1 : THEME.TX3 });
       drawText(ctx, isEq ? '已编入✓' : isUnl ? '已解锁' : `${d.unlockCost}pt`, dx + dw - 24, ry + 16, {
-        size: 10,
+        size: 12,
         bold: true,
         color: isEq ? THEME.GREEN : isUnl ? '#7DD3FC' : THEME.GOLD_LIGHT,
         align: 'right',
       });
-      drawText(ctx, fitText(ctx, d.benefitSummary, dw - 52, 10), dx + 24, ry + 38, { size: 10, color: THEME.TX2 });
+      drawText(ctx, fitText(ctx, d.benefitSummary, dw - 52, 10), dx + 24, ry + 38, { size: 12, color: THEME.TX2 });
       hits.add(dx + 16, ry, dw - 32, 54, () => {
         SoundEngine.playClick();
         this.selected = { kind: 'directive', id: d.id };
@@ -2390,15 +2292,15 @@ export class MetaScreen {
 
     drawButton(ctx, hits, dx + 16, dy + dh - 38, 80, 26, '上一页', () => {
       this.catalogPage = Math.max(0, this.catalogPage - 1);
-    }, { disabled: this.catalogPage === 0, fontSize: 10.5 });
+    }, { disabled: this.catalogPage === 0, fontSize: 12 });
     drawText(ctx, `${this.catalogPage + 1} / ${totalPages} (共${list.length}张)`, dx + dw / 2, dy + dh - 25, {
-      size: 10.5,
+      size: 12,
       color: THEME.TX2,
       align: 'center',
     });
     drawButton(ctx, hits, dx + dw - 96, dy + dh - 38, 80, 26, '下一页', () => {
       this.catalogPage = Math.min(totalPages - 1, this.catalogPage + 1);
-    }, { disabled: this.catalogPage >= totalPages - 1, fontSize: 10.5 });
+    }, { disabled: this.catalogPage >= totalPages - 1, fontSize: 12 });
   }
 
   private renderSkillCatalog(
@@ -2432,13 +2334,13 @@ export class MetaScreen {
       drawRoundRect(ctx, dx + 16, ry, dw - 32, 54, 7, isEq ? 'rgba(12, 74, 110, 0.45)' : THEME.BG_CARD, isEq ? '#4ADE80' : isUnl ? '#38BDF8' : THEME.BORDER);
       drawText(ctx, sk.name, dx + 24, ry + 16, { size: 12, bold: true, color: isEq ? '#4ADE80' : isUnl ? '#7DD3FC' : THEME.TX3 });
       drawText(ctx, isEq ? '已装配✓' : isUnl ? '已解锁' : `${sk.unlockCost}pt`, dx + dw - 24, ry + 16, {
-        size: 10,
+        size: 12,
         bold: true,
         color: isEq ? THEME.GREEN : isUnl ? '#7DD3FC' : THEME.GOLD_LIGHT,
         align: 'right',
       });
       drawText(ctx, fitText(ctx, `${sk.situationLabel} · ${sk.instantLabel}`, dw - 52, 10), dx + 24, ry + 38, {
-        size: 10,
+        size: 12,
         color: THEME.TX2,
       });
       hits.add(dx + 16, ry, dw - 32, 54, () => {
@@ -2449,15 +2351,15 @@ export class MetaScreen {
 
     drawButton(ctx, hits, dx + 16, dy + dh - 38, 80, 26, '上一页', () => {
       this.catalogPage = Math.max(0, this.catalogPage - 1);
-    }, { disabled: this.catalogPage === 0, fontSize: 10.5 });
+    }, { disabled: this.catalogPage === 0, fontSize: 12 });
     drawText(ctx, `${this.catalogPage + 1} / ${totalPages} (共${list.length}个)`, dx + dw / 2, dy + dh - 25, {
-      size: 10.5,
+      size: 12,
       color: THEME.TX2,
       align: 'center',
     });
     drawButton(ctx, hits, dx + dw - 96, dy + dh - 38, 80, 26, '下一页', () => {
       this.catalogPage = Math.min(totalPages - 1, this.catalogPage + 1);
-    }, { disabled: this.catalogPage >= totalPages - 1, fontSize: 10.5 });
+    }, { disabled: this.catalogPage >= totalPages - 1, fontSize: 12 });
   }
 
   private renderClubInfrastructure(
@@ -2469,17 +2371,29 @@ export class MetaScreen {
     actions: { onSave: () => void }
   ): void {
     const levels = league.getMetaLevels();
-    const cardGap = 12;
-    const cardW = (totalW - cardGap * 3) / 4;
-    const cardH = 286;
+    const cardGap = 14;
+    const cardW = (totalW - cardGap * 2) / 3;
+    const cardH = 264;
     const clubFunds = league.getClubFunds();
     const bestTier = league.getBestTierReached();
+    const infraPerPage = 6;
+    const infraPages = Math.max(1, Math.ceil(META_BRANCHES.length / infraPerPage));
+    if (this.infraPage >= infraPages) this.infraPage = infraPages - 1;
+    const visibleBranches = META_BRANCHES.slice(this.infraPage * infraPerPage, (this.infraPage + 1) * infraPerPage);
 
-    META_BRANCHES.forEach((branch, idx) => {
-      const col = idx % 4;
-      const row = Math.floor(idx / 4);
+    drawButton(ctx, hits, baseX + totalW - 184, 72, 62, 32, '◀ 上页', () => {
+      this.infraPage = Math.max(0, this.infraPage - 1);
+    }, { disabled: this.infraPage === 0, fontSize: 12 });
+    drawText(ctx, `${this.infraPage + 1}/${infraPages}`, baseX + totalW - 92, 88, { size: 12.5, bold: true, color: THEME.GOLD_LIGHT, align: 'center', mono: true });
+    drawButton(ctx, hits, baseX + totalW - 64, 72, 62, 32, '下页 ▶', () => {
+      this.infraPage = Math.min(infraPages - 1, this.infraPage + 1);
+    }, { disabled: this.infraPage >= infraPages - 1, fontSize: 12 });
+
+    visibleBranches.forEach((branch, idx) => {
+      const col = idx % 3;
+      const row = Math.floor(idx / 3);
       const bx = baseX + col * (cardW + cardGap);
-      const by = 116 + row * (cardH + 12);
+      const by = 116 + row * (cardH + 14);
 
       const curLv = levels[branch.id] ?? 0;
       const nextLv = curLv + 1;
@@ -2541,7 +2455,7 @@ export class MetaScreen {
           unlocked ? '#080C14' : isLvLocked ? '#FCA5A5' : THEME.TX2
         );
         drawWrappedText(ctx, branch.levelDescriptions[li], bx + 64, ly + 9, cardW - 134, 15, {
-          token: 'MICRO',
+          token: 'LABEL',
           color: unlocked ? THEME.TX1 : THEME.TX2,
           maxLines: 2,
         });
@@ -2551,7 +2465,7 @@ export class MetaScreen {
           bx + cardW - 18,
           ly + 25,
           {
-            size: 10,
+            size: 12,
             bold: true,
             color: unlocked ? THEME.GREEN : isLvLocked ? '#FCA5A5' : THEME.GOLD_LIGHT,
             align: 'right',
@@ -2586,7 +2500,7 @@ export class MetaScreen {
               this.notice = res.reason || '扩建失败';
             }
           },
-          { variant: canAfford ? 'gold' : 'ghost', disabled: !canAfford, fontSize: 11.5 }
+          { variant: canAfford ? 'gold' : 'ghost', disabled: !canAfford, fontSize: 12 }
         );
       }
     });

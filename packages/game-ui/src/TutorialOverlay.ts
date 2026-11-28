@@ -155,8 +155,6 @@ export class TutorialOverlay {
     ctx.fill('evenodd');
 
     // 挖空区呼吸金色光环
-    ctx.shadowColor = 'rgba(250, 204, 21, 0.75)';
-    ctx.shadowBlur = 14 + pulse * 10;
     ctx.strokeStyle = `rgba(254, 240, 138, ${(0.70 + pulse * 0.30).toFixed(2)})`;
     ctx.lineWidth = 3;
     ctx.beginPath();
@@ -204,8 +202,6 @@ export class TutorialOverlay {
 
     // 4. 暖色羊皮纸高对比战术气泡（与深蓝赛博 UI 形成强烈视觉剥离）
     ctx.save();
-    ctx.shadowColor = 'rgba(0, 0, 0, 0.72)';
-    ctx.shadowBlur = 22;
     ctx.shadowOffsetY = 6;
     drawRoundRect(ctx, cfg.x, cfg.y, cfg.w, cfg.h, 14, '#FEF9E7', '#D97706', 2.6);
     ctx.restore();
@@ -222,8 +218,6 @@ export class TutorialOverlay {
       const px = cfg.x - 14;
       const py = cfg.y - 12;
       ctx.save();
-      ctx.shadowColor = 'rgba(0, 0, 0, 0.45)';
-      ctx.shadowBlur = 10;
       drawRoundRect(ctx, px, py, 88, 88, 14, '#78350F', '#F59E0B', 2.6);
       ctx.restore();
       ctx.save();
@@ -242,7 +236,7 @@ export class TutorialOverlay {
       color: '#1E293B',
     });
     drawWrappedText(ctx, cfg.body, textLeft, cfg.y + 44, textW, 17.5, {
-      size: 11.5,
+      size: 12,
       color: '#334155',
       maxLines: 3,
     });
@@ -251,11 +245,11 @@ export class TutorialOverlay {
     drawButton(ctx, hits, cfg.x + cfg.w - 224, cfg.y + cfg.h - 34, 108, 26, '跳过全部引导', () => {
       league.markTutorialStep('skipAll');
       onUpdate();
-    }, { variant: 'ghost', fontSize: 10 });
+    }, { variant: 'ghost', fontSize: 12 });
 
     drawButton(ctx, hits, cfg.x + cfg.w - 108, cfg.y + cfg.h - 34, 94, 26, '明白了 ▶', () => {
       league.markTutorialStep(step);
       onUpdate();
-    }, { variant: 'gold', fontSize: 11 });
+    }, { variant: 'gold', fontSize: 12 });
   }
 }

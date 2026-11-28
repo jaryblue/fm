@@ -1,6 +1,5 @@
 /**
- * 赛季故事线开局简报与第 3 / 5 轮中期 2 选 1 剧情抉择弹窗
- * 接入统一暗调转播风自定义插画（外置新美术资源就绪时自动优先使用）
+ * 赛季故事线开局简报与第 3 / 5 轮中期 2 选 1 剧情抉择弹窗（PITCH PRINT 暖纸剧本卡）
  */
 
 import { LeagueManager } from '../../core/src/LeagueManager';
@@ -8,8 +7,7 @@ import { ArtAssetId, AssetLoader } from './AssetLoader';
 import {
   drawBadge,
   drawButton,
-  drawChamferPanel,
-  drawRoundRect,
+  drawPrintCard,
   drawText,
   drawWrappedText,
   HitRegistry,
@@ -39,31 +37,44 @@ export class StoryModal {
       else SoundEngine.playRewardChime();
     }
 
-    ctx.fillStyle = 'rgba(4, 7, 13, 0.82)';
+    ctx.fillStyle = 'rgba(7, 16, 12, 0.86)';
     ctx.fillRect(0, 0, THEME.W, THEME.H);
     hits.add(0, 0, THEME.W, THEME.H, () => {});
 
-    const mw = 820;
-    const mh = ev.kind === 'briefing' ? 400 : 480;
+    const mw = 840;
+    const mh = ev.kind === 'briefing' ? 420 : 500;
     const mx = (THEME.W - mw) / 2;
     const my = (THEME.H - mh) / 2;
 
-    drawChamferPanel(ctx, mx, my, mw, mh, 14, 'rgba(14, 22, 40, 0.98)', THEME.BORDER_GOLD, 1.8, THEME.GOLD_LIGHT);
-    drawBadge(ctx, mx + 28, my + 24, 220, 24, ev.badge, '#312E81', '#C7D2FE');
-    drawText(ctx, ev.title, mx + 28, my + 70, {
+    drawPrintCard(ctx, mx, my, mw, mh, {
+      paper: true,
+      topBandColor: THEME.BG_PANEL,
+      radius: 12,
+      shadowOffset: 6,
+      strokeColor: THEME.INK_LINE,
+      lineWidth: 2,
+    });
+    drawBadge(ctx, mx + 28, my + 24, 224, 24, ev.badge, THEME.BG_DEEP, THEME.LIME);
+    drawText(ctx, ev.title, mx + 28, my + 68, {
       size: 22,
       bold: true,
-      color: THEME.GOLD_LIGHT,
+      color: THEME.PAPER_INK,
     });
 
     const storyId = st.storyline?.id || 'underdog';
     const artKey = (ev.artId || `story_${storyId}`) as ArtAssetId;
     const artImg = AssetLoader.get(artKey);
     const ix = mx + 28;
-    const iy = my + 98;
+    const iy = my + 96;
     const iw = 256;
-    const ih = 144;
-    drawChamferPanel(ctx, ix, iy, iw, ih, 8, THEME.BG_CARD, THEME.BORDER_GOLD, 1.2);
+    const ih = 152;
+    drawPrintCard(ctx, ix, iy, iw, ih, {
+      paper: false,
+      radius: 8,
+      shadowOffset: 3,
+      strokeColor: THEME.INK_LINE,
+      lineWidth: 2,
+    });
     if (artImg && typeof ctx.drawImage === 'function') {
       ctx.save();
       ctx.beginPath();
@@ -77,22 +88,29 @@ export class StoryModal {
 
     const bx = ix + iw + 18;
     const bw = mw - 56 - iw - 18;
-    drawRoundRect(ctx, bx, iy, bw, ih, 10, THEME.BG_CARD, THEME.BORDER);
-    drawWrappedText(ctx, ev.body, bx + 18, iy + 18, bw - 36, 22, {
-      size: 14,
-      color: THEME.TX1,
-      maxLines: 4,
+    drawPrintCard(ctx, bx, iy, bw, ih, {
+      paper: false,
+      radius: 8,
+      shadowOffset: 3,
+      topBandColor: THEME.BRASS,
+      strokeColor: THEME.INK_LINE,
+      lineWidth: 2,
+    });
+    drawWrappedText(ctx, ev.body, bx + 18, iy + 24, bw - 36, 24, {
+      size: 14.5,
+      color: THEME.PAPER_CREAM,
+      maxLines: 5,
     });
 
     if (ev.kind === 'briefing') {
       const opt = ev.options[0];
-      drawText(ctx, `赛季被动：${opt.effectDesc}`, mx + mw / 2, my + 276, {
-        size: 13,
+      drawText(ctx, `赛季被动：${opt.effectDesc}`, mx + mw / 2, my + 294, {
+        size: 14,
         bold: true,
-        color: THEME.GREEN,
+        color: '#166534',
         align: 'center',
       });
-      drawButton(ctx, hits, mx + (mw - 300) / 2, my + 318, 300, 46, opt.label, () => {
+      drawButton(ctx, hits, mx + (mw - 310) / 2, my + 336, 310, 48, opt.label, () => {
         league.resolveStoryEvent(opt.id);
         onResolved();
       }, { variant: 'gold', fontSize: 15 });
@@ -100,29 +118,34 @@ export class StoryModal {
       ev.options.forEach((opt, idx) => {
         const cw = (mw - 76) / 2;
         const cx = mx + 28 + idx * (cw + 20);
-        const cy = my + 266;
-        drawChamferPanel(ctx, cx, cy, cw, 180, 10, THEME.BG_CARD, THEME.BORDER_GOLD, 1.2);
-        drawText(ctx, `选项 ${idx === 0 ? 'A' : 'B'}`, cx + 18, cy + 24, {
-          size: 12,
-          bold: true,
-          color: THEME.GOLD,
+        const cy = my + 280;
+        drawPrintCard(ctx, cx, cy, cw, 192, {
+          paper: false,
+          radius: 10,
+          shadowOffset: 4,
+          strokeColor: idx === 0 ? THEME.GOLD_LIGHT : THEME.BORDER,
+          lineWidth: 1.6,
         });
-        drawText(ctx, opt.label, cx + 18, cy + 52, {
+        drawText(ctx, `选项 ${idx === 0 ? 'A' : 'B'}`, cx + 18, cy + 24, {
+          size: 13,
+          bold: true,
+          color: THEME.GOLD_LIGHT,
+        });
+        drawText(ctx, opt.label, cx + 18, cy + 54, {
           size: 16,
           bold: true,
-          color: THEME.TX1,
+          color: THEME.PAPER_CREAM,
         });
-        drawWrappedText(ctx, `效果：${opt.effectDesc}`, cx + 18, cy + 78, cw - 36, 18, {
-          size: 12,
-          color: THEME.GREEN,
+        drawWrappedText(ctx, `效果：${opt.effectDesc}`, cx + 18, cy + 82, cw - 36, 20, {
+          size: 13,
+          color: THEME.LIME,
           maxLines: 2,
         });
-        drawButton(ctx, hits, cx + 18, cy + 126, cw - 36, 36, '选择此方案', () => {
+        drawButton(ctx, hits, cx + 18, cy + 134, cw - 36, 44, '选择此方案', () => {
           league.resolveStoryEvent(opt.id);
           onResolved();
-        }, { variant: idx === 0 ? 'gold' : 'primary', fontSize: 13 });
-        // 整张选项卡片任意区域均可点击确认，防止只点文字无响应
-        hits.add(cx, cy, cw, 180, () => {
+        }, { variant: idx === 0 ? 'gold' : 'primary', fontSize: 13.5 });
+        hits.addTouchTarget(cx, cy, cw, 192, () => {
           league.resolveStoryEvent(opt.id);
           onResolved();
         });

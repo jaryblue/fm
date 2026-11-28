@@ -5,12 +5,13 @@
  */
 
 import { DraftPlayer } from '../../core/src/types';
-import { drawRoundRect, tierColor } from './CanvasKit';
+import { THEME } from './Theme';
+import { drawRoundRect, getHalftonePattern, tierColor } from './CanvasKit';
 
 const PW = 256;
 const PH = 320;
 const CX = PW / 2;
-const INK = '#141B2D';
+const INK = '#111412';
 const MAX_AVATAR_CACHE = 260;
 
 // 离屏超采样画布 LRU 缓存（避免每帧重绘 11 个矢量图层）
@@ -190,51 +191,55 @@ function buildHeadPath(ctx: CanvasRenderingContext2D, j: JawSpec): void {
 }
 
 function drawBackdrop(ctx: CanvasRenderingContext2D, tier: 'S' | 'A' | 'B' | 'C'): void {
-  const bg = ctx.createLinearGradient(0, 0, PW, PH);
-  bg.addColorStop(0, '#0C1730');
-  bg.addColorStop(0.55, '#15284E');
-  bg.addColorStop(1, '#081020');
-  ctx.fillStyle = bg;
+  // PITCH PRINT 深松石绿底 + 鲜明斜切稀有度色带 + 亮半调网点
+  ctx.fillStyle = THEME.BG_PANEL;
   ctx.fillRect(0, 0, PW, PH);
 
-  // 斜向球场聚光灯束
+  const bandCol =
+    tier === 'S'
+      ? THEME.BRASS
+      : tier === 'A'
+      ? THEME.VIOLET
+      : tier === 'B'
+      ? THEME.COBALT
+      : '#2D6A4F';
   ctx.save();
-  const beam = ctx.createLinearGradient(0, 0, PW * 0.85, PH * 0.85);
-  beam.addColorStop(0, 'rgba(147, 197, 253, 0.20)');
-  beam.addColorStop(0.5, 'rgba(56, 189, 248, 0.06)');
-  beam.addColorStop(1, 'rgba(15, 23, 42, 0)');
-  ctx.fillStyle = beam;
+  ctx.globalAlpha = 0.42;
+  ctx.fillStyle = bandCol;
   ctx.beginPath();
-  ctx.moveTo(-20, 0);
-  ctx.lineTo(135, 0);
-  ctx.lineTo(256, 220);
-  ctx.lineTo(256, PH);
-  ctx.lineTo(80, PH);
+  ctx.moveTo(0, PH * 0.64);
+  ctx.lineTo(PW, PH * 0.16);
+  ctx.lineTo(PW, PH);
+  ctx.lineTo(0, PH);
   ctx.closePath();
   ctx.fill();
   ctx.restore();
 
-  // 等级光晕
-  const haloColor =
-    tier === 'S'
-      ? 'rgba(250, 204, 21, 0.34)'
-      : tier === 'A'
-      ? 'rgba(192, 132, 252, 0.30)'
-      : tier === 'B'
-      ? 'rgba(56, 189, 248, 0.24)'
-      : 'rgba(52, 211, 153, 0.18)';
-  const halo = ctx.createRadialGradient(CX, 146, 16, CX, 156, 150);
-  halo.addColorStop(0, haloColor);
-  halo.addColorStop(0.65, 'rgba(30, 58, 138, 0.08)');
-  halo.addColorStop(1, 'rgba(9, 13, 22, 0)');
-  ctx.fillStyle = halo;
-  ctx.fillRect(0, 0, PW, PH);
+  // 斜切漫画墨线分隔
+  ctx.save();
+  ctx.strokeStyle = INK;
+  ctx.lineWidth = 3;
+  ctx.beginPath();
+  ctx.moveTo(0, PH * 0.64);
+  ctx.lineTo(PW, PH * 0.16);
+  ctx.stroke();
+  ctx.restore();
 
-  const botGrad = ctx.createLinearGradient(0, PH * 0.68, 0, PH);
-  botGrad.addColorStop(0, 'rgba(8, 12, 22, 0)');
-  botGrad.addColorStop(1, 'rgba(4, 7, 14, 0.58)');
-  ctx.fillStyle = botGrad;
-  ctx.fillRect(0, PH * 0.68, PW, PH * 0.32);
+  // 暖象牙轻半调网点阵列（纯平铺小圆点，拉出漫画印刷深度）
+  ctx.save();
+  ctx.fillStyle = 'rgba(244, 239, 228, 0.13)';
+  for (let gy = 14; gy < PH; gy += 18) {
+    for (let gx = 12; gx < PW; gx += 18) {
+      ctx.beginPath();
+      ctx.arc(gx + ((gy / 18) % 2) * 8, gy, 1.5, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
+  ctx.restore();
+
+  // 底部硬压暗稳住肩部
+  ctx.fillStyle = 'rgba(7, 16, 12, 0.36)';
+  ctx.fillRect(0, PH * 0.76, PW, PH * 0.24);
 }
 
 function drawBackHair(ctx: CanvasRenderingContext2D, t: PortraitTraits): void {
@@ -244,7 +249,7 @@ function drawBackHair(ctx: CanvasRenderingContext2D, t: PortraitTraits): void {
   ctx.save();
   ctx.fillStyle = hp.shadow;
   ctx.strokeStyle = INK;
-  ctx.lineWidth = 3.2;
+  ctx.lineWidth = 4.6;
   ctx.lineJoin = 'round';
 
   if (hairIdx === 3) {
@@ -476,7 +481,7 @@ function drawJersey(ctx: CanvasRenderingContext2D, t: PortraitTraits): void {
   ctx.restore();
 
   ctx.strokeStyle = INK;
-  ctx.lineWidth = 3.8;
+  ctx.lineWidth = 4.8;
   ctx.lineJoin = 'round';
   ctx.beginPath();
   ctx.moveTo(14, PH + 4);
@@ -487,7 +492,7 @@ function drawJersey(ctx: CanvasRenderingContext2D, t: PortraitTraits): void {
 
   ctx.fillStyle = secEdge;
   ctx.strokeStyle = INK;
-  ctx.lineWidth = 3.2;
+  ctx.lineWidth = 4.5;
   if (kitIdx === 1 || kitIdx === 5) {
     ctx.beginPath();
     ctx.moveTo(CX - 34, 235);
@@ -536,8 +541,8 @@ function drawJersey(ctx: CanvasRenderingContext2D, t: PortraitTraits): void {
     ctx.roundRect(22, 272, 28, 16, 4);
     ctx.fill();
     ctx.stroke();
-    ctx.fillStyle = '#0F172A';
-    ctx.font = 'bold 11px sans-serif';
+    ctx.fillStyle = '#141916';
+    ctx.font = 'bold 12px sans-serif';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     ctx.fillText('C', 36, 280.5);
@@ -591,10 +596,23 @@ function drawNeck(ctx: CanvasRenderingContext2D, t: PortraitTraits): void {
   ctx.quadraticCurveTo(CX + 12, 232, CX + 4, 243);
   ctx.stroke();
 
+  // 下颌下方与颈部阴影区斜向硬墨线排线（Hatching）
+  ctx.strokeStyle = INK;
+  ctx.globalAlpha = 0.55;
+  ctx.lineWidth = 1.8;
+  for (let hi = 0; hi < 5; hi++) {
+    const hx = CX - 14 + hi * 7.5;
+    ctx.beginPath();
+    ctx.moveTo(hx, 202);
+    ctx.lineTo(hx - 6, 215);
+    ctx.stroke();
+  }
+  ctx.globalAlpha = 1;
+
   ctx.restore();
 
   ctx.strokeStyle = INK;
-  ctx.lineWidth = 3.5;
+  ctx.lineWidth = 4.6;
   ctx.lineCap = 'round';
   ctx.beginPath();
   ctx.moveTo(CX - 22, 194);
@@ -640,24 +658,43 @@ function drawFace(ctx: CanvasRenderingContext2D, t: PortraitTraits): void {
   ctx.save();
   ctx.clip();
 
-  // 右半侧赛璐璐立体面阴影
+  // 右半侧硬朗二分赛璐璐立体面阴影（深浅双阶，去柔和粉腮红）
   ctx.fillStyle = skin.shadow1;
   ctx.beginPath();
-  ctx.moveTo(CX + 18, jaw.topY);
+  ctx.moveTo(CX + 12, jaw.topY);
   ctx.lineTo(CX + 70, jaw.topY);
   ctx.lineTo(CX + 70, jaw.chinY + 12);
-  ctx.lineTo(CX + 4, jaw.chinY + 12);
-  ctx.quadraticCurveTo(CX + 28, 174, CX + 34, 146);
-  ctx.quadraticCurveTo(CX + 38, 114, CX + 18, jaw.topY);
+  ctx.lineTo(CX - 2, jaw.chinY + 12);
+  ctx.lineTo(CX + 10, 186);
+  ctx.lineTo(CX + 26, 148);
+  ctx.lineTo(CX + 26, 114);
   ctx.closePath();
   ctx.fill();
 
-  // 颧骨微暖过渡
-  ctx.fillStyle = mixHex(skin.shadow1, '#E11D48', 0.10);
+  ctx.fillStyle = skin.shadow2;
   ctx.beginPath();
-  ctx.ellipse(CX - 29, 152, 10, 5, -0.15, 0, Math.PI * 2);
-  ctx.ellipse(CX + 29, 152, 10, 5, 0.15, 0, Math.PI * 2);
+  ctx.moveTo(CX + 38, jaw.topY + 18);
+  ctx.lineTo(CX + 70, jaw.topY + 18);
+  ctx.lineTo(CX + 70, jaw.chinY + 12);
+  ctx.lineTo(CX + 12, jaw.chinY + 12);
+  ctx.lineTo(CX + 30, 174);
+  ctx.lineTo(CX + 42, 140);
+  ctx.closePath();
   ctx.fill();
+
+  // 右颊硬墨线短排线（Comic Cross-Hatching）
+  ctx.strokeStyle = INK;
+  ctx.globalAlpha = 0.45;
+  ctx.lineWidth = 1.8;
+  ctx.lineCap = 'round';
+  for (let hi = 0; hi < 4; hi++) {
+    const hy = 152 + hi * 9;
+    ctx.beginPath();
+    ctx.moveTo(CX + 30 + hi * 1.5, hy);
+    ctx.lineTo(CX + 40 + hi * 1.5, hy + 5);
+    ctx.stroke();
+  }
+  ctx.globalAlpha = 1;
 
   // 左脸颊受光边沿反光
   ctx.strokeStyle = tier === 'S' ? mixHex(skin.rim, '#FDE047', 0.25) : skin.rim;
@@ -693,7 +730,7 @@ function drawFace(ctx: CanvasRenderingContext2D, t: PortraitTraits): void {
 
   buildHeadPath(ctx, jaw);
   ctx.strokeStyle = INK;
-  ctx.lineWidth = 3.8;
+  ctx.lineWidth = 5.4;
   ctx.lineJoin = 'round';
   ctx.stroke();
 
@@ -1202,11 +1239,15 @@ function drawFrontHair(ctx: CanvasRenderingContext2D, t: PortraitTraits): void {
     ctx.closePath();
     ctx.fill();
 
-    ctx.fillStyle = hp.hi;
-    ctx.globalAlpha = 0.60;
+    // 深色发丝表面单条新月形刀锋高光弧线
+    ctx.strokeStyle = hp.hi;
+    ctx.lineWidth = 4.5;
+    ctx.lineCap = 'round';
+    ctx.globalAlpha = 0.85;
     ctx.beginPath();
-    ctx.ellipse(CX - 12, sheenY, sheenRx, 7.2, -0.14, 0, Math.PI * 2);
-    ctx.fill();
+    ctx.moveTo(CX - sheenRx * 0.95, sheenY + 5);
+    ctx.quadraticCurveTo(CX - 8, sheenY - 6, CX + sheenRx * 0.55, sheenY + 1);
+    ctx.stroke();
     ctx.globalAlpha = 1;
 
     if (saltPepper) {
@@ -1224,7 +1265,7 @@ function drawFrontHair(ctx: CanvasRenderingContext2D, t: PortraitTraits): void {
     pathFn();
     ctx.closePath();
     ctx.strokeStyle = INK;
-    ctx.lineWidth = 3.5;
+    ctx.lineWidth = 4.8;
     ctx.stroke();
   };
 
@@ -1613,6 +1654,11 @@ function resolveTraits(
 
 function renderPortraitLayers(ctx: CanvasRenderingContext2D, t: PortraitTraits): void {
   drawBackdrop(ctx, t.tier);
+  ctx.save();
+  // 特写景别放大约 1.15x 并略向上居中，减少头顶留白
+  ctx.translate(CX, 148);
+  ctx.scale(1.15, 1.15);
+  ctx.translate(-CX, -158);
   drawBackHair(ctx, t);
   drawJersey(ctx, t);
   drawNeck(ctx, t);
@@ -1624,6 +1670,7 @@ function renderPortraitLayers(ctx: CanvasRenderingContext2D, t: PortraitTraits):
   drawEyesAndBrows(ctx, t);
   drawFrontHair(ctx, t);
   drawAccessories(ctx, t);
+  ctx.restore();
 }
 
 function getOrRenderOffscreen(
@@ -1667,44 +1714,18 @@ function drawPortraitFrame(
 ): void {
   const tierCol = tierColor(tier);
   ctx.save();
-  if (tier === 'S') {
-    drawRoundRect(ctx, x, y, w, h, rad, undefined, '#FACC15', 1.8);
-    drawRoundRect(ctx, x + 2, y + 2, Math.max(2, w - 4), Math.max(2, h - 4), Math.max(2, rad - 2), undefined, 'rgba(254, 240, 138, 0.52)', 0.9);
-    const sheen = ctx.createLinearGradient(x, y, x + w, y);
-    sheen.addColorStop(0, 'rgba(254,240,138,0)');
-    sheen.addColorStop(0.5, 'rgba(255,255,255,0.85)');
-    sheen.addColorStop(1, 'rgba(254,240,138,0)');
-    ctx.strokeStyle = sheen;
-    ctx.lineWidth = 1.4;
-    ctx.beginPath();
-    ctx.moveTo(x + rad, y + 0.8);
-    ctx.lineTo(x + w - rad, y + 0.8);
-    ctx.stroke();
-
-    ctx.fillStyle = '#FEF08A';
-    const d = 2.4;
-    const pts: Array<[number, number]> = [
-      [x + 4, y + 4],
-      [x + w - 4, y + 4],
-      [x + 4, y + h - 4],
-      [x + w - 4, y + h - 4],
-    ];
-    for (const [px, py] of pts) {
-      ctx.beginPath();
-      ctx.moveTo(px, py - d);
-      ctx.lineTo(px + d, py);
-      ctx.lineTo(px, py + d);
-      ctx.lineTo(px - d, py);
-      ctx.closePath();
-      ctx.fill();
-    }
-  } else if (tier === 'A') {
-    drawRoundRect(ctx, x, y, w, h, rad, undefined, '#C084FC', 1.5);
-    drawRoundRect(ctx, x + 2, y + 2, Math.max(2, w - 4), Math.max(2, h - 4), Math.max(2, rad - 2), undefined, 'rgba(233, 213, 255, 0.40)', 0.8);
-  } else if (tier === 'B') {
-    drawRoundRect(ctx, x, y, w, h, rad, undefined, '#3B82F6', 1.2);
-  } else {
-    drawRoundRect(ctx, x, y, w, h, rad, undefined, tierCol, 1.0);
+  // PITCH PRINT 粗墨线外框 + 内部稀有度色框
+  drawRoundRect(ctx, x, y, w, h, rad, undefined, INK, 2.5);
+  const innerCol =
+    tier === 'S'
+      ? THEME.BRASS
+      : tier === 'A'
+      ? THEME.VIOLET
+      : tier === 'B'
+      ? THEME.COBALT
+      : tierCol;
+  if (w >= 48) {
+    drawRoundRect(ctx, x + 2.5, y + 2.5, Math.max(2, w - 5), Math.max(2, h - 5), Math.max(2, rad - 2), undefined, innerCol, tier === 'S' ? 2.0 : 1.4);
   }
   ctx.restore();
 }
@@ -1716,7 +1737,7 @@ export interface AvatarClubColors {
 
 /**
  * 绘制千人千面高精度球员肖像
- * 顺序：圆角裁剪 -> 256×320 离屏超采样渲染（背景光晕 -> 后发 -> 球衣 -> 颈部 -> 耳 -> 脸型 -> 胡须 -> 嘴 -> 鼻 -> 眉眼 -> 前发 -> 配饰） -> 原生锐利镂空金属框
+ * 顺序：圆角裁剪 -> 256×320 离屏超采样渲染（深松石网点背景 -> 后发 -> 球衣 -> 颈部 -> 耳 -> 脸型 -> 胡须 -> 嘴 -> 鼻 -> 眉眼 -> 前发 -> 配饰） -> PITCH PRINT 粗墨线边框
  */
 export function drawPlayerAvatar(
   ctx: CanvasRenderingContext2D,
@@ -1729,10 +1750,12 @@ export function drawPlayerAvatar(
   opts?: { radius?: number; showFrame?: boolean }
 ): void {
   const traits = resolveTraits(player, club);
-  const rad = opts?.radius ?? 6;
-  const tierCol = tierColor(player.tier);
+  const rad = opts?.radius ?? 3;
 
-  drawRoundRect(ctx, x, y, w, h, rad, '#0B1324', tierCol, 1.0);
+  if (w >= 64) {
+    drawRoundRect(ctx, x + 3, y + 3, w, h, rad, THEME.HARD_SHADOW);
+  }
+  drawRoundRect(ctx, x, y, w, h, rad, THEME.BG_PANEL, INK, 2.5);
 
   ctx.save();
   const r = Math.min(rad, w / 2, h / 2);

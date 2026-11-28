@@ -941,28 +941,23 @@ export class GameApp {
     this.particles.render(ctx);
 
     if (this.toast) {
-      // 顶部居中悬浮胶囊 Toast（避开所有页面的底部主行动按钮与状态栏）
+      // 底部居中安全区 PITCH PRINT 胶囊 Toast（彻底避免遮挡任意页面顶部标题与 Tab 栏）
       const alpha = Math.min(1, this.toast.timer * 4);
       const slide = (1 - alpha) * 10;
       ctx.save();
       ctx.globalAlpha = alpha;
-      ctx.font = `bold 12px ${THEME.FONT_FAMILY}`;
-      const tw = Math.min(580, Math.max(240, ctx.measureText(this.toast.text).width + 48));
+      ctx.font = `bold 13px ${THEME.FONT_FAMILY}`;
+      const tw = Math.min(620, Math.max(260, ctx.measureText(this.toast.text).width + 52));
       const tx = 640 - tw / 2;
-      const ty = 72 - slide;
-      if (!IS_MOBILE) {
-        ctx.shadowColor = 'rgba(0,0,0,0.65)';
-        ctx.shadowBlur = 18;
-        ctx.shadowOffsetY = 4;
-      }
-      drawRoundRect(ctx, tx, ty, tw, 30, 15, 'rgba(11, 17, 30, 0.94)', 'rgba(255,255,255,0.16)', 1);
-      ctx.shadowColor = 'transparent';
+      const ty = THEME.H - 52 + slide;
+      drawRoundRect(ctx, tx + 3, ty + 3, tw, 34, 6, THEME.HARD_SHADOW);
+      drawRoundRect(ctx, tx, ty, tw, 34, 6, THEME.BG_DEEP, this.toast.color || THEME.BRASS, 2);
       ctx.fillStyle = this.toast.color;
       ctx.beginPath();
-      ctx.arc(tx + 16, ty + 15, 3.5, 0, Math.PI * 2);
+      ctx.arc(tx + 18, ty + 17, 4, 0, Math.PI * 2);
       ctx.fill();
-      drawText(ctx, this.toast.text, 640 + 8, ty + 15, {
-        size: 12,
+      drawText(ctx, this.toast.text, 640 + 8, ty + 17, {
+        size: 13,
         bold: true,
         color: THEME.TX1,
         align: 'center',

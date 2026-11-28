@@ -1,8 +1,8 @@
 /**
- * 多存档槽位管理弹窗（3 档独立存档：展示俱乐部/赛季/轮次/元点数，支持切换与删除）
+ * 多存档槽位管理弹窗（PITCH PRINT 档案馆文件夹槽位）
  */
 
-import { drawBadge, drawButton, drawChamferPanel, drawRoundRect, drawText, HitRegistry } from './CanvasKit';
+import { drawBadge, drawButton, drawPrintCard, drawText, HitRegistry } from './CanvasKit';
 import { PlatformAdapter } from './Platform';
 import { SoundEngine } from './SoundEngine';
 import { THEME } from './Theme';
@@ -105,21 +105,27 @@ export class SaveSlotModal {
   ): void {
     if (!this.visible) return;
 
-    ctx.fillStyle = 'rgba(4, 7, 14, 0.80)';
+    ctx.fillStyle = 'rgba(7, 16, 12, 0.84)';
     ctx.fillRect(0, 0, THEME.W, THEME.H);
     hits.clear();
 
-    const mw = 640;
-    const mh = 420;
+    const mw = 660;
+    const mh = 436;
     const mx = (THEME.W - mw) / 2;
     const my = (THEME.H - mh) / 2;
 
-    drawChamferPanel(ctx, mx, my, mw, mh, 14, THEME.BG_PANEL, THEME.BORDER_GOLD, 1.6, THEME.GOLD_LIGHT);
+    drawPrintCard(ctx, mx, my, mw, mh, {
+      paper: false,
+      radius: 12,
+      shadowOffset: 6,
+      strokeColor: THEME.BORDER_GOLD,
+      lineWidth: 2,
+    });
     drawText(ctx, '存档位管理', mx + 28, my + 34, { size: 20, bold: true, color: THEME.GOLD_LIGHT });
-    drawText(ctx, '支持 3 档本地独立生涯存档，切换后立即生效', mx + 148, my + 34, { size: 12, color: THEME.TX2 });
-    drawButton(ctx, hits, mx + mw - 96, my + 18, 72, 30, '关闭', () => {
+    drawText(ctx, '支持 3 档本地独立生涯存档，切换后立即生效', mx + 148, my + 34, { size: 12.5, color: THEME.TX2 });
+    drawButton(ctx, hits, mx + mw - 102, my + 16, 78, 36, '关闭', () => {
       this.close();
-    }, { variant: 'ghost', fontSize: 12, icon: 'close' });
+    }, { variant: 'ghost', fontSize: 12.5, icon: 'close' });
 
     const activeSlot = opts.platform.getActiveSlotId?.() ?? 'slot_1';
     const rawSlots = opts.platform.listSaveSlots?.() ?? [
@@ -129,63 +135,59 @@ export class SaveSlotModal {
     rawSlots.slice(0, 3).forEach((entry, i) => {
       const info = parseSlotSummary(entry.slotId, i, entry.raw);
       const isActive = info.slotId === activeSlot;
-      const cy = my + 74 + i * 106;
+      const cy = my + 74 + i * 112;
       const cx = mx + 24;
       const cw = mw - 48;
-      const ch = 92;
+      const ch = 98;
 
-      drawChamferPanel(
-        ctx,
-        cx,
-        cy,
-        cw,
-        ch,
-        10,
-        isActive ? 'rgba(20, 36, 66, 0.96)' : THEME.BG_CARD,
-        isActive ? THEME.GOLD_LIGHT : THEME.BORDER,
-        isActive ? 1.8 : 1
-      );
+      drawPrintCard(ctx, cx, cy, cw, ch, {
+        paper: true,
+        radius: 8,
+        shadowOffset: isActive ? 5 : 3,
+        strokeColor: isActive ? THEME.LIME : THEME.INK_LINE,
+        lineWidth: isActive ? 2.2 : 1.5,
+      });
 
       drawBadge(
         ctx,
         cx + 16,
         cy + 14,
-        74,
-        22,
+        78,
+        24,
         info.label,
-        isActive ? '#78350F' : '#1E293B',
-        isActive ? '#FEF08A' : THEME.TX2
+        isActive ? THEME.BG_PANEL : '#E7DEC9',
+        isActive ? THEME.GOLD_LIGHT : THEME.PAPER_INK
       );
       if (isActive) {
-        drawBadge(ctx, cx + 98, cy + 14, 72, 22, '当前使用', '#14532D', THEME.GREEN);
+        drawBadge(ctx, cx + 102, cy + 14, 78, 24, '当前使用', '#166534', THEME.LIME);
       }
 
       if (info.isEmpty) {
-        drawText(ctx, info.clubName, cx + 16, cy + 56, { size: 15, bold: true, color: THEME.TX2 });
-        drawText(ctx, info.phaseText, cx + 120, cy + 56, { size: 12, color: THEME.TX3 });
+        drawText(ctx, info.clubName, cx + 16, cy + 62, { size: 16, bold: true, color: THEME.PAPER_INK });
+        drawText(ctx, info.phaseText, cx + 124, cy + 62, { size: 13, color: THEME.PAPER_MUTED });
       } else {
-        drawText(ctx, `S${info.seasonNumber} · ${info.clubName}`, cx + 16, cy + 50, {
-          size: 15,
+        drawText(ctx, `S${info.seasonNumber} · ${info.clubName}`, cx + 16, cy + 54, {
+          size: 16,
           bold: true,
-          color: isActive ? THEME.GOLD_LIGHT : THEME.TX1,
+          color: THEME.PAPER_INK,
         });
-        drawText(ctx, `${info.phaseText} · 阵容 ${info.squadCount}人 · 天赋 ${info.metaPoints}pt`, cx + 16, cy + 72, {
-          size: 11.5,
-          color: '#7DD3FC',
+        drawText(ctx, `${info.phaseText} · 阵容 ${info.squadCount}人 · 天赋 ${info.metaPoints}pt`, cx + 16, cy + 78, {
+          size: 12.5,
+          color: THEME.PAPER_MUTED,
         });
       }
 
       if (!isActive) {
-        drawButton(ctx, hits, cx + cw - 196, cy + 27, 102, 36, info.isEmpty ? '新建到此' : '切换载入', () => {
+        drawButton(ctx, hits, cx + cw - 204, cy + 27, 108, 44, info.isEmpty ? '新建到此' : '切换载入', () => {
           SoundEngine.playClick();
           this.close();
           opts.onSelectSlot(info.slotId);
-        }, { variant: info.isEmpty ? 'primary' : 'gold', fontSize: 12 });
+        }, { variant: info.isEmpty ? 'primary' : 'gold', fontSize: 12.5 });
       }
       if (!info.isEmpty) {
-        drawButton(ctx, hits, cx + cw - 84, cy + 27, 70, 36, '删除', () => {
+        drawButton(ctx, hits, cx + cw - 86, cy + 27, 72, 44, '删除', () => {
           opts.onDeleteSlot(info.slotId, info.label);
-        }, { variant: 'danger', fontSize: 12 });
+        }, { variant: 'danger', fontSize: 12.5 });
       }
     });
   }

@@ -1,26 +1,26 @@
 /**
- * 历史荣誉室、12 项成就里程碑与跨赛季俱乐部编年史档案
+ * 历史荣誉室、成就里程碑（8项/页）与跨赛季俱乐部编年史档案（PITCH PRINT 风格）
  */
 
 import { ACHIEVEMENTS } from '../../../core/src/Achievements';
 import { LeagueManager } from '../../../core/src/LeagueManager';
-import { ArtAssetId, AssetLoader } from '../AssetLoader';
+import { ArtAssetId, AssetLoader, getLeagueTierTrophyAssetId } from '../AssetLoader';
 import {
   drawBadge,
   drawBroadcastHeader,
   drawButton,
-  drawChamferPanel,
   drawFoilShimmer,
   drawNavRail,
+  drawPrintCard,
   drawRoundRect,
   drawText,
   drawWrappedText,
   fitText,
-  FONT,
   HitRegistry,
   NavRailTab,
 } from '../CanvasKit';
 import { drawTrophyIcon } from '../ClubVisuals';
+import { SoundEngine } from '../SoundEngine';
 import { THEME } from '../Theme';
 import { drawIcon, IconName } from '../VectorIcons';
 
@@ -30,24 +30,24 @@ const ACH_VISUAL_MAP: Record<string, { art?: ArtAssetId; icon: IconName; tint: s
   ach_playoffs: { art: 'ach_playoffs', icon: 'bolt', tint: THEME.GOLD_LIGHT },
   ach_champion: { art: 'ach_champion', icon: 'trophy', tint: THEME.GOLD_LIGHT },
   ach_dynasty: { art: 'ach_dynasty', icon: 'star', tint: THEME.GOLD_LIGHT },
-  ach_hattrick: { art: 'ach_hattrick', icon: 'ball', tint: '#FACC15' },
-  ach_clean_sheet: { art: 'ach_clean_sheet', icon: 'shield', tint: '#34D399' },
-  ach_craft_card: { art: 'ach_craft_card', icon: 'craft', tint: '#38BDF8' },
+  ach_hattrick: { art: 'ach_hattrick', icon: 'ball', tint: THEME.GOLD_LIGHT },
+  ach_clean_sheet: { art: 'ach_clean_sheet', icon: 'shield', tint: THEME.LIME },
+  ach_craft_card: { art: 'ach_craft_card', icon: 'craft', tint: '#60A5FA' },
   ach_recipe_5: { art: 'ach_recipe_5', icon: 'card', tint: '#C084FC' },
-  ach_hidden_trait: { art: 'ach_hidden_trait', icon: 'sparkle', tint: '#FEF08A' },
-  ach_synergy: { art: 'ach_synergy', icon: 'bolt', tint: '#22D3EE' },
-  ach_meta_lv3: { art: 'ach_meta_lv3', icon: 'talent', tint: '#F59E0B' },
+  ach_hidden_trait: { art: 'ach_hidden_trait', icon: 'sparkle', tint: THEME.GOLD_HOT },
+  ach_synergy: { art: 'ach_synergy', icon: 'bolt', tint: THEME.LIME },
+  ach_meta_lv3: { art: 'ach_meta_lv3', icon: 'talent', tint: THEME.GOLD },
   ach_secret_retire: { icon: 'star', tint: THEME.GOLD_LIGHT },
-  ach_skill_rank3: { icon: 'bolt', tint: '#38BDF8' },
+  ach_skill_rank3: { icon: 'bolt', tint: '#60A5FA' },
   ach_skill_mutate: { icon: 'sparkle', tint: '#C084FC' },
-  ach_fusion_power: { icon: 'craft', tint: '#F59E0B' },
+  ach_fusion_power: { icon: 'craft', tint: THEME.GOLD },
   ach_lv4_card: { icon: 'card', tint: THEME.GOLD_LIGHT },
-  ach_corrupted_win: { icon: 'bolt', tint: '#FB7185' },
-  ach_win_streak_5: { icon: 'trophy', tint: '#34D399' },
-  ach_big_win: { icon: 'ball', tint: '#FACC15' },
-  ach_comeback_win: { icon: 'bolt', tint: '#22D3EE' },
+  ach_corrupted_win: { icon: 'bolt', tint: THEME.VERMILION },
+  ach_win_streak_5: { icon: 'trophy', tint: THEME.LIME },
+  ach_big_win: { icon: 'ball', tint: THEME.GOLD_LIGHT },
+  ach_comeback_win: { icon: 'bolt', tint: THEME.LIME },
   ach_triple_synergy: { icon: 'link', tint: '#A78BFA' },
-  ach_scout_master: { icon: 'sparkle', tint: '#38BDF8' },
+  ach_scout_master: { icon: 'sparkle', tint: '#60A5FA' },
   ach_top_tier: { icon: 'trophy', tint: THEME.GOLD_LIGHT },
 };
 
@@ -55,10 +55,11 @@ export class HallOfFameScreen {
   private rightTab: 'achievements' | 'chronicles' = 'achievements';
   private achPage = 0;
   private chronPage = 0;
+  private trophyShimmerUntil = 0;
 
   public onWheel(deltaY: number): boolean {
     if (this.rightTab === 'achievements') {
-      const totalPages = Math.max(1, Math.ceil(ACHIEVEMENTS.length / 12));
+      const totalPages = Math.max(1, Math.ceil(ACHIEVEMENTS.length / 8));
       this.achPage = Math.max(0, Math.min(totalPages - 1, this.achPage + (deltaY > 0 ? 1 : -1)));
       return true;
     }
@@ -73,11 +74,13 @@ export class HallOfFameScreen {
     onBack: () => void,
     onNavigate?: (tab: NavRailTab) => void
   ): void {
+    const st = league.getState();
     const hof = league.getHallOfFame();
+    const tierInfo = league.getCurrentTierInfo();
     const unlockedSet = new Set(hof.unlockedAchievements);
     const chronicles = league.getChronicles();
     const completedChronCount = chronicles.filter(c => c.status === 'completed').length;
-    const activeChronCount = chronicles.filter(c => c.status === 'active').length;
+    const activeChronicles = chronicles.filter(c => c.status === 'active');
     const hasRail = !!onNavigate;
 
     drawBroadcastHeader(ctx, hits, {
@@ -85,8 +88,8 @@ export class HallOfFameScreen {
       title: '历史荣誉室与编年史',
       club: hasRail ? league.getUserClub() : undefined,
       onBack: hasRail ? undefined : onBack,
-      badge: `成就 ${unlockedSet.size}/${ACHIEVEMENTS.length} · 编年史 ${completedChronCount}/${chronicles.length}`,
-      metaPoints: league.getState().metaPointsTotal,
+      badge: `成就 ${unlockedSet.size}/${ACHIEVEMENTS.length} · 编年史已完成 ${completedChronCount}/${chronicles.length}`,
+      metaPoints: st.metaPointsTotal,
       showSoundToggle: true,
     });
 
@@ -94,115 +97,258 @@ export class HallOfFameScreen {
       drawNavRail(ctx, hits, 'hof', onNavigate);
     }
 
-    // 左栏：奖杯视觉焦点 + 执教生涯统计 + 历届赛季履历
     const lx = hasRail ? 96 : 16;
     const lw = hasRail ? 420 : 460;
-    drawChamferPanel(ctx, lx, 80, lw, 624, 12, 'rgba(14, 22, 40, 0.92)', THEME.BORDER_GOLD, 1.2, THEME.GOLD_LIGHT);
-    const hofTrophy = AssetLoader.get(hof.championships > 0 ? 'trophy_grand_cup' : 'trophy_tier2_4');
-    if (hofTrophy && typeof ctx.drawImage === 'function') {
-      ctx.drawImage(hofTrophy, lx + 26, 94, 44, 44);
-    } else {
-      drawTrophyIcon(ctx, lx + 48, 114, 34);
-    }
-    drawText(ctx, '执教生涯统计', lx + 82, 114, { size: 16, bold: true, color: THEME.GOLD_LIGHT });
-
-    const statW = Math.floor((lw - 52) / 2);
-    const statCards: Array<[string, string]> = [
-      ['执教赛季', `${hof.seasonsPlayed}`],
-      ['夺冠次数', `${hof.championships}`],
-      ['累计胜场', `${hof.totalWins}`],
-      ['累计进球', `${hof.totalGoals}`],
-    ];
-    statCards.forEach(([label, val], i) => {
-      const cx = lx + 20 + (i % 2) * (statW + 12);
-      const cy = 148 + Math.floor(i / 2) * 72;
-      drawRoundRect(ctx, cx, cy, statW, 60, 8, THEME.BG_CARD, THEME.BORDER);
-      drawText(ctx, label, cx + 14, cy + 18, { size: 11, color: THEME.TX2 });
-      drawText(ctx, val, cx + 14, cy + 42, { size: 22, bold: true, italic: true, color: THEME.GOLD_LIGHT, mono: true });
+    drawPrintCard(ctx, lx, 80, lw, 624, {
+      paper: false,
+      radius: 12,
+      shadowOffset: 5,
+      topBandColor: THEME.BRASS,
+      strokeColor: THEME.INK_LINE,
+      lineWidth: 2.5,
     });
 
-    drawText(ctx, '历届赛季履历', lx + 20, 312, { size: 14, bold: true, color: THEME.TX1 });
-    if (hof.records.length === 0) {
-      drawRoundRect(ctx, lx + 20, 334, lw - 40, 100, 8, THEME.BG_CARD, THEME.BORDER);
-      drawText(ctx, '完成首个赛季后，冠军奖杯与赛季战绩将收录于此', lx + lw / 2, 384, {
-        size: 12,
-        color: THEME.TX3,
-        align: 'center',
+    const wonTiers = new Set<number>();
+    let bestWonTier = 7;
+    for (const rec of hof.records) {
+      if (rec.isChampion) {
+        const t = rec.tier ?? 7;
+        wonTiers.add(t);
+        if (t < bestWonTier) bestWonTier = t;
+      }
+    }
+
+    // 顶部执教生涯徽章框（矢量奖杯 + 铜牌印章感）
+    drawPrintCard(ctx, lx + 20, 94, 52, 48, {
+      paper: true,
+      radius: 8,
+      shadowOffset: 3,
+      strokeColor: THEME.INK_LINE,
+      lineWidth: 2,
+    });
+    drawTrophyIcon(ctx, lx + 46, 118, 28);
+    if (performance.now() < this.trophyShimmerUntil) {
+      drawFoilShimmer(ctx, lx + 18, 92, 56, 52, performance.now() / 320, 'rgba(231, 194, 102, 0.45)');
+    }
+    hits.addTouchTarget(lx + 20, 92, 56, 52, () => {
+      SoundEngine.playRewardChime();
+      this.trophyShimmerUntil = performance.now() + 1200;
+    });
+
+    drawText(ctx, '执教生涯荣誉档案', lx + 84, 110, { size: 17, bold: true, color: THEME.GOLD_LIGHT });
+    drawText(ctx, `当前第 ${st.seasonNumber} 赛季 · ${tierInfo.name}`, lx + 84, 132, { size: 12, color: THEME.TX2 });
+
+    const statW = Math.floor((lw - 52) / 2);
+    const statCards: Array<[string, string, string]> = [
+      ['执教赛季', `${hof.seasonsPlayed}`, THEME.BRASS],
+      ['夺冠次数', `${hof.championships}`, THEME.VERMILION],
+      ['累计胜场', `${hof.totalWins}`, THEME.LIME],
+      ['累计进球', `${hof.totalGoals}`, THEME.COBALT],
+    ];
+    statCards.forEach(([label, val, accent], i) => {
+      const cx = lx + 20 + (i % 2) * (statW + 12);
+      const cy = 152 + Math.floor(i / 2) * 62;
+      drawPrintCard(ctx, cx, cy, statW, 54, {
+        paper: true,
+        radius: 8,
+        shadowOffset: 3,
+        topBandColor: accent,
+        strokeColor: THEME.INK_LINE,
+        lineWidth: 2,
       });
+      drawText(ctx, label, cx + 14, cy + 20, { size: 12, bold: true, color: THEME.PAPER_MUTED });
+      drawText(ctx, val, cx + statW - 14, cy + 36, { size: 22, bold: true, italic: true, color: THEME.PAPER_INK, align: 'right', mono: true });
+    });
+
+    // 7 级联赛专属冠军奖杯陈列架（T7 业余 -> T1 超级）
+    drawText(ctx, `联赛奖杯陈列架 (${wonTiers.size}/7)`, lx + 20, 290, { size: 14, bold: true, color: THEME.GOLD_LIGHT });
+    const shelfY = 304;
+    const shelfW = lw - 40;
+    drawPrintCard(ctx, lx + 20, shelfY, shelfW, 70, {
+      paper: false,
+      radius: 8,
+      shadowOffset: 3,
+      strokeColor: THEME.INK_LINE,
+      lineWidth: 2,
+    });
+    const tierOrder = [7, 6, 5, 4, 3, 2, 1];
+    const slotW = shelfW / 7;
+    tierOrder.forEach((tierNum, idx) => {
+      const won = wonTiers.has(tierNum);
+      const sx = lx + 20 + idx * slotW;
+      const cxSlot = sx + slotW / 2;
+      drawRoundRect(
+        ctx,
+        sx + 4,
+        shelfY + 7,
+        slotW - 8,
+        40,
+        6,
+        won ? THEME.PAPER_CREAM : THEME.BG_DEEP,
+        won ? THEME.BRASS : THEME.BORDER,
+        won ? 1.8 : 1
+      );
+      if (won) {
+        drawTrophyIcon(ctx, cxSlot, shelfY + 27, 22);
+      } else {
+        drawIcon(ctx, 'trophy', cxSlot, shelfY + 27, 16, THEME.TX3);
+      }
+      drawText(ctx, `T${tierNum}`, cxSlot, shelfY + 58, {
+        size: 12,
+        bold: won,
+        color: won ? THEME.GOLD_LIGHT : THEME.TX3,
+        align: 'center',
+        mono: true,
+      });
+    });
+
+    drawText(ctx, '历届赛季履历', lx + 20, 392, { size: 14.5, bold: true, color: THEME.TX1 });
+    if (hof.records.length === 0) {
+      // 充实空白区：当前赛季征程卡 + 在研编年史进度卡
+      drawPrintCard(ctx, lx + 20, 408, lw - 40, 126, {
+        paper: true,
+        radius: 10,
+        shadowOffset: 4,
+        topBandColor: THEME.VERMILION,
+        strokeColor: THEME.INK_LINE,
+        lineWidth: 2,
+      });
+      drawBadge(ctx, lx + 34, 424, 92, 22, `S${st.seasonNumber} 进行中`, THEME.BG_DEEP, THEME.LIME);
+      drawText(ctx, fitText(ctx, league.getUserClub().name, lw - 160, 15, true), lx + 134, 435, {
+        size: 15,
+        bold: true,
+        color: THEME.PAPER_INK,
+      });
+      drawWrappedText(
+        ctx,
+        '首个执教赛季尚未完赛。赛季收官后，您的最终排名、冠军奖杯与高光赛季记忆将永久封存于此档案柜。',
+        lx + 34,
+        460,
+        lw - 68,
+        19,
+        { size: 12.5, color: THEME.PAPER_MUTED, maxLines: 3 }
+      );
+
+      // 下方：编年史连载线索卡
+      drawPrintCard(ctx, lx + 20, 548, lw - 40, 138, {
+        paper: false,
+        radius: 10,
+        shadowOffset: 3,
+        topBandColor: THEME.LIME,
+        strokeColor: THEME.INK_LINE,
+        lineWidth: 2,
+      });
+      const focusChron = activeChronicles[0] ?? chronicles[0];
+      drawBadge(
+        ctx,
+        lx + 34,
+        564,
+        118,
+        22,
+        activeChronicles.length > 0 ? '编年史连载中' : '待开启编年史',
+        THEME.BG_DEEP,
+        THEME.LIME
+      );
+      drawText(ctx, `${activeChronicles.length} 篇推进中`, lx + lw - 34, 575, {
+        size: 12,
+        bold: true,
+        color: THEME.GOLD_LIGHT,
+        align: 'right',
+      });
+      if (focusChron) {
+        drawText(ctx, fitText(ctx, focusChron.title, lw - 68, 15, true), lx + 34, 604, {
+          size: 15,
+          bold: true,
+          color: THEME.TX1,
+        });
+        drawWrappedText(ctx, focusChron.subtitle, lx + 34, 626, lw - 68, 18, {
+          size: 12,
+          color: THEME.TX2,
+          maxLines: 2,
+        });
+        drawText(ctx, '点击右侧「俱乐部编年史」查看全部 7 篇长线档案 ▶', lx + 34, 668, {
+          size: 12,
+          color: THEME.LIME,
+        });
+      }
     } else {
-      [...hof.records].reverse().slice(0, 5).forEach((rec, i) => {
+      [...hof.records].reverse().slice(0, 4).forEach((rec, i) => {
         const hasMem = !!rec.topMemory;
-        const ry = 334 + i * 70;
-        drawRoundRect(
-          ctx,
-          lx + 20,
-          ry,
-          lw - 40,
-          hasMem ? 62 : 50,
-          7,
-          THEME.BG_CARD,
-          rec.isChampion ? THEME.GOLD : THEME.BORDER
-        );
+        const ry = 408 + i * 71;
+        drawPrintCard(ctx, lx + 20, ry, lw - 40, hasMem ? 64 : 56, {
+          paper: rec.isChampion,
+          radius: 8,
+          shadowOffset: 3,
+          strokeColor: THEME.INK_LINE,
+          lineWidth: 1.8,
+        });
         drawBadge(
           ctx,
-          lx + 32,
-          ry + 12,
-          42,
-          20,
+          lx + 30,
+          ry + 10,
+          44,
+          22,
           `S${rec.seasonNumber}`,
-          rec.isChampion ? THEME.GOLD : '#1E293B',
-          rec.isChampion ? '#080C14' : THEME.TX1
+          rec.isChampion ? THEME.BRASS : THEME.BG_DEEP,
+          rec.isChampion ? THEME.INK_LINE : THEME.TX1
         );
-        if (rec.isChampion) drawIcon(ctx, 'trophy', lx + 86, ry + 16, 13, THEME.GOLD_LIGHT);
-        drawText(ctx, fitText(ctx, rec.clubName, lw - 165, FONT.BODY, true, true), rec.isChampion ? lx + 100 : lx + 86, ry + 16, {
-          token: 'BODY',
+        if (rec.isChampion) {
+          drawIcon(ctx, 'trophy', lx + 86, ry + 20, 14, THEME.VERMILION);
+        }
+        drawText(ctx, fitText(ctx, rec.clubName, lw - 175, 13.5, true, true), rec.isChampion ? lx + 100 : lx + 82, ry + 18, {
+          size: 13.5,
           bold: true,
-          color: rec.isChampion ? THEME.GOLD_LIGHT : THEME.TX1,
+          color: rec.isChampion ? THEME.PAPER_INK : THEME.TX1,
         });
-        drawText(ctx, fitText(ctx, `${rec.storylineTitle || '常规赛季'} · ${rec.points}分 · ${rec.gf}/${rec.ga}`, lw - 120, FONT.MICRO, false, true), lx + 86, ry + 34, {
-          token: 'MICRO',
-          color: THEME.TX2,
+        drawText(ctx, fitText(ctx, `${rec.storylineTitle || '常规赛季'} · ${rec.points}分 · ${rec.gf}/${rec.ga}`, lw - 120, 12, false, true), lx + 82, ry + 37, {
+          size: 12,
+          color: rec.isChampion ? THEME.PAPER_MUTED : THEME.TX2,
         });
         if (rec.topMemory) {
           const mem = rec.topMemory;
-          const oppExtra = mem.oppPlayerName ? ` · 敌方:${mem.oppPlayerName}` : '';
-          drawText(ctx, fitText(ctx, `★ ${mem.badge} · ${mem.title} (${mem.scoreText}${oppExtra})`, lw - 60, FONT.MICRO, false, true), lx + 32, ry + 51, {
-            token: 'MICRO',
-            color: mem.isPainful ? '#FCA5A5' : THEME.GOLD_LIGHT,
+          const oppExtra = mem.oppPlayerName ? ` · 敌:${mem.oppPlayerName}` : '';
+          drawText(ctx, fitText(ctx, `★ ${mem.badge} · ${mem.title} (${mem.scoreText}${oppExtra})`, lw - 60, 12, false, true), lx + 30, ry + 54, {
+            size: 12,
+            color: mem.isPainful ? THEME.VERMILION : rec.isChampion ? THEME.PAPER_INK : THEME.GOLD_LIGHT,
           });
         }
-        drawText(ctx, `第 ${rec.finalRank} 名`, lx + lw - 34, ry + 22, {
-          size: 13,
+        drawText(ctx, `第 ${rec.finalRank} 名`, lx + lw - 34, ry + 20, {
+          size: 13.5,
           bold: true,
-          color: rec.isChampion ? THEME.GOLD_LIGHT : THEME.TX1,
+          color: rec.isChampion ? THEME.VERMILION : THEME.TX1,
           align: 'right',
         });
       });
     }
 
-    // 右栏：成就里程碑 | 俱乐部编年史 双标签页
     const rx = lx + lw + 14;
     const rw = 1264 - rx;
-    drawChamferPanel(ctx, rx, 80, rw, 624, 12, 'rgba(14, 22, 40, 0.92)', THEME.BORDER);
+    drawPrintCard(ctx, rx, 80, rw, 624, {
+      paper: false,
+      radius: 12,
+      shadowOffset: 5,
+      strokeColor: THEME.INK_LINE,
+      lineWidth: 2.5,
+    });
 
-    drawButton(ctx, hits, rx + 20, 94, 152, 30, `成就里程碑 (${unlockedSet.size}/${ACHIEVEMENTS.length})`, () => {
+    drawButton(ctx, hits, rx + 20, 92, 178, 34, `成就里程碑 (${unlockedSet.size}/${ACHIEVEMENTS.length})`, () => {
       this.rightTab = 'achievements';
-    }, { variant: this.rightTab === 'achievements' ? 'gold' : 'ghost', fontSize: 12 });
-    drawButton(ctx, hits, rx + 180, 94, 180, 30, `俱乐部编年史 (${completedChronCount + activeChronCount}/${chronicles.length})`, () => {
+    }, { variant: this.rightTab === 'achievements' ? 'gold' : 'ghost', fontSize: 12.5 });
+    drawButton(ctx, hits, rx + 206, 92, 212, 34, `俱乐部编年史 (已完成 ${completedChronCount}/${chronicles.length})`, () => {
       this.rightTab = 'chronicles';
-    }, { variant: this.rightTab === 'chronicles' ? 'gold' : 'ghost', fontSize: 12 });
+    }, { variant: this.rightTab === 'chronicles' ? 'gold' : 'ghost', fontSize: 12.5 });
 
     if (this.rightTab === 'achievements') {
-      const perPage = 12;
+      const perPage = 8; // 每页 8 项大卡 (2×4)
       const totalPages = Math.max(1, Math.ceil(ACHIEVEMENTS.length / perPage));
       this.achPage = Math.max(0, Math.min(totalPages - 1, this.achPage));
-      drawButton(ctx, hits, rx + rw - 130, 94, 42, 28, '◀', () => {
+      drawButton(ctx, hits, rx + rw - 144, 92, 44, 34, '◀', () => {
         this.achPage = Math.max(0, this.achPage - 1);
-      }, { variant: 'ghost', fontSize: 11 });
-      drawText(ctx, `${this.achPage + 1}/${totalPages}`, rx + rw - 72, 108, { size: 11, color: THEME.TX2, align: 'center', mono: true });
-      drawButton(ctx, hits, rx + rw - 54, 94, 34, 28, '▶', () => {
+      }, { variant: 'ghost', fontSize: 13 });
+      drawText(ctx, `${this.achPage + 1}/${totalPages}`, rx + rw - 78, 109, { size: 12.5, bold: true, color: THEME.TX2, align: 'center', mono: true });
+      drawButton(ctx, hits, rx + rw - 60, 92, 44, 34, '▶', () => {
         this.achPage = Math.min(totalPages - 1, this.achPage + 1);
-      }, { variant: 'ghost', fontSize: 11 });
+      }, { variant: 'ghost', fontSize: 13 });
 
       const achW = Math.floor((rw - 52) / 2);
       const blankMedalImg = AssetLoader.get('ach_blank');
@@ -211,118 +357,109 @@ export class HallOfFameScreen {
         const col = idx % 2;
         const row = Math.floor(idx / 2);
         const ax = rx + 20 + col * (achW + 12);
-        const ay = 136 + row * 92;
+        const ay = 140 + row * 134;
+        const achH = 120;
         const unlocked = unlockedSet.has(ach.id);
 
-        drawChamferPanel(
-          ctx,
-          ax,
-          ay,
-          achW,
-          80,
-          8,
-          unlocked ? 'rgba(34,197,94,0.12)' : THEME.BG_CARD,
-          unlocked ? THEME.GREEN : THEME.BORDER,
-          unlocked ? 1.4 : 1,
-          unlocked ? THEME.GREEN : undefined
-        );
+        drawPrintCard(ctx, ax, ay, achW, achH, {
+          paper: unlocked,
+          radius: 9,
+          shadowOffset: unlocked ? 5 : 3,
+          topBandColor: unlocked ? THEME.BRASS : undefined,
+          strokeColor: THEME.INK_LINE,
+          lineWidth: unlocked ? 2.2 : 1.8,
+        });
         if (unlocked) {
-          drawFoilShimmer(ctx, ax, ay, achW, 80, performance.now() / 1000 + idx * 0.23, 'rgba(34, 197, 94, 0.18)');
+          drawFoilShimmer(ctx, ax, ay, achW, achH, performance.now() / 1000 + idx * 0.23, 'rgba(216, 168, 66, 0.20)');
         }
         const vis = ACH_VISUAL_MAP[ach.id] ?? { icon: 'trophy' as IconName, tint: THEME.GOLD_LIGHT };
         const dedicatedImg = vis.art ? AssetLoader.get(vis.art) : null;
+        drawRoundRect(
+          ctx,
+          ax + 12,
+          ay + 34,
+          52,
+          52,
+          8,
+          unlocked ? THEME.BG_DEEP : THEME.BG_DEEP,
+          unlocked ? THEME.BRASS : THEME.BORDER,
+          unlocked ? 2 : 1.2
+        );
         if (dedicatedImg && typeof ctx.drawImage === 'function') {
           ctx.save();
-          ctx.globalAlpha = unlocked ? 1 : 0.28;
-          ctx.drawImage(dedicatedImg, ax + 8, ay + 16, 48, 48);
+          ctx.globalAlpha = unlocked ? 1 : 0.35;
+          ctx.drawImage(dedicatedImg, ax + 14, ay + 36, 48, 48);
           ctx.restore();
         } else if (blankMedalImg && typeof ctx.drawImage === 'function') {
           ctx.save();
-          ctx.globalAlpha = unlocked ? 1 : 0.32;
-          ctx.drawImage(blankMedalImg, ax + 8, ay + 16, 48, 48);
-          // 为通用奖章叠加稀有度金属外环与内圈高光，消除占位感
-          const cxM = ax + 32;
-          const cyM = ay + 40;
-          if (unlocked) {
-            ctx.strokeStyle = vis.tint;
-            ctx.lineWidth = 1.6;
-            ctx.beginPath();
-            ctx.arc(cxM, cyM, 20, 0, Math.PI * 2);
-            ctx.stroke();
-            ctx.strokeStyle = 'rgba(255,255,255,0.45)';
-            ctx.lineWidth = 1.1;
-            ctx.beginPath();
-            ctx.arc(cxM, cyM, 17, Math.PI * 1.15, Math.PI * 1.85);
-            ctx.stroke();
-          }
+          ctx.globalAlpha = unlocked ? 0.9 : 0.28;
+          ctx.drawImage(blankMedalImg, ax + 14, ay + 36, 48, 48);
           ctx.restore();
-          drawIcon(ctx, vis.icon, ax + 32, ay + 40, 18, unlocked ? vis.tint : THEME.TX3);
+          drawIcon(ctx, vis.icon, ax + 38, ay + 60, 20, unlocked ? vis.tint : THEME.TX3);
         } else {
-          drawRoundRect(ctx, ax + 12, ay + 20, 36, 36, 8, unlocked ? 'rgba(34,197,94,0.2)' : '#1E293B', unlocked ? THEME.GOLD : undefined, unlocked ? 1.2 : 0);
-          drawIcon(ctx, vis.icon, ax + 30, ay + 38, 18, unlocked ? THEME.GREEN : THEME.TX3);
+          drawIcon(ctx, vis.icon, ax + 38, ay + 60, 22, unlocked ? THEME.GOLD_LIGHT : THEME.TX3);
         }
-        drawText(ctx, fitText(ctx, ach.title, achW - 154, FONT.BODY, true, true), ax + 64, ay + 26, {
-          token: 'BODY',
+
+        drawText(ctx, fitText(ctx, ach.title, achW - 156, 15, true, true), ax + 74, ay + 36, {
+          size: 15,
           bold: true,
-          color: unlocked ? THEME.GOLD_LIGHT : THEME.TX2,
+          color: unlocked ? THEME.PAPER_INK : THEME.TX1,
         });
-        drawText(ctx, fitText(ctx, ach.desc, achW - 76, 11), ax + 64, ay + 52, {
-          size: 11,
-          color: unlocked ? THEME.TX1 : THEME.TX2,
+        drawWrappedText(ctx, ach.desc, ax + 74, ay + 60, achW - 88, 19, {
+          size: 12.5,
+          color: unlocked ? THEME.PAPER_MUTED : THEME.TX2,
+          maxLines: 2,
         });
         drawBadge(
           ctx,
-          ax + achW - 80,
+          ax + achW - 88,
           ay + 14,
-          68,
-          20,
-          unlocked ? '已解锁' : `+${ach.metaReward} pt`,
-          unlocked ? '#14532D' : '#1E293B',
-          unlocked ? THEME.GREEN : THEME.GOLD_LIGHT
+          76,
+          24,
+          unlocked ? '已解锁 ✓' : `+${ach.metaReward} pt`,
+          unlocked ? THEME.BRASS : THEME.BG_DEEP,
+          unlocked ? THEME.INK_LINE : THEME.GOLD_LIGHT
         );
       });
     } else {
       const perPage = 3;
-      const totalPages = Math.ceil(chronicles.length / perPage);
+      const totalPages = Math.max(1, Math.ceil(chronicles.length / perPage));
       this.chronPage = Math.max(0, Math.min(totalPages - 1, this.chronPage));
-      drawButton(ctx, hits, rx + rw - 136, 94, 52, 28, '◀', () => {
+      drawButton(ctx, hits, rx + rw - 144, 92, 44, 34, '◀', () => {
         this.chronPage = Math.max(0, this.chronPage - 1);
-      }, { variant: 'ghost', fontSize: 11 });
-      drawText(ctx, `${this.chronPage + 1}/${totalPages}`, rx + rw - 72, 108, { size: 11, color: THEME.TX2, align: 'center', mono: true });
-      drawButton(ctx, hits, rx + rw - 54, 94, 34, 28, '▶', () => {
+      }, { variant: 'ghost', fontSize: 13 });
+      drawText(ctx, `${this.chronPage + 1}/${totalPages}`, rx + rw - 78, 109, { size: 12.5, bold: true, color: THEME.TX2, align: 'center', mono: true });
+      drawButton(ctx, hits, rx + rw - 60, 92, 44, 34, '▶', () => {
         this.chronPage = Math.min(totalPages - 1, this.chronPage + 1);
-      }, { variant: 'ghost', fontSize: 11 });
+      }, { variant: 'ghost', fontSize: 13 });
 
       const pageItems = chronicles.slice(this.chronPage * perPage, this.chronPage * perPage + perPage);
       pageItems.forEach((c, i) => {
-        const cy = 136 + i * 184;
-        const ch = 172;
+        const cy = 140 + i * 182;
+        const ch = 170;
         const cw = rw - 40;
         const cx = rx + 20;
         const isDone = c.status === 'completed';
         const isActive = c.status === 'active';
-        const borderCol = isDone ? THEME.GOLD : isActive ? '#38BDF8' : THEME.BORDER;
+        const bandCol = isDone ? THEME.BRASS : isActive ? THEME.LIME : undefined;
 
-        drawChamferPanel(
-          ctx,
-          cx,
-          cy,
-          cw,
-          ch,
-          10,
-          isDone ? 'rgba(212,168,67,0.10)' : isActive ? 'rgba(56,189,248,0.08)' : THEME.BG_CARD,
-          borderCol,
-          isDone || isActive ? 1.4 : 1
-        );
+        drawPrintCard(ctx, cx, cy, cw, ch, {
+          paper: isDone,
+          radius: 10,
+          shadowOffset: isDone || isActive ? 5 : 3,
+          topBandColor: bandCol,
+          strokeColor: THEME.INK_LINE,
+          lineWidth: 2,
+        });
         if (isDone) {
-          drawFoilShimmer(ctx, cx, cy, cw, ch, performance.now() / 1000 + i * 0.4, 'rgba(250, 204, 21, 0.20)');
+          drawFoilShimmer(ctx, cx, cy, cw, ch, performance.now() / 1000 + i * 0.4, 'rgba(216, 168, 66, 0.22)');
         }
 
         const ix = cx + 14;
         const iy = cy + 16;
         const iw = 192;
         const ih = 108;
-        drawRoundRect(ctx, ix, iy, iw, ih, 8, '#0B1120', borderCol);
+        drawRoundRect(ctx, ix, iy, iw, ih, 8, THEME.BG_DEEP, THEME.INK_LINE, 1.8);
         const artImg = AssetLoader.get(c.artId as ArtAssetId);
         if (artImg && typeof ctx.drawImage === 'function') {
           ctx.save();
@@ -337,10 +474,10 @@ export class HallOfFameScreen {
           ctx,
           c.status === 'locked' ? '未开启' : isDone ? '已封存' : `第 ${c.chapter}/${c.maxChapters} 章`,
           ix + iw / 2,
-          iy + ih + 16,
-          { size: 11, bold: true, align: 'center', color: isDone ? THEME.GOLD_LIGHT : isActive ? '#38BDF8' : THEME.TX3 }
+          iy + ih + 18,
+          { size: 12, bold: true, align: 'center', color: isDone ? THEME.PAPER_INK : isActive ? THEME.LIME : THEME.TX3 }
         );
-        // 编年史章节进度点阵
+
         if (c.maxChapters > 0) {
           const dotsW = c.maxChapters * 14 - 4;
           const dx0 = ix + (iw - dotsW) / 2;
@@ -349,45 +486,47 @@ export class HallOfFameScreen {
             drawRoundRect(
               ctx,
               dx0 + d * 14,
-              iy + ih + 26,
+              iy + ih + 30,
               10,
               4,
               2,
-              lit ? (isDone ? THEME.GOLD_LIGHT : '#38BDF8') : '#1E293B'
+              lit ? (isDone ? THEME.BRASS : THEME.LIME) : THEME.BG_DEEP
             );
           }
         }
 
         const tx = ix + iw + 16;
         const tw = cw - iw - 44;
+        const mainTextCol = isDone ? THEME.PAPER_INK : isActive ? THEME.TX1 : THEME.TX2;
+        const subTextCol = isDone ? THEME.PAPER_MUTED : THEME.TX2;
         drawText(ctx, c.title, tx, cy + 28, {
-          size: 15,
+          size: 16,
           bold: true,
-          color: isDone ? THEME.GOLD_LIGHT : isActive ? THEME.TX1 : THEME.TX2,
+          color: mainTextCol,
         });
         const statusLabel = isDone ? '圆满归档' : isActive ? '连载推进中' : '未解锁';
-        const statusBg = isDone ? '#78350F' : isActive ? '#0C4A6E' : '#1E293B';
-        const statusFg = isDone ? THEME.GOLD_LIGHT : isActive ? '#38BDF8' : THEME.TX3;
-        drawBadge(ctx, cx + cw - 92, cy + 14, 78, 20, statusLabel, statusBg, statusFg);
+        const statusBg = isDone ? THEME.BG_PANEL : isActive ? THEME.BG_DEEP : THEME.BG_DEEP;
+        const statusFg = isDone ? THEME.GOLD_LIGHT : isActive ? THEME.LIME : THEME.TX3;
+        drawBadge(ctx, cx + cw - 98, cy + 14, 84, 24, statusLabel, statusBg, statusFg);
 
-        drawWrappedText(ctx, c.status === 'locked' ? `解锁条件：${c.subtitle}` : c.subtitle, tx, cy + 48, tw, 17, {
-          size: 11,
-          color: THEME.TX2,
+        drawWrappedText(ctx, c.status === 'locked' ? `解锁条件：${c.subtitle}` : c.subtitle, tx, cy + 50, tw, 18, {
+          size: 12.5,
+          color: subTextCol,
           maxLines: 2,
         });
 
         if (c.status !== 'locked') {
           const spanText = c.startSeason
-            ? `跨度：S${c.startSeason}(第${c.startTier ?? 7}级)${c.endSeason ? ` → S${c.endSeason}(第${c.endTier ?? 7}级)` : ' → 进行中'}`
+            ? `跨度：S${c.startSeason}(T${c.startTier ?? 7})${c.endSeason ? ` → S${c.endSeason}(T${c.endTier ?? 7})` : ' → 进行中'}`
             : '';
           const peopleText = c.keyPeople.length > 0 ? `关键人物：${c.keyPeople.join(' · ')}` : '';
-          drawText(ctx, fitText(ctx, [spanText, peopleText].filter(Boolean).join('  |  '), 456, FONT.MICRO, false, true), tx, cy + 96, {
-            token: 'MICRO',
-            color: '#93C5FD',
+          drawText(ctx, fitText(ctx, [spanText, peopleText].filter(Boolean).join(' | '), 456, 12, false, true), tx, cy + 98, {
+            size: 12,
+            color: isDone ? THEME.COBALT : THEME.LIME,
           });
-          drawText(ctx, fitText(ctx, `进度快照：${c.statSnapshot}`, 456, FONT.MICRO, false, true), tx, cy + 116, {
-            token: 'MICRO',
-            color: THEME.TX1,
+          drawText(ctx, fitText(ctx, `进度：${c.statSnapshot}`, 456, 12, false, true), tx, cy + 120, {
+            size: 12,
+            color: mainTextCol,
           });
           const lastChoice = c.choicesMade[c.choicesMade.length - 1];
           const footText = c.memorableMoment
@@ -395,10 +534,10 @@ export class HallOfFameScreen {
             : lastChoice
               ? `关键抉择：${lastChoice}`
               : '等待下一章节触发...';
-          drawText(ctx, fitText(ctx, footText, 456, FONT.MICRO, false, true), tx, cy + 140, {
-            token: 'MICRO',
+          drawText(ctx, fitText(ctx, footText, 456, 12, false, true), tx, cy + 144, {
+            size: 12,
             bold: !!c.memorableMoment,
-            color: c.memorableMoment ? THEME.GOLD_LIGHT : THEME.GREEN,
+            color: c.memorableMoment ? (isDone ? '#9A6B12' : THEME.GOLD_LIGHT) : (isDone ? '#166534' : THEME.LIME),
           });
         }
       });

@@ -266,7 +266,7 @@ async function main() {
         await shot(`05c_draft_open${i + 1}`, `核心开包 · 第 ${i + 1} 包展开`);
         const hs = await hits();
         const cards = hs
-          .filter((r) => r.w > 150 && r.w < 300 && r.h > 200 && r.y > 100)
+          .filter((r) => r.w >= 180 && r.w <= 250 && r.h >= 300 && r.y > 100)
           .sort((a, b) => a.x - b.x);
         if (cards.length < 3) throw new Error(`第 ${i + 1} 包只找到 ${cards.length} 张可选牌`);
         for (const c of cards.slice(0, 3)) {
@@ -343,7 +343,7 @@ async function main() {
       await shot('10b_roster_wall', '引援中心 · 大名单墙');
       const hs = await hits();
       const cards = hs
-        .filter((r) => r.w >= 170 && r.w <= 340 && r.h >= 96 && r.h <= 240 && r.x > 90)
+        .filter((r) => r.w >= 170 && r.w <= 400 && r.h >= 96 && r.h <= 240 && r.x > 90)
         .sort((a, b) => a.y - b.y || a.x - b.x);
       const hit = await tapUntilModal(cards.slice(0, 8), 'playerModal', '球员卡');
       await shot('17_modal_player', '球员详情弹窗');
@@ -358,7 +358,8 @@ async function main() {
       await enterMatchDay();
       await shot('18_match_day', '比赛日 · 指挥界面');
       await tap(640, 360, 800); // 跳过开球动画
-      await tapWhere((r) => r.y > 560 && r.w > 60 && r.w < 120 && r.x > 600 && r.x < 760, '打出第一张指令卡');
+      await tapWhere((r) => r.y >= 540 && r.w >= 100 && r.w <= 140 && r.x >= 490 && r.x <= 780, '选中第一张指令卡');
+      await tapWhere((r) => r.y >= 540 && r.w >= 100 && r.w <= 140 && r.x >= 490 && r.x <= 780, '拍板打出第一张指令卡');
       await shot('18b_match_card', '比赛日 · 出牌后');
       await tapWhere((r) => r.y < 60 && r.x > 1000 && r.w > 150, '快速完赛', undefined, 1500);
       await shot('18c_match_fulltime', '比赛日 · 全场结束');

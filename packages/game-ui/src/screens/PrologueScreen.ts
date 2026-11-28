@@ -14,6 +14,7 @@ import {
   drawButton,
   drawChamferPanel,
   drawFoilShimmer,
+  drawPrintCard,
   drawRoundRect,
   drawText,
   drawWrappedText,
@@ -208,7 +209,7 @@ export class PrologueScreen {
         y: 280 + (Math.random() - 0.5) * 90,
         vx: Math.cos(ang) * spd,
         vy: Math.sin(ang) * spd - 160,
-        size: 4 + Math.random() * 5,
+        size: 12 + Math.random() * 5,
         color: colors[i % colors.length],
         rot: Math.random() * Math.PI * 2,
         vrot: (Math.random() - 0.5) * 8,
@@ -223,7 +224,7 @@ export class PrologueScreen {
     cam?: { zoom?: number; panX?: number; panY?: number; tintColor?: string }
   ): void {
     const img = AssetLoader.get(artId);
-    ctx.fillStyle = '#050811';
+    ctx.fillStyle = THEME.BG_DEEP;
     ctx.fillRect(0, 0, THEME.W, THEME.H);
     if (img && typeof ctx.drawImage === 'function') {
       const iw = img.naturalWidth || img.width || 1024;
@@ -242,22 +243,32 @@ export class PrologueScreen {
       ctx.fillRect(0, 0, THEME.W, THEME.H);
     }
 
-    // 电影渐变暗角与底部可读压暗
+    // 深松石暗角与底部可读压暗
     const grad = ctx.createLinearGradient(0, 0, 0, THEME.H);
-    grad.addColorStop(0, `rgba(6, 10, 18, ${(darkOverlayAlpha * 0.78).toFixed(2)})`);
-    grad.addColorStop(0.48, `rgba(6, 10, 18, ${(darkOverlayAlpha * 0.36).toFixed(2)})`);
-    grad.addColorStop(1, `rgba(6, 10, 18, ${Math.min(0.95, darkOverlayAlpha + 0.50).toFixed(2)})`);
+    grad.addColorStop(0, `rgba(10, 26, 20, ${(darkOverlayAlpha * 0.78).toFixed(2)})`);
+    grad.addColorStop(0.48, `rgba(10, 26, 20, ${(darkOverlayAlpha * 0.36).toFixed(2)})`);
+    grad.addColorStop(1, `rgba(10, 26, 20, ${Math.min(0.95, darkOverlayAlpha + 0.50).toFixed(2)})`);
     ctx.fillStyle = grad;
     ctx.fillRect(0, 0, THEME.W, THEME.H);
   }
 
   private drawCinemaFrame(ctx: CanvasRenderingContext2D, stage: 0 | 1 | 2 | 3): void {
-    // 2.39:1 宽银幕电影黑边
+    // 2.39:1 宽银幕深松石遮幅 + 硬墨线边沿
     const barOpen = easeOutCubic(Math.min(1, this.stageTime / 0.45));
     const barH = Math.round(28 * barOpen);
-    ctx.fillStyle = '#03050B';
+    ctx.fillStyle = THEME.BG_DEEP;
     ctx.fillRect(0, 0, THEME.W, barH);
     ctx.fillRect(0, THEME.H - barH, THEME.W, barH);
+    if (barH > 4) {
+      ctx.strokeStyle = THEME.INK_LINE;
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(0, barH);
+      ctx.lineTo(THEME.W, barH);
+      ctx.moveTo(0, THEME.H - barH);
+      ctx.lineTo(THEME.W, THEME.H - barH);
+      ctx.stroke();
+    }
 
     // 电影章节片头浮卡（前 2.1 秒）
     if (this.stageTime < 2.2) {
@@ -345,21 +356,21 @@ export class PrologueScreen {
       ctx.restore();
 
       this.drawCinemaFrame(ctx, 0);
-      drawBadge(ctx, 40, 36, 224, 28, 'PROLOGUE · 老将序章 (1/4)', 'rgba(11,17,32,0.85)', THEME.GOLD_LIGHT);
+      drawBadge(ctx, 40, 36, 232, 28, 'PROLOGUE · 老将序章 (1/4)', THEME.BG_PANEL, THEME.GOLD_LIGHT);
       drawButton(ctx, hits, 1110, 34, 134, 32, '跳过序章 ▶', () => {
         SoundEngine.playClick();
         actions.onSkipPrologue();
-      }, { variant: 'ghost', fontSize: 11.5 });
+      }, { variant: 'ghost', fontSize: 12 });
 
       const fade = easeOutCubic(Math.min(1, this.stageTime / 0.45));
       ctx.save();
       ctx.globalAlpha = fade;
-      drawChamferPanel(ctx, 110, 468, 1060, 212, 14, 'rgba(8, 13, 24, 0.90)', THEME.BORDER_GOLD, 1.5, THEME.GOLD_LIGHT);
-      drawBadge(ctx, 138, 490, 168, 24, '第一幕 · 最后一次出场', '#0C4A6E', '#7DD3FC');
-      drawText(ctx, '38岁，最后一次把队长袖标缠在左臂', 138, 534, { size: 22, bold: true, color: THEME.GOLD_LIGHT });
+      drawPrintCard(ctx, 110, 456, 1060, 226, { paper: true, topBandColor: THEME.VERMILION, topBandHeight: 6, radius: 8, shadowOffset: 6, strokeColor: THEME.INK_LINE, lineWidth: 2.5 });
+      drawBadge(ctx, 138, 478, 178, 24, '第一幕 · 最后一次出场', THEME.BG_PANEL, THEME.GOLD_LIGHT);
+      drawText(ctx, '38岁，最后一次把队长袖标缠在左臂', 138, 520, { size: 22, bold: true, color: THEME.PAPER_INK });
       const story0 = '职业生涯第 612 场。队医昨夜警告你膝盖软骨早已磨平——但这更是联赛收官决战，只有赢下这场比赛才能捧起冠军奖杯！通道尽头泛着刺眼白光，八万人的合唱已在震动鞋底。';
-      drawWrappedText(ctx, this.revealLine(story0, 56), 138, 566, 740, 24, { size: 13.5, color: THEME.TX1, maxLines: 3 });
-      hits.add(110, 468, 780, 212, () => { this.skipReveal = true; });
+      drawWrappedText(ctx, story0, 138, 548, 752, 24, { size: 15, color: THEME.PAPER_MUTED, maxLines: 4 });
+      hits.add(110, 456, 780, 226, () => { this.skipReveal = true; });
       drawButton(ctx, hits, 916, 584, 224, 52, '踏上球场 · 最后一战 ▶', () => {
         if (actions.onEnterAct2Match) {
           SoundEngine.playClick();
@@ -452,8 +463,6 @@ export class PrologueScreen {
         // 动态缩放瞄准圈
         ctx.strokeStyle = inSweet ? '#FEF08A' : '#38BDF8';
         ctx.lineWidth = 3;
-        ctx.shadowColor = inSweet ? '#FACC15' : '#38BDF8';
-        ctx.shadowBlur = inSweet ? 18 : 8;
         ctx.beginPath();
         ctx.arc(cx, cy, outerR, 0, Math.PI * 2);
         ctx.stroke();
@@ -468,12 +477,12 @@ export class PrologueScreen {
       }
 
       this.drawCinemaFrame(ctx, 1);
-      drawBadge(ctx, 40, 36, 224, 28, 'PROLOGUE · 终场绝唱 (2/4)', 'rgba(11,17,32,0.85)', THEME.GOLD_LIGHT);
-      drawButton(ctx, hits, 1110, 34, 134, 32, '跳过序章 ▶', () => actions.onSkipPrologue(), { variant: 'ghost', fontSize: 11.5 });
+      drawBadge(ctx, 40, 36, 232, 28, 'PROLOGUE · 终场绝唱 (2/4)', THEME.BG_PANEL, THEME.GOLD_LIGHT);
+      drawButton(ctx, hits, 1110, 34, 134, 32, '跳过序章 ▶', () => actions.onSkipPrologue(), { variant: 'ghost', fontSize: 12 });
 
       if (!this.climaxShotTriggered) {
-        drawChamferPanel(ctx, 210, 444, 860, 232, 14, 'rgba(8, 13, 24, 0.92)', THEME.GOLD_LIGHT, 2, THEME.GOLD_LIGHT);
-        drawBadge(ctx, 240, 466, 220, 24, '90+2\' 伤停补时 · 1 : 1 平', '#7F1D1D', '#FCA5A5');
+        drawPrintCard(ctx, 210, 444, 860, 232, { paper: false, topBandColor: THEME.BRASS, topBandHeight: 6, radius: 8, shadowOffset: 6, strokeColor: THEME.INK_LINE, lineWidth: 2.5 });
+        drawBadge(ctx, 240, 466, 224, 24, '90+2\' 伤停补时 · 1 : 1 平', THEME.VERMILION, THEME.PAPER_CREAM);
         drawText(ctx, '边路传中穿过雨幕砸向门前！抓紧子弹时间在黄金圈内轰出最后一脚——', 640, 514, {
           size: 18.5,
           bold: true,
@@ -484,43 +493,43 @@ export class PrologueScreen {
         const bx = 340, by = 544, bw = 600, bh = 12;
         const pos = this.getBulletRingPhase();
         const inSweetBar = pos >= 0.30 && pos <= 0.64;
-        drawRoundRect(ctx, bx, by, bw, bh, 6, '#1E293B', THEME.BORDER);
-        drawRoundRect(ctx, bx + bw * 0.30, by, bw * 0.34, bh, 4, inSweetBar ? 'rgba(250, 204, 21, 0.62)' : 'rgba(250, 204, 21, 0.32)');
-        ctx.fillStyle = inSweetBar ? '#FEF08A' : '#7DD3FC';
+        drawRoundRect(ctx, bx, by, bw, bh, 6, THEME.BG_DEEP, THEME.INK_LINE, 1.5);
+        drawRoundRect(ctx, bx + bw * 0.30, by, bw * 0.34, bh, 4, inSweetBar ? 'rgba(216, 168, 66, 0.72)' : 'rgba(216, 168, 66, 0.36)');
+        ctx.fillStyle = inSweetBar ? THEME.LIME : THEME.BRASS;
         ctx.beginPath();
         ctx.arc(bx + bw * pos, by + bh / 2, 8.5, 0, Math.PI * 2);
         ctx.fill();
 
         drawButton(ctx, hits, 410, 580, 460, 58, '凌空爆射 · 终结这场比赛！(点击 / Space)', () => {
           this.triggerClimaxShot();
-        }, { variant: 'gold', fontSize: 16 });
+        }, { variant: 'primary', fontSize: 16 });
       } else {
-        drawChamferPanel(ctx, 110, 468, 1060, 212, 14, 'rgba(8, 13, 24, 0.92)', THEME.GOLD_LIGHT, 2, THEME.GOLD_LIGHT);
+        drawPrintCard(ctx, 110, 456, 1060, 226, { paper: true, topBandColor: THEME.LIME, topBandHeight: 6, radius: 8, shadowOffset: 6, strokeColor: THEME.INK_LINE, lineWidth: 2.5 });
         drawBadge(
           ctx,
           138,
-          490,
-          this.perfectShot ? 256 : 226,
+          478,
+          this.perfectShot ? 264 : 232,
           24,
           this.perfectShot ? 'GOOOAL!! 完美世界波 · 死角绝杀！' : 'GOOOAL!! 90+2\' 绝杀世界波！',
-          '#14532D',
-          THEME.GREEN
+          THEME.BG_PANEL,
+          THEME.LIME
         );
         drawText(
           ctx,
           this.perfectShot ? '教科书般完美谢幕 · 皮球直挂死角，全场山呼海啸' : '完美谢幕 · 球网震颤，全场起立献上最后掌声',
           138,
-          534,
-          { size: 22, bold: true, color: THEME.GOLD_LIGHT }
+          520,
+          { size: 22, bold: true, color: THEME.PAPER_INK }
         );
         drawWrappedText(
           ctx,
           '大雨里你双膝滑跪在草皮上，全队扑上来抱住你。主裁判随后吹响终场哨音——你赢下了属于球员时代的最后一座奖杯，也终于要把战靴脱下了。',
           138,
-          566,
-          740,
+          548,
+          752,
           24,
-          { size: 13.5, color: THEME.TX1, maxLines: 3 }
+          { size: 15, color: THEME.PAPER_MUTED, maxLines: 4 }
         );
         drawButton(ctx, hits, 916, 584, 224, 52, '走进更衣室 · 挂靴告别 ▶', () => this.goStage(2, 'white'), {
           variant: 'gold',
@@ -551,25 +560,25 @@ export class PrologueScreen {
       ctx.stroke();
 
       // 拟真通话语音波形浮条
-      drawRoundRect(ctx, 470, 396, 340, 44, 22, 'rgba(8, 15, 32, 0.88)', 'rgba(56, 189, 248, 0.65)', 1.4);
-      drawText(ctx, '老恩师 · 来电通话中', 492, 418, { size: 12, bold: true, color: '#7DD3FC' });
+      drawRoundRect(ctx, 470, 396, 340, 44, 8, THEME.BG_PANEL, THEME.INK_LINE, 2.2);
+      drawText(ctx, '老恩师 · 来电通话中', 492, 418, { size: 12.5, bold: true, color: THEME.LIME });
       for (let bi = 0; bi < 14; bi++) {
         const amp = 4 + Math.abs(Math.sin(this.animTime * 8.5 + bi * 0.9)) * 16;
-        ctx.fillStyle = bi % 2 === 0 ? '#38BDF8' : '#FACC15';
+        ctx.fillStyle = bi % 2 === 0 ? THEME.LIME : THEME.BRASS;
         ctx.fillRect(654 + bi * 9, 418 - amp / 2, 4, amp);
       }
       ctx.restore();
 
       this.drawCinemaFrame(ctx, 2);
-      drawBadge(ctx, 40, 36, 224, 28, 'PROLOGUE · 更衣室余温 (3/4)', 'rgba(11,17,32,0.85)', '#7DD3FC');
-      drawButton(ctx, hits, 1110, 34, 134, 32, '跳过序章 ▶', () => actions.onSkipPrologue(), { variant: 'ghost', fontSize: 11.5 });
+      drawBadge(ctx, 40, 36, 232, 28, 'PROLOGUE · 更衣室余温 (3/4)', THEME.BG_PANEL, THEME.LIME);
+      drawButton(ctx, hits, 1110, 34, 134, 32, '跳过序章 ▶', () => actions.onSkipPrologue(), { variant: 'ghost', fontSize: 12 });
 
-      drawChamferPanel(ctx, 110, 468, 1060, 212, 14, 'rgba(8, 13, 24, 0.91)', '#38BDF8', 1.5, '#38BDF8');
-      drawBadge(ctx, 138, 490, 186, 24, '第三幕 · 深夜的未接来电', '#0C4A6E', '#7DD3FC');
-      drawText(ctx, '泥泞战靴放在长凳旁，屏幕突然亮起老恩师的来电', 138, 534, { size: 22, bold: true, color: THEME.TX1 });
+      drawPrintCard(ctx, 110, 456, 1060, 226, { paper: true, topBandColor: THEME.COBALT, topBandHeight: 6, radius: 8, shadowOffset: 6, strokeColor: THEME.INK_LINE, lineWidth: 2.5 });
+      drawBadge(ctx, 138, 478, 188, 24, '第三幕 · 深夜的未接来电', THEME.BG_PANEL, THEME.GOLD_LIGHT);
+      drawText(ctx, '泥泞战靴放在长凳旁，屏幕突然亮起老恩师的来电', 138, 520, { size: 22, bold: true, color: THEME.PAPER_INK });
       const story2 = '「看见你那脚绝杀了，小子。」老恩师的声音沙哑又熟悉，「镇上那支你当年踢青训出来的草根小队快挺不住了——七级联赛垫底、没预算、没人愿接。哪怕再踢最后一个赛季也好，回来带着这群孩子打回来吧？」';
-      drawWrappedText(ctx, this.revealLine(story2, 54), 138, 566, 740, 24, { size: 13.5, color: '#CBD5E1', maxLines: 3 });
-      hits.add(110, 468, 780, 212, () => { this.skipReveal = true; });
+      drawWrappedText(ctx, story2, 138, 548, 752, 24, { size: 15, color: THEME.PAPER_MUTED, maxLines: 4 });
+      hits.add(110, 456, 780, 226, () => { this.skipReveal = true; });
       drawButton(ctx, hits, 916, 584, 224, 52, '回到故乡 · 推开铁门 ▶', () => this.goStage(3), {
         variant: 'primary',
         fontSize: 14,
@@ -626,63 +635,63 @@ export class PrologueScreen {
       ctx.restore();
 
       this.drawCinemaFrame(ctx, 3);
-      drawBadge(ctx, 40, 36, 224, 28, 'PROLOGUE · 命运分岔口 (4/4)', 'rgba(11,17,32,0.85)', THEME.GOLD_LIGHT);
+      drawBadge(ctx, 40, 36, 232, 28, 'PROLOGUE · 命运分岔口 (4/4)', THEME.BG_PANEL, THEME.GOLD_LIGHT);
 
-      drawChamferPanel(ctx, 220, 56, 840, 104, 12, 'rgba(8, 13, 24, 0.86)', THEME.BORDER_GOLD, 1.2);
+      drawPrintCard(ctx, 220, 56, 840, 104, { paper: false, topBandColor: THEME.BRASS, topBandHeight: 5, radius: 8, shadowOffset: 5, strokeColor: THEME.INK_LINE, lineWidth: 2.5 });
       drawText(ctx, '清晨的泥地球场，等待你的回答', 640, 88, { size: 22, bold: true, color: THEME.GOLD_LIGHT, align: 'center' });
       drawText(
         ctx,
         '雾气里一群十五六岁的孩子还在自己加练射门。老恩师递过战术板：是再燃烧一次执掌教鞭，还是彻底告别绿茵？',
         640,
         124,
-        { size: 13, color: THEME.TX1, align: 'center' }
+        { size: 13.5, color: THEME.TX1, align: 'center' }
       );
 
-      // 左卡：接受邀约，重返家乡执教
-      drawChamferPanel(ctx, lx, ly, lw, lh, 14, lHover ? 'rgba(16, 28, 48, 0.96)' : 'rgba(10, 17, 32, 0.92)', THEME.GOLD_LIGHT, lHover ? 2.4 : 1.6, THEME.GOLD_LIGHT);
-      drawFoilShimmer(ctx, lx, ly, lw, lh, this.animTime * 0.8, 'rgba(250, 204, 21, 0.16)');
-      drawBadge(ctx, lx + 22, ly + 18, 186, 24, '开启执教生涯 · 主线起点', '#78350F', THEME.GOLD_LIGHT);
+      // 左卡：接受邀约，重返家乡执教（PITCH PRINT 暖纸 + 朱红主钮）
+      drawPrintCard(ctx, lx, ly, lw, lh, { paper: true, topBandColor: THEME.VERMILION, topBandHeight: 7, radius: 8, shadowOffset: lHover ? 7 : 5, strokeColor: THEME.INK_LINE, lineWidth: 2.5 });
+      drawFoilShimmer(ctx, lx, ly, lw, lh, this.animTime * 0.8, 'rgba(216, 168, 66, 0.16)');
+      drawBadge(ctx, lx + 22, ly + 18, 192, 24, '开启执教生涯 · 主线起点', THEME.BG_PANEL, THEME.GOLD_LIGHT);
       const roarImg = AssetLoader.get('cmd_captain_roar');
       if (roarImg && typeof ctx.drawImage === 'function') {
-        drawChamferPanel(ctx, lx + 22, ly + 56, 118, 82, 8, '#090F1D', THEME.GOLD);
-        ctx.drawImage(roarImg, lx + 24, ly + 58, 114, 78);
+        drawRoundRect(ctx, lx + 22, ly + 54, 118, 84, 6, THEME.BG_DEEP, THEME.INK_LINE, 2);
+        ctx.drawImage(roarImg, lx + 24, ly + 56, 114, 80);
       }
-      drawText(ctx, '游子归家，再踢最后一季', lx + 156, ly + 72, { size: 18, bold: true, color: THEME.TX1 });
-      drawBadge(ctx, lx + 156, ly + 90, 232, 22, '老队长 #10 梅利纳亲自上阵 · S1限', '#14532D', THEME.GREEN);
-      drawText(ctx, 'CA 84 中轴全能(ST/CAM/CM/CDM/CB) · 季末转教练', lx + 156, ly + 128, { size: 11.5, color: '#7DD3FC' });
+      drawText(ctx, '游子归家，再踢最后一季', lx + 156, ly + 70, { size: 18, bold: true, color: THEME.PAPER_INK });
+      drawBadge(ctx, lx + 156, ly + 88, 266, 22, '老队长 #10 梅利纳亲自上阵 · S1限定', THEME.BG_PANEL, THEME.LIME);
+      drawText(ctx, 'CA 84 中轴全能(ST/CAM/CM/CDM/CB) · 季末转教练', lx + 156, ly + 126, { size: 12.5, bold: true, color: THEME.COBALT });
       drawWrappedText(
         ctx,
         '第1赛季化身80+中轴碾压卡带领家乡小队起飞，季末传奇退役转教练并传承【老队长的怒吼】！',
         lx + 22,
-        ly + 154,
+        ly + 152,
         lw - 44,
-        18,
-        { size: 12.5, color: THEME.TX2, maxLines: 2 }
+        20,
+        { size: 13, color: THEME.PAPER_MUTED, maxLines: 2 }
       );
-      drawButton(ctx, hits, lx + 22, ly + lh - 58, lw - 44, 44, '接过教鞭，回到家乡执教 ▶', () => {
+      drawButton(ctx, hits, lx + 22, ly + lh - 58, lw - 44, 46, '接过教鞭，回到家乡执教 ▶', () => {
         SoundEngine.playGoalCheer();
         actions.onAcceptHometown();
-      }, { variant: 'gold', fontSize: 14.5 });
+      }, { variant: 'primary', fontSize: 15 });
 
-      // 右卡：彩蛋抉择 — 婉拒邀约，体面归隐结局
-      drawChamferPanel(ctx, rx, ry, rw, rh, 14, rHover ? 'rgba(20, 26, 40, 0.96)' : 'rgba(11, 16, 28, 0.90)', rHover ? '#E2E8F0' : THEME.BORDER, rHover ? 1.8 : 1.2);
-      drawBadge(ctx, rx + 22, ry + 18, 174, 24, '★ 彩蛋分支 · 另一种人生', '#1E293B', '#E2E8F0');
-      drawText(ctx, '「谢谢老师，我想先回家陪陪家人」', rx + 22, ry + 70, { size: 18, bold: true, color: '#F8FAFC' });
+      // 右卡：彩蛋抉择 — 婉拒邀约，体面归隐结局（PITCH PRINT 暖纸 + 黄铜钮）
+      drawPrintCard(ctx, rx, ry, rw, rh, { paper: true, topBandColor: THEME.BRASS, topBandHeight: 7, radius: 8, shadowOffset: rHover ? 7 : 5, strokeColor: THEME.INK_LINE, lineWidth: 2.5 });
+      drawBadge(ctx, rx + 22, ry + 18, 182, 24, '★ 彩蛋分支 · 另一种人生', THEME.BG_PANEL, THEME.PAPER_CREAM);
+      drawText(ctx, '「谢谢老师，我想先回家陪陪家人」', rx + 22, ry + 70, { size: 18, bold: true, color: THEME.PAPER_INK });
       drawWrappedText(
         ctx,
         '你已经替这座城市与那群球迷踢完了所有硬仗。也许比起再一次背负胜负的重担，现在正是转身走进阳光与日常的最好时刻。',
         rx + 22,
-        ry + 104,
+        ry + 102,
         rw - 44,
-        21,
-        { size: 12.5, color: '#94A3B8', maxLines: 3 }
+        22,
+        { size: 13.5, color: THEME.PAPER_MUTED, maxLines: 3 }
       );
-      drawText(ctx, '解锁独立隐藏结局：《功成身退 · 绿茵归隐》（全剧终）', rx + 22, ry + 180, { size: 11.5, color: THEME.GOLD_LIGHT });
-      drawButton(ctx, hits, rx + 22, ry + rh - 58, rw - 44, 44, '婉拒邀约，挂靴体面归隐 ✦', () => {
+      drawText(ctx, '解锁独立隐藏结局：《功成身退 · 绿茵归隐》（全剧终）', rx + 22, ry + 180, { size: 12.5, bold: true, color: THEME.VERMILION });
+      drawButton(ctx, hits, rx + 22, ry + rh - 58, rw - 44, 46, '婉拒邀约，挂靴体面归隐 ✦', () => {
         SoundEngine.playFanfare();
         actions.onDeclineSecretEnding();
         this.goStage(4);
-      }, { variant: 'ghost', fontSize: 13.5 });
+      }, { variant: 'gold', fontSize: 14 });
       this.drawStageTransition(ctx);
       return;
     }
@@ -710,34 +719,30 @@ export class PrologueScreen {
     ctx.save();
     ctx.globalAlpha = enterAlpha;
 
-    // 顶部左侧浮动荣誉落幕头衔，把黄金夕阳海景、球场、足球与袖标完整让给画面上半区
-    drawBadge(ctx, 84, 34, 252, 28, '★ SECRET ENDING · 隐藏彩蛋结局', 'rgba(120, 53, 15, 0.90)', THEME.GOLD_LIGHT);
+    drawBadge(ctx, 84, 34, 252, 28, '★ SECRET ENDING · 隐藏彩蛋结局', THEME.BG_PANEL, THEME.GOLD_LIGHT);
     ctx.save();
-    ctx.shadowColor = 'rgba(0, 0, 0, 0.85)';
-    ctx.shadowBlur = 14;
     drawText(ctx, '功成身退 · 绿茵归隐', 84, 96, { size: 34, bold: true, italic: true, color: '#FEF08A' });
     drawText(ctx, 'SOME LEGENDS KEEP FIGHTING — OTHERS KNOW WHEN TO TAKE A BOW', 84, 130, {
-      size: 11.5,
+      size: 12,
       bold: true,
       color: '#FDE68A',
       mono: true,
     });
     ctx.restore();
 
-    // 底部半透明磨砂玻璃终章卡片（y: 368..684，不遮挡老将背影与桌面足球/袖标/海岸夕阳）
     const px = 84, py = 368 + slideOffset, pw = 1112, ph = 316;
-    drawChamferPanel(ctx, px, py, pw, ph, 14, 'rgba(8, 13, 24, 0.88)', THEME.BORDER_GOLD, 1.6, THEME.GOLD_LIGHT);
-    drawFoilShimmer(ctx, px, py, pw, ph, this.animTime * 0.55, 'rgba(250, 204, 21, 0.12)');
+    drawPrintCard(ctx, px, py, pw, ph, { paper: false, topBandColor: THEME.BRASS, topBandHeight: 6, radius: 10, shadowOffset: 6, strokeColor: THEME.INK_LINE, lineWidth: 2.5 });
+    drawFoilShimmer(ctx, px, py, pw, ph, this.animTime * 0.55, 'rgba(216, 168, 66, 0.14)');
 
-    drawChamferPanel(ctx, px + 26, py + 22, pw - 52, 128, 10, 'rgba(15, 23, 42, 0.78)', THEME.BORDER);
+    drawPrintCard(ctx, px + 26, py + 22, pw - 52, 128, { paper: true, radius: 8, shadowOffset: 3, strokeColor: THEME.INK_LINE, lineWidth: 2 });
     drawWrappedText(
       ctx,
       '老恩师愣了三秒，随即爽朗地拍了拍你的肩膀：「也是，你小子早就替大家踢完所有硬仗了，好好过日子去。」你把那只印着汗渍的队长袖标轻轻放回替补席长椅，挥了挥手，头也不回地走出了清晨的雾气。\n三个月后，你在海边小城盘下一间能看见球场的咖啡馆。偶尔会有少年抱着踢旧的足球害羞地请前任传奇签名——你笑着签完，总会在最后添上一句：「开心最重要。」',
       px + 48,
-      py + 46,
+      py + 40,
       pw - 96,
       24,
-      { size: 13.5, color: THEME.TX1, maxLines: 4 }
+      { size: 14, color: THEME.PAPER_INK, maxLines: 4 }
     );
 
     const stats: Array<[string, string]> = [
@@ -749,9 +754,9 @@ export class PrologueScreen {
     stats.forEach(([lbl, val], si) => {
       const sx = px + 26 + si * 268;
       const sy = py + 164;
-      drawRoundRect(ctx, sx, sy, 252, 62, 8, 'rgba(11, 17, 30, 0.90)', si === 3 ? THEME.GOLD_LIGHT : THEME.BORDER);
-      drawText(ctx, lbl, sx + 126, sy + 18, { size: 11, color: THEME.TX2, align: 'center' });
-      drawText(ctx, val, sx + 126, sy + 42, { size: 16.5, bold: true, color: si === 3 ? THEME.GOLD_LIGHT : THEME.TX1, align: 'center' });
+      drawRoundRect(ctx, sx, sy, 252, 62, 6, THEME.BG_PANEL, si === 3 ? THEME.BRASS : THEME.INK_LINE, 2);
+      drawText(ctx, lbl, sx + 126, sy + 18, { size: 12, color: THEME.TX2, align: 'center' });
+      drawText(ctx, val, sx + 126, sy + 42, { size: 16.5, bold: true, color: si === 3 ? THEME.BRASS : THEME.TX1, align: 'center' });
     });
 
     drawText(ctx, '—— THE END · 感谢游玩，你的传奇已体面落幕 ——', 640, py + 244, {

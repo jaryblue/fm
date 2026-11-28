@@ -1,8 +1,8 @@
 /**
- * 轻量二次确认弹窗（用于重开赛季、一键补齐等不可逆操作防误触）
+ * 轻量二次确认弹窗（PITCH PRINT 暖纸通告卡 + 朱红顶栏）
  */
 
-import { ButtonVariant, drawButton, drawRoundRect, drawText, drawWrappedText, HitRegistry } from './CanvasKit';
+import { ButtonVariant, drawButton, drawPrintCard, drawText, drawWrappedText, HitRegistry } from './CanvasKit';
 import { THEME } from './Theme';
 
 export class ConfirmModal {
@@ -40,35 +40,42 @@ export class ConfirmModal {
   public render(ctx: CanvasRenderingContext2D, hits: HitRegistry): void {
     if (!this.visible) return;
 
-    ctx.fillStyle = 'rgba(4, 7, 14, 0.72)';
+    ctx.fillStyle = 'rgba(7, 16, 12, 0.84)';
     ctx.fillRect(0, 0, THEME.W, THEME.H);
     hits.clear();
 
-    const mw = 440;
-    const mh = 210;
+    const mw = 460;
+    const mh = 236;
     const mx = (THEME.W - mw) / 2;
     const my = (THEME.H - mh) / 2;
 
-    drawRoundRect(ctx, mx, my, mw, mh, 12, THEME.BG_PANEL, THEME.BORDER_GOLD, 1.6);
-    drawText(ctx, this.title, mx + 24, my + 34, {
-      size: 18,
-      bold: true,
-      color: THEME.GOLD_LIGHT,
+    drawPrintCard(ctx, mx, my, mw, mh, {
+      paper: true,
+      topBandColor: this.variant === 'danger' ? THEME.VERMILION : THEME.BG_PANEL,
+      radius: 10,
+      shadowOffset: 6,
+      strokeColor: THEME.INK_LINE,
+      lineWidth: 2,
     });
-    drawWrappedText(ctx, this.message, mx + 24, my + 68, mw - 48, 22, {
-      size: 13,
-      color: THEME.TX2,
+    drawText(ctx, this.title, mx + 24, my + 50, {
+      size: 19,
+      bold: true,
+      color: THEME.PAPER_INK,
+    });
+    drawWrappedText(ctx, this.message, mx + 24, my + 84, mw - 48, 22, {
+      size: 14,
+      color: THEME.PAPER_MUTED,
       maxLines: 3,
     });
 
-    drawButton(ctx, hits, mx + 24, my + mh - 56, 184, 38, '取消', () => {
+    drawButton(ctx, hits, mx + 24, my + mh - 60, 194, 44, '取消', () => {
       this.close();
-    }, { variant: 'ghost', fontSize: 13 });
+    }, { variant: 'ghost', fontSize: 13.5 });
 
-    drawButton(ctx, hits, mx + mw - 208, my + mh - 56, 184, 38, this.confirmLabel, () => {
+    drawButton(ctx, hits, mx + mw - 218, my + mh - 60, 194, 44, this.confirmLabel, () => {
       const cb = this.onConfirm;
       this.close();
       if (cb) cb();
-    }, { variant: this.variant, fontSize: 13 });
+    }, { variant: this.variant, fontSize: 13.5 });
   }
 }

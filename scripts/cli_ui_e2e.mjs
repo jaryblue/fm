@@ -204,7 +204,7 @@ for (let pack = 0; pack < 3; pack++) {
   const sv = await getSave();
   if (sv && sv.phase !== 'INIT_DRAFT') break;
   await clickCanvas(640, 550, 750); // 撕开核心包
-  await clickCanvas(1001, 149, 250); // 一键推荐选满
+  await clickCanvas(1170, 149, 250); // 一键推荐选满
   await clickCanvas(640, 573, 450); // 签入这 3 人
 }
 const afterDraft = await getSave();

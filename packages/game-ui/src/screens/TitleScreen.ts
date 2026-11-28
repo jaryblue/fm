@@ -37,23 +37,27 @@ import {
   drawAstrolabeHexFusionNode,
   getAstrolabePassiveGlyph,
 } from '../AstrolabeVisuals';
+import { ArtAssetId, AssetLoader } from '../AssetLoader';
 import {
   drawBadge,
   drawButton,
   drawChamferPanel,
+  drawPrintCard,
   drawRoundRect,
+  drawStamp,
   drawText,
-  drawWrappedText,
   fitText,
   FONT,
   formatFunds,
+  getHalftonePattern,
+  getPaperGrainPattern,
   HitRegistry,
 } from '../CanvasKit';
 import { drawClubCrest, drawJerseyIcon } from '../ClubVisuals';
 import { drawGameLogoEmblem, easeOutBack, easeOutCubic } from '../Motion';
 import { getRunningVersion } from '../RuntimeInfo';
 import { SoundEngine } from '../SoundEngine';
-import { IS_MOBILE, THEME } from '../Theme';
+import { THEME } from '../Theme';
 import { drawIcon, drawSkillGlyph } from '../VectorIcons';
 
 const HOME_PRIMARY_PALETTE = ['#DC2626', '#2563EB', '#059669', '#EA580C', '#7C3AED', '#0284C7'];
@@ -94,7 +98,29 @@ const SYSTEM_NOTE: Record<DefenseSystem, string> = {
   '5-back': '五后卫禁区铁闸',
 };
 
+interface TitlePosterDef {
+  id: ArtAssetId;
+  stageLabel: string;
+  title: string;
+  /** null=默认解锁(00老将登场), 7..1=升入对应级别解锁, 0=夺得超级联赛冠军解锁 */
+  unlockTier: number | null;
+  unlockHint: string;
+}
+
+const TITLE_POSTERS: TitlePosterDef[] = [
+  { id: 'bg_title_00_veteran', stageLabel: '00 · 开局', title: '老将登场', unlockTier: null, unlockHint: '默认解锁' },
+  { id: 'bg_title_01_amateur', stageLabel: 'T7 · 业余', title: '社区业余联赛', unlockTier: 7, unlockHint: '开启生涯解锁' },
+  { id: 'bg_title_02_district', stageLabel: 'T6 · 地区', title: '地区联赛', unlockTier: 6, unlockHint: '升入第6级解锁' },
+  { id: 'bg_title_03_tier5', stageLabel: 'T5 · 丙级', title: '丙级联赛', unlockTier: 5, unlockHint: '升入第5级解锁' },
+  { id: 'bg_title_04_tier4', stageLabel: 'T4 · 乙级', title: '乙级联赛', unlockTier: 4, unlockHint: '升入第4级解锁' },
+  { id: 'bg_title_05_tier3', stageLabel: 'T3 · 甲级', title: '甲级联赛', unlockTier: 3, unlockHint: '升入第3级解锁' },
+  { id: 'bg_title_06_championship', stageLabel: 'T2 · 冠军', title: '冠军联赛', unlockTier: 2, unlockHint: '升入第2级解锁' },
+  { id: 'bg_title_07_super', stageLabel: 'T1 · 超级', title: '超级联赛', unlockTier: 1, unlockHint: '升入第1级解锁' },
+  { id: 'bg_title_08_dynasty', stageLabel: '王朝 · 捧杯', title: '超级联赛王朝', unlockTier: 0, unlockHint: '超级联赛夺冠解锁' },
+];
+
 export class TitleScreen {
+  private selectedPosterIdx: number | null = null;
   private wizardOpen = false;
   private wizardStep: 1 | 2 = 1;
   private previewKitMode: 'home' | 'away' = 'home';
@@ -278,41 +304,83 @@ export class TitleScreen {
     const metaLv = league.getMetaLevels();
     const hof = st.hallOfFame;
 
-    // 柔和暗调聚焦遮罩 + 球场扫射探照光束与飘浮金色微粒
-    ctx.save();
-    for (let bi = 0; bi < 2; bi++) {
-      const originX = bi === 0 ? THEME.W * 0.14 : THEME.W * 0.86;
-      const sweepX = THEME.W * 0.5 + Math.sin(this.ambientTime * 0.8 + bi * Math.PI) * 240;
-      const beam = ctx.createLinearGradient(originX, 0, sweepX, THEME.H * 0.85);
-      beam.addColorStop(0, bi === 0 ? 'rgba(250, 204, 21, 0.12)' : 'rgba(249, 115, 22, 0.11)');
-      beam.addColorStop(1, 'rgba(0, 0, 0, 0)');
-      ctx.fillStyle = beam;
-      ctx.beginPath();
-      ctx.moveTo(originX - 24, 0);
-      ctx.lineTo(originX + 24, 0);
-      ctx.lineTo(sweepX + 200, THEME.H);
-      ctx.lineTo(sweepX - 200, THEME.H);
-      ctx.closePath();
-      ctx.fill();
+    // 计算生涯最高解锁阶段（用于 9 张标题底图默认定位与解锁状态判定）
+    const recordBestTier = (hof?.records ?? []).reduce((best, r) => Math.min(best, r.tier ?? 7), 7);
+    const bestTier = Math.min(st.bestTierReached ?? 7, st.currentTier ?? 7, recordBestTier);
+    const hasCareerProgress = hasActiveRun || (hof?.seasonsPlayed ?? 0) > 0;
+    const hasSuperChamp = (hof?.records ?? []).some(r => r.isChampion && (r.tier ?? 7) === 1);
+    const isPosterUnlocked = (def: TitlePosterDef): boolean => {
+      if (def.unlockTier === null) return true;
+      if (def.unlockTier === 0) return hasSuperChamp;
+      return hasCareerProgress && bestTier <= def.unlockTier;
+    };
+    if (this.selectedPosterIdx === null) {
+      if (hasSuperChamp) this.selectedPosterIdx = 8;
+      else if (hasCareerProgress) this.selectedPosterIdx = Math.max(1, Math.min(7, 8 - bestTier));
+      else this.selectedPosterIdx = 0;
     }
+    const posterIdx = ((this.selectedPosterIdx % TITLE_POSTERS.length) + TITLE_POSTERS.length) % TITLE_POSTERS.length;
+    const activePoster = TITLE_POSTERS[posterIdx];
+    const posterUnlocked = isPosterUnlocked(activePoster);
+    const posterImg = AssetLoader.get(activePoster.id) ?? AssetLoader.get('bg_title');
 
-    const centerScrim = ctx.createRadialGradient(THEME.W / 2, 330, 100, THEME.W / 2, 340, 580);
-    centerScrim.addColorStop(0, 'rgba(6, 10, 18, 0.78)');
-    centerScrim.addColorStop(0.65, 'rgba(6, 10, 18, 0.48)');
-    centerScrim.addColorStop(1, 'rgba(6, 10, 18, 0.08)');
-    ctx.fillStyle = centerScrim;
+    // PITCH PRINT 非对称电影海报构图：优先渲染阶段演进主视觉底图（未解锁时置灰预览）
+    ctx.save();
+    ctx.fillStyle = '#0A1A14';
     ctx.fillRect(0, 0, THEME.W, THEME.H);
 
-    for (let pi = 0; pi < 22; pi++) {
-      const px = ((pi * 89 + Math.sin(this.ambientTime * 0.55 + pi) * 24) % THEME.W + THEME.W) % THEME.W;
-      const py = THEME.H - ((this.ambientTime * (34 + (pi % 4) * 14) + pi * 61) % THEME.H);
-      const pa = 0.18 + 0.24 * Math.sin(this.ambientTime * 2.2 + pi);
+    if (posterImg && typeof ctx.drawImage === 'function') {
+      ctx.save();
+      if (!posterUnlocked) {
+        if ('filter' in ctx) {
+          ctx.filter = 'grayscale(100%) brightness(0.45) contrast(0.9)';
+        }
+        ctx.globalAlpha = 0.72;
+      }
+      ctx.drawImage(posterImg, 0, 0, THEME.W, THEME.H);
+      ctx.restore();
+      if (!posterUnlocked) {
+        // 未解锁置灰遮罩（兼顾无 ctx.filter 的小游戏环境）
+        ctx.fillStyle = 'rgba(10, 20, 18, 0.56)';
+        ctx.fillRect(0, 0, THEME.W, THEME.H);
+      }
+      // 左侧 45% 温和暗角压底，保障菜单与卡片绝对高对比度
+      const leftScrim = ctx.createLinearGradient(0, 0, THEME.W * 0.52, 0);
+      leftScrim.addColorStop(0, 'rgba(10, 26, 20, 0.72)');
+      leftScrim.addColorStop(0.75, 'rgba(10, 26, 20, 0.35)');
+      leftScrim.addColorStop(1, 'rgba(10, 26, 20, 0)');
+      ctx.fillStyle = leftScrim;
+      ctx.fillRect(0, 0, THEME.W * 0.55, THEME.H);
+    } else {
+      // 底图尚未加载完成时的纯 Canvas 2D 兜底背景
+      const bgGrad = ctx.createRadialGradient(THEME.W * 0.72, THEME.H * 0.34, 40, THEME.W * 0.65, THEME.H * 0.45, THEME.W * 0.75);
+      bgGrad.addColorStop(0, '#1D4535');
+      bgGrad.addColorStop(0.50, THEME.BG_MID);
+      bgGrad.addColorStop(1, '#07120D');
+      ctx.fillStyle = bgGrad;
+      ctx.fillRect(0, 0, THEME.W, THEME.H);
+      const ht = getHalftonePattern(ctx, true);
+      if (ht) {
+        ctx.save();
+        ctx.globalAlpha = 0.50;
+        ctx.fillStyle = ht;
+        ctx.fillRect(THEME.W * 0.42, 0, THEME.W * 0.58, THEME.H);
+        ctx.restore();
+      }
+      this.drawVeteranTunnelHero(ctx, this.ambientTime);
+    }
+
+    for (let pi = 0; pi < 16; pi++) {
+      const px = ((pi * 103 + Math.sin(this.ambientTime * 0.55 + pi) * 18) % THEME.W + THEME.W) % THEME.W;
+      const py = THEME.H - ((this.ambientTime * (30 + (pi % 4) * 12) + pi * 71) % THEME.H);
+      const pa = 0.16 + 0.18 * Math.sin(this.ambientTime * 2.0 + pi);
       ctx.fillStyle = pi % 3 === 0
-        ? `rgba(249, 115, 22, ${Math.max(0.05, pa).toFixed(2)})`
-        : `rgba(250, 204, 21, ${Math.max(0.05, pa).toFixed(2)})`;
-      ctx.beginPath();
-      ctx.arc(px, py, 1.4 + (pi % 2) * 0.85, 0, Math.PI * 2);
-      ctx.fill();
+        ? `rgba(224, 58, 46, ${Math.max(0.06, pa).toFixed(2)})`
+        : pi % 3 === 1
+        ? `rgba(200, 242, 48, ${Math.max(0.06, pa).toFixed(2)})`
+        : `rgba(216, 168, 66, ${Math.max(0.06, pa).toFixed(2)})`;
+      const sz = 3 + (pi % 2) * 2;
+      ctx.fillRect(px, py, sz, sz);
     }
     ctx.restore();
 
@@ -321,88 +389,126 @@ export class TitleScreen {
     const pCard = easeOutBack(Math.min(1, Math.max(0, (this.enterTime - 0.1) / 0.42)));
     const pBtns = easeOutCubic(Math.min(1, Math.max(0, (this.enterTime - 0.18) / 0.38)));
 
-    // 右上角桌面端工具栏
     let toolRightX = 1256;
     if (actions.onQuitApp) {
-      toolRightX -= 84;
-      drawButton(ctx, hits, toolRightX, 24, 84, 36, '退出', actions.onQuitApp, { variant: 'ghost', fontSize: 12 });
+      toolRightX -= 88;
+      drawButton(ctx, hits, toolRightX, 20, 88, 44, '退出', actions.onQuitApp, { variant: 'ghost', fontSize: 13.5 });
       toolRightX -= 10;
     }
     if (actions.onOpenSettings) {
-      toolRightX -= 88;
-      drawButton(ctx, hits, toolRightX, 24, 88, 36, '设置', actions.onOpenSettings, { variant: 'ghost', fontSize: 12, icon: 'gear' });
+      toolRightX -= 96;
+      drawButton(ctx, hits, toolRightX, 20, 96, 44, '设置', actions.onOpenSettings, { variant: 'ghost', fontSize: 13.5, icon: 'gear' });
       toolRightX -= 10;
     } else {
-      toolRightX -= 102;
-      drawButton(ctx, hits, toolRightX, 24, 102, 36, SoundEngine.getAudioModeLabel(), () => {
+      toolRightX -= 114;
+      drawButton(ctx, hits, toolRightX, 20, 114, 44, SoundEngine.getAudioModeLabel(), () => {
         SoundEngine.cycleAudioMode();
-      }, { variant: 'ghost', fontSize: 12, icon: SoundEngine.muted ? 'sound_off' : 'sound_on' });
+      }, { variant: 'ghost', fontSize: 13.5, icon: SoundEngine.muted ? 'sound_off' : 'sound_on' });
       toolRightX -= 10;
     }
     if (actions.onOpenSaveSlots) {
-      toolRightX -= 116;
-      drawButton(ctx, hits, toolRightX, 24, 116, 36, actions.activeSlotLabel || '存档位 1', actions.onOpenSaveSlots, { variant: 'primary', fontSize: 12 });
+      toolRightX -= 126;
+      drawButton(ctx, hits, toolRightX, 20, 126, 44, actions.activeSlotLabel || '存档位 1', actions.onOpenSaveSlots, { variant: 'gold', fontSize: 13.5 });
       toolRightX -= 10;
     }
     if (hasActiveRun && actions.onResetSave) {
-      toolRightX -= 92;
-      drawButton(ctx, hits, toolRightX, 24, 92, 36, '重置存档', actions.onResetSave, { variant: 'ghost', fontSize: 12 });
+      toolRightX -= 104;
+      drawButton(ctx, hits, toolRightX, 20, 104, 44, '重置存档', actions.onResetSave, { variant: 'ghost', fontSize: 13.5 });
     }
 
-    const cx = THEME.W / 2;
-
-    // 1. 居中高燃主视觉 Logo
+    // 左侧非对称主视觉专栏（x = 68, w = 620）
+    const leftX = 68;
+    const dockInnerW = 580;
+    const dockPadX = 20;
+    const dockPadY = 18;
+    const dockW = dockInnerW + dockPadX * 2;
+    const dockX = leftX;
     const tyOff = Math.round((1 - pTitle) * 18);
-    const logoSize = hasActiveRun ? 206 : 248;
-    const logoCenterY = (hasActiveRun ? 168 : 204) + tyOff;
+
     ctx.save();
     ctx.globalAlpha = pTitle;
+    drawStamp(ctx, '2026 · GRASSROOTS', leftX + 86, 62 + tyOff, THEME.LIME, -3, 0.88, THEME.BG_PANEL);
+    drawText(ctx, 'TACTICAL ROGUELIKE FOOTBALL', leftX + 186, 62 + tyOff, {
+      size: 13,
+      bold: true,
+      color: THEME.TX2,
+      mono: true,
+    });
 
-    const heroGlow = ctx.createRadialGradient(cx, logoCenterY, 24, cx, logoCenterY, 340);
-    heroGlow.addColorStop(0, 'rgba(250, 204, 21, 0.24)');
-    heroGlow.addColorStop(0.5, 'rgba(249, 115, 22, 0.14)');
-    heroGlow.addColorStop(1, 'rgba(8, 12, 20, 0)');
-    ctx.fillStyle = heroGlow;
-    ctx.fillRect(cx - 360, logoCenterY - 170, 720, 340);
-
+    const logoSize = hasActiveRun ? 176 : 196;
+    const logoCenterY = (hasActiveRun ? 156 : 176) + tyOff;
     ctx.save();
-    ctx.translate(cx, logoCenterY);
+    ctx.translate(leftX + 252, logoCenterY);
     ctx.scale(pLogo, pLogo);
     drawGameLogoEmblem(ctx, 0, 0, logoSize, this.ambientTime, 'showcase');
     ctx.restore();
+    drawText(ctx, '38 岁老将重返草根母队 · 绿茵战术肉鸽足球经理', leftX + 4, logoCenterY + (hasActiveRun ? 88 : 98), {
+      size: 15.5,
+      bold: true,
+      color: THEME.TX1,
+      align: 'left',
+    });
     ctx.restore();
 
-    // 2. 统一半透明指令坞
     const cyOff = Math.round((1 - pCard) * 16);
-    const floatY = Math.round(Math.sin(this.ambientTime * 1.8) * 2);
-    const dockInnerW = 516;
-    const dockPadX = 16;
-    const dockPadY = 16;
-    const dockW = dockInnerW + dockPadX * 2;
-    const dockX = cx - dockW / 2;
-    const dockY = (hasActiveRun ? 298 : 362) + cyOff + floatY;
-    const row1H = hasActiveRun ? 108 : 58;
-    const rowGap = 12;
-    const row2H = 44;
+    const floatY = Math.round(Math.sin(this.ambientTime * 1.6) * 1.2);
+    const dockY = (hasActiveRun ? 320 : 352) + cyOff + floatY;
+    const row1H = hasActiveRun ? 116 : 64;
+    const rowGap = 16;
+    const row2H = 48;
     const dockH = dockPadY * 2 + row1H + rowGap + row2H;
 
     ctx.save();
     ctx.globalAlpha = Math.max(0.05, Math.min(1, pCard));
-    drawChamferPanel(
-      ctx,
-      dockX,
-      dockY,
-      dockW,
-      dockH,
-      14,
-      'rgba(8, 13, 24, 0.80)',
-      'rgba(250, 204, 21, 0.34)',
-      1.4,
-      THEME.FLAME
-    );
+
+    const slotLbl = actions.activeSlotLabel || '存档位 1';
+    const tab1W = 148;
+    const tabH = 34;
+    const tabY = dockY - tabH + 4;
+    drawRoundRect(ctx, dockX + 16, tabY, tab1W, tabH + 8, 3, THEME.PAPER_CREAM, THEME.INK_LINE, 2.5);
+    drawText(ctx, slotLbl, dockX + 16 + tab1W / 2, tabY + 17, {
+      size: 13.5,
+      bold: true,
+      color: THEME.PAPER_INK,
+      align: 'center',
+    });
+    if (actions.onOpenSaveSlots) {
+      hits.addTouchTarget(dockX + 16, tabY - 4, tab1W, 44, () => {
+        SoundEngine.playClick();
+        actions.onOpenSaveSlots!();
+      });
+      const tab2X = dockX + 16 + tab1W + 8;
+      drawRoundRect(ctx, tab2X, tabY + 4, 118, tabH + 4, 3, THEME.BG_CARD_DARK, THEME.INK_LINE, 2.0);
+      drawText(ctx, '切换槽位 ⇄', tab2X + 59, tabY + 19, {
+        size: 13,
+        bold: true,
+        color: THEME.TX1,
+        align: 'center',
+      });
+      hits.addTouchTarget(tab2X, tabY - 4, 118, 44, () => {
+        SoundEngine.playClick();
+        actions.onOpenSaveSlots!();
+      });
+    }
+
+    drawPrintCard(ctx, dockX, dockY, dockW, dockH, {
+      paper: true,
+      topBandColor: THEME.VERMILION,
+      radius: 3,
+      shadowOffset: 6,
+      lineWidth: 3,
+    });
+    const grain = getPaperGrainPattern(ctx);
+    if (grain) {
+      ctx.save();
+      ctx.globalAlpha = 0.55;
+      ctx.fillStyle = grain;
+      ctx.fillRect(dockX + 4, dockY + 8, dockW - 8, dockH - 12);
+      ctx.restore();
+    }
 
     const innerX = dockX + dockPadX;
-    const row1Y = dockY + dockPadY;
+    const row1Y = dockY + dockPadY + 4;
 
     if (hasActiveRun) {
       const standings = league.getStandings();
@@ -416,31 +522,22 @@ export class TitleScreen {
         st.phase === 'RE_DRAFT' ? `${tierInfo.shortLabel} · 第 ${st.currentRound} 轮赛后补强` :
         `${tierInfo.shortLabel} · 第 ${st.currentRound}/${totalRounds} 轮 · 第 ${myRank} 名`;
 
-      drawChamferPanel(
-        ctx,
-        innerX,
-        row1Y,
-        dockInnerW,
-        row1H,
-        10,
-        'rgba(14, 22, 40, 0.92)',
-        THEME.BORDER_GOLD,
-        1.2,
-        userClub.primaryColor || THEME.GOLD_LIGHT
-      );
-      drawClubCrest(ctx, innerX + 52, row1Y + row1H / 2, 26, userClub);
-      drawText(ctx, `第 ${st.seasonNumber} 赛季 · ${userClub.name}`, innerX + 96, row1Y + 38, {
-        size: 19,
+      drawRoundRect(ctx, innerX, row1Y, dockInnerW, row1H, 3, THEME.PAPER_WARM, THEME.INK_LINE, 2);
+      drawClubCrest(ctx, innerX + 50, row1Y + row1H / 2, 28, userClub);
+      drawText(ctx, fitText(ctx, `第 ${st.seasonNumber} 赛季 · ${userClub.name}`, dockInnerW - 280, 21, true), innerX + 94, row1Y + 40, {
+        size: 21,
         bold: true,
-        color: THEME.TX1,
+        color: THEME.PAPER_INK,
       });
-      drawText(ctx, `${phaseText} · ${userClub.formation}`, innerX + 96, row1Y + 68, {
-        size: 12,
-        color: THEME.TX2,
+      drawText(ctx, fitText(ctx, `${phaseText} · ${userClub.formation}`, dockInnerW - 280, 14), innerX + 94, row1Y + 74, {
+        size: 14,
+        bold: true,
+        color: THEME.PAPER_MUTED,
       });
-      drawButton(ctx, hits, innerX + dockInnerW - 150, row1Y + (row1H - 42) / 2, 134, 42, '继续赛季', actions.onContinue, {
-        variant: 'gold',
-        fontSize: 14,
+      drawStamp(ctx, `S${st.seasonNumber} 在任`, innerX + dockInnerW - 216, row1Y + 26, THEME.VERMILION, -7, 0.85);
+      drawButton(ctx, hits, innerX + dockInnerW - 166, row1Y + (row1H - 52) / 2, 152, 52, '继续赛季', actions.onContinue, {
+        variant: 'primary',
+        fontSize: 16,
         icon: 'play',
       });
     } else {
@@ -450,40 +547,81 @@ export class TitleScreen {
         } else {
           this.openNewSeasonWizard();
         }
-      }, { variant: 'gold', fontSize: 18, icon: 'sparkle' });
+      }, { variant: 'primary', fontSize: 20, icon: 'sparkle' });
     }
     ctx.restore();
 
-    // 第二排 3 个等宽功能按钮
     const row2Y = row1Y + row1H + rowGap;
-    const dockBtnW = 164;
+    const dockBtnW = Math.floor((dockInnerW - 24) / 3);
     const dockGap = 12;
     ctx.save();
     ctx.globalAlpha = Math.max(0.05, Math.min(1, pBtns));
     drawButton(ctx, hits, innerX, row2Y, dockBtnW, row2H, `教练天赋 (${st.metaPointsTotal})`, actions.onOpenMeta, {
       variant: 'ghost',
-      fontSize: 12.5,
+      fontSize: 14,
       icon: 'talent',
     });
     drawButton(ctx, hits, innerX + dockBtnW + dockGap, row2Y, dockBtnW, row2H, '我的球队', actions.onOpenRoster, {
       variant: 'ghost',
-      fontSize: 12.5,
+      fontSize: 14,
       icon: 'tactics',
     });
     drawButton(ctx, hits, innerX + (dockBtnW + dockGap) * 2, row2Y, dockBtnW, row2H, `荣誉室 (${hof?.unlockedAchievements.length ?? 0}/${ACHIEVEMENTS.length})`, actions.onOpenHallOfFame, {
       variant: 'ghost',
-      fontSize: 12.5,
+      fontSize: 14,
       icon: 'trophy',
     });
     ctx.restore();
 
     if (!this.wizardOpen) {
+      // 右下角：9 阶段主视觉海报手动左右切换预览条（未解锁时显示置灰锁定提示）
+      const barW = 342;
+      const barH = 40;
+      const barX = THEME.W - barW - 14;
+      const barY = THEME.H - 86;
+      drawRoundRect(
+        ctx,
+        barX,
+        barY,
+        barW,
+        barH,
+        6,
+        posterUnlocked ? 'rgba(10, 26, 20, 0.86)' : 'rgba(18, 22, 24, 0.90)',
+        posterUnlocked ? THEME.BORDER_GOLD : 'rgba(148, 163, 184, 0.45)',
+        1.5
+      );
+      drawButton(ctx, hits, barX + 4, barY + 4, 34, 32, '◀', () => {
+        this.selectedPosterIdx = (posterIdx - 1 + TITLE_POSTERS.length) % TITLE_POSTERS.length;
+      }, { variant: 'ghost', fontSize: 13 });
+      drawButton(ctx, hits, barX + barW - 38, barY + 4, 34, 32, '▶', () => {
+        this.selectedPosterIdx = (posterIdx + 1) % TITLE_POSTERS.length;
+      }, { variant: 'ghost', fontSize: 13 });
+
+      const midX = barX + barW / 2;
+      const titleLabel = posterUnlocked
+        ? `${activePoster.stageLabel} · ${activePoster.title}`
+        : `🔒 ${activePoster.stageLabel} · ${activePoster.title}`;
+      drawText(ctx, fitText(ctx, titleLabel, barW - 92, 12.5, true), midX, barY + 14, {
+        size: 12.5,
+        bold: true,
+        color: posterUnlocked ? THEME.GOLD_LIGHT : '#94A3B8',
+        align: 'center',
+      });
+      const subLabel = posterUnlocked
+        ? `主视觉 ${posterIdx + 1}/${TITLE_POSTERS.length} · 已解锁`
+        : `未解锁 · ${activePoster.unlockHint} (${posterIdx + 1}/${TITLE_POSTERS.length})`;
+      drawText(ctx, fitText(ctx, subLabel, barW - 92, 11), midX, barY + 30, {
+        size: 11,
+        color: posterUnlocked ? THEME.TX2 : '#64748B',
+        align: 'center',
+      });
+
       const verText = getRunningVersion();
-      const verW = Math.max(118, verText.length * 6.2 + 20);
-      drawRoundRect(ctx, THEME.W - verW - 8, THEME.H - 30, verW, 24, 5, 'rgba(4,7,14,0.66)', THEME.BORDER);
-      drawText(ctx, verText, THEME.W - 18, THEME.H - 13, {
-        size: 10.5,
-        color: '#94A3B8',
+      const verW = Math.max(132, verText.length * 7.2 + 24);
+      drawRoundRect(ctx, THEME.W - verW - 14, THEME.H - 38, verW, 28, 3, THEME.BG_CARD_DARK, THEME.INK_LINE, 2);
+      drawText(ctx, verText, THEME.W - 24, THEME.H - 24, {
+        size: 12,
+        color: THEME.TX2,
         align: 'right',
         mono: true,
       });
@@ -492,6 +630,180 @@ export class TitleScreen {
     if (this.wizardOpen) {
       this.renderWizardModal(ctx, hits, metaLv, actions);
     }
+  }
+
+  /**
+   * 标题页右侧主视觉：38 岁老将 #10 队长走出球员通道（粗墨线 + 硬二分阴影 + 球场探照光 + 雨丝）
+   */
+  private drawVeteranTunnelHero(ctx: CanvasRenderingContext2D, t: number): void {
+    ctx.save();
+    ctx.translate(770, 96);
+    const scale = 1.06;
+    ctx.scale(scale, scale);
+
+    // 混凝土球员通道透视框
+    ctx.fillStyle = '#07120D';
+    ctx.strokeStyle = THEME.INK_LINE;
+    ctx.lineWidth = 4;
+    ctx.beginPath();
+    ctx.moveTo(0, 588);
+    ctx.lineTo(86, 62);
+    ctx.lineTo(368, 62);
+    ctx.lineTo(454, 588);
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
+
+    // 远端球场绿茵与强光通道口
+    ctx.fillStyle = THEME.BG_PITCH_ALT;
+    ctx.beginPath();
+    ctx.moveTo(100, 82);
+    ctx.lineTo(354, 82);
+    ctx.lineTo(386, 405);
+    ctx.lineTo(68, 405);
+    ctx.closePath();
+    ctx.fill();
+
+    ctx.fillStyle = 'rgba(244, 239, 228, 0.11)';
+    ctx.beginPath();
+    ctx.moveTo(114, 96);
+    ctx.lineTo(340, 96);
+    ctx.lineTo(366, 386);
+    ctx.lineTo(88, 386);
+    ctx.closePath();
+    ctx.fill();
+
+    // 探照灯炫光光晕（无 shadowBlur）
+    ctx.fillStyle = 'rgba(244, 239, 228, 0.55)';
+    ctx.beginPath();
+    ctx.arc(166, 140, 22, 0, Math.PI * 2);
+    ctx.arc(288, 140, 22, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = 'rgba(200, 242, 48, 0.24)';
+    ctx.beginPath();
+    ctx.arc(227, 130, 34 + Math.sin(t * 2) * 2, 0, Math.PI * 2);
+    ctx.fill();
+
+    // 雨丝斜线
+    ctx.strokeStyle = 'rgba(244, 239, 228, 0.24)';
+    ctx.lineWidth = 1.6;
+    ctx.lineCap = 'round';
+    const rainPts: Array<[number, number, number]> = [
+      [78, 118, 55], [148, 76, 65], [326, 92, 68], [394, 148, 62], [118, 256, 58], [352, 236, 64],
+    ];
+    for (const [rx, ry, rlen] of rainPts) {
+      ctx.beginPath();
+      ctx.moveTo(rx, ry);
+      ctx.lineTo(rx - 14, ry + rlen);
+      ctx.stroke();
+    }
+
+    // 双腿与球袜
+    ctx.fillStyle = THEME.INK_LINE;
+    ctx.strokeStyle = THEME.HARD_SHADOW;
+    ctx.lineWidth = 4;
+    ctx.beginPath();
+    ctx.moveTo(186, 412); ctx.lineTo(173, 566); ctx.lineTo(206, 566); ctx.lineTo(220, 424); ctx.closePath();
+    ctx.fill(); ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(240, 424); ctx.lineTo(256, 566); ctx.lineTo(290, 566); ctx.lineTo(274, 412); ctx.closePath();
+    ctx.fill(); ctx.stroke();
+
+    // 球裤
+    ctx.fillStyle = THEME.PAPER_INK;
+    ctx.beginPath();
+    ctx.moveTo(166, 352); ctx.lineTo(292, 352); ctx.lineTo(284, 430);
+    ctx.lineTo(234, 430); ctx.lineTo(229, 396); ctx.lineTo(223, 430); ctx.lineTo(173, 430);
+    ctx.closePath();
+    ctx.fill(); ctx.stroke();
+
+    // 手臂
+    ctx.fillStyle = '#C78B5D';
+    ctx.strokeStyle = THEME.INK_LINE;
+    ctx.lineWidth = 4;
+    ctx.beginPath();
+    ctx.moveTo(133, 294); ctx.lineTo(122, 372); ctx.lineTo(148, 377); ctx.lineTo(162, 298); ctx.closePath();
+    ctx.fill(); ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(296, 298); ctx.lineTo(308, 377); ctx.lineTo(334, 372); ctx.lineTo(323, 294); ctx.closePath();
+    ctx.fill(); ctx.stroke();
+
+    // 红色 10 号球衣躯干 + 二分硬阴影
+    ctx.fillStyle = THEME.VERMILION;
+    ctx.strokeStyle = THEME.INK_LINE;
+    ctx.lineWidth = 5;
+    ctx.lineJoin = 'round';
+    ctx.beginPath();
+    ctx.moveTo(146, 206); ctx.lineTo(183, 182); ctx.lineTo(273, 182); ctx.lineTo(310, 206);
+    ctx.lineTo(326, 294); ctx.lineTo(292, 300); ctx.lineTo(284, 244); ctx.lineTo(284, 358);
+    ctx.lineTo(172, 358); ctx.lineTo(172, 244); ctx.lineTo(164, 300); ctx.lineTo(130, 294);
+    ctx.closePath();
+    ctx.fill();
+
+    ctx.fillStyle = '#9E2219';
+    ctx.beginPath();
+    ctx.moveTo(172, 244); ctx.lineTo(226, 238); ctx.lineTo(220, 358); ctx.lineTo(172, 358); ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
+
+    // 球衣背面大号 #10
+    ctx.save();
+    ctx.font = `italic 900 72px ${THEME.DISPLAY_FONT_NUM}`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.lineWidth = 5;
+    ctx.strokeStyle = THEME.INK_LINE;
+    ctx.strokeText('10', 228, 282);
+    ctx.fillStyle = THEME.PAPER_CREAM;
+    ctx.fillText('10', 228, 282);
+    ctx.restore();
+
+    // 左臂荧光绿队长袖标 'C'
+    ctx.save();
+    ctx.translate(150, 262);
+    ctx.rotate(-0.18);
+    ctx.fillStyle = THEME.LIME;
+    ctx.strokeStyle = THEME.INK_LINE;
+    ctx.lineWidth = 3;
+    ctx.fillRect(-16, -9, 32, 18);
+    ctx.strokeRect(-16, -9, 32, 18);
+    drawText(ctx, 'C', 0, 1, { size: 13, bold: true, color: THEME.PAPER_INK, align: 'center', rawSize: true });
+    ctx.restore();
+
+    // 颈部与头部剪影 + 轮廓亮边
+    ctx.fillStyle = '#9B633B';
+    ctx.strokeStyle = THEME.INK_LINE;
+    ctx.lineWidth = 4;
+    ctx.fillRect(212, 154, 32, 32);
+    ctx.strokeRect(212, 154, 32, 32);
+
+    ctx.fillStyle = THEME.INK_LINE;
+    ctx.beginPath();
+    ctx.moveTo(200, 124);
+    ctx.bezierCurveTo(200, 92, 256, 92, 256, 124);
+    ctx.bezierCurveTo(256, 152, 244, 164, 228, 164);
+    ctx.bezierCurveTo(212, 164, 200, 152, 200, 124);
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
+
+    ctx.strokeStyle = 'rgba(244, 239, 228, 0.65)';
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.moveTo(205, 114);
+    ctx.quadraticCurveTo(228, 96, 251, 114);
+    ctx.stroke();
+
+    // 漫画动势速度线
+    ctx.strokeStyle = THEME.LIME;
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.moveTo(88, 248); ctx.lineTo(123, 242);
+    ctx.moveTo(368, 252); ctx.lineTo(336, 246);
+    ctx.moveTo(98, 318); ctx.lineTo(126, 316);
+    ctx.stroke();
+
+    ctx.restore();
   }
 
   private renderWizardModal(
@@ -503,36 +815,35 @@ export class TitleScreen {
       onEditName?: (current: string, apply: (next: string) => void) => void;
     }
   ): void {
-    ctx.fillStyle = 'rgba(4, 7, 14, 0.86)';
+    ctx.fillStyle = 'rgba(10, 26, 20, 0.86)';
     ctx.fillRect(0, 0, THEME.W, THEME.H);
     hits.clear();
 
-    const mx = 136;
-    const my = 58;
-    const mw = 1008;
-    const mh = 604;
-    drawChamferPanel(ctx, mx, my, mw, mh, 14, 'rgba(12, 19, 36, 0.98)', THEME.BORDER_GOLD, 1.6, THEME.GOLD_LIGHT);
+    const mx = 116;
+    const my = 44;
+    const mw = 1048;
+    const mh = 632;
+    drawPrintCard(ctx, mx, my, mw, mh, { paper: false, topBandColor: THEME.BRASS, radius: 12, shadowOffset: 6 });
 
-    // 顶栏：标题 + 2 步导航胶囊 + 关闭
-    drawText(ctx, '新赛季建队向导', mx + 26, my + 34, { size: 20, bold: true, color: THEME.GOLD_LIGHT });
+    drawText(ctx, '新赛季建队向导', mx + 26, my + 38, { size: 22, bold: true, color: THEME.BRASS });
     const steps: Array<[1 | 2, string]> = [
       [1, '1. 俱乐部形象室'],
       [2, '2. 阵型与战术星盘'],
     ];
     steps.forEach(([s, lbl], i) => {
-      drawButton(ctx, hits, mx + 236 + i * 204, my + 18, 190, 32, lbl, () => {
+      drawButton(ctx, hits, mx + 236 + i * 212, my + 16, 198, 44, lbl, () => {
         if (s === 2) this.enterStep2();
         else this.wizardStep = 1;
-      }, { active: this.wizardStep === s, fontSize: 12.5 });
+      }, { active: this.wizardStep === s, fontSize: 14 });
     });
-    drawButton(ctx, hits, mx + mw - 100, my + 18, 76, 32, '关闭', () => {
+    drawButton(ctx, hits, mx + mw - 106, my + 16, 84, 44, '关闭', () => {
       this.wizardOpen = false;
-    }, { variant: 'ghost', fontSize: 12, icon: 'close' });
+    }, { variant: 'ghost', fontSize: 14, icon: 'close' });
 
     const sx = mx + 24;
-    const sy = my + 68;
+    const sy = my + 74;
     const sw = this.wizardStep === 2 ? 324 : 286;
-    const sh = 508;
+    const sh = 526;
 
     if (this.wizardStep === 1) {
       this.renderStep1LeftShowcase(ctx, hits, sx, sy, sw, sh, metaLv);
@@ -540,21 +851,21 @@ export class TitleScreen {
       this.renderStep2AstrolabeViewport(ctx, sx, sy, sw, sh);
     }
 
-    const rx = sx + sw + 20;
-    const ry = my + 68;
+    const rx = sx + sw + 22;
+    const ry = my + 74;
     const rw = mx + mw - rx - 24;
 
     if (this.wizardStep === 1) {
       this.renderStep1RightPanel(ctx, hits, rx, ry, rw, actions);
-      drawButton(ctx, hits, mx + mw - 246, my + mh - 58, 222, 42, '下一步：星盘与哲学 ▶', () => {
+      drawButton(ctx, hits, mx + mw - 266, my + mh - 62, 242, 46, '下一步：星盘与哲学 ▶', () => {
         this.enterStep2();
-      }, { variant: 'gold', fontSize: 13.5, icon: 'sparkle' });
+      }, { variant: 'primary', fontSize: 15, icon: 'sparkle' });
     } else {
       this.renderStep2RightPanel(ctx, hits, rx, ry, rw);
-      drawButton(ctx, hits, rx, my + mh - 58, 146, 42, '◀ 上一步', () => {
+      drawButton(ctx, hits, rx, my + mh - 62, 148, 46, '◀ 上一步', () => {
         this.wizardStep = 1;
-      }, { variant: 'ghost', fontSize: 13 });
-      drawButton(ctx, hits, mx + mw - 304, my + mh - 58, 280, 42, '确认建队 · 开启核心开包 ▶', () => {
+      }, { variant: 'ghost', fontSize: 14 });
+      drawButton(ctx, hits, mx + mw - 318, my + mh - 62, 294, 46, '确认建队 · 开启核心开包 ▶', () => {
         this.wizardOpen = false;
         actions.onStartNewSeason({
           clubId: this.selectedClubId,
@@ -566,7 +877,7 @@ export class TitleScreen {
           formation: this.formation,
           style: this.style,
         });
-      }, { variant: 'gold', fontSize: 14, icon: 'sparkle' });
+      }, { variant: 'primary', fontSize: 15, icon: 'sparkle' });
     }
   }
 
@@ -591,38 +902,38 @@ export class TitleScreen {
       secondaryColor: this.secondaryColor,
     };
 
-    drawChamferPanel(ctx, sx, sy, sw, sh, 12, 'rgba(9, 14, 26, 0.96)', THEME.BORDER_GOLD, 1.2, activeKit.primaryColor);
+    drawPrintCard(ctx, sx, sy, sw, sh, { paper: false, topBandColor: activeKit.primaryColor, topBandHeight: 6, radius: 8, shadowOffset: 5, strokeColor: THEME.INK_LINE, lineWidth: 2.5 });
 
     ctx.save();
     const spot = ctx.createRadialGradient(sx + sw / 2, sy + 188, 14, sx + sw / 2, sy + 188, 148);
-    spot.addColorStop(0, `${activeKit.primaryColor}44`);
-    spot.addColorStop(0.55, `${activeKit.secondaryColor}18`);
-    spot.addColorStop(1, 'rgba(9, 14, 26, 0)');
+    spot.addColorStop(0, `${activeKit.primaryColor}38`);
+    spot.addColorStop(0.55, `${activeKit.secondaryColor}16`);
+    spot.addColorStop(1, 'rgba(10, 26, 20, 0)');
     ctx.fillStyle = spot;
-    ctx.fillRect(sx + 4, sy + 4, sw - 8, 340);
+    ctx.fillRect(sx + 4, sy + 6, sw - 8, 336);
     ctx.restore();
 
-    drawButton(ctx, hits, sx + 18, sy + 16, 120, 30, '主场战袍', () => {
+    drawButton(ctx, hits, sx + 18, sy + 18, 120, 32, '主场战袍', () => {
       this.previewKitMode = 'home';
-    }, { active: isHome, variant: isHome ? 'gold' : 'ghost', fontSize: 11.5 });
-    drawButton(ctx, hits, sx + 148, sy + 16, 120, 30, '客场战袍', () => {
+    }, { active: isHome, variant: isHome ? 'gold' : 'ghost', fontSize: 12.5 });
+    drawButton(ctx, hits, sx + 148, sy + 18, 120, 32, '客场战袍', () => {
       this.previewKitMode = 'away';
-    }, { active: !isHome, variant: !isHome ? 'primary' : 'ghost', fontSize: 11.5 });
+    }, { active: !isHome, variant: !isHome ? 'primary' : 'ghost', fontSize: 12.5 });
 
     const jerseyFloat = Math.sin(this.ambientTime * 2.1) * 3;
     drawJerseyIcon(ctx, sx + sw / 2, sy + 176 + jerseyFloat, 118, activeKit, 10);
-    drawRoundRect(ctx, sx + sw - 74, sy + 64, 56, 56, 28, 'rgba(8, 13, 24, 0.92)', THEME.BORDER_GOLD, 1.4);
+    drawRoundRect(ctx, sx + sw - 74, sy + 64, 56, 56, 28, THEME.BG_DEEP, THEME.INK_LINE, 2.2);
     drawClubCrest(ctx, sx + sw - 46, sy + 92, 22, crestClub);
 
     drawBadge(
       ctx,
-      sx + sw / 2 - 64,
+      sx + sw / 2 - 68,
       sy + 266,
-      128,
-      22,
+      136,
+      24,
       isHome ? 'HOME KIT · 主场' : 'AWAY KIT · 客场',
-      isHome ? 'rgba(212,168,67,0.18)' : 'rgba(56,189,248,0.18)',
-      isHome ? THEME.GOLD_LIGHT : '#7DD3FC'
+      THEME.BG_DEEP,
+      isHome ? THEME.BRASS : THEME.LIME
     );
 
     drawText(ctx, this.customName.slice(0, 12), sx + sw / 2, sy + 318, {
@@ -633,18 +944,18 @@ export class TitleScreen {
     });
     drawText(ctx, fitText(ctx, `EST. 2026 · ${this.formation} · ${TACTICAL_PRESETS[this.style].name}`, sw - 28, FONT.LABEL, false, true), sx + sw / 2, sy + 346, {
       token: 'LABEL',
-      color: THEME.GOLD_LIGHT,
+      color: THEME.BRASS,
       align: 'center',
     });
 
-    drawRoundRect(ctx, sx + 18, sy + 378, sw - 36, 110, 8, 'rgba(15, 23, 42, 0.86)', THEME.BORDER);
+    drawPrintCard(ctx, sx + 18, sy + 378, sw - 36, 114, { paper: true, radius: 6, shadowOffset: 3, strokeColor: THEME.INK_LINE, lineWidth: 2 });
     const startFunds = 900 + (metaLv.finance || 0) * 150;
-    drawText(ctx, '初始资金', sx + 30, sy + 402, { token: 'MICRO', color: THEME.TX2 });
-    drawText(ctx, formatFunds(startFunds), sx + sw - 30, sy + 402, { token: 'BODY', bold: true, color: THEME.GREEN, align: 'right', mono: true });
-    drawText(ctx, '建队流程', sx + 30, sy + 434, { token: 'MICRO', color: THEME.TX2 });
-    drawText(ctx, '3核心包 → 夏窗26人', sx + sw - 30, sy + 434, { token: 'LABEL', bold: true, color: THEME.GOLD_LIGHT, align: 'right' });
-    drawText(ctx, '防撞色', sx + 30, sy + 466, { token: 'MICRO', color: THEME.TX2 });
-    drawText(ctx, '已启用 · 客场自动切换', sx + sw - 30, sy + 466, { token: 'MICRO', color: '#38BDF8', align: 'right' });
+    drawText(ctx, '初始资金', sx + 30, sy + 402, { token: 'MICRO', bold: true, color: THEME.PAPER_MUTED });
+    drawText(ctx, formatFunds(startFunds), sx + sw - 30, sy + 402, { token: 'BODY', bold: true, color: '#15803D', align: 'right', mono: true });
+    drawText(ctx, '建队流程', sx + 30, sy + 434, { token: 'MICRO', bold: true, color: THEME.PAPER_MUTED });
+    drawText(ctx, '3核心包 → 夏窗26人', sx + sw - 30, sy + 434, { token: 'LABEL', bold: true, color: THEME.VERMILION, align: 'right' });
+    drawText(ctx, '防撞色', sx + 30, sy + 466, { token: 'MICRO', bold: true, color: THEME.PAPER_MUTED });
+    drawText(ctx, '已启用 · 客场自动切换', sx + sw - 30, sy + 466, { token: 'MICRO', bold: true, color: THEME.COBALT, align: 'right' });
   }
 
   private renderStep1RightPanel(
@@ -655,90 +966,90 @@ export class TitleScreen {
     rw: number,
     actions: { onEditName?: (current: string, apply: (next: string) => void) => void }
   ): void {
-    drawText(ctx, '俱乐部名称', rx, ry + 14, { size: 14, bold: true, color: THEME.GOLD_LIGHT });
-    drawText(ctx, '点击输入框自定义（最多 12 字）或随机生成', rx + 96, ry + 14, { size: 11.5, color: THEME.TX2 });
+    drawText(ctx, '俱乐部名称', rx, ry + 14, { size: 15, bold: true, color: THEME.BRASS });
+    drawText(ctx, '点击输入框自定义（最多 12 字）或随机生成', rx + 104, ry + 14, { size: 13, color: THEME.TX2 });
 
-    const nameBoxW = rw - 156;
-    drawRoundRect(ctx, rx, ry + 32, nameBoxW, 46, 8, THEME.BG_CARD, hits.isHovered(rx, ry + 32, nameBoxW, 46) ? THEME.GOLD : THEME.BORDER_GOLD);
+    const nameBoxW = rw - 166;
+    drawRoundRect(ctx, rx, ry + 32, nameBoxW, 46, 8, THEME.BG_CARD, hits.isHovered(rx, ry + 32, nameBoxW, 46) ? THEME.LIME : THEME.INK_LINE, 2.2);
     drawText(ctx, this.customName, rx + 18, ry + 55, { size: 19, bold: true, color: THEME.TX1 });
-    drawIcon(ctx, 'edit', rx + nameBoxW - 72, ry + 55, 13, THEME.GOLD_LIGHT);
-    drawText(ctx, '编辑', rx + nameBoxW - 16, ry + 55, { size: 11.5, color: THEME.GOLD_LIGHT, align: 'right' });
+    drawIcon(ctx, 'edit', rx + nameBoxW - 72, ry + 55, 14, THEME.BRASS);
+    drawText(ctx, '编辑', rx + nameBoxW - 16, ry + 55, { size: 13.5, color: THEME.BRASS, align: 'right' });
     if (actions.onEditName) {
-      hits.add(rx, ry + 32, nameBoxW, 46, () => {
+      hits.addTouchTarget(rx, ry + 32, nameBoxW, 46, () => {
         SoundEngine.playClick();
         actions.onEditName!(this.customName, (next) => {
           this.customName = next;
         });
       });
     }
-    drawButton(ctx, hits, rx + nameBoxW + 10, ry + 32, 146, 46, '随机队名', () => {
+    drawButton(ctx, hits, rx + nameBoxW + 12, ry + 32, 154, 46, '随机队名', () => {
       this.customName = generateFictionalClubName();
-    }, { variant: 'primary', fontSize: 12.5, icon: 'dice' });
+    }, { variant: 'primary', fontSize: 14, icon: 'dice' });
 
-    drawText(ctx, '选择队徽与底色模板', rx, ry + 102, { size: 14, bold: true, color: THEME.GOLD_LIGHT });
+    drawText(ctx, '选择队徽与底色模板', rx, ry + 100, { size: 15, bold: true, color: THEME.BRASS });
     FICTIONAL_CLUBS.forEach((c, idx) => {
       const col = idx % 2;
       const row = Math.floor(idx / 2);
       const bw = Math.floor((rw - 12) / 2);
       const bx = rx + col * (bw + 12);
-      const by = ry + 122 + row * 44;
+      const by = ry + 118 + row * 46;
       const active = this.selectedClubId === c.id;
-      drawRoundRect(ctx, bx, by, bw, 38, 7, active ? '#1E293B' : THEME.BG_CARD, active ? THEME.GOLD : THEME.BORDER, active ? 1.8 : 1);
-      drawClubCrest(ctx, bx + 22, by + 19, 13, c);
-      drawText(ctx, c.name, bx + 44, by + 19, { size: 12.5, bold: active, color: active ? THEME.GOLD_LIGHT : THEME.TX1 });
-      drawRoundRect(ctx, bx + bw - 42, by + 13, 12, 12, 6, c.primaryColor, '#FFFFFF', 0.8);
-      drawRoundRect(ctx, bx + bw - 24, by + 13, 12, 12, 6, c.secondaryColor, '#FFFFFF', 0.8);
-      hits.add(bx, by, bw, 38, () => {
+      drawRoundRect(ctx, bx, by, bw, 42, 7, active ? THEME.BG_PITCH_ALT : THEME.BG_CARD, active ? THEME.LIME : THEME.INK_LINE, active ? 2.5 : 1.8);
+      drawClubCrest(ctx, bx + 22, by + 21, 13, c);
+      drawText(ctx, c.name, bx + 44, by + 21, { size: 14, bold: active, color: active ? THEME.LIME : THEME.TX1 });
+      drawRoundRect(ctx, bx + bw - 44, by + 14, 14, 14, 7, c.primaryColor, THEME.INK_LINE, 1.5);
+      drawRoundRect(ctx, bx + bw - 24, by + 14, 14, 14, 7, c.secondaryColor, THEME.INK_LINE, 1.5);
+      hits.addTouchTarget(bx, by, bw, 44, () => {
         SoundEngine.playClick();
         this.selectTemplate(c.id);
       });
     });
 
     const isHome = this.previewKitMode === 'home';
-    const palY = ry + 314;
-    drawChamferPanel(ctx, rx, palY, rw, 126, 10, 'rgba(15, 23, 42, 0.78)', isHome ? THEME.BORDER_GOLD : 'rgba(56,189,248,0.45)');
+    const palY = ry + 306;
+    drawRoundRect(ctx, rx, palY, rw, 158, 10, THEME.BG_PANEL, THEME.INK_LINE, 2.2);
     drawText(
       ctx,
       isHome ? '自定义主场战袍配色' : '自定义客场战袍配色',
       rx + 16,
-      palY + 22,
-      { size: 13.5, bold: true, color: isHome ? THEME.GOLD_LIGHT : '#7DD3FC' }
+      palY + 26,
+      { size: 14.5, bold: true, color: isHome ? THEME.BRASS : '#7DD3FC' }
     );
-    drawButton(ctx, hits, rx + rw - 150, palY + 8, 136, 26, isHome ? '切换编辑客场 ⇄' : '切换编辑主场 ⇄', () => {
+    drawButton(ctx, hits, rx + rw - 176, palY + 6, 160, 44, isHome ? '切换编辑客场 ⇄' : '切换编辑主场 ⇄', () => {
       this.previewKitMode = isHome ? 'away' : 'home';
-    }, { variant: 'ghost', fontSize: 11 });
+    }, { variant: 'ghost', fontSize: 13 });
 
     const curPrimPalette = isHome ? HOME_PRIMARY_PALETTE : AWAY_PRIMARY_PALETTE;
     const curSecPalette = isHome ? HOME_SECONDARY_PALETTE : AWAY_SECONDARY_PALETTE;
     const curPrimVal = isHome ? this.primaryColor : this.awayPrimaryColor;
     const curSecVal = isHome ? this.secondaryColor : this.awaySecondaryColor;
 
-    drawText(ctx, '主色:', rx + 16, palY + 62, { size: 12, color: THEME.TX2 });
+    drawText(ctx, '主色:', rx + 16, palY + 74, { size: 14, bold: true, color: THEME.TX2 });
     curPrimPalette.forEach((col, i) => {
-      const px = rx + 66 + i * 42;
+      const px = rx + 68 + i * 50;
       const sel = curPrimVal === col;
-      drawRoundRect(ctx, px, palY + 46, 32, 30, 6, col, sel ? '#FFFFFF' : THEME.BORDER, sel ? 2.5 : 1);
+      drawRoundRect(ctx, px, palY + 52, 44, 44, 7, col, sel ? THEME.LIME : THEME.INK_LINE, sel ? 3 : 2);
       if (sel) {
-        const chk = col === '#F8FAFC' || col === '#FACC15' ? '#090D16' : '#FFFFFF';
-        drawIcon(ctx, 'check', px + 16, palY + 61, 12, chk);
+        const chk = col === '#F8FAFC' || col === '#FACC15' ? '#141916' : '#F4EFE4';
+        drawIcon(ctx, 'check', px + 22, palY + 74, 14, chk);
       }
-      hits.addTouchTarget(px, palY + 46, 32, 30, () => {
+      hits.addTouchTarget(px, palY + 52, 44, 44, () => {
         SoundEngine.playClick();
         if (isHome) this.primaryColor = col;
         else this.awayPrimaryColor = col;
       });
     });
 
-    drawText(ctx, '副色:', rx + 344, palY + 62, { size: 12, color: THEME.TX2 });
+    drawText(ctx, '副色:', rx + 16, palY + 124, { size: 14, bold: true, color: THEME.TX2 });
     curSecPalette.forEach((col, i) => {
-      const px = rx + 392 + i * 42;
+      const px = rx + 68 + i * 50;
       const sel = curSecVal === col;
-      drawRoundRect(ctx, px, palY + 46, 32, 30, 6, col, sel ? THEME.GOLD_LIGHT : THEME.BORDER, sel ? 2.5 : 1);
+      drawRoundRect(ctx, px, palY + 102, 44, 44, 7, col, sel ? THEME.LIME : THEME.INK_LINE, sel ? 3 : 2);
       if (sel) {
-        const chk = col === '#F8FAFC' || col === '#FACC15' ? '#090D16' : '#FFFFFF';
-        drawIcon(ctx, 'check', px + 16, palY + 61, 12, chk);
+        const chk = col === '#F8FAFC' || col === '#FACC15' ? '#141916' : '#F4EFE4';
+        drawIcon(ctx, 'check', px + 22, palY + 124, 14, chk);
       }
-      hits.addTouchTarget(px, palY + 46, 32, 30, () => {
+      hits.addTouchTarget(px, palY + 102, 44, 44, () => {
         SoundEngine.playClick();
         if (isHome) this.secondaryColor = col;
         else this.awaySecondaryColor = col;
@@ -747,10 +1058,10 @@ export class TitleScreen {
 
     drawText(
       ctx,
-      '提示：左侧展示台会实时同步所选战袍；比赛日与对手撞色时自动启用客场战袍',
-      rx + 16,
-      palY + 102,
-      { size: 11, color: THEME.TX3 }
+      '比赛撞色自动切客场战袍',
+      rx + rw - 16,
+      palY + 124,
+      { size: 12.5, color: THEME.TX2, align: 'right' }
     );
   }
 
@@ -775,7 +1086,7 @@ export class TitleScreen {
     const pFade = Math.min(1, this.step2AnimTime / 0.28);
     const scaleFactor = 0.62 + 0.38 * pScale;
 
-    drawChamferPanel(ctx, sx, sy, sw, sh, 12, 'rgba(7, 12, 24, 0.98)', THEME.BORDER_GOLD, 1.4, styleInfo.color);
+    drawPrintCard(ctx, sx, sy, sw, sh, { paper: false, topBandColor: styleInfo.color, topBandHeight: 6, radius: 8, shadowOffset: 5, strokeColor: THEME.INK_LINE, lineWidth: 2.5 });
 
     ctx.save();
     ctx.beginPath();
@@ -810,7 +1121,7 @@ export class TitleScreen {
       const burstGrad = ctx.createRadialGradient(fx, fy, 4, fx, fy, 220 * (0.4 + bp * 0.9));
       burstGrad.addColorStop(0, `rgba(254, 240, 138, ${bAlpha.toFixed(3)})`);
       burstGrad.addColorStop(0.35, `${styleInfo.color}${Math.round(bAlpha * 140).toString(16).padStart(2, '0')}`);
-      burstGrad.addColorStop(1, 'rgba(8, 13, 24, 0)');
+      burstGrad.addColorStop(1, 'rgba(10, 26, 20, 0)');
       ctx.fillStyle = burstGrad;
       ctx.fillRect(sx, sy, sw, sh);
 
@@ -939,35 +1250,29 @@ export class TitleScreen {
         true
       );
       drawText(ctx, sysInfo.name.slice(0, 3), sysOriginPos.x + 18, sysOriginPos.y + 4, {
-        size: 9.5,
+        size: 12,
         bold: true,
         color: sysInfo.color,
       });
     }
 
-    // 当前阵型节点
     ctx.save();
-    if (!IS_MOBILE) {
-      ctx.shadowColor = THEME.GREEN;
-      ctx.shadowBlur = 12;
-    }
-    ctx.fillStyle = '#064E3B';
+    ctx.fillStyle = THEME.BG_PITCH_ALT;
     ctx.beginPath();
-    ctx.arc(formPos.x, formPos.y, 11.5, 0, Math.PI * 2);
+    ctx.arc(formPos.x, formPos.y, 14, 0, Math.PI * 2);
     ctx.fill();
-    ctx.lineWidth = 2.4;
-    ctx.strokeStyle = THEME.GREEN;
+    ctx.lineWidth = 2.5;
+    ctx.strokeStyle = THEME.LIME;
     ctx.stroke();
     ctx.restore();
     drawText(ctx, this.formation, formPos.x, formPos.y + 1, {
-      size: 9,
+      size: 12,
       bold: true,
-      color: '#ECFDF5',
+      color: THEME.TX1,
       align: 'center',
       mono: true,
     });
 
-    // 7b. 第 3 层：正对碰撞融合奇点
     drawAstrolabeHexFusionNode(
       ctx,
       fusionPos.x,
@@ -979,7 +1284,6 @@ export class TitleScreen {
       this.ambientTime
     );
 
-    // 7c. 外环：打法原点 + 流派主纹章 + 攻守被动 + 主动技 + 手牌
     if (styleOriginDef) {
       drawAstrolabeCircleNode(
         ctx,
@@ -996,27 +1300,22 @@ export class TitleScreen {
       );
     }
 
-    // 中央流派大纹章
     ctx.save();
-    if (!IS_MOBILE) {
-      ctx.shadowColor = styleInfo.color;
-      ctx.shadowBlur = 16;
-    }
-    ctx.fillStyle = '#13233E';
+    ctx.fillStyle = THEME.BG_PANEL;
     ctx.beginPath();
     ctx.arc(emblemPos.x, emblemPos.y, 20, 0, Math.PI * 2);
     ctx.fill();
-    ctx.lineWidth = 2.2;
-    ctx.strokeStyle = THEME.GOLD_LIGHT;
+    ctx.lineWidth = 2.5;
+    ctx.strokeStyle = THEME.BRASS;
     ctx.stroke();
-    ctx.strokeStyle = `${styleInfo.color}88`;
-    ctx.lineWidth = 1.2;
+    ctx.strokeStyle = `${styleInfo.color}99`;
+    ctx.lineWidth = 1.5;
     ctx.setLineDash([4, 4]);
     ctx.beginPath();
     ctx.arc(emblemPos.x, emblemPos.y, 24.5, this.ambientTime * 0.55, this.ambientTime * 0.55 + Math.PI * 1.5);
     ctx.stroke();
     ctx.setLineDash([]);
-    drawSkillGlyph(ctx, ASTROLABE_STYLE_GLYPH[this.style], emblemPos.x, emblemPos.y, 24, styleInfo.color, THEME.GOLD_LIGHT);
+    drawSkillGlyph(ctx, ASTROLABE_STYLE_GLYPH[this.style], emblemPos.x, emblemPos.y, 24, styleInfo.color, THEME.BRASS);
     ctx.restore();
 
     if (atkPassive) {
@@ -1026,44 +1325,43 @@ export class TitleScreen {
       drawAstrolabeCircleNode(ctx, defPassivePos.x, defPassivePos.y, 8.5, getAstrolabePassiveGlyph(defPassive), styleInfo.color, true, false, false, this.ambientTime);
     }
     if (atkSkill) {
-      drawAstrolabeDiamondSkillNode(ctx, atkSkillPos.x, atkSkillPos.y, 10.5, ASTROLABE_STYLE_GLYPH[this.style], true, false, true, false, atkSkill.name.slice(0, 4));
+      drawAstrolabeDiamondSkillNode(ctx, atkSkillPos.x, atkSkillPos.y, 10.5, ASTROLABE_STYLE_GLYPH[this.style], true, false, true, false, atkSkill.name);
     }
     if (defSkill) {
-      drawAstrolabeDiamondSkillNode(ctx, defSkillPos.x, defSkillPos.y, 10.5, ASTROLABE_STYLE_GLYPH[this.style], true, false, true, false, defSkill.name.slice(0, 4));
+      drawAstrolabeDiamondSkillNode(ctx, defSkillPos.x, defSkillPos.y, 10.5, ASTROLABE_STYLE_GLYPH[this.style], true, false, true, false, defSkill.name);
     }
     if (atkDir) {
-      drawAstrolabeDirectiveNode(ctx, cx, cy, atkDirPos.x, atkDirPos.y, 9, atkDir.tendency, atkDir.zone, true, false, true, false, [], atkDir.name.slice(0, 4));
+      drawAstrolabeDirectiveNode(ctx, cx, cy, atkDirPos.x, atkDirPos.y, 9, atkDir.tendency, atkDir.zone, true, false, true, false, [], atkDir.name);
     }
     if (defDir) {
-      drawAstrolabeDirectiveNode(ctx, cx, cy, defDirPos.x, defDirPos.y, 9, defDir.tendency, defDir.zone, true, false, true, false, [], defDir.name.slice(0, 4));
+      drawAstrolabeDirectiveNode(ctx, cx, cy, defDirPos.x, defDirPos.y, 9, defDir.tendency, defDir.zone, true, false, true, false, [], defDir.name);
     }
 
-    // 8. 顶部星盘抬头与底部融合奇点铭牌
-    drawRoundRect(ctx, sx + 12, sy + 12, sw - 24, 46, 8, 'rgba(8, 13, 25, 0.88)', styleInfo.color, 1.1);
-    drawSkillGlyph(ctx, ASTROLABE_SYSTEM_GLYPH[sys], sx + 32, sy + 35, 19, sysInfo.color, THEME.GOLD_LIGHT);
+    drawRoundRect(ctx, sx + 12, sy + 12, sw - 24, 52, 8, THEME.BG_DEEP, styleInfo.color, 2);
+    drawSkillGlyph(ctx, ASTROLABE_SYSTEM_GLYPH[sys], sx + 32, sy + 38, 19, sysInfo.color, THEME.BRASS);
     drawText(ctx, `${styleInfo.name} × ${this.formation}`, sx + sw / 2, sy + 28, {
-      size: 13.5,
+      size: 14.5,
       bold: true,
       color: THEME.TX1,
       align: 'center',
     });
-    drawText(ctx, `星盘正上方 · 已选共鸣预览`, sx + sw / 2, sy + 46, {
-      size: 10,
+    drawText(ctx, '星盘正上方 · 已选共鸣预览', sx + sw / 2, sy + 49, {
+      size: 12,
       color: styleInfo.color,
       align: 'center',
     });
-    drawSkillGlyph(ctx, ASTROLABE_STYLE_GLYPH[this.style], sx + sw - 32, sy + 35, 19, styleInfo.color, THEME.GOLD_LIGHT);
+    drawSkillGlyph(ctx, ASTROLABE_STYLE_GLYPH[this.style], sx + sw - 32, sy + 38, 19, styleInfo.color, THEME.BRASS);
 
-    drawRoundRect(ctx, sx + 12, sy + sh - 62, sw - 24, 50, 8, 'rgba(24, 15, 6, 0.90)', THEME.BORDER_GOLD, 1.3);
-    drawText(ctx, `✦ 碰撞奇点：${fusion.name}`, sx + sw / 2, sy + sh - 44, {
-      size: 12.5,
+    drawRoundRect(ctx, sx + 12, sy + sh - 66, sw - 24, 54, 8, THEME.BG_DEEP, THEME.BRASS, 2);
+    drawText(ctx, `✦ 碰撞奇点：${fusion.name}`, sx + sw / 2, sy + sh - 46, {
+      size: 13.5,
       bold: true,
-      color: THEME.GOLD_LIGHT,
+      color: THEME.BRASS,
       align: 'center',
     });
     drawText(ctx, `${fusion.branchA.label} / ${fusion.branchB.label}`, sx + sw / 2, sy + sh - 24, {
-      size: 10.5,
-      color: '#FDE68A',
+      size: 12,
+      color: THEME.TX1,
       align: 'center',
     });
 
@@ -1090,7 +1388,7 @@ export class TitleScreen {
       const lbl = sys === '4-back' ? '四后卫 (8)' : sys === '3-back' ? '三后卫 (4)' : '五后卫 (4)';
       drawButton(ctx, hits, rx + rw - 372 + si * 126, baseY + 1, 118, 24, lbl, () => {
         this.sysTab = sys;
-      }, { active: this.sysTab === sys, fontSize: 11 });
+      }, { active: this.sysTab === sys, fontSize: 12 });
     });
 
     const forms = FORMATION_SYSTEMS[this.sysTab].formations;
@@ -1120,10 +1418,10 @@ export class TitleScreen {
         by,
         swBtn,
         34,
-        7,
-        active ? 'rgba(24, 38, 66, 0.96)' : THEME.BG_CARD,
-        active ? sCol : hits.isHovered(bx, by, swBtn, 34) ? THEME.GOLD : THEME.BORDER,
-        active ? 1.8 : 1
+        6,
+        active ? THEME.BG_PITCH_ALT : THEME.BG_CARD_DARK,
+        active ? sCol : hits.isHovered(bx, by, swBtn, 34) ? THEME.BRASS : THEME.INK_LINE,
+        active ? 2.5 : 1.8
       );
       ctx.fillStyle = sCol;
       ctx.beginPath();
@@ -1132,12 +1430,12 @@ export class TitleScreen {
       drawText(ctx, TACTICAL_PRESETS[s].name, bx + 28, by + 17, {
         size: 12.5,
         bold: active,
-        color: active ? '#FFFFFF' : THEME.TX1,
+        color: active ? THEME.LIME : THEME.TX1,
       });
       if (active) {
-        drawText(ctx, '★', bx + swBtn - 16, by + 17, { size: 11, color: sCol, align: 'center' });
+        drawText(ctx, '★', bx + swBtn - 16, by + 17, { size: 12, color: sCol, align: 'center' });
       }
-      hits.add(bx, by, swBtn, 34, () => {
+      hits.addTouchTarget(bx, by, swBtn, 34, () => {
         this.selectStyle(s);
       });
     });
@@ -1147,14 +1445,14 @@ export class TitleScreen {
     const dashH = 226;
     const sys = getDefenseSystem(this.formation);
     const styleInfo = STYLE_LABELS[this.style];
-    drawChamferPanel(ctx, rx, dashY, rw, dashH, 10, 'rgba(9, 15, 29, 0.94)', THEME.BORDER_GOLD, 1.2, styleInfo.color);
+    drawPrintCard(ctx, rx, dashY, rw, dashH, { paper: false, topBandColor: styleInfo.color, topBandHeight: 5, radius: 8, shadowOffset: 5, strokeColor: THEME.INK_LINE, lineWidth: 2.5 });
 
     // 3a. 左侧：图形化五维雷达图 + 优势/短板
     const leftW = 266;
-    drawText(ctx, `战术画像 · ${SYSTEM_NOTE[sys]}`, rx + 14, dashY + 18, {
-      size: 11.5,
+    drawText(ctx, `战术画像 · ${SYSTEM_NOTE[sys]}`, rx + 14, dashY + 20, {
+      size: 12.5,
       bold: true,
-      color: styleInfo.color,
+      color: THEME.BRASS,
     });
 
     const baseAxes = STYLE_BASE_RADAR[this.style];
@@ -1171,26 +1469,26 @@ export class TitleScreen {
     );
 
     const pc = STYLE_PROS_CONS[this.style];
-    drawRoundRect(ctx, rx + 12, dashY + 168, leftW - 20, 22, 5, 'rgba(20, 83, 45, 0.30)', 'rgba(34, 197, 94, 0.45)');
-    drawText(ctx, `优势：${fitText(ctx, pc.pros, leftW - 36, 10)}`, rx + 20, dashY + 179, {
-      size: 10,
-      color: '#86EFAC',
+    drawRoundRect(ctx, rx + 12, dashY + 164, leftW - 20, 26, 4, THEME.BG_PITCH_ALT, THEME.INK_LINE, 1.5);
+    drawText(ctx, `优：${fitText(ctx, pc.pros, leftW - 36, 12)}`, rx + 20, dashY + 177, {
+      size: 12,
+      bold: true,
+      color: THEME.LIME,
     });
-    drawRoundRect(ctx, rx + 12, dashY + 195, leftW - 20, 22, 5, 'rgba(127, 29, 29, 0.28)', 'rgba(248, 113, 113, 0.42)');
-    drawText(ctx, `短板：${fitText(ctx, pc.cons, leftW - 36, 10)}`, rx + 20, dashY + 206, {
-      size: 10,
+    drawRoundRect(ctx, rx + 12, dashY + 194, leftW - 20, 26, 4, 'rgba(224, 58, 46, 0.22)', THEME.INK_LINE, 1.5);
+    drawText(ctx, `弱：${fitText(ctx, pc.cons, leftW - 36, 12)}`, rx + 20, dashY + 207, {
+      size: 12,
+      bold: true,
       color: '#FCA5A5',
     });
 
-    // 中间竖线分隔
-    ctx.strokeStyle = 'rgba(148, 163, 184, 0.18)';
-    ctx.lineWidth = 1;
+    ctx.strokeStyle = THEME.INK_LINE;
+    ctx.lineWidth = 2;
     ctx.beginPath();
     ctx.moveTo(rx + leftW + 4, dashY + 12);
     ctx.lineTo(rx + leftW + 4, dashY + dashH - 12);
     ctx.stroke();
 
-    // 3b. 右侧：代表技能 & 代表手牌
     const rColX = rx + leftW + 16;
     const rColW = rw - leftW - 28;
 
@@ -1198,19 +1496,19 @@ export class TitleScreen {
     const formSkill = V6_ACTIVE_SKILLS.find(s => s.source === 'formation' && s.formation === this.formation);
     const repSkills = [styleSkill, formSkill].filter((x): x is NonNullable<typeof x> => !!x).slice(0, 2);
 
-    drawText(ctx, '代表主动技 (星盘解锁后 F 键瞬发)', rColX, dashY + 18, {
-      size: 11,
+    drawText(ctx, '代表主动技 (星盘解锁后 F 键瞬发)', rColX, dashY + 20, {
+      size: 12.5,
       bold: true,
-      color: '#7DD3FC',
+      color: THEME.LIME,
     });
     repSkills.forEach((sk, idx) => {
-      const cardY = dashY + 30 + idx * 42;
-      drawRoundRect(ctx, rColX, cardY, rColW, 36, 6, 'rgba(12, 54, 86, 0.42)', '#38BDF8', 1);
-      drawBadge(ctx, rColX + 6, cardY + 8, 42, 20, sk.source === 'formation' ? '阵型技' : '流派技', '#0F172A', '#38BDF8');
-      drawText(ctx, sk.name, rColX + 54, cardY + 13, { size: 11.5, bold: true, color: '#FFFFFF' });
-      drawText(ctx, fitText(ctx, `${sk.situationLabel} · ${sk.instantLabel}`, rColW - 62, 9.5), rColX + 54, cardY + 27, {
-        size: 9.5,
-        color: '#BAE6FD',
+      const cardY = dashY + 32 + idx * 44;
+      drawPrintCard(ctx, rColX, cardY, rColW, 40, { paper: true, radius: 5, shadowOffset: 2, strokeColor: THEME.INK_LINE, lineWidth: 1.8 });
+      drawBadge(ctx, rColX + 6, cardY + 8, 54, 24, sk.source === 'formation' ? '阵型技' : '流派技', THEME.BG_PANEL, THEME.LIME);
+      drawText(ctx, sk.name, rColX + 66, cardY + 13, { size: 13, bold: true, color: THEME.PAPER_INK });
+      drawText(ctx, fitText(ctx, `${sk.situationLabel} · ${sk.instantLabel}`, rColW - 74, 12), rColX + 66, cardY + 30, {
+        size: 12,
+        color: THEME.PAPER_MUTED,
       });
     });
 
@@ -1219,27 +1517,28 @@ export class TitleScreen {
       ?? V6_DIRECTIVES.find(d => d.source === 'style' && d.style === this.style && d.id !== styleDir?.id);
     const repDirs = [styleDir, formDir].filter((x): x is NonNullable<typeof x> => !!x).slice(0, 2);
 
-    const dirTitleY = dashY + 124;
+    const dirTitleY = dashY + 125;
     drawText(ctx, '代表临场手牌 (比赛四赛段拍板)', rColX, dirTitleY, {
-      size: 11,
+      size: 12.5,
       bold: true,
-      color: THEME.GOLD_LIGHT,
+      color: THEME.BRASS,
     });
     repDirs.forEach((d, idx) => {
-      const cardY = dirTitleY + 12 + idx * 44;
+      const cardY = dirTitleY + 12 + idx * 45;
       const zCol = ASTROLABE_ZONE_COLOR[d.zone];
-      drawRoundRect(ctx, rColX, cardY, rColW, 38, 6, 'rgba(18, 29, 51, 0.90)', zCol, 1);
+      drawPrintCard(ctx, rColX, cardY, rColW, 41, { paper: true, radius: 5, shadowOffset: 2, strokeColor: THEME.INK_LINE, lineWidth: 1.8 });
       ctx.fillStyle = zCol;
-      ctx.fillRect(rColX + 2, cardY + 4, 3, 30);
-      drawBadge(ctx, rColX + 10, cardY + 9, 36, 20, `${d.tpCost}TP`, '#78350F', THEME.GOLD_LIGHT);
-      drawText(ctx, `${d.name} (${ASTROLABE_ZONE_LABEL[d.zone]}·${d.tendency === 'ATK' ? '攻' : '守'})`, rColX + 52, cardY + 13, {
-        size: 11,
+      ctx.fillRect(rColX + 2, cardY + 4, 4, 33);
+      drawBadge(ctx, rColX + 10, cardY + 9, 44, 24, `${d.tpCost}TP`, THEME.BG_PANEL, THEME.BRASS);
+      drawText(ctx, `${d.name} (${ASTROLABE_ZONE_LABEL[d.zone]}·${d.tendency === 'ATK' ? '攻' : '守'})`, rColX + 60, cardY + 13, {
+        size: 12.5,
         bold: true,
-        color: THEME.TX1,
+        color: THEME.PAPER_INK,
       });
-      drawText(ctx, fitText(ctx, d.benefitSummary, rColW - 60, 9.5), rColX + 52, cardY + 28, {
-        size: 9.5,
-        color: '#86EFAC',
+      drawText(ctx, fitText(ctx, d.benefitSummary, rColW - 68, 12), rColX + 60, cardY + 30, {
+        size: 12,
+        bold: true,
+        color: '#15803D',
       });
     });
 
@@ -1257,7 +1556,6 @@ export class TitleScreen {
   ): void {
     const n = 5;
     ctx.save();
-    // 3 层五边形网格
     for (const scale of [0.35, 0.68, 1.0]) {
       ctx.beginPath();
       for (let i = 0; i < n; i++) {
@@ -1268,33 +1566,31 @@ export class TitleScreen {
         else ctx.lineTo(px, py);
       }
       ctx.closePath();
-      ctx.strokeStyle = scale === 1.0 ? 'rgba(148, 163, 184, 0.35)' : 'rgba(148, 163, 184, 0.16)';
-      ctx.lineWidth = 1;
+      ctx.strokeStyle = scale === 1.0 ? 'rgba(244, 239, 228, 0.35)' : 'rgba(244, 239, 228, 0.16)';
+      ctx.lineWidth = 1.2;
       ctx.stroke();
     }
 
-    // 5 条轴线与标签
     for (let i = 0; i < n; i++) {
       const ang = -Math.PI / 2 + (i * 2 * Math.PI) / n;
       const ex = cx + Math.cos(ang) * maxR;
       const ey = cy + Math.sin(ang) * maxR;
-      ctx.strokeStyle = 'rgba(148, 163, 184, 0.20)';
+      ctx.strokeStyle = 'rgba(244, 239, 228, 0.22)';
       ctx.beginPath();
       ctx.moveTo(cx, cy);
       ctx.lineTo(ex, ey);
       ctx.stroke();
 
-      const lx = cx + Math.cos(ang) * (maxR + 15);
-      const ly = cy + Math.sin(ang) * (maxR + 13);
+      const lx = cx + Math.cos(ang) * (maxR + 17);
+      const ly = cy + Math.sin(ang) * (maxR + 14);
       drawText(ctx, `${labels[i]}`, lx, ly, {
-        size: 9.5,
+        size: 12,
         bold: true,
-        color: '#CBD5E1',
+        color: THEME.TX1,
         align: 'center',
       });
     }
 
-    // 能力多边形
     ctx.beginPath();
     const pts: Array<{ x: number; y: number }> = [];
     for (let i = 0; i < n; i++) {
@@ -1309,20 +1605,14 @@ export class TitleScreen {
     ctx.closePath();
     ctx.fillStyle = `${accentColor}44`;
     ctx.fill();
-    ctx.lineWidth = 2;
+    ctx.lineWidth = 2.5;
     ctx.strokeStyle = accentColor;
-    if (!IS_MOBILE) {
-      ctx.shadowColor = accentColor;
-      ctx.shadowBlur = 10;
-    }
     ctx.stroke();
 
-    // 顶点高亮圆点
-    ctx.shadowBlur = 0;
     for (const pt of pts) {
-      ctx.fillStyle = '#FFFFFF';
+      ctx.fillStyle = THEME.PAPER_CREAM;
       ctx.beginPath();
-      ctx.arc(pt.x, pt.y, 2.6, 0, Math.PI * 2);
+      ctx.arc(pt.x, pt.y, 3, 0, Math.PI * 2);
       ctx.fill();
     }
     ctx.restore();

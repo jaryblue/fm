@@ -1,10 +1,10 @@
 /**
- * 轻量动效、缓动函数、启动加载动画、屏幕震动与广播级转场控制器
- * 零外部依赖，60fps 纯 Canvas 2D 运行
+ * PITCH PRINT v1.0 轻量动效、缓动函数、矢量新 Logo、启动动画、斜切转场与漫画原语
+ * 零外部依赖，零 shadowBlur / ctx.filter，60fps 纯 Canvas 2D 运行
  */
 
 import { AssetLoader } from './AssetLoader';
-import { drawRoundRect, drawText } from './CanvasKit';
+import { drawPrintCard, drawRoundRect, drawText, getHalftonePattern } from './CanvasKit';
 import { THEME } from './Theme';
 
 export function easeOutCubic(t: number): number {
@@ -53,13 +53,262 @@ export class ScreenShake {
 }
 
 /**
- * 广播级斜切百叶窗转场（覆盖旧画面 -> 中点切换路由 -> 拉开揭示新画面 + 内容滑入）
+ * 油墨盖章砸落动效（180ms easeOutBack: scale 1.48 -> 1.0, alpha 0 -> 1）
+ */
+export class StampSlam {
+  private timer = 0;
+  private readonly duration = 0.18;
+  private active = false;
+  private settled = false;
+
+  public trigger(): void {
+    this.timer = 0;
+    this.active = true;
+    this.settled = true;
+  }
+
+  public reset(): void {
+    this.timer = 0;
+    this.active = false;
+    this.settled = false;
+  }
+
+  public update(dtSec: number): void {
+    if (!this.active) return;
+    this.timer += dtSec;
+    if (this.timer >= this.duration) {
+      this.timer = this.duration;
+      this.active = false;
+    }
+  }
+
+  public getTransform(): { scale: number; alpha: number; active: boolean; settled: boolean } {
+    if (!this.settled) return { scale: 1, alpha: 0, active: false, settled: false };
+    if (!this.active) return { scale: 1, alpha: 1, active: false, settled: true };
+    const t = Math.min(1, this.timer / this.duration);
+    const p = easeOutBack(t);
+    return {
+      scale: 1.48 - 0.48 * p,
+      alpha: Math.min(1, t * 2.2),
+      active: true,
+      settled: true,
+    };
+  }
+}
+
+/**
+ * 数值跳变脉冲动效（220ms easeOutCubic: 1.0 -> 1.22 -> 1.0，前 80ms 闪烁 #C8F230）
+ */
+export class ValuePulse {
+  private timer = 0;
+  private readonly duration = 0.22;
+  private active = false;
+
+  public trigger(): void {
+    this.timer = 0;
+    this.active = true;
+  }
+
+  public update(dtSec: number): void {
+    if (!this.active) return;
+    this.timer += dtSec;
+    if (this.timer >= this.duration) {
+      this.timer = 0;
+      this.active = false;
+    }
+  }
+
+  public getScale(): number {
+    if (!this.active) return 1;
+    const half = this.duration * 0.4;
+    if (this.timer <= half) {
+      return 1 + 0.22 * easeOutCubic(this.timer / half);
+    }
+    return 1.22 - 0.22 * easeOutCubic((this.timer - half) / (this.duration - half));
+  }
+
+  public isFlash(): boolean {
+    return this.active && this.timer <= 0.08;
+  }
+}
+
+/**
+ * 漫画斜切速度线 Cut-In 横幅（140ms 滑入 + 860ms 停留 + 200ms 划出 = 1.2s，支持点击秒跳）
+ */
+export class MangaCutIn {
+  private active = false;
+  private timer = 0;
+  private readonly inDur = 0.14;
+  private readonly holdDur = 0.86;
+  private readonly outDur = 0.20;
+  private title = '';
+  private subtitle = '';
+  private tag = '';
+  private accent: string = THEME.VERMILION;
+  private artId: import('./AssetLoader').ArtAssetId | null = null;
+
+  public trigger(opts: { title: string; subtitle?: string; accent?: string; tag?: string; artId?: import('./AssetLoader').ArtAssetId }): void {
+    this.title = opts.title;
+    this.subtitle = opts.subtitle ?? '';
+    this.tag = opts.tag ?? '';
+    this.accent = opts.accent ?? THEME.VERMILION;
+    this.artId = opts.artId ?? null;
+    this.timer = 0;
+    this.active = true;
+  }
+
+  public dismiss(): void {
+    this.active = false;
+    this.timer = 0;
+  }
+
+  public isActive(): boolean {
+    return this.active;
+  }
+
+  public update(dtSec: number): void {
+    if (!this.active) return;
+    this.timer += dtSec;
+    if (this.timer >= this.inDur + this.holdDur + this.outDur) {
+      this.active = false;
+      this.timer = 0;
+    }
+  }
+
+  public render(ctx: CanvasRenderingContext2D, w: number, h: number): void {
+    if (!this.active) return;
+    const total = this.inDur + this.holdDur + this.outDur;
+    let slideX = 0;
+    let dimAlpha = 0.5;
+    if (this.timer < this.inDur) {
+      const p = easeOutCubic(this.timer / this.inDur);
+      slideX = (1 - p) * -w;
+      dimAlpha = 0.5 * p;
+    } else if (this.timer > this.inDur + this.holdDur) {
+      const p = easeInOutCubic((this.timer - this.inDur - this.holdDur) / this.outDur);
+      slideX = p * w;
+      dimAlpha = 0.5 * (1 - p);
+    }
+
+    ctx.save();
+    ctx.fillStyle = `rgba(10, 26, 20, ${dimAlpha.toFixed(2)})`;
+    ctx.fillRect(0, 0, w, h);
+
+    ctx.translate(slideX, 0);
+    const bandTop = h * 0.34;
+    const bandH = 196;
+    const skew = 48;
+
+    // 硬阴影偏移底条
+    ctx.fillStyle = THEME.HARD_SHADOW;
+    ctx.beginPath();
+    ctx.moveTo(0, bandTop + 8);
+    ctx.lineTo(w, bandTop - 10 + 8);
+    ctx.lineTo(w, bandTop + bandH - 10 + 8);
+    ctx.lineTo(0, bandTop + bandH + 8);
+    ctx.closePath();
+    ctx.fill();
+
+    // 主斜切漫画横幅
+    ctx.fillStyle = this.accent;
+    ctx.beginPath();
+    ctx.moveTo(0, bandTop);
+    ctx.lineTo(w, bandTop - 10);
+    ctx.lineTo(w, bandTop + bandH - 10);
+    ctx.lineTo(0, bandTop + bandH);
+    ctx.closePath();
+    ctx.fill();
+
+    // 速度线滚动
+    ctx.save();
+    ctx.clip();
+    const scroll = (this.timer * 1400) % 160;
+    ctx.fillStyle = 'rgba(244, 239, 228, 0.20)';
+    for (let sx = -160; sx < w + 160; sx += 80) {
+      const lx = sx + scroll;
+      ctx.fillRect(lx, bandTop - 16, 26, 4);
+      ctx.fillRect(lx + 40, bandTop + bandH - 36, 42, 5);
+    }
+    ctx.fillStyle = THEME.LIME;
+    ctx.fillRect(0, bandTop + bandH - 18, w, 6);
+    ctx.restore();
+
+    // 硬墨线上下边界
+    ctx.strokeStyle = THEME.INK_LINE;
+    ctx.lineWidth = 3.5;
+    ctx.beginPath();
+    ctx.moveTo(0, bandTop);
+    ctx.lineTo(w, bandTop - 10);
+    ctx.moveTo(0, bandTop + bandH);
+    ctx.lineTo(w, bandTop + bandH - 10);
+    ctx.stroke();
+
+    // 呼号文字（大号斜体 + 硬偏移影）
+    if (this.tag) {
+      drawRoundRect(ctx, w / 2 - 90, bandTop - 18, 180, 32, 4, THEME.PAPER_CREAM, THEME.INK_LINE, 2.5);
+      drawText(ctx, this.tag, w / 2, bandTop - 2, {
+        size: 14,
+        bold: true,
+        color: THEME.PAPER_INK,
+        align: 'center',
+        rawSize: true,
+      });
+    }
+    const cy = bandTop + bandH / 2 - 4;
+    const cutSticker = this.artId ? AssetLoader.get(this.artId) : null;
+    if (cutSticker && typeof ctx.drawImage === 'function') {
+      ctx.save();
+      ctx.translate(w * 0.20, cy + 4);
+      ctx.rotate(-0.06);
+      ctx.drawImage(cutSticker, -56, -56, 112, 112);
+      ctx.restore();
+    }
+    drawText(ctx, this.title, w / 2 + 4, cy + 4, {
+      size: 46,
+      bold: true,
+      italic: true,
+      color: THEME.HARD_SHADOW,
+      align: 'center',
+      rawSize: true,
+    });
+    drawText(ctx, this.title, w / 2, cy, {
+      size: 46,
+      bold: true,
+      italic: true,
+      color: THEME.PAPER_CREAM,
+      align: 'center',
+      rawSize: true,
+    });
+    if (this.subtitle) {
+      drawText(ctx, this.subtitle, w / 2, cy + 44, {
+        size: 18,
+        bold: true,
+        color: THEME.LIME,
+        align: 'center',
+        rawSize: true,
+      });
+    }
+    if (this.timer < total - 0.1) {
+      drawText(ctx, '点击任意位置跳过 ▶', w - 28 - skew * 0.2, bandTop + bandH - 30, {
+        size: 13,
+        bold: true,
+        color: THEME.PAPER_CREAM,
+        align: 'right',
+        rawSize: true,
+      });
+    }
+    ctx.restore();
+  }
+}
+
+/**
+ * PITCH PRINT 斜切战术板转场（120ms 遮盖 -> 180ms 拉开，深松柏绿 + 朱红/荧光绿边界）
  */
 export class RouteTransition {
   private phase: 'idle' | 'in' | 'out' = 'idle';
   private timer = 0;
-  private readonly inDuration = 0.16;
-  private readonly outDuration = 0.26;
+  private readonly inDuration = 0.12;
+  private readonly outDuration = 0.18;
   private onMidpoint: (() => void) | null = null;
   private label = '';
 
@@ -102,8 +351,8 @@ export class RouteTransition {
     if (this.phase === 'in') return { alpha: 1, offsetY: 0 };
     const p = easeOutCubic(this.timer / this.outDuration);
     return {
-      alpha: 0.35 + 0.65 * p,
-      offsetY: Math.round((1 - p) * 14),
+      alpha: 0.4 + 0.6 * p,
+      offsetY: Math.round((1 - p) * 10),
     };
   }
 
@@ -120,17 +369,17 @@ export class RouteTransition {
       ctx.lineTo(rightX - skew, h);
       ctx.lineTo(-skew * 2, h);
       ctx.closePath();
-      ctx.fillStyle = '#070B13';
+      ctx.fillStyle = THEME.BG_DEEP;
       ctx.fill();
 
-      ctx.strokeStyle = THEME.FLAME;
-      ctx.lineWidth = 7;
+      ctx.strokeStyle = THEME.VERMILION;
+      ctx.lineWidth = 6;
       ctx.beginPath();
       ctx.moveTo(rightX - 4, 0);
       ctx.lineTo(rightX - skew - 4, h);
       ctx.stroke();
 
-      ctx.strokeStyle = THEME.GOLD_LIGHT;
+      ctx.strokeStyle = THEME.LIME;
       ctx.lineWidth = 3;
       ctx.beginPath();
       ctx.moveTo(rightX, 0);
@@ -145,18 +394,18 @@ export class RouteTransition {
       ctx.lineTo(w + skew, h);
       ctx.lineTo(leftX - skew, h);
       ctx.closePath();
-      ctx.fillStyle = '#070B13';
+      ctx.fillStyle = THEME.BG_DEEP;
       ctx.fill();
 
-      ctx.strokeStyle = THEME.FLAME;
-      ctx.lineWidth = 5;
+      ctx.strokeStyle = THEME.VERMILION;
+      ctx.lineWidth = 6;
       ctx.beginPath();
       ctx.moveTo(leftX + 3, 0);
       ctx.lineTo(leftX - skew + 3, h);
       ctx.stroke();
 
-      ctx.strokeStyle = THEME.GOLD_LIGHT;
-      ctx.lineWidth = 2.5;
+      ctx.strokeStyle = THEME.LIME;
+      ctx.lineWidth = 3;
       ctx.beginPath();
       ctx.moveTo(leftX, 0);
       ctx.lineTo(leftX - skew, h);
@@ -168,13 +417,14 @@ export class RouteTransition {
         ? easeOutCubic(this.timer / this.inDuration)
         : 1 - easeOutCubic(this.timer / this.outDuration);
       ctx.globalAlpha = Math.max(0, Math.min(1, alpha));
-      drawRoundRect(ctx, w / 2 - 170, h / 2 - 26, 340, 52, 8, 'rgba(11, 17, 30, 0.94)', THEME.GOLD_LIGHT, 1.5);
+      drawPrintCard(ctx, w / 2 - 170, h / 2 - 28, 340, 56, { paper: true, radius: 6, shadowOffset: 4 });
       drawText(ctx, this.label, w / 2, h / 2, {
-        size: 16,
+        size: 18,
         bold: true,
         italic: true,
-        color: THEME.GOLD_LIGHT,
+        color: THEME.PAPER_INK,
         align: 'center',
+        rawSize: true,
       });
     }
     ctx.restore();
@@ -182,69 +432,242 @@ export class RouteTransition {
 }
 
 /**
- * 绘制「再开一局 2026」游戏主 Logo 徽章（优先使用 game_logo 美术资源，未放置时自动呈现矢量金盾+足球+重开回环）
+ * 绘制「再开一局 2026」PITCH PRINT 矢量新版 Logo
+ * （倾斜硬阴影暖纸底板 + 红绿双拼盾牌与五边形足球 + 粗黑斜体字标 + 朱红战术箭头 + 2026 黄铜铭牌）
  */
 export function drawGameLogoEmblem(
   ctx: CanvasRenderingContext2D,
   cx: number,
   cy: number,
   size: number,
-  timeSec = 0,
+  _timeSec = 0,
   shape: 'circle' | 'showcase' = 'circle'
 ): void {
   ctx.save();
   ctx.translate(cx, cy);
-  const r = size / 2;
 
-  // 外圈炽金-烈焰呼吸光晕
-  const pulse = 0.26 + 0.1 * Math.sin(timeSec * 2.5);
-  const halo = ctx.createRadialGradient(0, 0, r * 0.35, 0, 0, r * 1.38);
-  halo.addColorStop(0, `rgba(250, 204, 21, ${pulse.toFixed(2)})`);
-  halo.addColorStop(0.5, 'rgba(249, 115, 22, 0.14)');
-  halo.addColorStop(1, 'rgba(0, 0, 0, 0)');
-  ctx.fillStyle = halo;
-  ctx.beginPath();
-  ctx.arc(0, 0, r * 1.38, 0, Math.PI * 2);
-  ctx.fill();
+  if (shape === 'circle') {
+    const r = size * 0.46;
+    ctx.fillStyle = THEME.HARD_SHADOW;
+    ctx.beginPath();
+    ctx.arc(3, 3, r, 0, Math.PI * 2);
+    ctx.fill();
 
-  const logoImg = AssetLoader.get('game_logo');
-  if (logoImg && typeof ctx.drawImage === 'function') {
-    if (shape === 'showcase') {
-      ctx.save();
-      ctx.shadowColor = 'rgba(249, 115, 22, 0.45)';
-      ctx.shadowBlur = 22;
-      ctx.drawImage(logoImg, -r, -r, size, size);
-      ctx.restore();
-    } else {
-      ctx.save();
-      ctx.shadowColor = 'rgba(250, 204, 21, 0.35)';
-      ctx.shadowBlur = 10;
-      ctx.drawImage(logoImg, -r, -r, size, size);
-      ctx.restore();
+    ctx.fillStyle = THEME.PAPER_CREAM;
+    ctx.strokeStyle = THEME.INK_LINE;
+    ctx.lineWidth = 2.5;
+    ctx.beginPath();
+    ctx.arc(0, 0, r, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+
+    // 盾牌分色
+    ctx.save();
+    ctx.beginPath();
+    ctx.arc(0, 0, r - 4, 0, Math.PI * 2);
+    ctx.clip();
+    ctx.fillStyle = THEME.VERMILION;
+    ctx.fillRect(-r, -r, r, r * 2);
+    ctx.fillStyle = THEME.BG_PANEL;
+    ctx.fillRect(0, -r, r, r * 2);
+    ctx.restore();
+
+    // 中心黑白五边形足球
+    const br = r * 0.48;
+    ctx.fillStyle = THEME.PAPER_CREAM;
+    ctx.strokeStyle = THEME.INK_LINE;
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.arc(0, 0, br, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+
+    ctx.fillStyle = THEME.INK_LINE;
+    ctx.beginPath();
+    for (let i = 0; i < 5; i++) {
+      const a = (Math.PI * 2 * i) / 5 - Math.PI / 2;
+      const px = Math.cos(a) * br * 0.44;
+      const py = Math.sin(a) * br * 0.44;
+      if (i === 0) ctx.moveTo(px, py);
+      else ctx.lineTo(px, py);
     }
+    ctx.closePath();
+    ctx.fill();
     ctx.restore();
     return;
   }
 
-  // 图片仍在解码前几帧时仅绘制轻量旋转金色光环，避免闪现旧占位盾牌
-  ctx.strokeStyle = 'rgba(250, 204, 21, 0.38)';
-  ctx.lineWidth = 2.2;
+  // showcase 模式：优先绘制俱乐部双框正式 Logo（1024x512），加载前兜底使用 PITCH PRINT 矢量横幅
+  const logoImg = AssetLoader.get('game_logo');
+  if (logoImg && typeof ctx.drawImage === 'function') {
+    const lw = Math.max(380, size * 2.38);
+    const lh = Math.round(lw * 0.5);
+    ctx.save();
+    // 硬阴影底托
+    drawRoundRect(ctx, -lw / 2 + 5, -lh / 2 + 5, lw, lh, 10, THEME.HARD_SHADOW);
+    // 圆角裁切绘制正式 Logo
+    ctx.beginPath();
+    ctx.roundRect(-lw / 2, -lh / 2, lw, lh, 10);
+    ctx.clip();
+    ctx.drawImage(logoImg, -lw / 2, -lh / 2, lw, lh);
+    ctx.restore();
+    // 细墨线外框保证与标题页左侧深背景干净融合
+    drawRoundRect(ctx, -lw / 2, -lh / 2, lw, lh, 10, undefined, 'rgba(216, 168, 66, 0.35)', 1.5);
+    ctx.restore();
+    return;
+  }
+
+  const bw = Math.max(360, size * 2.30);
+  const bh = Math.max(104, size * 0.60);
+  const skew = 18;
+
+  // 7px 硬偏移黑影 (#07100C)
+  ctx.fillStyle = THEME.HARD_SHADOW;
   ctx.beginPath();
-  ctx.arc(0, 0, r * 0.52, timeSec * 2.4, timeSec * 2.4 + Math.PI * 1.4);
+  ctx.moveTo(-bw / 2 + skew + 7, -bh / 2 + 7);
+  ctx.lineTo(bw / 2 + skew + 7, -bh / 2 + 7);
+  ctx.lineTo(bw / 2 - skew + 7, bh / 2 + 7);
+  ctx.lineTo(-bw / 2 - skew + 7, bh / 2 + 7);
+  ctx.closePath();
+  ctx.fill();
+
+  // 暖象牙底板 (#F4EFE4, 3.5px #111412 描边 + 右半侧网点)
+  ctx.beginPath();
+  ctx.moveTo(-bw / 2 + skew, -bh / 2);
+  ctx.lineTo(bw / 2 + skew, -bh / 2);
+  ctx.lineTo(bw / 2 - skew, bh / 2);
+  ctx.lineTo(-bw / 2 - skew, bh / 2);
+  ctx.closePath();
+  ctx.fillStyle = THEME.PAPER_CREAM;
+  ctx.fill();
+
+  const ht = getHalftonePattern(ctx, false);
+  if (ht) {
+    ctx.save();
+    ctx.clip();
+    ctx.globalAlpha = 0.55;
+    ctx.fillStyle = ht;
+    ctx.fillRect(0, -bh / 2, bw / 2 + skew, bh);
+    ctx.restore();
+  }
+
+  ctx.strokeStyle = THEME.INK_LINE;
+  ctx.lineWidth = 3.5;
   ctx.stroke();
+
+  // 左侧经典红绿双拼盾牌 + 几何五边形足球
+  const sx = -bw / 2 + 54;
+  const sw = 56;
+  const sh = 64;
+  ctx.save();
+  ctx.translate(sx, -2);
+  ctx.beginPath();
+  ctx.moveTo(-sw / 2, -sh / 2);
+  ctx.lineTo(sw / 2, -sh / 2);
+  ctx.lineTo(sw / 2, 0);
+  ctx.quadraticCurveTo(sw / 2, sh * 0.45, 0, sh * 0.55);
+  ctx.quadraticCurveTo(-sw / 2, sh * 0.45, -sw / 2, 0);
+  ctx.closePath();
+  ctx.save();
+  ctx.clip();
+  ctx.fillStyle = THEME.VERMILION;
+  ctx.fillRect(-sw / 2, -sh / 2, sw / 2, sh + 8);
+  ctx.fillStyle = THEME.BG_PANEL;
+  ctx.fillRect(0, -sh / 2, sw / 2, sh + 8);
+  ctx.restore();
+  ctx.strokeStyle = THEME.INK_LINE;
+  ctx.lineWidth = 3;
+  ctx.stroke();
+
+  // 足球
+  ctx.fillStyle = THEME.PAPER_CREAM;
+  ctx.beginPath();
+  ctx.arc(0, -2, 15, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.stroke();
+  ctx.fillStyle = THEME.INK_LINE;
+  ctx.beginPath();
+  for (let i = 0; i < 5; i++) {
+    const a = (Math.PI * 2 * i) / 5 - Math.PI / 2;
+    const px = Math.cos(a) * 6.8;
+    const py = -2 + Math.sin(a) * 6.8;
+    if (i === 0) ctx.moveTo(px, py);
+    else ctx.lineTo(px, py);
+  }
+  ctx.closePath();
+  ctx.fill();
+  ctx.restore();
+
+  // 右侧粗黑斜体「再开一局」（双层厚重字标）
+  const textX = sx + 50;
+  const titleSize = Math.round(bh * 0.54);
+  ctx.save();
+  ctx.font = `italic 900 ${titleSize}px ${THEME.DISPLAY_FONT_CN}`;
+  ctx.textAlign = 'left';
+  ctx.textBaseline = 'middle';
+  ctx.fillStyle = 'rgba(17, 20, 18, 0.16)';
+  ctx.fillText('再开一局', textX + 2.5, -6 + 2.5);
+  ctx.fillStyle = THEME.PAPER_INK;
+  ctx.fillText('再开一局', textX, -6);
+  ctx.restore();
+
+  // 底部横穿朱砂红填充战术大箭头 (#E03A2E + 2.5px #111412 描边)
+  const arrowY = bh * 0.30;
+  const arrowLeft = textX - 4;
+  const arrowRight = bw / 2 - 4;
+  ctx.save();
+  ctx.fillStyle = THEME.VERMILION;
+  ctx.strokeStyle = THEME.INK_LINE;
+  ctx.lineWidth = 2.5;
+  ctx.lineJoin = 'round';
+  ctx.beginPath();
+  ctx.moveTo(arrowLeft, arrowY - 4);
+  ctx.lineTo(arrowRight - 22, arrowY - 6);
+  ctx.lineTo(arrowRight - 26, arrowY - 13);
+  ctx.lineTo(arrowRight + 6, arrowY - 1);
+  ctx.lineTo(arrowRight - 26, arrowY + 11);
+  ctx.lineTo(arrowRight - 22, arrowY + 4);
+  ctx.lineTo(arrowLeft, arrowY + 2);
+  ctx.closePath();
+  ctx.fill();
+  ctx.stroke();
+  ctx.restore();
+
+  // 右上角微倾黄铜色「2026」实体铭牌
+  ctx.save();
+  ctx.translate(bw / 2 - 22, -bh / 2 + 2);
+  ctx.rotate(-0.10);
+  ctx.fillStyle = THEME.HARD_SHADOW;
+  ctx.fillRect(-34 + 3, -15 + 3, 68, 30);
+  ctx.fillStyle = THEME.BRASS;
+  ctx.strokeStyle = THEME.INK_LINE;
+  ctx.lineWidth = 2.5;
+  ctx.fillRect(-34, -15, 68, 30);
+  ctx.strokeRect(-34, -15, 68, 30);
+  drawText(ctx, '2026', 0, 1, {
+    size: 15,
+    bold: true,
+    italic: true,
+    color: THEME.PAPER_INK,
+    align: 'center',
+    mono: true,
+    rawSize: true,
+  });
+  ctx.restore();
+
   ctx.restore();
 }
 
 /**
- * 进入游戏的启动加载动画（跟踪资源加载进度 -> 金色光幕拉开进入主页）
+ * 进入游戏的启动加载动画（深松柏绿底 + 矢量新 Logo + 硬墨线进度条）
  */
 export class BootIntro {
   private state: 'loading' | 'opening' | 'done' = 'loading';
   private elapsed = 0;
   private smoothProgress = 0;
   private openTimer = 0;
-  private readonly minLoadSec = 1.25;
-  private readonly openDuration = 0.55;
+  private readonly minLoadSec = 1.1;
+  private readonly openDuration = 0.42;
   private onEnteredTitle?: () => void;
 
   public constructor(onEnteredTitle?: () => void) {
@@ -275,13 +698,11 @@ export class BootIntro {
     if (this.state === 'loading') {
       const prog = AssetLoader.getProgress();
       const target = prog.total > 0 ? Math.min(1, prog.loaded / prog.total) : 1;
-      const logoReady = !!AssetLoader.get('game_logo');
-      // 即使本地秒加载也保留平滑动画推进感
       const timeGate = Math.min(1, this.elapsed / this.minLoadSec);
       const effectiveTarget = Math.min(target, timeGate);
       this.smoothProgress += (effectiveTarget - this.smoothProgress) * Math.min(1, dtSec * 8);
 
-      if (this.elapsed >= this.minLoadSec && ((logoReady && target >= 0.85) || this.elapsed >= 2.4)) {
+      if (this.elapsed >= this.minLoadSec && (target >= 0.85 || this.elapsed >= 2.2)) {
         this.smoothProgress = 1;
         this.state = 'opening';
         this.openTimer = 0;
@@ -302,13 +723,12 @@ export class BootIntro {
     if (this.state === 'opening') {
       const p = easeInOutCubic(this.openTimer / this.openDuration);
       const halfH = (h / 2) * (1 - p);
-      ctx.fillStyle = '#060A12';
+      ctx.fillStyle = THEME.BG_DEEP;
       ctx.fillRect(0, 0, w, halfH);
       ctx.fillRect(0, h - halfH, w, halfH);
 
-      ctx.strokeStyle = THEME.GOLD_LIGHT;
-      ctx.lineWidth = 2.5;
-      ctx.globalAlpha = 1 - p;
+      ctx.strokeStyle = THEME.LIME;
+      ctx.lineWidth = 3;
       ctx.beginPath();
       ctx.moveTo(0, halfH);
       ctx.lineTo(w, halfH);
@@ -319,138 +739,69 @@ export class BootIntro {
       return;
     }
 
-    // Loading 阶段背景（stadium_bg 加载好即刻渐显）
-    ctx.fillStyle = '#060A12';
+    ctx.fillStyle = THEME.BG_DEEP;
     ctx.fillRect(0, 0, w, h);
-    const bg = AssetLoader.get('stadium_bg');
-    if (bg && typeof ctx.drawImage === 'function') {
+
+    const ht = getHalftonePattern(ctx, true);
+    if (ht) {
       ctx.save();
-      const scale = 1.05 - 0.05 * Math.min(1, this.elapsed / 1.5);
-      const dw = w * scale;
-      const dh = h * scale;
-      ctx.globalAlpha = Math.min(0.45, this.elapsed * 0.42);
-      ctx.drawImage(bg, (w - dw) / 2, (h - dh) / 2, dw, dh);
+      ctx.globalAlpha = 0.5;
+      ctx.fillStyle = ht;
+      ctx.fillRect(0, 0, w, h);
       ctx.restore();
     }
 
-    // 球场双侧炽金-烈焰橙红探照灯交叉扫光
-    for (let bi = 0; bi < 2; bi++) {
-      const ox = bi === 0 ? w * 0.16 : w * 0.84;
-      const sx = w * 0.5 + Math.sin(this.elapsed * 1.4 + bi * Math.PI) * 190;
-      const beam = ctx.createLinearGradient(ox, 0, sx, h * 0.88);
-      beam.addColorStop(0, bi === 0 ? 'rgba(250, 204, 21, 0.15)' : 'rgba(249, 115, 22, 0.13)');
-      beam.addColorStop(1, 'rgba(0, 0, 0, 0)');
-      ctx.fillStyle = beam;
-      ctx.beginPath();
-      ctx.moveTo(ox - 18, 0);
-      ctx.lineTo(ox + 18, 0);
-      ctx.lineTo(sx + 180, h);
-      ctx.lineTo(sx - 180, h);
-      ctx.closePath();
-      ctx.fill();
-    }
+    // 粉笔战术中线装饰
+    ctx.strokeStyle = 'rgba(244, 239, 228, 0.08)';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(w / 2, 0);
+    ctx.lineTo(w / 2, h);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.arc(w / 2, h / 2, 160, 0, Math.PI * 2);
+    ctx.stroke();
 
-    const vignette = ctx.createRadialGradient(w / 2, h / 2, 80, w / 2, h / 2, 680);
-    vignette.addColorStop(0, 'rgba(8, 12, 20, 0.22)');
-    vignette.addColorStop(1, 'rgba(6, 10, 18, 0.94)');
-    ctx.fillStyle = vignette;
-    ctx.fillRect(0, 0, w, h);
-
-    // 飘升炽金与火星尘埃
-    for (let pi = 0; pi < 20; pi++) {
-      const px = ((pi * 97 + Math.sin(this.elapsed * 0.8 + pi) * 24) % w + w) % w;
-      const py = h - ((this.elapsed * (52 + (pi % 4) * 18) + pi * 55) % h);
-      const pa = 0.2 + 0.26 * Math.sin(this.elapsed * 3.2 + pi);
-      ctx.fillStyle = pi % 3 === 0
-        ? `rgba(249, 115, 22, ${Math.max(0.06, pa).toFixed(2)})`
-        : `rgba(250, 204, 21, ${Math.max(0.06, pa).toFixed(2)})`;
-      ctx.beginPath();
-      ctx.arc(px, py, 1.4 + (pi % 2) * 0.8, 0, Math.PI * 2);
-      ctx.fill();
-    }
-
-    // 旋转高燃双环 + 完整展示主 Logo
     const cx = w / 2;
-    const cy = h / 2 - 44;
-    ctx.save();
-    ctx.translate(cx, cy - 26);
-    ctx.rotate(this.elapsed * 1.1);
-    ctx.strokeStyle = 'rgba(250, 204, 21, 0.34)';
-    ctx.lineWidth = 1.6;
-    ctx.setLineDash([16, 12]);
-    ctx.beginPath();
-    ctx.arc(0, 0, 96, 0, Math.PI * 2);
-    ctx.stroke();
-    ctx.setLineDash([]);
-    ctx.rotate(-this.elapsed * 1.9);
-    ctx.strokeStyle = 'rgba(249, 115, 22, 0.34)';
-    ctx.beginPath();
-    ctx.arc(0, 0, 112, 0, Math.PI * 1.35);
-    ctx.stroke();
-    ctx.restore();
-
-    const logoPop = easeOutBack(Math.min(1, this.elapsed / 0.45));
+    const cy = h / 2 - 36;
+    const logoPop = easeOutBack(Math.min(1, this.elapsed / 0.36));
     ctx.save();
     ctx.translate(cx, cy - 26);
     ctx.scale(logoPop, logoPop);
-    drawGameLogoEmblem(ctx, 0, 0, 152, this.elapsed, 'showcase');
+    drawGameLogoEmblem(ctx, 0, 0, 164, this.elapsed, 'showcase');
     ctx.restore();
 
-    const hasArtLogo = !!AssetLoader.get('game_logo');
-    const titleReveal = easeOutCubic(Math.min(1, this.elapsed / 0.52));
-    ctx.globalAlpha = titleReveal;
-    const ty = cy + 72 + (1 - titleReveal) * 12;
-    if (hasArtLogo) {
-      drawText(ctx, 'ONE MORE RUN · 15 分钟一局肉鸽足球经理', cx, ty + 2, {
-        size: 13,
-        bold: true,
-        color: THEME.GOLD_LIGHT,
-        align: 'center',
-      });
-    } else {
-      drawText(ctx, 'ONE MORE RUN · FOOTBALL ROGUELIKE', cx, ty - 14, {
-        size: 11,
-        bold: true,
-        color: THEME.FLAME_LIGHT,
-        align: 'center',
-        mono: true,
-      });
-      drawText(ctx, '再开一局 2026', cx, ty + 14, {
-        size: 36,
-        bold: true,
-        italic: true,
-        color: THEME.TX1,
-        align: 'center',
-      });
-    }
+    drawText(ctx, 'ONE MORE RUN · 15 分钟一局肉鸽足球经理', cx, cy + 62, {
+      size: 14,
+      bold: true,
+      color: THEME.BRASS,
+      align: 'center',
+      rawSize: true,
+    });
 
-    // 烈焰金渐变进度条与加载提示
-    const barW = 400;
+    const barW = 420;
     const barX = cx - barW / 2;
-    const barY = cy + 106;
-    drawRoundRect(ctx, barX, barY, barW, 8, 4, 'rgba(30, 41, 59, 0.85)', 'rgba(249, 115, 22, 0.5)');
-    const fillW = Math.max(12, Math.round(barW * this.smoothProgress));
-    const barGrad = ctx.createLinearGradient(barX, barY, barX + barW, barY);
-    barGrad.addColorStop(0, '#DC2626');
-    barGrad.addColorStop(0.45, '#F97316');
-    barGrad.addColorStop(0.8, '#FACC15');
-    barGrad.addColorStop(1, '#FEF08A');
-    drawRoundRect(ctx, barX, barY, fillW, 8, 4, barGrad);
+    const barY = cy + 96;
+    drawRoundRect(ctx, barX + 3, barY + 3, barW, 12, 4, THEME.HARD_SHADOW);
+    drawRoundRect(ctx, barX, barY, barW, 12, 4, THEME.BG_CARD_DARK, THEME.INK_LINE, 2);
+    const fillW = Math.max(14, Math.round(barW * this.smoothProgress));
+    drawRoundRect(ctx, barX + 2, barY + 2, Math.max(10, fillW - 4), 8, 3, THEME.LIME);
 
     const prog = AssetLoader.getProgress();
     const pct = Math.round(this.smoothProgress * 100);
     drawText(
       ctx,
-      `正在点亮球场灯光与战术资产 (${prog.loaded}/${prog.total}) · ${pct}%`,
+      `正在整备战术资产 (${prog.loaded}/${prog.total}) · ${pct}%`,
       cx,
-      barY + 26,
-      { size: 12, color: THEME.TX2, align: 'center' }
+      barY + 32,
+      { size: 13.5, color: THEME.TX2, align: 'center', rawSize: true }
     );
     if (this.elapsed >= 0.4) {
-      drawText(ctx, '点击画面任意位置可跳过开场', cx, h - 42, {
-        size: 11,
+      drawText(ctx, '点击画面任意位置跳过开场', cx, h - 42, {
+        size: 12.5,
         color: THEME.TX3,
         align: 'center',
+        rawSize: true,
       });
     }
     ctx.restore();

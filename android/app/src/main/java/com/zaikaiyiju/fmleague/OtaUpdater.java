@@ -1,12 +1,31 @@
 package com.zaikaiyiju.fmleague;
 
 import android.app.Activity;
+import android.app.Dialog;
 import android.content.Context;
+import android.content.Intent;
 import android.content.SharedPreferences;
+import android.content.pm.PackageInfo;
+import android.graphics.Color;
+import android.graphics.Typeface;
+import android.graphics.drawable.ClipDrawable;
+import android.graphics.drawable.ColorDrawable;
+import android.graphics.drawable.Drawable;
+import android.graphics.drawable.GradientDrawable;
+import android.graphics.drawable.LayerDrawable;
+import android.os.Build;
 import android.os.Handler;
 import android.os.Looper;
 import android.util.Log;
-import android.widget.Toast;
+import android.util.TypedValue;
+import android.view.Gravity;
+import android.view.View;
+import android.view.Window;
+import android.view.WindowManager;
+import android.widget.Button;
+import android.widget.LinearLayout;
+import android.widget.ProgressBar;
+import android.widget.TextView;
 import java.io.BufferedInputStream;
 import java.io.BufferedOutputStream;
 import java.io.ByteArrayOutputStream;
@@ -18,8 +37,10 @@ import java.net.HttpURLConnection;
 import java.net.URL;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
+import java.util.Locale;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipInputStream;
 import org.json.JSONObject;
@@ -27,22 +48,66 @@ import org.json.JSONObject;
 public final class OtaUpdater {
     private static final String TAG = "OtaUpdater";
     private static final ExecutorService EXECUTOR = Executors.newSingleThreadExecutor();
-    private static volatile boolean started = false;
+    private static final Handler MAIN = new Handler(Looper.getMainLooper());
+    private static final AtomicBoolean CHECK_IN_PROGRESS = new AtomicBoolean(false);
+    private static final AtomicBoolean DIALOG_SHOWING = new AtomicBoolean(false);
 
-    // 供 JS 桥接读取：已下载完成、等待下次启动生效的版本号
+    // 供 JS 桥接与壳状态持久化使用
     private static final String PREFS_OTA = "fm_ota_state";
     private static final String KEY_PENDING_VERSION = "pending_version";
     private static final String KEY_PENDING_HASH = "pending_hash";
+    private static final String KEY_LAST_APK_UPDATE_TIME = "last_apk_update_time";
+    private static final String KEY_LAST_APK_HASH = "last_apk_hash";
 
-    /**
-     * 进程启动时 WebView 实际加载的 bundle 版本/hash。
-     * 必须在下载激活新包之前记录（见 MainActivity.onCreate），
-     * 否则磁盘激活路径已被改写，会把「下载完成」误判为「已重启生效」。
-     */
+    /** 进程启动时 WebView 实际加载的 bundle 版本/hash */
     private static volatile String bootHash = "";
     private static volatile String bootVersion = "";
 
     private OtaUpdater() {}
+
+    /**
+     * 若用户覆盖安装了新 APK（lastUpdateTime 或内置 assets hash 变化），
+     * 在 Capacitor 启动 WebView 前自动清除旧的 CAP_SERVER_PATH，确保直接加载新 APK 的最新资源。
+     */
+    public static void resetStaleOtaIfApkUpdated(Context context) {
+        if (context == null) return;
+        try {
+            Context appCtx = context.getApplicationContext();
+            PackageInfo pkgInfo = appCtx.getPackageManager().getPackageInfo(appCtx.getPackageName(), 0);
+            long currentApkUpdateTime = pkgInfo.lastUpdateTime;
+            JSONObject bundled = readBundledManifest(appCtx);
+            String currentApkHash = bundled != null ? bundled.optString("hash", "").trim() : "";
+
+            SharedPreferences otaPrefs = appCtx.getSharedPreferences(PREFS_OTA, Activity.MODE_PRIVATE);
+            long savedUpdateTime = otaPrefs.getLong(KEY_LAST_APK_UPDATE_TIME, -1L);
+            String savedApkHash = otaPrefs.getString(KEY_LAST_APK_HASH, "");
+
+            boolean apkChanged = (savedUpdateTime != -1L && savedUpdateTime != currentApkUpdateTime)
+                || (!savedApkHash.isEmpty() && !currentApkHash.isEmpty() && !savedApkHash.equals(currentApkHash));
+
+            if (apkChanged) {
+                Log.i(TAG, "Detected fresh APK install/update, clearing stale OTA CAP_SERVER_PATH");
+                SharedPreferences webPrefs = appCtx.getSharedPreferences(
+                    com.getcapacitor.plugin.WebView.WEBVIEW_PREFS_NAME,
+                    Activity.MODE_PRIVATE
+                );
+                webPrefs.edit().remove(com.getcapacitor.plugin.WebView.CAP_SERVER_PATH).commit();
+                otaPrefs.edit()
+                    .remove(KEY_PENDING_VERSION)
+                    .remove(KEY_PENDING_HASH)
+                    .commit();
+            }
+
+            if (savedUpdateTime != currentApkUpdateTime || !savedApkHash.equals(currentApkHash)) {
+                otaPrefs.edit()
+                    .putLong(KEY_LAST_APK_UPDATE_TIME, currentApkUpdateTime)
+                    .putString(KEY_LAST_APK_HASH, currentApkHash)
+                    .commit();
+            }
+        } catch (Exception e) {
+            Log.w(TAG, "resetStaleOtaIfApkUpdated skipped: " + e.getMessage());
+        }
+    }
 
     /** 在 WebView 尚未被 OTA 改写激活路径前，快照当前实际加载的版本 */
     public static void captureBootVersion(Context context) {
@@ -68,9 +133,6 @@ public final class OtaUpdater {
         String pendingHash = prefs.getString(KEY_PENDING_HASH, null);
         if (pendingVersion == null || pendingVersion.isEmpty()) return null;
 
-        // 判定基准必须是「本次进程实际加载的版本」，不是磁盘激活路径。
-        // download 完成后 activateRelease 会立刻改写磁盘激活路径，但旧 WebView 进程仍在跑老 bundle；
-        // 用磁盘路径判定会把「下载完成」误当成「重启已生效」，导致 pending 被提前清掉、弹窗永不出现。
         String runningHash = bootHash;
         if (runningHash == null || runningHash.isEmpty()) runningHash = readActiveHash(context);
         String runningVersion = bootVersion;
@@ -97,16 +159,16 @@ public final class OtaUpdater {
     /** 重启应用以加载已下载的 OTA 包 */
     public static void restartApp(Context context) {
         if (context == null) return;
-        android.content.Intent launch = context.getPackageManager()
+        Intent launch = context.getPackageManager()
             .getLaunchIntentForPackage(context.getPackageName());
         if (launch != null) {
-            android.content.Intent restartIntent;
+            Intent restartIntent;
             if (launch.getComponent() != null) {
-                restartIntent = android.content.Intent.makeRestartActivityTask(launch.getComponent());
+                restartIntent = Intent.makeRestartActivityTask(launch.getComponent());
             } else {
                 restartIntent = launch;
-                restartIntent.addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK
-                    | android.content.Intent.FLAG_ACTIVITY_CLEAR_TASK);
+                restartIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK
+                    | Intent.FLAG_ACTIVITY_CLEAR_TASK);
             }
             context.startActivity(restartIntent);
         }
@@ -114,12 +176,27 @@ public final class OtaUpdater {
         Runtime.getRuntime().exit(0);
     }
 
+    /** 兼容旧调用入口 */
     public static void checkForUpdateInBackground(final Activity activity) {
-        if (started || activity == null) return;
-        final String rawBaseUrl = activity.getString(R.string.ota_base_url).trim();
-        if (rawBaseUrl.isEmpty()) return;
+        checkForUpdateWithPrompt(activity);
+    }
 
-        started = true;
+    /**
+     * 先校验远端 ota-manifest.json；
+     * 若远端版本 hash 与当前运行版本不同，则弹出更新对话框，
+     * 用户点击「立即更新」后展示实时下载进度条、校验完整性、解压并自动重启生效。
+     */
+    public static void checkForUpdateWithPrompt(final Activity activity) {
+        if (activity == null || activity.isFinishing()) return;
+        if (DIALOG_SHOWING.get()) return;
+        if (!CHECK_IN_PROGRESS.compareAndSet(false, true)) return;
+
+        final String rawBaseUrl = activity.getString(R.string.ota_base_url).trim();
+        if (rawBaseUrl.isEmpty()) {
+            CHECK_IN_PROGRESS.set(false);
+            return;
+        }
+
         final String baseUrl = rawBaseUrl.replaceAll("/+$", "");
         final Context appContext = activity.getApplicationContext();
 
@@ -127,91 +204,401 @@ public final class OtaUpdater {
             try {
                 String currentHash = readActiveHash(appContext);
                 String manifestUrl = baseUrl + "/ota-manifest.json?t=" + System.currentTimeMillis();
-                String manifestJson = fetchText(manifestUrl);
-                if (manifestJson == null || manifestJson.isEmpty()) return;
+                String manifestJson = fetchTextWithRetry(manifestUrl, 2);
+                if (manifestJson == null || manifestJson.isEmpty()) {
+                    Log.w(TAG, "OTA manifest fetch returned empty");
+                    return;
+                }
 
                 JSONObject manifest = new JSONObject(manifestJson);
                 String remoteHash = manifest.optString("hash", "").trim();
                 String remoteVersion = manifest.optString("version", remoteHash).trim();
                 String bundleZip = manifest.optString("bundleZip", "ota-bundle.zip").trim();
                 String expectedSha256 = manifest.optString("zipSha256", "").trim();
+                long expectedZipSize = manifest.optLong("zipSize", 0L);
 
-                // 以「本次进程实际运行的版本」为准判断是否已是最新。
-                // 磁盘激活路径在下载完成后就会被改写，若用它比较，重启后的新进程会误以为
-                // 远端与本地一致而清掉刚写入的 pending（虽然那种场景 pending 本就该清，
-                // 但反过来在「已下载、未重启」的旧进程里，磁盘路径已是新版本，也会命中此分支）。
                 String runningHash = (bootHash != null && !bootHash.isEmpty()) ? bootHash : currentHash;
+                String runningVersion = (bootVersion != null && !bootVersion.isEmpty()) ? bootVersion : getActiveVersion(appContext);
+                if (runningVersion.isEmpty()) runningVersion = runningHash.isEmpty() ? "内置版本" : runningHash;
+
                 if (remoteHash.isEmpty() || remoteHash.equals(runningHash)) {
                     appContext.getSharedPreferences(PREFS_OTA, Activity.MODE_PRIVATE)
                         .edit().remove(KEY_PENDING_VERSION).remove(KEY_PENDING_HASH).commit();
+                    Log.i(TAG, "OTA up-to-date: " + runningVersion);
                     return;
                 }
 
                 File otaRoot = new File(appContext.getFilesDir(), "ota");
                 File releasesDir = new File(otaRoot, "releases");
                 File targetDir = new File(releasesDir, remoteHash);
-                if (new File(targetDir, "index.html").exists()
-                        && new File(targetDir, "ota-manifest.json").exists()) {
-                    activateRelease(appContext, targetDir);
-                    appContext.getSharedPreferences(PREFS_OTA, Activity.MODE_PRIVATE)
-                        .edit()
-                        .putString(KEY_PENDING_VERSION, remoteVersion)
-                        .putString(KEY_PENDING_HASH, remoteHash)
-                        .commit();
-                    return;
-                }
+                boolean alreadyReady = new File(targetDir, "index.html").exists()
+                    && new File(targetDir, "ota-manifest.json").exists();
 
-                String zipUrl = bundleZip.startsWith("http://") || bundleZip.startsWith("https://")
+                String zipUrl = (bundleZip.startsWith("http://") || bundleZip.startsWith("https://"))
                     ? bundleZip
                     : baseUrl + "/" + bundleZip.replaceAll("^/+", "");
 
-                File tmpZip = new File(appContext.getCacheDir(), "ota_" + remoteHash + ".zip");
-                downloadFile(zipUrl, tmpZip);
+                final ReleaseInfo info = new ReleaseInfo(
+                    runningVersion,
+                    remoteVersion,
+                    remoteHash,
+                    zipUrl,
+                    expectedSha256,
+                    expectedZipSize,
+                    alreadyReady
+                );
 
-                if (!expectedSha256.isEmpty()) {
-                    String actualSha256 = sha256Hex(tmpZip);
-                    if (!expectedSha256.equalsIgnoreCase(actualSha256)) {
-                        Log.w(TAG, "OTA zip sha256 mismatch: expected=" + expectedSha256 + " actual=" + actualSha256);
+                MAIN.post(() -> {
+                    if (activity.isFinishing() || (Build.VERSION.SDK_INT >= Build.VERSION_CODES.JELLY_BEAN_MR1 && activity.isDestroyed())) {
+                        return;
+                    }
+                    showUpdateDialog(activity, info);
+                });
+            } catch (Exception e) {
+                Log.w(TAG, "OTA manifest check failed: " + e.getMessage());
+            } finally {
+                CHECK_IN_PROGRESS.set(false);
+            }
+        });
+    }
+
+    private static final class ReleaseInfo {
+        final String currentVersion;
+        final String remoteVersion;
+        final String remoteHash;
+        final String zipUrl;
+        final String expectedSha256;
+        final long expectedZipSize;
+        final boolean alreadyReady;
+
+        ReleaseInfo(String currentVersion, String remoteVersion, String remoteHash,
+                    String zipUrl, String expectedSha256, long expectedZipSize, boolean alreadyReady) {
+            this.currentVersion = currentVersion;
+            this.remoteVersion = remoteVersion;
+            this.remoteHash = remoteHash;
+            this.zipUrl = zipUrl;
+            this.expectedSha256 = expectedSha256;
+            this.expectedZipSize = expectedZipSize;
+            this.alreadyReady = alreadyReady;
+        }
+    }
+
+    private static void showUpdateDialog(final Activity activity, final ReleaseInfo info) {
+        if (!DIALOG_SHOWING.compareAndSet(false, true)) return;
+
+        final Dialog dialog = new Dialog(activity);
+        dialog.requestWindowFeature(Window.FEATURE_NO_TITLE);
+        dialog.setCanceledOnTouchOutside(false);
+        dialog.setCancelable(true);
+
+        int dp12 = dp(activity, 12);
+        int dp16 = dp(activity, 16);
+        int dp20 = dp(activity, 20);
+        int dp24 = dp(activity, 24);
+
+        // 根节点：PITCH PRINT 深松石纸板 + 黄铜粗边框
+        LinearLayout root = new LinearLayout(activity);
+        root.setOrientation(LinearLayout.VERTICAL);
+        root.setPadding(dp24, dp20, dp24, dp20);
+        GradientDrawable cardBg = new GradientDrawable();
+        cardBg.setColor(Color.parseColor("#0A1A14"));
+        cardBg.setCornerRadius(dp(activity, 14));
+        cardBg.setStroke(dp(activity, 2), Color.parseColor("#D8A842"));
+        root.setBackground(cardBg);
+
+        // 顶部标签
+        TextView badge = new TextView(activity);
+        badge.setText("PITCH PRINT · 线上热更新");
+        badge.setTextColor(Color.parseColor("#A3E635"));
+        badge.setTextSize(TypedValue.COMPLEX_UNIT_SP, 11);
+        badge.setTypeface(Typeface.MONOSPACE, Typeface.BOLD);
+        root.addView(badge);
+
+        // 标题
+        final TextView titleView = new TextView(activity);
+        titleView.setText("发现新版本");
+        titleView.setTextColor(Color.parseColor("#FDE68A"));
+        titleView.setTextSize(TypedValue.COMPLEX_UNIT_SP, 20);
+        titleView.setTypeface(Typeface.DEFAULT_BOLD);
+        LinearLayout.LayoutParams titleLp = new LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
+        titleLp.topMargin = dp(activity, 4);
+        titleLp.bottomMargin = dp12;
+        root.addView(titleView, titleLp);
+
+        // 版本信息面板
+        LinearLayout infoBox = new LinearLayout(activity);
+        infoBox.setOrientation(LinearLayout.VERTICAL);
+        infoBox.setPadding(dp16, dp12, dp16, dp12);
+        GradientDrawable infoBg = new GradientDrawable();
+        infoBg.setColor(Color.parseColor("#112820"));
+        infoBg.setCornerRadius(dp(activity, 8));
+        infoBg.setStroke(dp(activity, 1), Color.parseColor("#24483A"));
+        infoBox.setBackground(infoBg);
+
+        TextView curLine = new TextView(activity);
+        curLine.setText("当前版本：" + info.currentVersion);
+        curLine.setTextColor(Color.parseColor("#94A3B8"));
+        curLine.setTextSize(TypedValue.COMPLEX_UNIT_SP, 13);
+        infoBox.addView(curLine);
+
+        TextView newLine = new TextView(activity);
+        newLine.setText("最新版本：" + info.remoteVersion);
+        newLine.setTextColor(Color.parseColor("#F4EFE4"));
+        newLine.setTextSize(TypedValue.COMPLEX_UNIT_SP, 14);
+        newLine.setTypeface(Typeface.DEFAULT_BOLD);
+        LinearLayout.LayoutParams lineLp = new LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
+        lineLp.topMargin = dp(activity, 4);
+        infoBox.addView(newLine, lineLp);
+
+        TextView sizeLine = new TextView(activity);
+        if (info.alreadyReady) {
+            sizeLine.setText("更新状态：新版本已缓存就绪，点击即可直接应用");
+            sizeLine.setTextColor(Color.parseColor("#A3E635"));
+        } else if (info.expectedZipSize > 0) {
+            sizeLine.setText("更新包大小：" + formatSizeMb(info.expectedZipSize));
+            sizeLine.setTextColor(Color.parseColor("#D8A842"));
+        } else {
+            sizeLine.setText("更新内容：最新界面与功能补丁包");
+            sizeLine.setTextColor(Color.parseColor("#D8A842"));
+        }
+        sizeLine.setTextSize(TypedValue.COMPLEX_UNIT_SP, 13);
+        LinearLayout.LayoutParams sizeLp = new LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
+        sizeLp.topMargin = dp(activity, 4);
+        infoBox.addView(sizeLine, sizeLp);
+
+        root.addView(infoBox, new LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT));
+
+        // 进度条与状态区（点击更新后展开）
+        final LinearLayout progressBox = new LinearLayout(activity);
+        progressBox.setOrientation(LinearLayout.VERTICAL);
+        progressBox.setVisibility(View.GONE);
+        LinearLayout.LayoutParams pbBoxLp = new LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
+        pbBoxLp.topMargin = dp16;
+        root.addView(progressBox, pbBoxLp);
+
+        final TextView statusView = new TextView(activity);
+        statusView.setText("准备下载更新...");
+        statusView.setTextColor(Color.parseColor("#E2E8F0"));
+        statusView.setTextSize(TypedValue.COMPLEX_UNIT_SP, 13);
+        progressBox.addView(statusView);
+
+        final ProgressBar progressBar = new ProgressBar(activity, null, android.R.attr.progressBarStyleHorizontal);
+        progressBar.setMax(100);
+        progressBar.setProgress(0);
+        progressBar.setProgressDrawable(createProgressDrawable(activity));
+        LinearLayout.LayoutParams barLp = new LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT, dp(activity, 12));
+        barLp.topMargin = dp(activity, 8);
+        progressBox.addView(progressBar, barLp);
+
+        // 底部按钮行
+        LinearLayout btnRow = new LinearLayout(activity);
+        btnRow.setOrientation(LinearLayout.HORIZONTAL);
+        btnRow.setGravity(Gravity.END);
+        LinearLayout.LayoutParams rowLp = new LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
+        rowLp.topMargin = dp20;
+        root.addView(btnRow, rowLp);
+
+        final Button laterBtn = createStyledButton(activity, "稍后再说", "#163329", "#CBD5E1", "#2B5243");
+        LinearLayout.LayoutParams laterLp = new LinearLayout.LayoutParams(0, dp(activity, 44), 1f);
+        laterLp.rightMargin = dp(activity, 10);
+        btnRow.addView(laterBtn, laterLp);
+
+        final Button updateBtn = createStyledButton(
+            activity,
+            info.alreadyReady ? "立即应用更新" : "立即更新",
+            "#D8A842",
+            "#0A1A14",
+            "#FDE68A"
+        );
+        LinearLayout.LayoutParams updLp = new LinearLayout.LayoutParams(0, dp(activity, 44), 1.35f);
+        btnRow.addView(updateBtn, updLp);
+
+        final AtomicBoolean cancelled = new AtomicBoolean(false);
+        final AtomicBoolean downloading = new AtomicBoolean(false);
+
+        laterBtn.setOnClickListener(v -> {
+            cancelled.set(true);
+            dialog.dismiss();
+        });
+
+        updateBtn.setOnClickListener(v -> {
+            if (!downloading.compareAndSet(false, true)) return;
+            cancelled.set(false);
+            dialog.setCancelable(false);
+            titleView.setText(info.alreadyReady ? "正在应用更新..." : "正在下载更新...");
+            progressBox.setVisibility(View.VISIBLE);
+            statusView.setTextColor(Color.parseColor("#A3E635"));
+            statusView.setText(info.alreadyReady ? "正在激活新版本..." : "正在连接更新服务器...");
+            progressBar.setIndeterminate(false);
+            progressBar.setProgress(info.alreadyReady ? 90 : 0);
+            updateBtn.setEnabled(false);
+            updateBtn.setAlpha(0.55f);
+            laterBtn.setEnabled(false);
+            laterBtn.setAlpha(0.45f);
+
+            startInteractiveUpdate(activity, info, cancelled, new UpdateUiCallback() {
+                @Override
+                public void onProgress(int percent, String statusText, boolean indeterminate) {
+                    MAIN.post(() -> {
+                        if (!dialog.isShowing()) return;
+                        progressBar.setIndeterminate(indeterminate);
+                        if (!indeterminate) {
+                            progressBar.setProgress(Math.max(0, Math.min(100, percent)));
+                        }
+                        statusView.setTextColor(Color.parseColor("#E2E8F0"));
+                        statusView.setText(statusText);
+                    });
+                }
+
+                @Override
+                public void onSuccess() {
+                    MAIN.post(() -> {
+                        if (dialog.isShowing()) {
+                            titleView.setText("更新完成");
+                            progressBar.setIndeterminate(false);
+                            progressBar.setProgress(100);
+                            statusView.setTextColor(Color.parseColor("#A3E635"));
+                            statusView.setText("更新安装完成，正在重启进入新版本...");
+                        }
+                        MAIN.postDelayed(() -> {
+                            try {
+                                if (dialog.isShowing()) dialog.dismiss();
+                            } catch (Exception ignored) {}
+                            restartApp(activity);
+                        }, 450);
+                    });
+                }
+
+                @Override
+                public void onError(String message) {
+                    downloading.set(false);
+                    MAIN.post(() -> {
+                        if (!dialog.isShowing()) return;
+                        dialog.setCancelable(true);
+                        titleView.setText("更新未完成");
+                        progressBar.setIndeterminate(false);
+                        statusView.setTextColor(Color.parseColor("#FCA5A5"));
+                        statusView.setText(message);
+                        updateBtn.setText("重试更新");
+                        updateBtn.setEnabled(true);
+                        updateBtn.setAlpha(1f);
+                        laterBtn.setText("取消");
+                        laterBtn.setEnabled(true);
+                        laterBtn.setAlpha(1f);
+                    });
+                }
+            });
+        });
+
+        dialog.setOnDismissListener(d -> DIALOG_SHOWING.set(false));
+        dialog.setContentView(root);
+
+        Window window = dialog.getWindow();
+        if (window != null) {
+            window.setBackgroundDrawable(new ColorDrawable(Color.TRANSPARENT));
+            int screenW = activity.getResources().getDisplayMetrics().widthPixels;
+            int targetW = Math.min(dp(activity, 460), (int) (screenW * 0.86f));
+            window.setLayout(targetW, WindowManager.LayoutParams.WRAP_CONTENT);
+        }
+        dialog.show();
+    }
+
+    private interface UpdateUiCallback {
+        void onProgress(int percent, String statusText, boolean indeterminate);
+        void onSuccess();
+        void onError(String message);
+    }
+
+    private static void startInteractiveUpdate(
+        final Activity activity,
+        final ReleaseInfo info,
+        final AtomicBoolean cancelled,
+        final UpdateUiCallback cb
+    ) {
+        final Context appContext = activity.getApplicationContext();
+        EXECUTOR.execute(() -> {
+            File tmpZip = null;
+            File stagingDir = null;
+            try {
+                File otaRoot = new File(appContext.getFilesDir(), "ota");
+                File releasesDir = new File(otaRoot, "releases");
+                File targetDir = new File(releasesDir, info.remoteHash);
+
+                if (!(new File(targetDir, "index.html").exists()
+                        && new File(targetDir, "ota-manifest.json").exists())) {
+
+                    tmpZip = new File(appContext.getCacheDir(), "ota_" + info.remoteHash + ".zip");
+                    if (tmpZip.exists()) {
+                        //noinspection ResultOfMethodCallIgnored
+                        tmpZip.delete();
+                    }
+
+                    // 1. 下载更新包（带实时进度）
+                    downloadFileWithProgress(info.zipUrl, tmpZip, info.expectedZipSize, cancelled, cb);
+                    if (cancelled.get()) {
                         //noinspection ResultOfMethodCallIgnored
                         tmpZip.delete();
                         return;
                     }
-                }
 
-                File stagingDir = new File(releasesDir, remoteHash + "_tmp");
-                deleteRecursive(stagingDir);
-                unzipSafely(tmpZip, stagingDir);
-                //noinspection ResultOfMethodCallIgnored
-                tmpZip.delete();
+                    // 2. 校验 SHA-256
+                    cb.onProgress(100, "正在校验更新包完整性...", true);
+                    if (!info.expectedSha256.isEmpty()) {
+                        String actualSha256 = sha256Hex(tmpZip);
+                        if (!info.expectedSha256.equalsIgnoreCase(actualSha256)) {
+                            Log.w(TAG, "OTA zip sha256 mismatch: expected=" + info.expectedSha256 + " actual=" + actualSha256);
+                            throw new IllegalStateException("更新包校验不匹配，可能下载不完整，请重试");
+                        }
+                    }
 
-                if (!new File(stagingDir, "index.html").exists()) {
-                    Log.w(TAG, "OTA package missing index.html");
+                    // 3. 安全解压（带进度）
+                    stagingDir = new File(releasesDir, info.remoteHash + "_tmp");
                     deleteRecursive(stagingDir);
-                    return;
+                    cb.onProgress(0, "正在解压安装更新...", false);
+                    unzipSafelyWithProgress(tmpZip, stagingDir, cb);
+
+                    //noinspection ResultOfMethodCallIgnored
+                    tmpZip.delete();
+                    tmpZip = null;
+
+                    if (!new File(stagingDir, "index.html").exists()) {
+                        throw new IllegalStateException("更新包缺少入口文件 index.html");
+                    }
+
+                    deleteRecursive(targetDir);
+                    if (!stagingDir.renameTo(targetDir)) {
+                        throw new IllegalStateException("安装目录替换失败，请检查存储空间后重试");
+                    }
+                    stagingDir = null;
                 }
 
-                deleteRecursive(targetDir);
-                if (!stagingDir.renameTo(targetDir)) {
-                    Log.w(TAG, "Failed to move OTA staging dir");
-                    deleteRecursive(stagingDir);
-                    return;
-                }
-
+                // 4. 激活新版本并清理旧目录
                 activateRelease(appContext, targetDir);
-                cleanupOldReleases(releasesDir, remoteHash);
-
-                // 同步写入待生效版本与 hash，确保立即重启时不会丢失
+                cleanupOldReleases(releasesDir, info.remoteHash);
                 appContext.getSharedPreferences(PREFS_OTA, Activity.MODE_PRIVATE)
                     .edit()
-                    .putString(KEY_PENDING_VERSION, remoteVersion)
-                    .putString(KEY_PENDING_HASH, remoteHash)
+                    .remove(KEY_PENDING_VERSION)
+                    .remove(KEY_PENDING_HASH)
                     .commit();
 
-                new Handler(Looper.getMainLooper()).post(() ->
-                    Toast.makeText(appContext, "发现新版本 (" + remoteVersion + ")，已下载完成，下次启动生效", Toast.LENGTH_SHORT).show()
-                );
+                cb.onSuccess();
             } catch (Exception e) {
-                Log.w(TAG, "OTA check skipped/failed: " + e.getMessage());
+                Log.w(TAG, "Interactive OTA failed: " + e.getMessage(), e);
+                if (tmpZip != null && tmpZip.exists()) {
+                    //noinspection ResultOfMethodCallIgnored
+                    tmpZip.delete();
+                }
+                if (stagingDir != null && stagingDir.exists()) {
+                    deleteRecursive(stagingDir);
+                }
+                cb.onError("更新失败：" + friendlyError(e));
             }
         });
     }
@@ -224,6 +611,14 @@ public final class OtaUpdater {
         prefs.edit()
             .putString(com.getcapacitor.plugin.WebView.CAP_SERVER_PATH, releaseDir.getAbsolutePath())
             .commit();
+    }
+
+    private static JSONObject readBundledManifest(Context context) {
+        try (InputStream is = context.getAssets().open("public/ota-manifest.json")) {
+            return new JSONObject(readStreamText(is));
+        } catch (Exception ignored) {
+            return null;
+        }
     }
 
     private static JSONObject readActiveManifest(Context context) {
@@ -241,9 +636,7 @@ public final class OtaUpdater {
                     }
                 }
             }
-            try (InputStream is = context.getAssets().open("public/ota-manifest.json")) {
-                return new JSONObject(readStreamText(is));
-            }
+            return readBundledManifest(context);
         } catch (Exception ignored) {
             return null;
         }
@@ -254,43 +647,121 @@ public final class OtaUpdater {
         return obj != null ? obj.optString("hash", "").trim() : "";
     }
 
-    private static String fetchText(String urlStr) throws Exception {
-        HttpURLConnection conn = (HttpURLConnection) new URL(urlStr).openConnection();
-        conn.setConnectTimeout(5000);
-        conn.setReadTimeout(10000);
-        conn.setUseCaches(false);
-        conn.setRequestProperty("Cache-Control", "no-cache");
-        try {
-            if (conn.getResponseCode() != HttpURLConnection.HTTP_OK) return null;
-            try (InputStream is = conn.getInputStream()) {
-                return readStreamText(is);
+    private static HttpURLConnection openConnectionWithRedirects(String urlStr, int connectTimeoutMs, int readTimeoutMs) throws Exception {
+        String currentUrl = urlStr;
+        for (int hops = 0; hops < 5; hops++) {
+            HttpURLConnection conn = (HttpURLConnection) new URL(currentUrl).openConnection();
+            conn.setInstanceFollowRedirects(false);
+            conn.setConnectTimeout(connectTimeoutMs);
+            conn.setReadTimeout(readTimeoutMs);
+            conn.setUseCaches(false);
+            conn.setRequestProperty("Cache-Control", "no-cache");
+            conn.setRequestProperty("Accept-Encoding", "identity");
+            int code = conn.getResponseCode();
+            if (code == HttpURLConnection.HTTP_MOVED_PERM
+                    || code == HttpURLConnection.HTTP_MOVED_TEMP
+                    || code == HttpURLConnection.HTTP_SEE_OTHER
+                    || code == 307
+                    || code == 308) {
+                String location = conn.getHeaderField("Location");
+                conn.disconnect();
+                if (location == null || location.isEmpty()) {
+                    throw new IllegalStateException("重定向缺少目标地址 (HTTP " + code + ")");
+                }
+                currentUrl = new URL(new URL(currentUrl), location).toString();
+                continue;
             }
-        } finally {
-            conn.disconnect();
+            return conn;
         }
+        throw new IllegalStateException("服务器重定向次数过多");
     }
 
-    private static void downloadFile(String urlStr, File destFile) throws Exception {
-        HttpURLConnection conn = (HttpURLConnection) new URL(urlStr).openConnection();
-        conn.setConnectTimeout(8000);
-        conn.setReadTimeout(30000);
-        conn.setUseCaches(false);
-        try {
-            if (conn.getResponseCode() != HttpURLConnection.HTTP_OK) {
-                throw new IllegalStateException("HTTP " + conn.getResponseCode());
+    private static String fetchTextWithRetry(String urlStr, int maxAttempts) throws Exception {
+        Exception lastErr = null;
+        for (int attempt = 1; attempt <= maxAttempts; attempt++) {
+            HttpURLConnection conn = null;
+            try {
+                conn = openConnectionWithRedirects(urlStr, 10000, 15000);
+                int code = conn.getResponseCode();
+                if (code != HttpURLConnection.HTTP_OK) {
+                    throw new IllegalStateException("HTTP " + code);
+                }
+                try (InputStream is = conn.getInputStream()) {
+                    return readStreamText(is);
+                }
+            } catch (Exception e) {
+                lastErr = e;
+                Log.w(TAG, "fetchText attempt " + attempt + " failed: " + e.getMessage());
+            } finally {
+                if (conn != null) conn.disconnect();
             }
+        }
+        if (lastErr != null) throw lastErr;
+        return null;
+    }
+
+    private static void downloadFileWithProgress(
+        String urlStr,
+        File destFile,
+        long fallbackTotalBytes,
+        AtomicBoolean cancelled,
+        UpdateUiCallback cb
+    ) throws Exception {
+        HttpURLConnection conn = openConnectionWithRedirects(urlStr, 15000, 60000);
+        try {
+            int code = conn.getResponseCode();
+            if (code != HttpURLConnection.HTTP_OK) {
+                throw new IllegalStateException("服务器返回 HTTP " + code);
+            }
+            long headerLen = Build.VERSION.SDK_INT >= Build.VERSION_CODES.N
+                ? conn.getContentLengthLong()
+                : conn.getContentLength();
+            long totalBytes = headerLen > 0 ? headerLen : fallbackTotalBytes;
+
             File parent = destFile.getParentFile();
             if (parent != null && !parent.exists()) {
                 //noinspection ResultOfMethodCallIgnored
                 parent.mkdirs();
             }
-            try (InputStream in = new BufferedInputStream(conn.getInputStream());
+
+            long downloaded = 0L;
+            int lastPercent = -1;
+            long lastNotifyMs = 0L;
+
+            try (InputStream in = new BufferedInputStream(conn.getInputStream(), 32768);
                  FileOutputStream out = new FileOutputStream(destFile)) {
-                byte[] buf = new byte[8192];
+                byte[] buf = new byte[32768];
                 int n;
                 while ((n = in.read(buf)) != -1) {
+                    if (cancelled.get()) {
+                        return;
+                    }
                     out.write(buf, 0, n);
+                    downloaded += n;
+
+                    long now = System.currentTimeMillis();
+                    if (totalBytes > 0) {
+                        int pct = (int) Math.min(100L, (downloaded * 100L) / totalBytes);
+                        if (pct != lastPercent && (now - lastNotifyMs >= 60 || pct == 100)) {
+                            lastPercent = pct;
+                            lastNotifyMs = now;
+                            cb.onProgress(
+                                pct,
+                                String.format(Locale.US, "正在下载更新... %d%%  (%s / %s)",
+                                    pct, formatSizeMb(downloaded), formatSizeMb(totalBytes)),
+                                false
+                            );
+                        }
+                    } else if (now - lastNotifyMs >= 120) {
+                        lastNotifyMs = now;
+                        cb.onProgress(0, "正在下载更新... 已下载 " + formatSizeMb(downloaded), true);
+                    }
                 }
+                out.flush();
+            }
+
+            if (totalBytes > 0 && downloaded < totalBytes && !cancelled.get()) {
+                throw new IllegalStateException("连接提前中断，仅下载 " + formatSizeMb(downloaded) + " / " + formatSizeMb(totalBytes));
             }
         } finally {
             conn.disconnect();
@@ -300,7 +771,7 @@ public final class OtaUpdater {
     private static String sha256Hex(File file) throws Exception {
         MessageDigest md = MessageDigest.getInstance("SHA-256");
         try (InputStream in = new FileInputStream(file)) {
-            byte[] buf = new byte[8192];
+            byte[] buf = new byte[32768];
             int n;
             while ((n = in.read(buf)) != -1) {
                 md.update(buf, 0, n);
@@ -314,15 +785,19 @@ public final class OtaUpdater {
         return sb.toString();
     }
 
-    private static void unzipSafely(File zipFile, File destDir) throws Exception {
+    private static void unzipSafelyWithProgress(File zipFile, File destDir, UpdateUiCallback cb) throws Exception {
         if (!destDir.exists()) {
             //noinspection ResultOfMethodCallIgnored
             destDir.mkdirs();
         }
         String destCanonical = destDir.getCanonicalPath() + File.separator;
-        try (ZipInputStream zis = new ZipInputStream(new BufferedInputStream(new FileInputStream(zipFile)))) {
+        long totalZipSize = Math.max(1L, zipFile.length());
+        long consumedCompressed = 0L;
+        int lastPct = -1;
+
+        try (ZipInputStream zis = new ZipInputStream(new BufferedInputStream(new FileInputStream(zipFile), 32768))) {
             ZipEntry entry;
-            byte[] buf = new byte[8192];
+            byte[] buf = new byte[32768];
             while ((entry = zis.getNextEntry()) != null) {
                 File outFile = new File(destDir, entry.getName());
                 String outCanonical = outFile.getCanonicalPath();
@@ -338,16 +813,24 @@ public final class OtaUpdater {
                         //noinspection ResultOfMethodCallIgnored
                         parent.mkdirs();
                     }
-                    try (BufferedOutputStream bos = new BufferedOutputStream(new FileOutputStream(outFile))) {
+                    try (BufferedOutputStream bos = new BufferedOutputStream(new FileOutputStream(outFile), 32768)) {
                         int n;
                         while ((n = zis.read(buf)) != -1) {
                             bos.write(buf, 0, n);
                         }
                     }
                 }
+                long comp = entry.getCompressedSize();
+                if (comp > 0) consumedCompressed += comp;
+                int pct = (int) Math.min(99L, (consumedCompressed * 100L) / totalZipSize);
+                if (pct > lastPct) {
+                    lastPct = pct;
+                    cb.onProgress(pct, "正在解压安装更新... " + pct + "%", false);
+                }
                 zis.closeEntry();
             }
         }
+        cb.onProgress(100, "解压完成，正在应用更新...", false);
     }
 
     private static void cleanupOldReleases(File releasesDir, String keepHash) {
@@ -380,5 +863,57 @@ public final class OtaUpdater {
             baos.write(buf, 0, n);
         }
         return baos.toString(StandardCharsets.UTF_8.name());
+    }
+
+    private static Drawable createProgressDrawable(Context ctx) {
+        int radius = dp(ctx, 6);
+        GradientDrawable track = new GradientDrawable();
+        track.setColor(Color.parseColor("#18382C"));
+        track.setCornerRadius(radius);
+
+        GradientDrawable fill = new GradientDrawable();
+        fill.setColor(Color.parseColor("#A3E635"));
+        fill.setCornerRadius(radius);
+
+        ClipDrawable clip = new ClipDrawable(fill, Gravity.LEFT, ClipDrawable.HORIZONTAL);
+        LayerDrawable layer = new LayerDrawable(new Drawable[] { track, clip });
+        layer.setId(0, android.R.id.background);
+        layer.setId(1, android.R.id.progress);
+        return layer;
+    }
+
+    private static Button createStyledButton(Context ctx, String text, String bgHex, String textHex, String strokeHex) {
+        Button btn = new Button(ctx);
+        btn.setText(text);
+        btn.setAllCaps(false);
+        btn.setTextColor(Color.parseColor(textHex));
+        btn.setTextSize(TypedValue.COMPLEX_UNIT_SP, 14);
+        btn.setTypeface(Typeface.DEFAULT_BOLD);
+        GradientDrawable bg = new GradientDrawable();
+        bg.setColor(Color.parseColor(bgHex));
+        bg.setCornerRadius(dp(ctx, 8));
+        bg.setStroke(dp(ctx, 1), Color.parseColor(strokeHex));
+        btn.setBackground(bg);
+        btn.setPadding(dp(ctx, 12), 0, dp(ctx, 12), 0);
+        return btn;
+    }
+
+    private static String formatSizeMb(long bytes) {
+        double mb = bytes / (1024.0 * 1024.0);
+        return String.format(Locale.US, "%.1f MB", mb);
+    }
+
+    private static String friendlyError(Exception e) {
+        String msg = e.getMessage();
+        if (msg == null || msg.isEmpty()) return "网络连接异常，请稍后重试";
+        if (msg.contains("timed out") || msg.contains("Timeout")) return "连接超时，请检查网络后重试";
+        if (msg.contains("Unable to resolve host")) return "无法解析更新服务器，请检查网络";
+        return msg;
+    }
+
+    private static int dp(Context ctx, int dp) {
+        return Math.round(TypedValue.applyDimension(
+            TypedValue.COMPLEX_UNIT_DIP, dp, ctx.getResources().getDisplayMetrics()
+        ));
     }
 }

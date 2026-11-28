@@ -1,5 +1,5 @@
 /**
- * 通用球员完整属性详情弹窗（10维能力条 + 实装词条效果 + 赛季数据）
+ * 通用球员完整属性详情弹窗（PITCH PRINT 暖纸球探档案卡 + 10维能力条 + 5×4 大号选号器）
  */
 
 import { PlayerAttributes } from '../../engine/src/types';
@@ -10,6 +10,7 @@ import { drawPlayerAvatar } from './AvatarRenderer';
 import {
   drawBadge,
   drawButton,
+  drawPrintCard,
   drawRoundRect,
   drawStatBar,
   drawText,
@@ -99,44 +100,47 @@ export class PlayerModal {
     const pa = p.pa ?? p.ca;
     const fogLv = p.scoutFogLevel ?? 0;
 
-    // 半透明遮罩
-    ctx.fillStyle = 'rgba(4, 7, 13, 0.78)';
+    ctx.fillStyle = 'rgba(7, 16, 12, 0.84)';
     ctx.fillRect(0, 0, THEME.W, THEME.H);
-    // 拦截底层点击
     hits.add(0, 0, THEME.W, THEME.H, () => this.close());
 
-    const mx = 270, my = 80, mw = 740, mh = 560;
-    drawRoundRect(ctx, mx, my, mw, mh, 12, THEME.BG_PANEL, THEME.BORDER_GOLD, 1.5);
-    // 弹窗内部点击不关闭
+    const mx = 270, my = 76, mw = 740, mh = 568;
+    drawPrintCard(ctx, mx, my, mw, mh, {
+      paper: true,
+      radius: 12,
+      shadowOffset: 6,
+      strokeColor: THEME.INK_LINE,
+      lineWidth: 2,
+    });
     hits.add(mx, my, mw, mh, () => {});
 
-    // 头部 + 球员分层拼接/程序化矢量头像
     drawPlayerAvatar(ctx, mx + 22, my + 16, 62, 74, p, undefined, { radius: 8 });
 
     const revealedSet = this.scoutFog ? this.getRevealedKeys(p, this.revealCount) : null;
 
-    drawBadge(ctx, mx + 92, my + 24, 30, 22, this.scoutFog ? '?' : p.tier, this.scoutFog ? '#334155' : tierColor(p.tier), this.scoutFog ? THEME.GOLD_LIGHT : undefined);
-    drawBadge(ctx, mx + 130, my + 24, 44, 22, p.role, '#1E293B', THEME.TX1);
+    drawBadge(ctx, mx + 92, my + 22, 32, 24, this.scoutFog ? '?' : p.tier, this.scoutFog ? THEME.BG_PANEL : tierColor(p.tier), this.scoutFog ? THEME.GOLD_LIGHT : '#FFFFFF');
+    drawBadge(ctx, mx + 130, my + 22, 46, 24, p.role, THEME.BG_PANEL, THEME.PAPER_CREAM);
     const nameStr = fitText(ctx, p.name, 165, FONT.HEADLINE, true, true);
-    drawText(ctx, nameStr, mx + 186, my + 35, { token: 'HEADLINE', bold: true });
+    drawText(ctx, nameStr, mx + 186, my + 34, { token: 'HEADLINE', bold: true, color: THEME.PAPER_INK });
     if (this.scoutFog) {
       drawBadge(
         ctx,
-        mx + 360,
-        my + 24,
+        mx + 356,
+        my + 22,
         164,
-        22,
-        fogLv === 1 ? `初探 Lv.1 · 显 ${revealedSet!.size}/10 项` : `球探盲盒 · 仅显 ${revealedSet!.size}/10 项`,
-        '#1E3A5F',
-        '#38BDF8'
+        24,
+        fogLv === 1 ? `初探 Lv.1 · 显 ${revealedSet!.size}/10` : `球探盲盒 · 仅显 ${revealedSet!.size}/10`,
+        '#1D4ED8',
+        '#FFFFFF'
       );
     } else if (p.careerStats && p.careerStats.championships >= 1 && p.careerStats.seasons >= 2) {
-      drawBadge(ctx, mx + 360, my + 24, 72, 22, '队史传奇', '#78350F', THEME.GOLD_LIGHT);
+      drawBadge(ctx, mx + 356, my + 22, 78, 24, '队史传奇', THEME.INK_LINE, THEME.GOLD_LIGHT);
     } else if (p.careerStats && p.careerStats.seasons >= 2) {
-      drawBadge(ctx, mx + 360, my + 24, 72, 22, '功勋老臣', '#1E3A5F', '#7DD3FC');
+      drawBadge(ctx, mx + 356, my + 22, 78, 24, '功勋老臣', '#1D4ED8', '#FFFFFF');
     } else if (p.isNewSigning) {
-      drawBadge(ctx, mx + 360, my + 24, 54, 22, '新援', '#14532D', THEME.GREEN);
+      drawBadge(ctx, mx + 356, my + 22, 58, 24, '新援', '#166534', THEME.LIME);
     }
+
     const secText = p.secondaryRoles && p.secondaryRoles.length > 0 ? ` · 兼 ${p.secondaryRoles.join('/')}` : '';
     const mVal = p.marketValue ?? p.cost;
     const paSub = this.scoutFog
@@ -145,30 +149,30 @@ export class PlayerModal {
         : `${p.age}岁${secText} · CA ??? · 潜力 PA ??? · 球探深度探查或签入后揭晓`
       : `${p.age}岁${secText} · CA ${p.ca} / PA ${pa} · 身价 ¥${mVal}万`;
     if (this.scoutFog) {
-      drawWrappedText(ctx, paSub, mx + 92, my + 52, 360, 16, {
-        token: 'LABEL',
-        color: '#38BDF8',
+      drawWrappedText(ctx, paSub, mx + 92, my + 52, 360, 18, {
+        size: 12.5,
+        color: '#1D4ED8',
         maxLines: 2,
       });
     } else {
-      const fittedSub = fitText(ctx, paSub, 365, FONT.LABEL, false, true);
-      drawText(ctx, fittedSub, mx + 92, my + 60, { token: 'LABEL', color: THEME.TX2 });
+      const fittedSub = fitText(ctx, paSub, 365, 13, false, true);
+      drawText(ctx, fittedSub, mx + 92, my + 60, { size: 13, color: THEME.PAPER_MUTED });
     }
 
     if (!this.scoutFog) {
       const ratio = Math.max(0.08, Math.min(1, p.ca / Math.max(1, pa)));
       const gap = Math.max(0, pa - p.ca);
-      drawRoundRect(ctx, mx + 92, my + 76, 260, 7, 3, '#1E293B');
-      drawRoundRect(ctx, mx + 92, my + 76, Math.round(260 * ratio), 7, 3, gap >= 8 ? '#38BDF8' : gap > 0 ? THEME.GREEN : THEME.GOLD_LIGHT);
+      drawRoundRect(ctx, mx + 92, my + 77, 248, 8, 4, THEME.PAPER_WARM);
+      drawRoundRect(ctx, mx + 92, my + 77, Math.round(248 * ratio), 8, 4, gap >= 8 ? '#2B6BE6' : gap > 0 ? '#16A34A' : THEME.GOLD);
       drawText(
         ctx,
-        gap > 0 ? `可成长空间 +${gap} PA` : '潜力已兑现',
-        mx + 362,
-        my + 79,
-        { size: 10.5, bold: true, color: gap >= 8 ? '#7DD3FC' : gap > 0 ? THEME.GREEN : THEME.GOLD_LIGHT }
+        gap > 0 ? `可成长 +${gap} PA` : '潜力已兑现',
+        mx + 348,
+        my + 81,
+        { size: 12, bold: true, color: gap >= 8 ? '#1D4ED8' : gap > 0 ? '#166534' : '#9A6B12' }
       );
     }
-    drawButton(ctx, hits, mx + mw - 104, my + 22, 80, 32, '关闭', () => this.close(), { variant: 'ghost', icon: 'close' });
+    drawButton(ctx, hits, mx + mw - 104, my + 18, 82, 34, '关闭', () => this.close(), { variant: 'ghost', icon: 'close', fontSize: 12.5 });
 
     const userClub = !this.scoutFog && clubCtx ? clubCtx.league.getUserClub() : null;
     const isOwnPlayer = !!userClub && userClub.squad.some(x => x.id === p.id);
@@ -178,10 +182,10 @@ export class PlayerModal {
       drawButton(
         ctx,
         hits,
-        mx + mw - 210,
-        my + 22,
-        98,
-        32,
+        mx + mw - 212,
+        my + 18,
+        100,
+        34,
         isCap ? '现队长' : '设为队长',
         () => {
           if (isCap) return;
@@ -189,70 +193,68 @@ export class PlayerModal {
           if (res.ok) clubCtx.onSave();
           clubCtx.onToast?.(res.msg ?? '', res.ok ? THEME.GOLD_LIGHT : THEME.RED_LIGHT);
         },
-        { variant: isCap ? 'gold' : 'primary', disabled: isCap, icon: 'star', fontSize: 11.5 }
+        { variant: isCap ? 'gold' : 'primary', disabled: isCap, icon: 'star', fontSize: 12 }
       );
 
       const curNum = p.shirtNumber ?? 10;
-      drawText(ctx, '球衣号码', mx + mw - 270, my + 73, { size: 11, color: THEME.TX2 });
-      drawButton(ctx, hits, mx + mw - 210, my + 60, 28, 26, '-', () => {
+      drawText(ctx, '号码', mx + mw - 252, my + 73, { size: 12, color: THEME.PAPER_MUTED });
+      drawButton(ctx, hits, mx + mw - 212, my + 58, 32, 28, '-', () => {
         const res = clubCtx.league.setPlayerShirtNumber(p.id, curNum <= 1 ? 99 : curNum - 1);
         if (res.ok) clubCtx.onSave();
         clubCtx.onToast?.(res.msg, THEME.GOLD_LIGHT);
       }, { variant: 'ghost', fontSize: 13 });
-      drawButton(ctx, hits, mx + mw - 178, my + 60, 74, 26, `#${curNum} ▾`, () => {
+      drawButton(ctx, hits, mx + mw - 176, my + 58, 72, 28, `#${curNum} ▾`, () => {
         this.numberPickerOpen = !this.numberPickerOpen;
-      }, { active: this.numberPickerOpen, fontSize: 11.5 });
-      drawButton(ctx, hits, mx + mw - 100, my + 60, 28, 26, '+', () => {
+      }, { active: this.numberPickerOpen, fontSize: 12 });
+      drawButton(ctx, hits, mx + mw - 100, my + 58, 32, 28, '+', () => {
         const res = clubCtx.league.setPlayerShirtNumber(p.id, curNum >= 99 ? 1 : curNum + 1);
         if (res.ok) clubCtx.onSave();
         clubCtx.onToast?.(res.msg, THEME.GOLD_LIGHT);
       }, { variant: 'ghost', fontSize: 13 });
     }
 
-    // 10 维属性面板 (2列 × 5行；球探盲盒模式仅展示局部已侦察项)
     drawText(
       ctx,
       this.scoutFog
         ? `球探局部侦察（仅展示 ${revealedSet!.size} 项小数据，其余签入后揭晓）`
         : '完整技术与身体属性（全部实装于 2D 引擎）',
       mx + 24,
-      my + 104,
-      { size: 13, bold: true, color: THEME.GOLD_LIGHT }
+      my + 106,
+      { size: 14, bold: true, color: THEME.PAPER_INK }
     );
 
     ATTR_LABELS.forEach(([key, label], idx) => {
       const col = idx % 2;
       const row = Math.floor(idx / 2);
       const ax = mx + 24 + col * 356;
-      const ay = my + 128 + row * 44;
+      const ay = my + 128 + row * 45;
       const isShown = !revealedSet || revealedSet.has(key);
       const val = p.attributes[key];
       const barColor =
         val >= 82 ? THEME.GOLD :
-        val >= 70 ? THEME.GREEN :
-        val >= 55 ? THEME.BLUE_LIGHT : '#64748B';
+        val >= 70 ? '#16A34A' :
+        val >= 55 ? THEME.BLUE : '#64748B';
 
-      drawText(ctx, label, ax, ay + 8, { token: 'BODY', color: isShown ? THEME.TX1 : THEME.TX3 });
+      drawText(ctx, label, ax, ay + 8, { size: 14, bold: true, color: isShown ? THEME.PAPER_INK : THEME.PAPER_MUTED });
       drawText(ctx, isShown ? String(val) : '??', ax + 336, ay + 8, {
-        token: 'BODY',
+        size: 14,
         bold: true,
-        color: isShown ? barColor : '#475569',
+        color: isShown ? barColor : THEME.PAPER_MUTED,
         align: 'right',
         mono: true,
       });
       if (isShown) {
-        drawStatBar(ctx, val, 99, ax, ay + 20, 336, 10, barColor, '#1E293B');
+        drawStatBar(ctx, val, 99, ax, ay + 22, 336, 10, barColor, THEME.PAPER_WARM);
       } else {
-        drawRoundRect(ctx, ax, ay + 20, 336, 10, 5, '#1E293B');
-        drawRoundRect(ctx, ax, ay + 20, 96, 10, 5, '#334155');
+        drawRoundRect(ctx, ax, ay + 22, 336, 10, 5, THEME.PAPER_WARM);
+        drawRoundRect(ctx, ax, ay + 22, 96, 10, 5, '#CBD5E1');
       }
     });
 
-    // 实装词条效果说明（FC26 金标/银标多特质系统）
-    drawText(ctx, '实装特质与词条（★金标2x引擎加成 / ◆银标1x）', mx + 24, my + 366, {
-      size: 13,
+    drawText(ctx, '实装特质与词条（★金标2x引擎加成 / ◆银标1x）', mx + 24, my + 370, {
+      size: 14,
       bold: true,
-      color: THEME.GOLD_LIGHT,
+      color: THEME.PAPER_INK,
     });
     const goldList = p.goldTraits ?? [];
     const silverList = p.silverTraits ?? [];
@@ -266,7 +268,7 @@ export class PlayerModal {
         : fallbackTraits.map((t, i) => ({ name: t, isGold: i === 0 && p.tier === 'S' }));
 
     if (combinedBadges.length === 0) {
-      drawText(ctx, p.trait || '常规均衡型球员', mx + 24, my + 398, { size: 12, color: THEME.TX2 });
+      drawText(ctx, p.trait || '常规均衡型球员', mx + 24, my + 402, { size: 13, color: THEME.PAPER_MUTED });
     } else {
       const shown = combinedBadges.slice(0, 4);
       const count = shown.length;
@@ -274,49 +276,59 @@ export class PlayerModal {
       const cardW = Math.floor((mw - 48 - gap * (count - 1)) / count);
       shown.forEach((item, ti) => {
         const tx = mx + 24 + ti * (cardW + gap);
-        const borderCol = item.isGold ? '#FACC15' : '#94A3B8';
-        const bgCol = item.isGold ? 'rgba(120, 53, 15, 0.35)' : THEME.BG_CARD;
-        drawRoundRect(ctx, tx, my + 384, cardW, 64, 8, bgCol, borderCol, item.isGold ? 1.5 : 1);
+        drawPrintCard(ctx, tx, my + 382, cardW, 82, {
+          paper: false,
+          radius: 8,
+          shadowOffset: 3,
+          strokeColor: item.isGold ? THEME.GOLD_LIGHT : THEME.INK_LINE,
+          lineWidth: item.isGold ? 2 : 1.5,
+        });
         drawBadge(
           ctx,
           tx + 10,
-          my + 392,
-          44,
-          16,
+          my + 390,
+          58,
+          18,
           item.isGold ? '★ 金标' : '◆ 银标',
-          item.isGold ? '#78350F' : '#1E293B',
-          item.isGold ? '#FACC15' : '#CBD5E1'
+          item.isGold ? '#78350F' : THEME.BG_DEEP,
+          item.isGold ? THEME.GOLD_HOT : THEME.TX2
         );
-        const nameFitted = fitText(ctx, item.name, cardW - 68, FONT.LABEL, true, true);
-        drawText(ctx, nameFitted, tx + 60, my + 400, {
-          token: 'LABEL',
+        const nameFitted = fitText(ctx, item.name, cardW - 80, 13, true, true);
+        drawText(ctx, nameFitted, tx + 72, my + 399, {
+          size: 13,
           bold: true,
-          color: item.isGold ? '#FDE047' : '#E2E8F0',
+          color: item.isGold ? THEME.GOLD_HOT : THEME.PAPER_CREAM,
         });
-        const descFitted = fitText(ctx, TRAIT_DESCRIPTIONS[item.name] || '比赛决策与执行加成', cardW - 20, FONT.MICRO, false, true);
-        drawText(ctx, descFitted, tx + 10, my + 429, {
-          token: 'MICRO',
+        drawWrappedText(ctx, TRAIT_DESCRIPTIONS[item.name] || '比赛决策与执行加成', tx + 10, my + 418, cardW - 20, 18, {
+          size: 12,
           color: THEME.TX2,
+          maxLines: 2,
         });
       });
     }
     if (p.hiddenTrait) {
-      drawText(ctx, '隐藏特质：待比赛特定条件触发觉醒', mx + 360, my + 366, {
-        size: 12,
-        color: '#38BDF8',
+      drawText(ctx, '隐藏特质：待比赛特定条件触发觉醒', mx + 372, my + 370, {
+        size: 12.5,
+        bold: true,
+        color: '#1D4ED8',
       });
     }
 
-    // 赛季个人数据 + 跨赛季生涯累计履历
-    drawRoundRect(ctx, mx + 24, my + 464, mw - 48, 74, 8, THEME.BG_CARD, THEME.BORDER);
+    drawPrintCard(ctx, mx + 24, my + 472, mw - 48, 76, {
+      paper: false,
+      radius: 8,
+      shadowOffset: 3,
+      strokeColor: THEME.INK_LINE,
+      lineWidth: 1.5,
+    });
     const banTxt = (p.suspendedRounds ?? 0) > 0 ? `  |  停赛 ${p.suspendedRounds} 轮` : '';
     const hasCareer = !!p.careerStats && p.careerStats.seasons > 0;
     drawText(
       ctx,
       `本赛季：出场 ${p.seasonStats.appearances}  |  进球 ${p.seasonStats.goals}  |  助攻 ${p.seasonStats.assists}  |  零封 ${p.seasonStats.cleanSheets}  |  黄牌 ${p.seasonStats.yellowCards}${banTxt}`,
       mx + mw / 2,
-      my + (hasCareer ? 486 : 501),
-      { size: 13, bold: true, align: 'center', color: (p.suspendedRounds ?? 0) > 0 ? THEME.RED_LIGHT : THEME.TX1 }
+      my + (hasCareer ? 494 : 510),
+      { size: 14, bold: true, align: 'center', color: (p.suspendedRounds ?? 0) > 0 ? THEME.RED_LIGHT : THEME.PAPER_CREAM }
     );
     if (hasCareer) {
       const cs = p.careerStats!;
@@ -324,53 +336,62 @@ export class PlayerModal {
         ctx,
         `生涯累计 (${cs.seasons} 季)：出场 ${cs.appearances}  |  进球 ${cs.goals}  |  助攻 ${cs.assists}  |  零封 ${cs.cleanSheets}  |  冠军 ×${cs.championships}`,
         mx + mw / 2,
-        my + 516,
-        { size: 12, bold: true, align: 'center', color: THEME.GOLD_LIGHT }
+        my + 524,
+        { size: 12.5, bold: true, align: 'center', color: THEME.GOLD_LIGHT }
       );
     }
 
+    // 5×4 球衣号码选择器（每页 20 个，44×44 热区）
     if (this.numberPickerOpen && isOwnPlayer && clubCtx && userClub) {
-      const npx = mx + mw - 388;
+      const npx = mx + mw - 332;
       const npy = my + 92;
-      const npw = 376;
-      const nph = 338;
-      drawRoundRect(ctx, npx, npy, npw, nph, 10, 'rgba(9, 15, 28, 0.98)', THEME.GOLD_LIGHT, 1.4);
+      const npw = 316;
+      const nph = 328;
+      drawPrintCard(ctx, npx, npy, npw, nph, {
+        paper: false,
+        radius: 10,
+        shadowOffset: 6,
+        strokeColor: THEME.GOLD_LIGHT,
+        lineWidth: 1.8,
+      });
       hits.add(npx, npy, npw, nph, () => {});
-      drawText(ctx, '选择球衣号码 (1-99 · 已有号码自动互换)', npx + 14, npy + 18, { token: 'LABEL', bold: true, color: THEME.GOLD_LIGHT });
-      drawButton(ctx, hits, npx + npw - 58, npy + 6, 46, 24, '收起', () => {
+      drawText(ctx, '选择号码 (1-99)', npx + 16, npy + 22, { size: 14, bold: true, color: THEME.GOLD_LIGHT });
+      drawButton(ctx, hits, npx + npw - 66, npy + 8, 52, 28, '收起', () => {
         this.numberPickerOpen = false;
-      }, { variant: 'ghost', fontSize: 11 });
+      }, { variant: 'ghost', fontSize: 12 });
 
       const takenSet = new Set(userClub.squad.filter(x => x.id !== p.id && x.shirtNumber).map(x => x.shirtNumber!));
-      const startNum = this.numberPage * 33 + 1;
-      for (let i = 0; i < 33; i++) {
+      const totalNumPages = 5;
+      if (this.numberPage >= totalNumPages) this.numberPage = totalNumPages - 1;
+      const startNum = this.numberPage * 20 + 1;
+      for (let i = 0; i < 20; i++) {
         const num = startNum + i;
         if (num > 99) break;
-        const col = i % 7;
-        const row = Math.floor(i / 7);
-        const bx = npx + 16 + col * 50;
-        const by = npy + 38 + row * 50;
+        const col = i % 5;
+        const row = Math.floor(i / 5);
+        const bx = npx + 18 + col * 58;
+        const by = npy + 46 + row * 54;
         const isCur = p.shirtNumber === num;
         const isTaken = takenSet.has(num);
         drawRoundRect(
           ctx,
           bx,
           by,
-          44,
-          44,
+          48,
+          46,
           6,
-          isCur ? '#78350F' : isTaken ? '#0F172A' : '#1E293B',
-          isCur ? THEME.GOLD_LIGHT : isTaken ? '#334155' : '#475569',
-          isCur ? 1.5 : 1
+          isCur ? '#78350F' : isTaken ? THEME.BG_DEEP : THEME.BG_PANEL,
+          isCur ? THEME.GOLD_LIGHT : isTaken ? THEME.BORDER : THEME.BORDER_GOLD,
+          isCur ? 1.8 : 1.2
         );
-        drawText(ctx, String(num), bx + 22, by + 22, {
-          token: 'BODY',
+        drawText(ctx, String(num), bx + 24, by + 23, {
+          size: 15,
           bold: isCur,
-          color: isCur ? '#FEF08A' : isTaken ? '#64748B' : THEME.TX1,
+          color: isCur ? THEME.GOLD_HOT : isTaken ? THEME.TX3 : THEME.PAPER_CREAM,
           align: 'center',
           mono: true,
         });
-        hits.addTouchTarget(bx, by, 44, 44, () => {
+        hits.addTouchTarget(bx, by, 48, 46, () => {
           const res = clubCtx.league.setPlayerShirtNumber(p.id, num);
           if (res.ok) clubCtx.onSave();
           clubCtx.onToast?.(res.msg, THEME.GOLD_LIGHT);
@@ -378,12 +399,20 @@ export class PlayerModal {
         });
       }
 
-      const pageRanges = ['1-33', '34-66', '67-99'];
-      pageRanges.forEach((lbl, pg) => {
-        drawButton(ctx, hits, npx + 16 + pg * 82, npy + 294, 74, 28, lbl, () => {
-          this.numberPage = pg;
-        }, { active: this.numberPage === pg, fontSize: 11 });
+      const endNum = Math.min(99, startNum + 19);
+      drawButton(ctx, hits, npx + 18, npy + 272, 76, 38, '◀ 上页', () => {
+        this.numberPage = Math.max(0, this.numberPage - 1);
+      }, { disabled: this.numberPage === 0, fontSize: 12 });
+      drawText(ctx, `${startNum}-${endNum}`, npx + npw / 2, npy + 291, {
+        size: 13,
+        bold: true,
+        color: THEME.GOLD_LIGHT,
+        align: 'center',
+        mono: true,
       });
+      drawButton(ctx, hits, npx + npw - 94, npy + 272, 76, 38, '下页 ▶', () => {
+        this.numberPage = Math.min(totalNumPages - 1, this.numberPage + 1);
+      }, { disabled: this.numberPage >= totalNumPages - 1, fontSize: 12 });
     }
   }
 }

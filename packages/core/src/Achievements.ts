@@ -13,7 +13,7 @@ export interface AchievementDef {
 }
 
 export const ACHIEVEMENTS: AchievementDef[] = [
-  { id: 'ach_first_draft',  title: '初出茅庐',   desc: '完成首次 26 人 Shuffle Draft 建队',           icon: 'clipboard', metaReward: 10 },
+  { id: 'ach_first_draft',  title: '初出茅庐',   desc: '完成首次 26 人核心开包建队',                 icon: 'clipboard', metaReward: 10 },
   { id: 'ach_first_win',    title: '首胜纪念',   desc: '赢得执教生涯首场正式比赛',                   icon: 'ball',      metaReward: 10 },
   { id: 'ach_playoffs',     title: '冲级成功',   desc: '联赛排名前 3 成功升入更高级别',               icon: 'bolt',      metaReward: 20 },
   { id: 'ach_champion',     title: '联赛捧杯',   desc: '夺得赛季总冠军奖杯',                         icon: 'trophy',    metaReward: 50 },
